@@ -330,6 +330,19 @@ one call.
   - blast radius on file-change cards (`codegraph impact`)
   - a "Run affected tests" button in the Changes pane (`git diff --name-only | codegraph affected --stdin`)
 
+### Verified in M0 (2026-10-23, codex 0.164, codegraph 1.6.2)
+
+- codex sends `_meta.threadId` on every MCP tool call, so `tau-mcp-proxy` keys upstream
+  sessions by thread without any process-to-thread mapping.
+- codex reports compaction as an `item/completed` with `item.type == "contextCompaction"`;
+  `thread/compacted` is never emitted. Resets hang off that item.
+- codegraph's cross-call dedup is **off by default** (`CODEGRAPH_EXPLORE_DEDUP=1` opts in) and is
+  read by the per-project daemon. taucode therefore runs its own daemon via
+  `CODEGRAPH_DIR=.codegraph-taucode`, so other clients of the same project (Claude Code) keep
+  dedup off. This costs a second small index per project.
+- Result on a real thread: a repeated explore shrank from 22.4k to 18.4k chars with dedup
+  pointers; after a compaction the same call re-sent the full source.
+
 ### Known trade-off
 
 CodeGraph cuts tokens *processed* but leaves more *resident* context (its README measures
