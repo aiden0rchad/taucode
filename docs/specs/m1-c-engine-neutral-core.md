@@ -16,6 +16,44 @@ app's **canonical event model**. Each engine adapter produces it.
 
 Done = the verification command passes. Live tests are run outside your sandbox.
 
+## 0. No accounts, no logins (hard requirement)
+
+taucode is a straight interface to the user's own providers and models. It has **no sign-in
+of any kind**: no ChatGPT/OpenAI account, codex login, account switching or plan/rate-limit
+displays, and no "connect your account" flows. All model access goes through providers in
+the registry (section 1).
+
+- **Remove from frontend and backend** (Tauri commands, daemon RPC methods, hooks,
+  components, menu items, onboarding steps, and the tests that encode them):
+  - codex login/logout (`codex_login`, `codex_login_cancel`, `account/login/*`)
+  - account read/switching (`account_read`, `useAccountSwitching`, `useHomeAccount` and
+    the home account card)
+  - rate limits and plan (`account_rate_limits`, `useThreadRateLimits`,
+    `account/rateLimits/updated`, `account/updated`)
+  - ChatGPT apps/connectors (`apps_list`, `codex_apps`)
+  - anything else that only exists to serve a signed-in OpenAI account. Search for it; don't
+    rely on this list being complete.
+
+  Ignore those notifications explicitly if an engine still sends them. Per-thread token usage
+  (`thread/tokenUsage/updated`) stays: it's the user's own usage data.
+- **Keep** local, account-free features: git/worktrees, local gh-CLI-based GitHub panels,
+  terminal, prompts, skills, the self-hosted remote daemon, dictation.
+- **Codex engine runs fully isolated.** It uses a taucode-managed `CODEX_HOME`
+  (`<app data>/engines/codex-home`), never `~/.codex`, so no `auth.json` and no user config,
+  MCP servers or plugins leak in.
+  - taucode writes that home's `config.toml` (or passes `-c` overrides) with:
+    - `forced_login_method` unset and no credentials store
+    - `model_provider` = the chosen registry provider
+    - the registry providers
+    - `requires_openai_auth = false` on every provider
+    - `apps`, `plugins`, `analytics` and `feedback` disabled, update checks off, no
+      `chatgpt_base_url`
+  - Look up the exact keys and values in codex's `codex-rs/config/src/config_toml.rs` at
+    `/Users/rolandleyco/taucode-refs/codex/codex-rs` (codegraph-indexed).
+  - The OpenAI provider kind is reached with an API key like any other provider.
+  - If codex still asks for login with this setup, surface its error; never fall back to a
+    login flow.
+
 ## 1. Provider registry (Rust `types.rs` + `src/types.ts`, persisted in app settings)
 
 `AppSettings.providers: Vec<ProviderEntry>`:
