@@ -1,7 +1,15 @@
-use std::{env, io::Write, time::Duration};
+use std::{
+    env,
+    io::Write,
+    path::PathBuf,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{Context, Result, anyhow, bail};
-use desktop_lib::engine::{Engine, EngineEvent};
+use desktop_lib::{
+    codegraph::CodegraphSetup,
+    engine::{Engine, EngineConfig, EngineEvent},
+};
 use serde_json::{Map, Value, json};
 use tokio::{sync::broadcast, time::timeout};
 
@@ -14,12 +22,35 @@ struct Args {
     fork_provider: Option<String>,
     fork_model: Option<String>,
     fork_prompt: Option<String>,
+    codegraph_proxy: Option<String>,
+    second_prompt: Option<String>,
+    compact_between: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = parse_args()?;
-    let engine = Engine::spawn().await?;
+    let codegraph = if let Some(proxy) = &args.codegraph_proxy {
+        let state_dir = env::temp_dir().join(format!(
+            "tau-m0-smoke-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        std::fs::create_dir(&state_dir)?;
+        println!("codegraph state_dir={}", state_dir.display());
+        Some(CodegraphSetup {
+            proxy_bin: PathBuf::from(proxy),
+            upstream: vec!["codegraph".into(), "serve".into(), "--mcp".into()],
+            state_dir,
+        })
+    } else {
+        None
+    };
+    let mut config = EngineConfig::default();
+    if let Some(setup) = &codegraph {
+        config.args.extend(setup.codex_config_args());
+    }
+    let engine = Engine::spawn_with_config(config).await?;
     let mut events = engine.subscribe();
     let first = start_thread(&engine, &args.cwd, args.model, args.provider).await?;
     print_thread(&first)?;
@@ -30,8 +61,50 @@ async fn main() -> Result<()> {
         &first_id,
         &args.prompt,
         args.auto_approve,
+        codegraph.as_ref(),
     )
     .await?;
+
+    if let Some(prompt) = &args.second_prompt {
+        if args.compact_between {
+            engine
+                .request("thread/compact/start", json!({"threadId":first_id}))
+                .await?;
+            timeout(Duration::from_secs(600), async {
+                loop {
+                    match events.recv().await? {
+                        EngineEvent::Notification(message) => {
+                            if let Some(setup) = &codegraph {
+                                setup.on_engine_message(&message);
+                            }
+                            if message["method"] == "thread/compacted"
+                                && message["params"]["threadId"] == first_id
+                            {
+                                println!("thread/compacted {first_id}");
+                                return anyhow::Ok(());
+                            }
+                        }
+                        EngineEvent::ServerRequest(message) => {
+                            answer_server_request(&engine, message, args.auto_approve).await?
+                        }
+                        EngineEvent::Stderr(line) => eprintln!("stderr {line}"),
+                        EngineEvent::Exit { code } => bail!("app-server exited with code {code:?}"),
+                    }
+                }
+            })
+            .await
+            .context("compaction timed out after 10 minutes")??;
+        }
+        run_turn(
+            &engine,
+            &mut events,
+            &first_id,
+            prompt,
+            args.auto_approve,
+            codegraph.as_ref(),
+        )
+        .await?;
+    }
 
     if args.fork_provider.is_some() || args.fork_model.is_some() || args.fork_prompt.is_some() {
         let prompt = args
@@ -46,6 +119,7 @@ async fn main() -> Result<()> {
             &fork_id,
             &prompt,
             args.auto_approve,
+            codegraph.as_ref(),
         )
         .await?;
     }
@@ -63,6 +137,9 @@ fn parse_args() -> Result<Args> {
     let mut fork_provider = None;
     let mut fork_model = None;
     let mut fork_prompt = None;
+    let mut codegraph_proxy = None;
+    let mut second_prompt = None;
+    let mut compact_between = false;
     let mut args = env::args().skip(1);
 
     while let Some(flag) = args.next() {
@@ -74,6 +151,12 @@ fn parse_args() -> Result<Args> {
             "--fork-provider" => &mut fork_provider,
             "--fork-model" => &mut fork_model,
             "--fork-prompt" => &mut fork_prompt,
+            "--codegraph-proxy" => &mut codegraph_proxy,
+            "--second-prompt" => &mut second_prompt,
+            "--compact-between" => {
+                compact_between = true;
+                continue;
+            }
             "--auto-approve" => {
                 auto_approve = true;
                 continue;
@@ -81,7 +164,8 @@ fn parse_args() -> Result<Args> {
             "-h" | "--help" => {
                 println!(
                     "m0_smoke --cwd DIR --prompt TEXT [--model M] [--provider P] \
-                     [--auto-approve] [--fork-provider P2 --fork-model M2 --fork-prompt T]"
+                     [--auto-approve] [--fork-provider P2 --fork-model M2 --fork-prompt T] \
+                     [--codegraph-proxy PATH] [--second-prompt TEXT] [--compact-between]"
                 );
                 std::process::exit(0);
             }
@@ -93,6 +177,9 @@ fn parse_args() -> Result<Args> {
         );
     }
 
+    if compact_between && second_prompt.is_none() {
+        bail!("--compact-between requires --second-prompt");
+    }
     Ok(Args {
         cwd: cwd.context("--cwd is required")?,
         prompt: prompt.context("--prompt is required")?,
@@ -102,6 +189,9 @@ fn parse_args() -> Result<Args> {
         fork_provider,
         fork_model,
         fork_prompt,
+        codegraph_proxy,
+        second_prompt,
+        compact_between,
     })
 }
 
@@ -123,10 +213,7 @@ async fn fork_thread(
     model: Option<String>,
     provider: Option<String>,
 ) -> Result<Value> {
-    let mut params = Map::from_iter([(
-        "threadId".to_owned(),
-        Value::String(thread_id.to_owned()),
-    )]);
+    let mut params = Map::from_iter([("threadId".to_owned(), Value::String(thread_id.to_owned()))]);
     insert(&mut params, "model", model);
     insert(&mut params, "modelProvider", provider);
     engine.request("thread/fork", Value::Object(params)).await
@@ -138,6 +225,7 @@ async fn run_turn(
     thread_id: &str,
     prompt: &str,
     auto_approve: bool,
+    codegraph: Option<&CodegraphSetup>,
 ) -> Result<()> {
     let response = engine
         .request(
@@ -172,9 +260,15 @@ async fn run_turn(
             };
             match event {
                 EngineEvent::Notification(message) => {
+                    if let Some(setup) = codegraph {
+                        setup.on_engine_message(&message);
+                    }
                     let method = message["method"].as_str().unwrap_or("unknown");
                     if method == "item/agentMessage/delta" {
-                        print!("{}", message["params"]["delta"].as_str().unwrap_or_default());
+                        print!(
+                            "{}",
+                            message["params"]["delta"].as_str().unwrap_or_default()
+                        );
                         std::io::stdout().flush()?;
                         inline_delta = true;
                     } else {
@@ -185,9 +279,32 @@ async fn run_turn(
                         println!("{method} {}", summary(&message));
                     }
 
-                    if method == "turn/completed"
-                        && message["params"]["turn"]["id"] == turn_id
+                    if method == "item/completed"
+                        && message["params"]["item"]["type"] == "mcpToolCall"
                     {
+                        let item = &message["params"]["item"];
+                        let text = item["result"]["content"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter(|content| content["type"] == "text")
+                            .filter_map(|content| content["text"].as_str())
+                            .collect::<Vec<_>>()
+                            .join("");
+                        println!(
+                            "mcpToolCall server={} tool={} text_len={} dedup={}",
+                            item["server"].as_str().unwrap_or("unknown"),
+                            item["tool"].as_str().unwrap_or("unknown"),
+                            text.len(),
+                            if text.contains("Already sent earlier in this conversation") {
+                                "yes"
+                            } else {
+                                "no"
+                            }
+                        );
+                    }
+
+                    if method == "turn/completed" && message["params"]["turn"]["id"] == turn_id {
                         let status = message["params"]["turn"]["status"]
                             .as_str()
                             .unwrap_or("unknown");
@@ -212,11 +329,7 @@ async fn run_turn(
     .context("turn timed out after 10 minutes")?
 }
 
-async fn answer_server_request(
-    engine: &Engine,
-    message: Value,
-    auto_approve: bool,
-) -> Result<()> {
+async fn answer_server_request(engine: &Engine, message: Value, auto_approve: bool) -> Result<()> {
     let method = message["method"].as_str().unwrap_or("unknown");
     let id = message["id"].clone();
     if matches!(
@@ -230,6 +343,21 @@ async fn answer_server_request(
         );
         engine
             .respond_to_server_request(id, Some(json!({ "decision": decision })), None)
+            .await
+    } else if method == "mcpServer/elicitation/request" {
+        let action = if auto_approve { "accept" } else { "decline" };
+        println!("{method} {action}");
+        let content = if auto_approve && message["params"]["mode"] != "url" {
+            json!({})
+        } else {
+            Value::Null
+        };
+        engine
+            .respond_to_server_request(
+                id,
+                Some(json!({"action": action, "content": content, "_meta": null})),
+                None,
+            )
             .await
     } else {
         println!("{method} unsupported");
@@ -286,9 +414,7 @@ fn summary(message: &Value) -> String {
             .to_owned(),
         Some("item/commandExecution/outputDelta") => format!(
             "{} bytes",
-            message["params"]["delta"]
-                .as_str()
-                .map_or(0, str::len)
+            message["params"]["delta"].as_str().map_or(0, str::len)
         ),
         Some("turn/started") => message["params"]["turn"]["status"]
             .as_str()
