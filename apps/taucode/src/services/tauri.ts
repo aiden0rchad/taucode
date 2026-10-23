@@ -1064,6 +1064,12 @@ export async function resumeThread(workspaceId: string, threadId: string) {
   return invoke<any>("resume_thread", { workspaceId, threadId });
 }
 
+export async function listThreadHistory(workspaceId: string, threadId: string, cursor: string) {
+  return invoke<import("@protocol/v2/ThreadTurnsListResponse").ThreadTurnsListResponse>(
+    "list_thread_history", { workspaceId, threadId, cursor },
+  );
+}
+
 export async function readThread(workspaceId: string, threadId: string) {
   return invoke<any>("read_thread", { workspaceId, threadId });
 }

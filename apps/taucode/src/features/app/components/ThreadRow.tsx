@@ -106,7 +106,11 @@ export function ThreadRow({
     hasPendingUserInput,
   );
   const statusLabel =
-    statusClass === "reviewing"
+    threadStatusById[thread.id]?.activeFlags?.includes("waitingOnApproval")
+      ? "Waiting for approval"
+      : threadStatusById[thread.id]?.activeFlags?.includes("waitingOnUserInput")
+        ? "Waiting for input"
+        : statusClass === "reviewing"
       ? "Reviewing"
       : hasPendingUserInput
         ? "Waiting"

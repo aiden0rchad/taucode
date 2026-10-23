@@ -170,15 +170,23 @@ export function RequestUserInputMessage({
                       ))}
                     </div>
                   ) : null}
-                  <textarea
+                  {question.isSecret ? <input
+                    type="password"
                     className="request-user-input-notes"
+                    aria-label={question.question}
+                    autoComplete="off"
+                    value={notes[questionId] ?? ""}
+                    onChange={(event) => handleNotesChange(questionId, event.target.value)}
+                  /> : <textarea
+                    className="request-user-input-notes"
+                    aria-label={question.question}
                     placeholder={notePlaceholder}
                     value={notes[questionId] ?? ""}
                     onChange={(event) =>
                       handleNotesChange(questionId, event.target.value)
                     }
                     rows={2}
-                  />
+                  />}
                 </section>
               );
             })

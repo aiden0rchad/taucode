@@ -559,6 +559,7 @@ export function useThreads({
 
   const {
     startThreadForWorkspace: startThreadForWorkspaceInternal,
+    historyCursorByThread, historyLoadingByThread, historyErrorByThread, loadOlderHistory,
     forkThreadForWorkspace,
     resumeThreadForWorkspace,
     refreshThread,
@@ -861,6 +862,7 @@ export function useThreads({
 
   return {
     activeThreadId,
+    historyCursorByThread, historyLoadingByThread, historyErrorByThread, loadOlderHistory,
     setActiveThreadId,
     hasLocalThreadSnapshot,
     activeItems,

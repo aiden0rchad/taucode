@@ -522,11 +522,12 @@ where
                     }
                 }
                 "turn/completed" => break,
-                "turn/error" => {
+                "error" if event["params"]["willRetry"] != true => {
                     let error_msg = event
                         .get("params")
                         .and_then(|p| p.get("error"))
-                        .and_then(|e| e.as_str())
+                        .and_then(|e| e.get("message"))
+                        .and_then(Value::as_str)
                         .unwrap_or(turn_error_fallback);
                     return Err(error_msg.to_string());
                 }

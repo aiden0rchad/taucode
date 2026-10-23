@@ -122,7 +122,7 @@ export function upsertItem(list: ConversationItem[], item: ConversationItem) {
     return next;
   }
 
-  next[index] = { ...existing, ...item };
+  next[index] = item;
   return next;
 }
 

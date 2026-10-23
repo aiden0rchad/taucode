@@ -17,6 +17,8 @@ import { reduceThreadQueue } from "./threadReducer/threadQueueSlice";
 import { reduceThreadSnapshots } from "./threadReducer/threadSnapshotSlice";
 
 type ThreadActivityStatus = {
+  activeFlags?: import("@protocol/v2/ThreadActiveFlag").ThreadActiveFlag[];
+  lastTurn?: import("@protocol/v2/Turn").Turn;
   isProcessing: boolean;
   hasUnread: boolean;
   isReviewing: boolean;
@@ -28,6 +30,7 @@ export type ThreadState = {
   activeThreadIdByWorkspace: Record<string, string | null>;
   itemsByThread: Record<string, ConversationItem[]>;
   maxItemsPerThread: number | null;
+  expandedHistoryByThread?: Record<string, boolean>;
   threadsByWorkspace: Record<string, ThreadSummary[]>;
   hiddenThreadIdsByWorkspace: Record<string, Record<string, true>>;
   threadParentById: Record<string, string>;
@@ -49,6 +52,7 @@ export type ThreadState = {
 };
 
 export type ThreadAction =
+  | { type: "setThreadProtocolState"; threadId: string; patch: Partial<Pick<ThreadActivityStatus, "activeFlags" | "lastTurn">> }
   | { type: "setActiveThreadId"; workspaceId: string; threadId: string | null }
   | { type: "setMaxItemsPerThread"; maxItemsPerThread: number | null }
   | { type: "ensureThread"; workspaceId: string; threadId: string }
@@ -106,6 +110,7 @@ export type ThreadAction =
       hasCustomName?: boolean;
     }
   | { type: "setThreadItems"; threadId: string; items: ConversationItem[] }
+  | { type: "prependThreadHistory"; threadId: string; items: ConversationItem[]; snapshot: ConversationItem[]; recent?: boolean; replace?: boolean }
   | {
       type: "appendReasoningSummary";
       threadId: string;

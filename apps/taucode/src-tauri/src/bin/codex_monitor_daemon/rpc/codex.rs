@@ -48,7 +48,7 @@ pub(super) async fn try_handle(
             };
             Some(state.resume_thread(workspace_id, thread_id).await)
         }
-        "read_thread" => {
+        "read_thread" | "list_thread_history" => {
             let workspace_id = match parse_string(params, "workspaceId") {
                 Ok(value) => value,
                 Err(err) => return Some(Err(err)),
@@ -57,7 +57,12 @@ pub(super) async fn try_handle(
                 Ok(value) => value,
                 Err(err) => return Some(Err(err)),
             };
-            Some(state.read_thread(workspace_id, thread_id).await)
+            if method == "list_thread_history" {
+                Some(codex_core::list_thread_history_core(&state.sessions, workspace_id, thread_id,
+                    parse_optional_string(params, "cursor")).await)
+            } else {
+                Some(state.read_thread(workspace_id, thread_id).await)
+            }
         }
         "thread_live_subscribe" => {
             let workspace_id = match parse_string(params, "workspaceId") {

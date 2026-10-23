@@ -1,4 +1,5 @@
 export type ThreadStatusFlags = {
+  activeFlags?: import("@protocol/v2/ThreadActiveFlag").ThreadActiveFlag[];
   isProcessing?: boolean;
   hasUnread?: boolean;
   isReviewing?: boolean;
@@ -12,7 +13,7 @@ export function getThreadStatusClass(
   status: ThreadStatusFlags | undefined,
   hasPendingUserInput: boolean,
 ): ThreadStatusClass {
-  if (hasPendingUserInput) {
+  if (hasPendingUserInput || status?.activeFlags?.length) {
     return "unread";
   }
   if (status?.isReviewing) {

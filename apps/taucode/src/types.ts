@@ -97,14 +97,19 @@ export type CollabAgentStatus = CollabAgentRef & {
   status: string;
 };
 
+export type AgentMessageMetadata = Partial<Pick<
+  import("@protocol/v2/ThreadItem").ThreadItem & { type: "agentMessage" },
+  "phase" | "memoryCitation" | "delivery" | "questions"
+>>;
+
 export type ConversationItem =
-  | {
+  | (AgentMessageMetadata & {
       id: string;
       kind: "message";
       role: "user" | "assistant";
       text: string;
       images?: string[];
-    }
+    })
   | {
       id: string;
       kind: "userInput";
@@ -134,6 +139,7 @@ export type ConversationItem =
       status?: string;
       output?: string;
       durationMs?: number | null;
+      images?: string[];
       changes?: { path: string; kind?: string; diff?: string }[];
       collabSender?: CollabAgentRef;
       collabReceiver?: CollabAgentRef;
@@ -391,18 +397,14 @@ export type ApprovalRequest = {
   params: Record<string, unknown>;
 };
 
-export type RequestUserInputOption = {
-  label: string;
-  description: string;
-};
+export type RequestUserInputOption = import("@protocol/v2/ToolRequestUserInputOption").ToolRequestUserInputOption;
 
-export type RequestUserInputQuestion = {
-  id: string;
-  header: string;
-  question: string;
-  isOther?: boolean;
-  options?: RequestUserInputOption[];
-};
+export type RequestUserInputQuestion = Pick<
+  import("@protocol/v2/ToolRequestUserInputQuestion").ToolRequestUserInputQuestion,
+  "id" | "header" | "question"
+> & Partial<Pick<import("@protocol/v2/ToolRequestUserInputQuestion").ToolRequestUserInputQuestion,
+  "isOther" | "isSecret" | "options"
+>>;
 
 export type RequestUserInputParams = {
   thread_id: string;

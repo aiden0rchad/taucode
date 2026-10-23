@@ -37,7 +37,7 @@ function buildUserInputConversationItem(
       id,
       header: asString(question.header).trim(),
       question: asString(question.question).trim(),
-      answers,
+      answers: question.isSecret && answers.length ? ["[secret provided]"] : answers,
     };
   });
   const extra = Object.entries(answered)

@@ -15,7 +15,33 @@ import {
 } from "./common";
 
 export function reduceThreadItems(state: ThreadState, action: ThreadAction): ThreadState {
+  const maxItemsPerThread = "threadId" in action && action.threadId && state.expandedHistoryByThread?.[action.threadId]
+    ? null : state.maxItemsPerThread;
   switch (action.type) {
+    case "prependThreadHistory": {
+      const snapshot = new Map(action.snapshot.map((item) => [item.id, item]));
+      const current = state.itemsByThread[action.threadId] ?? [];
+      const local = action.replace ? current.filter((item) => snapshot.get(item.id) !== item) : current;
+      const localById = new Map(local.map((item) => [item.id, item]));
+      const remoteIds = new Set(action.items.map((item) => item.id));
+      const overlap = local.findIndex((item) => remoteIds.has(item.id));
+      const prefix = action.recent
+        ? overlap >= 0 ? local.slice(0, overlap) : local.filter((item) => snapshot.has(item.id))
+        : [];
+      const merged = new Map(prefix.map((item) => [item.id, item]));
+      action.items.forEach((item) => {
+        const existing = localById.get(item.id);
+        merged.set(item.id, existing
+          ? snapshot.get(item.id) === existing ? upsertItem([existing], item)[0] : existing
+          : item);
+      });
+      local.forEach((item) => { if (!merged.has(item.id)) merged.set(item.id, item); });
+      return {
+        ...state,
+        expandedHistoryByThread: { ...state.expandedHistoryByThread, [action.threadId]: true },
+        itemsByThread: { ...state.itemsByThread, [action.threadId]: [...merged.values()] },
+      };
+    }
     case "addAssistantMessage": {
       const list = state.itemsByThread[action.threadId] ?? [];
       const message: ConversationItem = {
@@ -28,7 +54,7 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
         ...state,
         itemsByThread: {
           ...state.itemsByThread,
-          [action.threadId]: prepareThreadItems([...list, message], { maxItemsPerThread: state.maxItemsPerThread }),
+          [action.threadId]: prepareThreadItems([...list, message], { maxItemsPerThread }),
         },
       };
     }
@@ -49,7 +75,7 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
           text: action.delta,
         });
       }
-      const updatedItems = prepareThreadItems(list, { maxItemsPerThread: state.maxItemsPerThread });
+      const updatedItems = prepareThreadItems(list, { maxItemsPerThread });
       const nextThreadsByWorkspace = maybeRenameThreadFromAgent({
         workspaceId: action.workspaceId,
         threadId: action.threadId,
@@ -84,7 +110,7 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
           text: action.text,
         });
       }
-      const updatedItems = prepareThreadItems(list, { maxItemsPerThread: state.maxItemsPerThread });
+      const updatedItems = prepareThreadItems(list, { maxItemsPerThread });
       const nextThreadsByWorkspace = maybeRenameThreadFromAgent({
         workspaceId: action.workspaceId,
         threadId: action.threadId,
@@ -127,7 +153,7 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
         }
       }
       const nextItem = ensureUniqueReviewId(list, item);
-      const updatedItems = prepareThreadItems(upsertItem(list, nextItem), { maxItemsPerThread: state.maxItemsPerThread });
+      const updatedItems = prepareThreadItems(upsertItem(list, nextItem), { maxItemsPerThread });
       let nextThreadsByWorkspace = state.threadsByWorkspace;
       if (isUserMessage) {
         const threads = state.threadsByWorkspace[action.workspaceId] ?? [];
@@ -176,7 +202,7 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
         ...state,
         itemsByThread: {
           ...state.itemsByThread,
-          [action.threadId]: prepareThreadItems(action.items, { maxItemsPerThread: state.maxItemsPerThread }),
+          [action.threadId]: prepareThreadItems(action.items, { maxItemsPerThread }),
         },
       };
     case "appendReasoningSummary": {
@@ -206,7 +232,7 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
         ...state,
         itemsByThread: {
           ...state.itemsByThread,
-          [action.threadId]: prepareThreadItems(next, { maxItemsPerThread: state.maxItemsPerThread }),
+          [action.threadId]: prepareThreadItems(next, { maxItemsPerThread }),
         },
       };
     }
@@ -234,7 +260,7 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
         ...state,
         itemsByThread: {
           ...state.itemsByThread,
-          [action.threadId]: prepareThreadItems(next, { maxItemsPerThread: state.maxItemsPerThread }),
+          [action.threadId]: prepareThreadItems(next, { maxItemsPerThread }),
         },
       };
     }
@@ -265,7 +291,7 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
         ...state,
         itemsByThread: {
           ...state.itemsByThread,
-          [action.threadId]: prepareThreadItems(next, { maxItemsPerThread: state.maxItemsPerThread }),
+          [action.threadId]: prepareThreadItems(next, { maxItemsPerThread }),
         },
       };
     }
@@ -302,7 +328,7 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
         ...state,
         itemsByThread: {
           ...state.itemsByThread,
-          [action.threadId]: prepareThreadItems(next, { maxItemsPerThread: state.maxItemsPerThread }),
+          [action.threadId]: prepareThreadItems(next, { maxItemsPerThread }),
         },
       };
     }
@@ -323,7 +349,7 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
         ...state,
         itemsByThread: {
           ...state.itemsByThread,
-          [action.threadId]: prepareThreadItems(next, { maxItemsPerThread: state.maxItemsPerThread }),
+          [action.threadId]: prepareThreadItems(next, { maxItemsPerThread }),
         },
       };
     }

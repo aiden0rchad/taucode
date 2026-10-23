@@ -308,6 +308,7 @@ describe("useAppServerEvents", () => {
             header: "Confirm",
             question: "Proceed?",
             isOther: false,
+            isSecret: false,
             options: [
               { label: "Yes", description: "Continue." },
               { label: "No", description: "Stop." },
@@ -433,6 +434,7 @@ describe("useAppServerEvents", () => {
                 id: "q-1",
                 header: "",
                 question: "Choose",
+                isSecret: true,
                 options: [
                   { label: "", description: "" },
                   { label: "Yes", description: "" },
@@ -458,6 +460,7 @@ describe("useAppServerEvents", () => {
             header: "",
             question: "Choose",
             isOther: false,
+            isSecret: true,
             options: [
               { label: "Yes", description: "" },
               { label: "", description: "No label" },

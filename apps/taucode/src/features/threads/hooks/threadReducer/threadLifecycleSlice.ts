@@ -19,6 +19,19 @@ export function reduceThreadLifecycle(
   action: ThreadAction,
 ): ThreadState {
   switch (action.type) {
+    case "setThreadProtocolState":
+      return {
+        ...state,
+        threadStatusById: {
+          ...state.threadStatusById,
+          [action.threadId]: {
+            ...(state.threadStatusById[action.threadId] ?? {
+              isProcessing: false, hasUnread: false, isReviewing: false,
+              processingStartedAt: null, lastDurationMs: null,
+            }), ...action.patch,
+          },
+        },
+      };
     case "setActiveThreadId":
       return {
         ...state,
@@ -30,6 +43,7 @@ export function reduceThreadLifecycle(
           ? {
               ...state.threadStatusById,
               [action.threadId]: {
+                ...state.threadStatusById[action.threadId],
                 isProcessing:
                   state.threadStatusById[action.threadId]?.isProcessing ?? false,
                 hasUnread: false,
@@ -175,6 +189,7 @@ export function reduceThreadLifecycle(
         const nextStartedAt =
           wasProcessing && startedAt ? startedAt : action.timestamp;
         const nextStatus: ThreadStatus = {
+          ...previous,
           isProcessing: true,
           hasUnread,
           isReviewing,
@@ -197,6 +212,7 @@ export function reduceThreadLifecycle(
           ? Math.max(0, action.timestamp - startedAt)
           : lastDurationMs ?? null;
       const nextStatus: ThreadStatus = {
+        ...previous,
         isProcessing: false,
         hasUnread,
         isReviewing,
@@ -225,6 +241,7 @@ export function reduceThreadLifecycle(
     case "markReviewing": {
       const previous = state.threadStatusById[action.threadId];
       const nextStatus: ThreadStatus = {
+        ...previous,
         isProcessing: previous?.isProcessing ?? false,
         hasUnread: previous?.hasUnread ?? false,
         isReviewing: action.isReviewing,
@@ -245,6 +262,7 @@ export function reduceThreadLifecycle(
     case "markUnread": {
       const previous = state.threadStatusById[action.threadId];
       const nextStatus: ThreadStatus = {
+        ...previous,
         isProcessing: previous?.isProcessing ?? false,
         hasUnread: action.hasUnread,
         isReviewing: previous?.isReviewing ?? false,

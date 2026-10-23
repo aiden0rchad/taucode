@@ -10,6 +10,7 @@
     "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
+      "@protocol/*": ["../../packages/protocol/src/*"],
       "@/*": ["src/*"],
       "@app/*": ["src/features/app/*"],
       "@settings/*": ["src/features/settings/*"],

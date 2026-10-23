@@ -427,6 +427,7 @@ export default function MainApp() {
   const {
     setActiveThreadId,
     hasLocalThreadSnapshot,
+    historyCursorByThread, historyLoadingByThread, historyErrorByThread, loadOlderHistory,
     activeThreadId,
     activeItems,
     approvals,
@@ -1802,7 +1803,21 @@ export default function MainApp() {
     compactEmptyCodexNode,
     compactEmptyGitNode,
     compactGitBackNode,
-  } = useMainAppLayoutNodes(layoutSurfaces);
+  } = useMainAppLayoutNodes({
+    ...layoutSurfaces,
+    primary: {
+      ...layoutSurfaces.primary,
+      messagesProps: {
+        ...layoutSurfaces.primary.messagesProps,
+        hasOlderHistory: Boolean(activeThreadId && historyCursorByThread[activeThreadId]),
+        isLoadingHistory: Boolean(activeThreadId && historyLoadingByThread[activeThreadId]),
+        historyError: activeThreadId ? historyErrorByThread[activeThreadId] : null,
+        onLoadOlderHistory: async () => {
+          if (activeWorkspaceId && activeThreadId) await loadOlderHistory(activeWorkspaceId, activeThreadId);
+        },
+      },
+    },
+  });
 
   const mainMessagesNode = showWorkspaceHome ? workspaceHomeNode : messagesNode;
   const compactThreadConnectionState: "live" | "polling" | "disconnected" =

@@ -65,6 +65,7 @@ export default defineConfig(async () => ({
   plugins: [react()],
   resolve: {
     alias: {
+      "@protocol": fileURLToPath(new URL("../../packages/protocol/src", import.meta.url)),
       "@": fileURLToPath(new URL("./src", import.meta.url)),
       "@app": fileURLToPath(new URL("./src/features/app", import.meta.url)),
       "@settings": fileURLToPath(new URL("./src/features/settings", import.meta.url)),

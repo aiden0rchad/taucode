@@ -230,6 +230,7 @@ export function useAppServerEvents(handlers: AppServerEventHandlers) {
               header: String(question.header ?? ""),
               question: String(question.question ?? ""),
               isOther: Boolean(question.isOther ?? question.is_other),
+              isSecret: Boolean(question.isSecret),
               options: options.length ? options : undefined,
             };
           })

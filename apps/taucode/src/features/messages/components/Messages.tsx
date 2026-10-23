@@ -29,6 +29,10 @@ type MessagesProps = {
   workspaceId?: string | null;
   isThinking: boolean;
   isLoadingMessages?: boolean;
+  hasOlderHistory?: boolean;
+  isLoadingHistory?: boolean;
+  historyError?: string | null;
+  onLoadOlderHistory?: () => Promise<void>;
   processingStartedAt?: number | null;
   lastDurationMs?: number | null;
   showPollingFetchStatus?: boolean;
@@ -55,6 +59,10 @@ export const Messages = memo(function Messages({
   workspaceId = null,
   isThinking,
   isLoadingMessages = false,
+  hasOlderHistory = false,
+  isLoadingHistory = false,
+  historyError,
+  onLoadOlderHistory,
   processingStartedAt = null,
   lastDurationMs = null,
   showPollingFetchStatus = false,
@@ -106,6 +114,7 @@ export const Messages = memo(function Messages({
     bottomRef,
     containerRef,
     updateAutoScroll,
+    loadOlderHistory,
     requestAutoScroll,
     expandedItems,
     toggleExpanded,
@@ -122,6 +131,9 @@ export const Messages = memo(function Messages({
   } = useMessagesViewState({
     items,
     threadId,
+    hasOlderHistory,
+    isLoadingHistory,
+    onLoadOlderHistory,
     isThinking,
     activeUserInputRequestId,
     hasVisibleUserInputRequest,
@@ -238,6 +250,12 @@ export const Messages = memo(function Messages({
       onScroll={updateAutoScroll}
     >
       <div className="messages-inner">
+        {hasOlderHistory && (
+          <button type="button" className="ghost" disabled={isLoadingHistory} onClick={() => void loadOlderHistory()}>
+            {isLoadingHistory ? "Loading history…" : "Load older messages"}
+          </button>
+        )}
+        {historyError && <div role="alert">Could not load history: {historyError}</div>}
         {groupedItems.map((entry) => {
           if (entry.kind === "toolGroup") {
             const { group } = entry;

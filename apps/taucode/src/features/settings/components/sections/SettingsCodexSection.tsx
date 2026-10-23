@@ -230,7 +230,7 @@ export function SettingsCodexSection({
   return (
     <SettingsSection
       title="Codex"
-      subtitle="Configure the Codex CLI used by CodexMonitor and validate the install."
+      subtitle="Configure the Codex CLI used by taucode and validate the install."
     >
       <div className="settings-field">
         <label className="settings-field-label" htmlFor="codex-path">
