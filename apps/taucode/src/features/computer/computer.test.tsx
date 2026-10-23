@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ComputerHud } from "./ComputerHud";
+import { ComputerApprovals } from "./ComputerApprovals";
 import { ComputerRunItem } from "./ComputerRunItem";
 import { defaultComputerSettings, parseComputerRun } from "./computer";
 import { SettingsComputerSection } from "@settings/components/sections/SettingsComputerSection";
@@ -90,13 +90,20 @@ describe("computer use", () => {
     expect(screen.getByText("Step 1: Approval wait")).toBeTruthy();
     expect(screen.getByText("Predict: 12 ms · Execute: 0 ms · Wait: 900 ms")).toBeTruthy();
   });
-  it("wires pause and stop plus one-action approval through the existing UI", async () => {
+  it.each([true, false])("routes one-action approval from the main UI (accept: %s)", async accept => {
     vi.mocked(computerRequest).mockResolvedValue({ running: true, steps: [step], approval: { id: "approval", reason: "Secure field", action: { kind: "type" }, app: "com.apple.TextEdit" } });
-    render(<ComputerHud />);
-    await screen.findByText("Waiting for approval");
-    fireEvent.click(screen.getByText("Pause")); expect(computerRequest).toHaveBeenCalledWith({ action: "pause", paused: true });
-    fireEvent.click(screen.getByText("Stop", { selector: "button" })); expect(computerRequest).toHaveBeenCalledWith({ action: "stop" });
-    fireEvent.click(screen.getByText("Approve (Enter)")); expect(computerRequest).toHaveBeenCalledWith({ action: "approve", id: "approval", accept: true });
+    render(<ComputerApprovals />);
+    await screen.findByText("Computer Use approval needed");
+    expect(screen.getByText("Secure field")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(computerRequest).not.toHaveBeenCalledWith(expect.objectContaining({ action: "approve" }));
+    const globalShortcut = vi.fn();
+    window.addEventListener("keydown", globalShortcut);
+    fireEvent.keyDown(screen.getByText("Approve", { selector: "button" }), { key: "Enter" });
+    window.removeEventListener("keydown", globalShortcut);
+    expect(globalShortcut).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText(accept ? "Approve" : "Decline", { selector: "button" }));
+    await waitFor(() => expect(computerRequest).toHaveBeenCalledWith({ action: "approve", id: "approval", accept }));
     expect(screen.queryByText("Allow for session")).toBeNull();
   });
   it("shows registry models, coordinate presets and permission states", async () => {

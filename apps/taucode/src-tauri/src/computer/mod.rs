@@ -78,7 +78,7 @@ impl Computer {
         Ok(())
     }
     #[cfg(target_os = "macos")]
-    async fn arm(&self, app: &AppHandle, s: &Settings) -> Result<(), String> {
+    fn arm(&self, app: &AppHandle, s: &Settings) -> Result<(), String> {
         use tauri_plugin_global_shortcut::GlobalShortcutExt;
         {
             let mut old = self.shortcut.lock().map_err(|_| "Shortcut unavailable")?;
@@ -92,26 +92,7 @@ impl Computer {
                 *old = Some(s.shortcut.clone());
             }
         }
-        let hud = if let Some(hud) = app.get_webview_window("computer-hud") {
-            hud
-        } else {
-            tauri::WebviewWindowBuilder::new(
-                app,
-                "computer-hud",
-                tauri::WebviewUrl::App("index.html".into()),
-            )
-            .title("Computer Use")
-            .inner_size(440., 420.)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .focused(panels::FOCUS)
-            .focusable(panels::FOCUSABLE)
-            .accept_first_mouse(true)
-            .visible(panels::INITIALLY_VISIBLE)
-            .build()
-            .map_err(|e| e.to_string())?
-        };
-        panels::show_hud(hud).await
+        Ok(())
     }
     pub async fn request(self: &Arc<Self>, app: AppHandle, p: Value) -> Result<Value, String> {
         if !self.owned.load(std::sync::atomic::Ordering::SeqCst) {
@@ -263,7 +244,7 @@ impl Computer {
             }
             self.private_dir()?;
             let previous_focus = background::UserFocus::capture();
-            self.arm(&app, &limits).await?;
+            self.arm(&app, &limits)?;
             self.control.replace_input(native::NativeInput::default());
             self.control.start();
             let _stop = StopOnDrop(self.clone());
@@ -272,6 +253,7 @@ impl Computer {
             let resource = app.path().resource_dir().ok();
             let start = std::time::Instant::now();
             let result = async {
+                panels::show_hud(app.clone(), self).await?;
                 let sidecar = self
                     .control
                     .until(async {
@@ -618,7 +600,7 @@ impl runner::Environment for Live {
                 .state
                 .send_modify(|s| s["approval"] = Value::Null);
             if approved {
-                // Clicking the HUD may activate taucode. Restore only the exact app
+                // Approving in the main UI may activate taucode. Restore only the exact app
                 // the user just approved, then let the loop recheck the secure field.
                 if self.session.is_none() && native::context()?.app == "dev.taucode.desktop" {
                     native::open_app(&context.app, &context.app)?;

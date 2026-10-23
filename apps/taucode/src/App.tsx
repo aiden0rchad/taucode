@@ -41,7 +41,7 @@ import "./styles/compact-phone.css";
 import "./styles/compact-tablet.css";
 import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import MainApp from "@app/components/MainApp";
-import { ComputerHud } from "@/features/computer/ComputerHud";
+import { ComputerApprovals } from "@/features/computer/ComputerApprovals";
 
 const AboutView = lazy(() =>
   import("@/features/about/components/AboutView").then((module) => ({
@@ -52,8 +52,6 @@ const AboutView = lazy(() =>
 export default function App() {
   const windowLabel = useWindowLabel();
 
-  if (windowLabel === "computer-hud") return <ComputerHud />;
-
   if (windowLabel === "about") {
     return (
       <Suspense fallback={null}>
@@ -62,5 +60,5 @@ export default function App() {
     );
   }
 
-  return <MainApp />;
+  return <><MainApp /><ComputerApprovals /></>;
 }

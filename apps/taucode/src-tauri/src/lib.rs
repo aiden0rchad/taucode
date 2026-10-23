@@ -113,13 +113,6 @@ pub fn run() {
                 .build(),
         )
         .on_window_event(|window, event| {
-            if window.label() == "computer-hud"
-                && matches!(event, WindowEvent::CloseRequested { .. })
-            {
-                if let Some(state) = window.app_handle().try_state::<state::AppState>() {
-                    state.computer.stop();
-                }
-            }
             if window.label() != "main" {
                 return;
             }
