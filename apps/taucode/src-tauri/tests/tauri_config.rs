@@ -45,3 +45,29 @@ fn macos_private_api_feature_matches_config() {
         );
     }
 }
+
+#[test]
+fn app_updater_is_disabled() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let config: Value =
+        serde_json::from_str(&fs::read_to_string(root.join("tauri.conf.json")).unwrap()).unwrap();
+    assert_eq!(config["bundle"]["createUpdaterArtifacts"], false);
+    assert!(config["plugins"]["updater"]["pubkey"].is_null());
+    assert!(config["plugins"]["updater"]["endpoints"].is_null());
+    for name in [
+        "tauri.windows.conf.json",
+        "tauri.linux.conf.json",
+        "tauri.ios.conf.json",
+    ] {
+        let platform: Value =
+            serde_json::from_str(&fs::read_to_string(root.join(name)).unwrap()).unwrap();
+        assert_ne!(platform["bundle"]["createUpdaterArtifacts"], true);
+        assert!(platform["plugins"]["updater"].is_null());
+    }
+    let lib = fs::read_to_string(root.join("src/lib.rs")).unwrap();
+    assert!(!lib.contains("tauri_plugin_updater::"));
+    let capabilities = fs::read_to_string(root.join("capabilities/default.json")).unwrap();
+    assert!(!capabilities.contains("updater:"));
+    let menu = fs::read_to_string(root.join("src/menu.rs")).unwrap();
+    assert!(!menu.contains("check_for_updates"));
+}

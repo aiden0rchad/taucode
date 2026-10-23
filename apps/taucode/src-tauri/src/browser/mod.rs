@@ -4,6 +4,8 @@ mod launcher;
 mod lifecycle;
 #[cfg(unix)]
 mod paths;
+#[cfg(windows)]
+mod pipe;
 mod process;
 pub(crate) mod signal;
 #[cfg(test)]
@@ -278,6 +280,10 @@ impl Browser {
             let browser = Arc::downgrade(self);
             *server = Some(tokio::spawn(async move {
                 while let Ok((socket, _)) = listener.accept().await {
+                    if let Err(error) = crate::shared::local_socket::validate_peer(&socket) {
+                        eprintln!("Rejected browser control peer: {error}");
+                        continue;
+                    }
                     let Some(browser) = browser.upgrade() else {
                         break;
                     };
@@ -287,17 +293,12 @@ impl Browser {
         }
         #[cfg(windows)]
         {
-            use tokio::net::windows::named_pipe::ServerOptions;
             let mut server = self.server.lock().await;
             if server.is_some() {
                 return Ok(());
             }
             let name = pipe_name(&self.data);
-            let mut pipe = match ServerOptions::new()
-                .first_pipe_instance(true)
-                .reject_remote_clients(true)
-                .create(&name)
-            {
+            let mut pipe = match pipe::create(std::ffi::OsStr::new(&name), true) {
                 Ok(pipe) => pipe,
                 Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => return Ok(()),
                 Err(e) => return Err(e.to_string()),
@@ -308,10 +309,7 @@ impl Browser {
                     if pipe.connect().await.is_err() {
                         break;
                     }
-                    let next = match ServerOptions::new()
-                        .reject_remote_clients(true)
-                        .create(&name)
-                    {
+                    let next = match pipe::create(std::ffi::OsStr::new(&name), false) {
                         Ok(next) => next,
                         Err(_) => break,
                     };

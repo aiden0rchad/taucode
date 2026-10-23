@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "09F7A9973F81CD1301FD1481"
-               BuildableName = "Codex Monitor.app"
+               BuildableName = "taucode.app"
                BlueprintName = "codex-monitor_iOS"
                ReferencedContainer = "container:codex-monitor.xcodeproj">
             </BuildableReference>
@@ -31,7 +31,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "09F7A9973F81CD1301FD1481"
-            BuildableName = "Codex Monitor.app"
+            BuildableName = "taucode.app"
             BlueprintName = "codex-monitor_iOS"
             ReferencedContainer = "container:codex-monitor.xcodeproj">
          </BuildableReference>
@@ -66,7 +66,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "09F7A9973F81CD1301FD1481"
-            BuildableName = "Codex Monitor.app"
+            BuildableName = "taucode.app"
             BlueprintName = "codex-monitor_iOS"
             ReferencedContainer = "container:codex-monitor.xcodeproj">
          </BuildableReference>
@@ -95,7 +95,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "09F7A9973F81CD1301FD1481"
-            BuildableName = "Codex Monitor.app"
+            BuildableName = "taucode.app"
             BlueprintName = "codex-monitor_iOS"
             ReferencedContainer = "container:codex-monitor.xcodeproj">
          </BuildableReference>
