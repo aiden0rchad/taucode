@@ -6,6 +6,7 @@ import {
   exportMarkdownFile,
   addWorkspace,
   compactThread,
+  computerRequestPermissions,
   createGitHubRepo,
   fetchGit,
   forkThread,
@@ -71,6 +72,12 @@ vi.mock("@tauri-apps/plugin-notification", () => ({
 }));
 
 describe("tauri invoke wrappers", () => {
+  it("requests computer permissions through the dedicated command", async () => {
+    const permissions = { screen: true, accessibility: false };
+    vi.mocked(invoke).mockResolvedValueOnce(permissions);
+    await expect(computerRequestPermissions()).resolves.toEqual(permissions);
+    expect(invoke).toHaveBeenCalledWith("computer_request_permissions");
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     const invokeMock = vi.mocked(invoke);

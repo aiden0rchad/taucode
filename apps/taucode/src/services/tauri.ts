@@ -830,6 +830,7 @@ export async function movePrompt(
 }
 
 export function computerRequest<T = unknown>(params: Record<string, unknown>): Promise<T> { return invoke<T>("computer_request", { params }); }
+export function computerRequestPermissions(): Promise<{ screen: boolean; accessibility: boolean; unsupported?: boolean }> { return invoke("computer_request_permissions"); }
 
 export async function getAppSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("get_app_settings");

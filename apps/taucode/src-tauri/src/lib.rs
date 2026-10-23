@@ -210,6 +210,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             computer_commands::computer_request,
+            computer_commands::computer_request_permissions,
             browser_commands::browser_request,
             browser_commands::browser_subscribe,
             browser_commands::browser_unsubscribe,

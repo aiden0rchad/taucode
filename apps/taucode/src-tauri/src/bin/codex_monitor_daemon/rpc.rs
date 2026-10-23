@@ -149,6 +149,9 @@ pub(super) async fn handle_rpc_request(
     params: Value,
     client_version: String,
 ) -> Result<Value, String> {
+    if method == "computer_request_permissions" {
+        return crate::shared::computer::ipc(&state.data_dir, json!({"action":"requestPermissions"})).await;
+    }
     if method == "computer_request" {
         return crate::shared::computer::ipc(&state.data_dir, params.get("params").cloned().unwrap_or_default()).await;
     }

@@ -109,6 +109,9 @@ impl Computer {
             return transport::ipc(&self.data, p).await;
         }
         match p["action"].as_str() {
+            Some("requestPermissions") => tokio::task::spawn_blocking(request_permissions)
+                .await
+                .map_err(|e| e.to_string())?,
             Some("runLog") => {
                 let id = p["id"].as_str().ok_or("Missing run ID")?;
                 uuid::Uuid::parse_str(id).map_err(|_| "Invalid run ID")?;
@@ -330,6 +333,27 @@ pub fn permissions() -> Value {
     #[cfg(not(target_os = "macos"))]
     {
         json!({"screen":false,"accessibility":false,"unsupported":true})
+    }
+}
+#[cfg(any(target_os = "macos", test))]
+trait PermissionRequests {
+    fn request_screen(&self) -> bool;
+    fn request_accessibility(&self) -> Result<bool, String>;
+}
+#[cfg(any(target_os = "macos", test))]
+fn request_permissions_with(api: &impl PermissionRequests) -> Result<Value, String> {
+    let screen = api.request_screen();
+    let accessibility = api.request_accessibility()?;
+    Ok(json!({"screen": screen, "accessibility": accessibility}))
+}
+fn request_permissions() -> Result<Value, String> {
+    #[cfg(target_os = "macos")]
+    {
+        request_permissions_with(&native::NativePermissions)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(permissions())
     }
 }
 #[cfg(target_os = "macos")]

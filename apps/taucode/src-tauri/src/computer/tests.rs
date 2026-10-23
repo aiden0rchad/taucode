@@ -9,6 +9,38 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+#[test]
+fn permission_requests_map_each_status_without_short_circuiting() {
+    struct FakePermissions {
+        screen: bool,
+        accessibility: Result<bool, String>,
+        calls: std::cell::RefCell<Vec<&'static str>>,
+    }
+    impl super::PermissionRequests for FakePermissions {
+        fn request_screen(&self) -> bool {
+            self.calls.borrow_mut().push("screen");
+            self.screen
+        }
+        fn request_accessibility(&self) -> Result<bool, String> {
+            self.calls.borrow_mut().push("accessibility");
+            self.accessibility.clone()
+        }
+    }
+    for screen in [false, true] {
+        for accessibility in [Ok(false), Ok(true), Err("Options unavailable".into())] {
+            let api = FakePermissions {
+                screen,
+                accessibility: accessibility.clone(),
+                calls: Default::default(),
+            };
+            assert_eq!(
+                super::request_permissions_with(&api),
+                accessibility.map(|accessibility| json!({"screen": screen, "accessibility": accessibility}))
+            );
+            assert_eq!(*api.calls.borrow(), ["screen", "accessibility"]);
+        }
+    }
+}
 #[derive(Clone, Default)]
 struct FakeInput(Arc<Mutex<Vec<Event>>>);
 impl Input for FakeInput {

@@ -5,6 +5,13 @@ The sidecar returns structured proposals; only the Rust host enforces policy,
 approvals and input. Credentials arrive through `TAUCODE_CUA_PLANNER_KEY` and
 `TAUCODE_CUA_GROUNDING_KEY`, never through RPC.
 
+## macOS permissions
+
+Use **Request access** in Settings → Computer Use to request Screen Recording and
+Accessibility, then grant any missing access in System Settings. Screen Recording
+takes effect only after quitting and reopening taucode; use **Quit & Reopen**.
+Development builds are ad-hoc signed, so macOS may ask again after rebuilds.
+
 `configure.grounding.mode` accepts `pixels` (default) or `ui-tars`. Pixel mode
 uses the actual dimensions of an aspect-preserving image capped at 1920 pixels
 on its long side. UI-TARS uses `grounding.width`/`height` (1920×1080 or 1000×1000)

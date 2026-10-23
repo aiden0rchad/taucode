@@ -1822,6 +1822,24 @@ mod tests {
             let _ = std::fs::remove_dir_all(&tmp);
         });
     }
+    #[cfg(unix)]
+    #[test]
+    fn rpc_permission_requests_require_the_visible_computer_host() {
+        run_async_test(async {
+            let tmp = make_temp_dir("rpc-permissions");
+            let state = test_state(&tmp);
+            let error = rpc::handle_rpc_request(
+                &state,
+                "computer_request_permissions",
+                json!({}),
+                "daemon-test".into(),
+            )
+            .await
+            .expect_err("permissions must be requested by the visible host");
+            assert!(error.starts_with("Computer host unavailable:"), "{error}");
+            std::fs::remove_dir_all(tmp).unwrap();
+        });
+    }
     #[test]
     fn list_workspaces_syncs_from_storage_file() {
         run_async_test(async {

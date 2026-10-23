@@ -1,16 +1,62 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ComputerHud } from "./ComputerHud";
 import { ComputerRunItem } from "./ComputerRunItem";
 import { defaultComputerSettings, parseComputerRun } from "./computer";
 import { SettingsComputerSection } from "@settings/components/sections/SettingsComputerSection";
-import { computerRequest } from "@services/tauri";
+import { computerRequest, computerRequestPermissions } from "@services/tauri";
 import type { AppSettings } from "@/types";
-vi.mock("@services/tauri", () => ({ computerRequest: vi.fn() }));
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+vi.mock("@services/tauri", () => ({ computerRequest: vi.fn(), computerRequestPermissions: vi.fn() }));
+afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const step = { step: 1, thumbnail: "aGVsbG8=", action: { kind: "click" }, reflection: "Found button" };
 describe("computer use", () => {
+  it.each([
+    { screen: false, accessibility: false },
+    { screen: true, accessibility: false },
+    { screen: false, accessibility: true },
+    { screen: true, accessibility: true },
+  ])("requests access and opens only missing panes: %j", async permissions => {
+    vi.mocked(computerRequest).mockResolvedValue({ steps: [], permissions: { screen: false, accessibility: false } });
+    vi.mocked(computerRequestPermissions).mockResolvedValue(permissions);
+    render(<SettingsComputerSection appSettings={{ computer: defaultComputerSettings } as AppSettings} onUpdateAppSettings={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Request access" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Request access" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(computerRequestPermissions).toHaveBeenCalledTimes(1);
+    for (const pane of ["screen", "accessibility"] as const) {
+      const call = expect(computerRequest);
+      if (permissions[pane]) call.not.toHaveBeenCalledWith({ action: "permissions", pane });
+      else call.toHaveBeenCalledWith({ action: "permissions", pane });
+      expect(screen.getByText(`${pane === "screen" ? "Screen Recording" : "Accessibility"}: ${permissions[pane] ? "Granted" : "Not granted"}`)).toBeTruthy();
+    }
+  });
+  it.each([false, true])("requests once on enable only when permissions are missing (granted: %s)", async granted => {
+    const permissions = { screen: granted, accessibility: granted };
+    vi.mocked(computerRequest).mockResolvedValue({ steps: [], permissions });
+    vi.mocked(computerRequestPermissions).mockResolvedValue(permissions);
+    render(<SettingsComputerSection appSettings={{ computer: defaultComputerSettings } as AppSettings} onUpdateAppSettings={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText("Enable Computer Use"));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Request access" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(computerRequestPermissions).toHaveBeenCalledTimes(granted ? 0 : 1);
+    fireEvent.click(screen.getByLabelText("Enable Computer Use"));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Refresh permissions" })); });
+    expect(computerRequestPermissions).toHaveBeenCalledTimes(granted ? 0 : 1);
+  });
+  it("explains Screen Recording restart and wires Quit & Reopen", async () => {
+    vi.mocked(computerRequest).mockResolvedValue({ steps: [] });
+    render(<SettingsComputerSection appSettings={{ computer: defaultComputerSettings } as AppSettings} onUpdateAppSettings={vi.fn()} />);
+    expect(screen.getByText("Screen Recording takes effect only after quitting and reopening taucode.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Quit & Reopen" }));
+    await waitFor(() => expect(computerRequest).toHaveBeenCalledWith({ action: "restart" }));
+  });
+  it("shows request failures and allows retry", async () => {
+    vi.mocked(computerRequest).mockResolvedValue({ steps: [] });
+    vi.mocked(computerRequestPermissions).mockRejectedValue(new Error("Permission request failed"));
+    render(<SettingsComputerSection appSettings={{ computer: defaultComputerSettings } as AppSettings} onUpdateAppSettings={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Request access" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Error: Permission request failed");
+    expect((screen.getByRole("button", { name: "Request access" }) as HTMLButtonElement).disabled).toBe(false);
+  });
   it("renders persisted tool steps and validates unknown output", () => {
     const run = parseComputerRun(JSON.stringify({ computerRun: { steps: [step], summary: "Done" } }));
     expect(run).not.toBeNull(); expect(parseComputerRun('{"computerRun":{"steps":[{}]}}')).toBeNull();
