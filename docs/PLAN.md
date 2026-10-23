@@ -17,9 +17,11 @@ main on 2026-10-22.
 > - ✅ M1-E: MCP connectors (no OAuth), codegraph built in
 > - ✅ M2: built-in browser (shared Chrome via CDP + playwright-mcp, pane, approvals,
 >   process cleanup); the pane UI is unit-tested only, so check it by hand
-> - ✅ M3 (code): computer use: vendored Agent-S3 planner (AST-only), pixel grounding with any
->   vision model, Rust capture/input, kill switch, HUD; live **capture/input** test pending
->   the user granting Screen Recording + Accessibility (Agent-S3 planner vendored, Rust capture/input); live test needs macOS
+> - ✅ M3: computer use **live-verified on the user's Mac** (2026-10-23). Calculator 12 × 7 = 84
+>   in 8 steps with clicks only, every click on the right button, screenshots containing only
+>   the allowed app, lock screen refused, Stop honoured in 0.02 s. Dev builds are ad-hoc
+>   signed, so macOS permissions must be re-granted after each rebuild (`tccutil reset …
+>   dev.taucode.desktop`); a stable signing identity fixes that (Agent-S3 planner vendored, Rust capture/input); live test needs macOS
 >   Screen Recording + Accessibility granted by the user
 
 > **Decisions, 2026-10-23 (these override older text below where they conflict):**
