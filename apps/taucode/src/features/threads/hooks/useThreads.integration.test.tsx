@@ -43,7 +43,6 @@ vi.mock("@services/tauri", () => ({
   readThread: vi.fn(),
   archiveThread: vi.fn(),
   setThreadName: vi.fn(),
-  getAccountRateLimits: vi.fn(),
   getAccountInfo: vi.fn(),
   interruptTurn: vi.fn(),
 }));
@@ -832,7 +831,7 @@ describe("useThreads UX integration", () => {
         isReviewing: status?.isReviewing ?? false,
         steerEnabled: false,
         followUpMessageBehavior: "queue",
-        appsEnabled: true,
+
         activeWorkspace: workspace,
         connectWorkspace,
         startThreadForWorkspace: threads.startThreadForWorkspace,
@@ -842,7 +841,7 @@ describe("useThreads UX integration", () => {
         startReview: threads.startReview,
         startResume: threads.startResume,
         startCompact: threads.startCompact,
-        startApps: threads.startApps,
+
         startMcp: threads.startMcp,
         startFast: threads.startFast,
         startStatus: threads.startStatus,

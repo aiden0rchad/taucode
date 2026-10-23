@@ -20,7 +20,18 @@ impl ClientHandler for Client {
 }
 
 async fn start(state: Option<&std::path::Path>) -> RunningService<RoleClient, Client> {
+    start_with_key(state, None).await
+}
+
+async fn start_with_key(
+    state: Option<&std::path::Path>,
+    key: Option<&str>,
+) -> RunningService<RoleClient, Client> {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_tau-mcp-proxy"));
+    cmd.env_remove("TAUCODE_SESSION_KEY");
+    if let Some(key) = key {
+        cmd.arg("--tau-mcp-proxy").env("TAUCODE_SESSION_KEY", key);
+    }
     cmd.arg("--")
         .arg(env!("CARGO_BIN_EXE_tau-mcp-fake-upstream"));
     cmd.env_remove("TAUCODE_STATE_DIR");
@@ -225,4 +236,21 @@ async fn evicts_least_recently_used_thread() {
         oldest["session"]
     );
     client.cancel().await.unwrap();
+}
+
+#[tokio::test]
+async fn embedded_cli_session_key_controls_fallback_epochs() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut client = start_with_key(Some(dir.path()), Some("pi-session")).await;
+    let before = who(&client, None).await;
+    let thread = who(&client, Some("codex-thread")).await;
+    tau_mcp_proxy::epoch::bump_epoch(dir.path(), "default");
+    assert_eq!(who(&client, None).await["session"], before["session"]);
+    tau_mcp_proxy::epoch::bump_epoch(dir.path(), "pi-session");
+    assert_ne!(who(&client, None).await["session"], before["session"]);
+    assert_eq!(
+        who(&client, Some("codex-thread")).await["session"],
+        thread["session"]
+    );
+    client.close().await.unwrap();
 }

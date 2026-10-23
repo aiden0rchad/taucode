@@ -1,3 +1,4 @@
+import { defaultAgentPolicy } from "../registry";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppSettings } from "@/types";
 import { getAppSettings, runCodexDoctor, updateAppSettings } from "@services/tauri";
@@ -134,6 +135,9 @@ function buildDefaultSettings(): AppSettings {
     lastConnectedAtMs: null,
   };
   return {
+    providers: [],
+    agentPolicy: defaultAgentPolicy,
+    codegraphEnabled: true,
     codexBin: null,
     codexArgs: null,
     backendMode: isMobile ? "remote" : "local",
@@ -167,7 +171,6 @@ function buildDefaultSettings(): AppSettings {
     lastComposerReasoningEffort: null,
     uiScale: UI_SCALE_DEFAULT,
     theme: "system",
-    usageShowRemaining: false,
     showMessageFilePath: true,
     chatHistoryScrollbackItems: CHAT_SCROLLBACK_DEFAULT,
     threadTitleAutogenerationEnabled: false,
@@ -189,7 +192,7 @@ function buildDefaultSettings(): AppSettings {
     composerFollowUpHintEnabled: true,
     pauseQueuedMessagesWhenResponseRequired: true,
     unifiedExecEnabled: true,
-    experimentalAppsEnabled: false,
+
     personality: "friendly",
     dictationEnabled: false,
     dictationModelId: "base",
@@ -243,6 +246,7 @@ function normalizeAppSettings(settings: AppSettings): AppSettings {
   return {
     ...settings,
     ...remoteBackendSettings,
+    codegraphEnabled: settings.codegraphEnabled ?? true,
     codexBin: settings.codexBin?.trim() ? settings.codexBin.trim() : null,
     codexArgs: settings.codexArgs?.trim() ? settings.codexArgs.trim() : null,
     uiScale: clampUiScale(settings.uiScale),

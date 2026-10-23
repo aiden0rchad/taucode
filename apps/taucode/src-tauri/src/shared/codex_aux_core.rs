@@ -456,9 +456,10 @@ where
 
     on_hide_thread(&workspace_id, &thread_id);
 
+    let backend = session.codex_backend().await?;
     let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
     {
-        let mut callbacks = session.background_thread_callbacks.lock().await;
+        let mut callbacks = backend.background_thread_callbacks.lock().await;
         callbacks.insert(thread_id.clone(), tx);
     }
 
@@ -479,7 +480,7 @@ where
         Ok(result) => result,
         Err(error) => {
             {
-                let mut callbacks = session.background_thread_callbacks.lock().await;
+                let mut callbacks = backend.background_thread_callbacks.lock().await;
                 callbacks.remove(&thread_id);
             }
             let archive_params = json!({ "threadId": thread_id.as_str() });
@@ -496,7 +497,7 @@ where
             .and_then(|m| m.as_str())
             .unwrap_or(turn_error_fallback);
         {
-            let mut callbacks = session.background_thread_callbacks.lock().await;
+            let mut callbacks = backend.background_thread_callbacks.lock().await;
             callbacks.remove(&thread_id);
         }
         let archive_params = json!({ "threadId": thread_id.as_str() });
@@ -539,7 +540,7 @@ where
     .await;
 
     {
-        let mut callbacks = session.background_thread_callbacks.lock().await;
+        let mut callbacks = backend.background_thread_callbacks.lock().await;
         callbacks.remove(&thread_id);
     }
 

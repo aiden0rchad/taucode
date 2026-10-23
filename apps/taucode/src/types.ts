@@ -1,4 +1,23 @@
+export type EngineKind = "pi" | "codex";
+export type ModelRef = { providerId: string; modelId: string };
+export type ProviderKind = "openai" | "anthropic" | "google" | "openrouter" | "groq" | "mistral" | "xai" | "deepseek" | "zai" | "ollama" | "lmstudio" | "openai-compatible";
+export type ProviderAuth = { type: "none" } | { type: "apiKey" } | { type: "env"; var: string } | { type: "command"; command: string; args: string[] };
+export type ProviderModel = { id: string; displayName?: string | null; enabled: boolean; contextWindow?: number | null; supportsTools?: boolean | null; supportsImages?: boolean | null };
+export type ProviderEntry = {
+  id: string; name: string; kind: ProviderKind; baseUrl?: string | null;
+  apiStyle?: "chat-completions" | "responses" | null; auth: ProviderAuth;
+  models: ProviderModel[]; modelsFetchedAt?: number | null; enabled: boolean; extraHeaders?: Record<string, string>;
+};
+export type AgentRole = { name: string; description: string; model: ModelRef | null; toolAccess: "read-only" | "full"; instructions: string };
+export type AgentPolicy = {
+  defaultEngine: EngineKind; defaultModel: ModelRef | null;
+  subagents: { enabled: boolean; maxConcurrent: number; maxPerTurn: number; maxDepth: number; allowedModels: ModelRef[]; defaultModel: ModelRef | null; roles: AgentRole[] };
+};
+export type AgentPolicyOverride = Partial<Omit<AgentPolicy, "subagents">> & { subagents?: Partial<AgentPolicy["subagents"]> };
 export type WorkspaceSettings = {
+  mcpServers?: McpServerEntry[];
+  agentPolicy?: AgentPolicyOverride | null;
+  codegraphEnabled?: boolean | null;
   sidebarCollapsed: boolean;
   sortOrder?: number | null;
   groupId?: string | null;
@@ -95,6 +114,9 @@ export type CollabAgentRef = {
 
 export type CollabAgentStatus = CollabAgentRef & {
   status: string;
+  message?: string;
+  model?: string;
+  usage?: { input: number; output: number; cost: number };
 };
 
 export type AgentMessageMetadata = Partial<Pick<
@@ -148,6 +170,8 @@ export type ConversationItem =
     };
 
 export type ThreadSummary = {
+  engine?: EngineKind;
+  modelProvider?: string;
   id: string;
   name: string;
   updatedAt: number;
@@ -241,7 +265,19 @@ export type OpenAppTarget = {
   args: string[];
 };
 
+export type McpCredential = { value: string } | { secret: true };
+export type McpServerEntry = {
+  id: string; name?: string; enabled: boolean;
+  transport?: { type: "stdio"; command: string; args: string[]; cwd?: string | null; env: Record<string, McpCredential> } | { type: "http"; url: string; headers: Record<string, McpCredential>; bearer?: { secret: true } | null } | null;
+  toolAllowlist?: string[] | null; toolDenylist?: string[] | null; approval?: "auto" | "ask";
+};
+export type McpConnectionResult = { ok: boolean; latencyMs: number; tools?: { name: string; description?: string }[]; error?: string };
+
 export type AppSettings = {
+  mcpServers?: McpServerEntry[];
+  providers?: ProviderEntry[];
+  agentPolicy?: AgentPolicy;
+  codegraphEnabled: boolean;
   codexBin: string | null;
   codexArgs: string | null;
   backendMode: BackendMode;
@@ -275,7 +311,6 @@ export type AppSettings = {
   lastComposerReasoningEffort: string | null;
   uiScale: number;
   theme: ThemePreference;
-  usageShowRemaining: boolean;
   showMessageFilePath: boolean;
   chatHistoryScrollbackItems: number | null;
   threadTitleAutogenerationEnabled: boolean;
@@ -297,7 +332,7 @@ export type AppSettings = {
   composerFollowUpHintEnabled: boolean;
   pauseQueuedMessagesWhenResponseRequired: boolean;
   unifiedExecEnabled: boolean;
-  experimentalAppsEnabled: boolean;
+
   personality: PersonalityPreference;
   dictationEnabled: boolean;
   dictationModelId: string;
@@ -585,11 +620,7 @@ export type TurnPlan = {
   steps: TurnPlanStep[];
 };
 
-export type RateLimitWindow = {
-  usedPercent: number;
-  windowDurationMins: number | null;
-  resetsAt: number | null;
-};
+
 
 export type CreditsSnapshot = {
   hasCredits: boolean;
@@ -597,34 +628,25 @@ export type CreditsSnapshot = {
   balance: string | null;
 };
 
-export type RateLimitSnapshot = {
-  primary: RateLimitWindow | null;
-  secondary: RateLimitWindow | null;
-  credits: CreditsSnapshot | null;
-  planType: string | null;
-};
 
-export type AccountSnapshot = {
-  type: "chatgpt" | "apikey" | "unknown";
-  email: string | null;
-  planType: string | null;
-  requiresOpenaiAuth: boolean | null;
-};
+
+
 
 export type QueuedMessage = {
   id: string;
   text: string;
   createdAt: number;
   images?: string[];
-  appMentions?: AppMention[];
+
 };
 
-export type AppMention = {
-  name: string;
-  path: string;
-};
+
 
 export type ModelOption = {
+  providerId?: string;
+  providerName?: string;
+  modelId?: string;
+  engines?: EngineKind[];
   id: string;
   model: string;
   displayName: string;
@@ -650,14 +672,7 @@ export type SkillOption = {
   description?: string;
 };
 
-export type AppOption = {
-  id: string;
-  name: string;
-  description?: string;
-  isAccessible: boolean;
-  installUrl?: string | null;
-  distributionChannel?: string | null;
-};
+
 
 export type CustomPromptOption = {
   name: string;

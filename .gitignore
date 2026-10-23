@@ -1,6 +1,7 @@
 node_modules/
 target/
 dist/
+.tmp/
 .DS_Store
 .codegraph/
 .claude/settings.local.json

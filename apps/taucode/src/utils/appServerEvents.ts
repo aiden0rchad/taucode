@@ -3,6 +3,7 @@ import type { ServerNotification } from "@protocol/ServerNotification";
 
 // These features have no UI in taucode. Keep their traffic out of error handling.
 export const IGNORED_APP_SERVER_METHODS = [
+  "account/login/completed", "account/rateLimits/updated", "account/updated",
   "turn/moderationMetadata", "thread/goal/updated", "thread/goal/cleared",
   "remoteControl/status/changed", "mcpServer/startupStatus/updated",
 ] as const satisfies readonly ServerNotification["method"][];
@@ -15,9 +16,6 @@ export const SUPPORTED_APP_SERVER_METHODS = [
   ...IGNORED_APP_SERVER_METHODS,
   ...THREAD_METADATA_METHODS,
   "app/list/updated",
-  "account/login/completed",
-  "account/rateLimits/updated",
-  "account/updated",
   "codex/backgroundThread",
   "codex/connected",
   "codex/event/skills_update_available",
@@ -121,8 +119,4 @@ export function isApprovalRequestMethod(method: string): boolean {
 
 export function isSkillsUpdateAvailableEvent(event: AppServerEvent): boolean {
   return getAppServerRawMethod(event) === "codex/event/skills_update_available";
-}
-
-export function isAppListUpdatedEvent(event: AppServerEvent): boolean {
-  return getAppServerRawMethod(event) === "app/list/updated";
 }

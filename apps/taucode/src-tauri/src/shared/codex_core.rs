@@ -2,23 +2,17 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use tokio::sync::oneshot::error::TryRecvError;
-use tokio::sync::{oneshot, Mutex};
-use tokio::time::timeout;
-use tokio::time::Instant;
+use tokio::sync::Mutex;
 
 use crate::backend::app_server::WorkspaceSession;
 use crate::codex::config as codex_config;
 use crate::codex::home::{resolve_default_codex_home, resolve_workspace_codex_home};
 use crate::rules;
-use crate::shared::account::{build_account_response, read_auth_account};
 use crate::types::WorkspaceEntry;
 
-const LOGIN_START_TIMEOUT: Duration = Duration::from_secs(30);
 #[allow(dead_code)]
 const MAX_INLINE_IMAGE_BYTES: u64 = 50 * 1024 * 1024;
 const THREAD_LIST_SOURCE_KINDS: &[&str] = &[
@@ -194,11 +188,6 @@ pub(crate) fn read_image_as_data_url_core(path: &str) -> Result<String, String> 
     Ok(format!("data:{mime_type};base64,{encoded}"))
 }
 
-pub(crate) enum CodexLoginCancelState {
-    PendingStart(oneshot::Sender<()>),
-    LoginId(String),
-}
-
 async fn get_session_clone(
     sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
     workspace_id: &str,
@@ -252,13 +241,21 @@ pub(crate) async fn start_thread_core(
     sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
     workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
     workspace_id: String,
+    engine: Option<crate::types::EngineKind>,
+    model: Option<String>,
 ) -> Result<Value, String> {
     let session = get_session_clone(sessions, &workspace_id).await?;
     let workspace_path = resolve_workspace_path_core(workspaces, &workspace_id).await?;
-    let params = json!({
+    let mut params = json!({
         "cwd": workspace_path,
         "approvalPolicy": "on-request"
     });
+    if let Some(engine) = engine {
+        params["engine"] = json!(engine);
+    }
+    if let Some(model) = model {
+        params["model"] = json!(model);
+    }
     session
         .send_request_for_workspace(&workspace_id, "thread/start", params)
         .await
@@ -326,38 +323,68 @@ async fn load_thread_history_page(
     if thread_id.trim().is_empty() {
         return Err("threadId is required".into());
     }
-    let response = session.send_request_for_workspace(workspace_id, "thread/turns/list", json!({
-        "threadId": thread_id, "cursor": cursor, "limit": 20,
-        "sortDirection": "desc", "itemsView": "notLoaded"
-    })).await?;
+    let response = session
+        .send_request_for_workspace(
+            workspace_id,
+            "thread/turns/list",
+            json!({
+                "threadId": thread_id, "cursor": cursor, "limit": 20,
+                "sortDirection": "desc", "itemsView": "notLoaded"
+            }),
+        )
+        .await?;
     let mut page = history_result(response)?;
-    let turns = page.get_mut("data").and_then(Value::as_array_mut)
+    let turns = page
+        .get_mut("data")
+        .and_then(Value::as_array_mut)
         .ok_or("Invalid thread/turns/list data")?;
     // The wire page is newest first; the conversation renders oldest first.
     turns.reverse();
     for turn in turns {
-        let turn_id = turn.get("id").and_then(Value::as_str).ok_or("Missing turn id")?.to_string();
+        let turn_id = turn
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or("Missing turn id")?
+            .to_string();
         let mut items = Vec::new();
         let mut seen_ids = HashSet::new();
         let mut seen_cursors = HashSet::new();
         let mut item_cursor: Option<String> = None;
         loop {
-            let response = session.send_request_for_workspace(workspace_id, "thread/items/list", json!({
-                "threadId": thread_id, "turnId": turn_id, "cursor": item_cursor,
-                "limit": 100, "sortDirection": "asc"
-            })).await?;
+            let response = session
+                .send_request_for_workspace(
+                    workspace_id,
+                    "thread/items/list",
+                    json!({
+                        "threadId": thread_id, "turnId": turn_id, "cursor": item_cursor,
+                        "limit": 100, "sortDirection": "asc"
+                    }),
+                )
+                .await?;
             let item_page = history_result(response)?;
-            let entries = item_page.get("data").and_then(Value::as_array)
+            let entries = item_page
+                .get("data")
+                .and_then(Value::as_array)
                 .ok_or("Invalid thread/items/list data")?;
             for entry in entries {
                 let item = entry.get("item").ok_or("Missing thread item")?;
-                let id = item.get("id").and_then(Value::as_str).ok_or("Missing item id")?;
-                if seen_ids.insert(id.to_string()) { items.push(item.clone()); }
+                let id = item
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .ok_or("Missing item id")?;
+                if seen_ids.insert(id.to_string()) {
+                    items.push(item.clone());
+                }
             }
-            item_cursor = item_page.get("nextCursor").and_then(Value::as_str).map(str::to_string);
+            item_cursor = item_page
+                .get("nextCursor")
+                .and_then(Value::as_str)
+                .map(str::to_string);
             match &item_cursor {
                 None => break,
-                Some(cursor) if !seen_cursors.insert(cursor.clone()) => return Err("Repeated history cursor".into()),
+                Some(cursor) if !seen_cursors.insert(cursor.clone()) => {
+                    return Err("Repeated history cursor".into())
+                }
                 _ => {}
             }
         }
@@ -371,7 +398,10 @@ fn history_result(response: Value) -> Result<Value, String> {
     if let Some(error) = response.get("error") {
         return Err(error.to_string());
     }
-    response.get("result").filter(|value| value.is_object()).cloned()
+    response
+        .get("result")
+        .filter(|value| value.is_object())
+        .cloned()
         .ok_or_else(|| "Missing history response result".into())
 }
 
@@ -403,9 +433,13 @@ pub(crate) async fn fork_thread_core(
     sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
     workspace_id: String,
     thread_id: String,
+    model: Option<String>,
 ) -> Result<Value, String> {
     let session = get_session_clone(sessions, &workspace_id).await?;
-    let params = json!({ "threadId": thread_id, "excludeTurns": true });
+    let mut params = json!({ "threadId": thread_id, "excludeTurns": true });
+    if let Some(model) = model {
+        params["model"] = json!(model);
+    }
     session
         .send_request_for_workspace(&workspace_id, "thread/fork", params)
         .await
@@ -435,16 +469,23 @@ pub(crate) async fn list_threads_core(
 }
 
 pub(crate) async fn list_mcp_server_status_core(
-    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    settings: &Mutex<crate::types::AppSettings>,
+    workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
     workspace_id: String,
-    cursor: Option<String>,
-    limit: Option<u32>,
+    _cursor: Option<String>,
+    _limit: Option<u32>,
 ) -> Result<Value, String> {
-    let session = get_session_clone(sessions, &workspace_id).await?;
-    let params = json!({ "cursor": cursor, "limit": limit });
-    session
-        .send_request_for_workspace(&workspace_id, "mcpServerStatus/list", params)
+    let app = settings.lock().await.clone();
+    let workspace = workspaces
+        .lock()
         .await
+        .get(&workspace_id)
+        .cloned()
+        .ok_or("Workspace not found")?;
+    let entries = super::connectors::effective(&app, &workspace.settings, None)?;
+    Ok(
+        json!({"result":{"data":entries.iter().map(|s| json!({"name":s.name,"enabled":s.enabled,"approval":s.approval})).collect::<Vec<_>>(),"nextCursor":null}}),
+    )
 }
 
 pub(crate) async fn archive_thread_core(
@@ -471,6 +512,28 @@ pub(crate) async fn compact_thread_core(
         .await
 }
 
+pub(crate) async fn set_thread_access_mode_core(
+    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    workspace_id: String,
+    thread_id: String,
+    access_mode: String,
+) -> Result<Value, String> {
+    if !matches!(
+        access_mode.as_str(),
+        "current" | "ask" | "read-only" | "full-access"
+    ) {
+        return Err("Invalid access mode".into());
+    }
+    get_session_clone(sessions, &workspace_id)
+        .await?
+        .send_request_for_workspace(
+            &workspace_id,
+            "thread/accessMode/set",
+            json!({"threadId":thread_id,"accessMode":access_mode}),
+        )
+        .await
+}
+
 pub(crate) async fn set_thread_name_core(
     sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
     workspace_id: String,
@@ -484,11 +547,7 @@ pub(crate) async fn set_thread_name_core(
         .await
 }
 
-fn build_turn_input_items(
-    text: String,
-    images: Option<Vec<String>>,
-    app_mentions: Option<Vec<Value>>,
-) -> Result<Vec<Value>, String> {
+fn build_turn_input_items(text: String, images: Option<Vec<String>>) -> Result<Vec<Value>, String> {
     let trimmed_text = text.trim();
     let mut input: Vec<Value> = Vec::new();
     if !trimmed_text.is_empty() {
@@ -513,33 +572,6 @@ fn build_turn_input_items(
             } else {
                 input.push(json!({ "type": "localImage", "path": trimmed }));
             }
-        }
-    }
-    if let Some(mentions) = app_mentions {
-        let mut seen_paths: HashSet<String> = HashSet::new();
-        for mention in mentions {
-            let object = mention
-                .as_object()
-                .ok_or_else(|| "invalid app mention payload".to_string())?;
-            let name = object
-                .get("name")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| "invalid app mention name".to_string())?;
-            let path = object
-                .get("path")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| "invalid app mention path".to_string())?;
-            if !path.starts_with("app://") || path.len() <= "app://".len() {
-                return Err("invalid app mention path".to_string());
-            }
-            if !seen_paths.insert(path.to_string()) {
-                continue;
-            }
-            input.push(json!({ "type": "mention", "name": name, "path": path }));
         }
     }
     if input.is_empty() {
@@ -569,7 +601,6 @@ pub(crate) async fn send_user_message_core(
     service_tier: Option<Option<String>>,
     access_mode: Option<String>,
     images: Option<Vec<String>>,
-    app_mentions: Option<Vec<Value>>,
     collaboration_mode: Option<Value>,
 ) -> Result<Value, String> {
     let session = get_session_clone(sessions, &workspace_id).await?;
@@ -591,7 +622,7 @@ pub(crate) async fn send_user_message_core(
         "on-request"
     };
 
-    let input = build_turn_input_items(text, images, app_mentions)?;
+    let input = build_turn_input_items(text, images)?;
 
     let mut params = Map::new();
     params.insert("threadId".to_string(), json!(thread_id));
@@ -619,13 +650,12 @@ pub(crate) async fn turn_steer_core(
     turn_id: String,
     text: String,
     images: Option<Vec<String>>,
-    app_mentions: Option<Vec<Value>>,
 ) -> Result<Value, String> {
     if turn_id.trim().is_empty() {
         return Err("missing active turn id".to_string());
     }
     let session = get_session_clone(sessions, &workspace_id).await?;
-    let input = build_turn_input_items(text, images, app_mentions)?;
+    let input = build_turn_input_items(text, images)?;
     let params = json!({
         "threadId": thread_id,
         "expectedTurnId": turn_id,
@@ -678,16 +708,6 @@ pub(crate) async fn start_review_core(
         .await
 }
 
-pub(crate) async fn model_list_core(
-    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
-    workspace_id: String,
-) -> Result<Value, String> {
-    let session = get_session_clone(sessions, &workspace_id).await?;
-    session
-        .send_request_for_workspace(&workspace_id, "model/list", json!({}))
-        .await
-}
-
 pub(crate) async fn experimental_feature_list_core(
     sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
     workspace_id: String,
@@ -696,188 +716,23 @@ pub(crate) async fn experimental_feature_list_core(
 ) -> Result<Value, String> {
     let session = get_session_clone(sessions, &workspace_id).await?;
     let params = json!({ "cursor": cursor, "limit": limit });
-    session
+    let mut response = session
         .send_request_for_workspace(&workspace_id, "experimentalFeature/list", params)
-        .await
-}
-
-pub(crate) async fn account_rate_limits_core(
-    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
-    workspace_id: String,
-) -> Result<Value, String> {
-    let session = get_session_clone(sessions, &workspace_id).await?;
-    session
-        .send_request_for_workspace(&workspace_id, "account/rateLimits/read", Value::Null)
-        .await
-}
-
-pub(crate) async fn account_read_core(
-    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
-    workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
-    workspace_id: String,
-) -> Result<Value, String> {
-    let session = {
-        let sessions = sessions.lock().await;
-        sessions.get(&workspace_id).cloned()
-    };
-    let response = if let Some(session) = session {
-        session
-            .send_request_for_workspace(&workspace_id, "account/read", json!({}))
-            .await
-            .ok()
-    } else {
-        None
-    };
-
-    let (entry, parent_entry) = resolve_workspace_and_parent(workspaces, &workspace_id).await?;
-    let codex_home = resolve_workspace_codex_home(&entry, parent_entry.as_ref())
-        .or_else(resolve_default_codex_home);
-    let fallback = read_auth_account(codex_home);
-
-    Ok(build_account_response(response, fallback))
-}
-
-pub(crate) async fn codex_login_core(
-    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
-    codex_login_cancels: &Mutex<HashMap<String, CodexLoginCancelState>>,
-    workspace_id: String,
-) -> Result<Value, String> {
-    let session = get_session_clone(sessions, &workspace_id).await?;
-    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+        .await?;
+    if let Some(data) = response
+        .pointer_mut("/result/data")
+        .and_then(Value::as_array_mut)
     {
-        let mut cancels = codex_login_cancels.lock().await;
-        if let Some(existing) = cancels.remove(&workspace_id) {
-            match existing {
-                CodexLoginCancelState::PendingStart(tx) => {
-                    let _ = tx.send(());
-                }
-                CodexLoginCancelState::LoginId(_) => {}
-            }
-        }
-        cancels.insert(
-            workspace_id.clone(),
-            CodexLoginCancelState::PendingStart(cancel_tx),
-        );
+        data.retain(|v| {
+            !matches!(
+                v.get("name")
+                    .or_else(|| v.get("key"))
+                    .and_then(Value::as_str),
+                Some("apps" | "plugins")
+            )
+        });
     }
-
-    let start = Instant::now();
-    let mut cancel_rx = cancel_rx;
-    let workspace_for_request = workspace_id.clone();
-    let mut login_request: Pin<Box<_>> = Box::pin(session.send_request_for_workspace(
-        &workspace_for_request,
-        "account/login/start",
-        json!({ "type": "chatgpt" }),
-    ));
-
-    let response = loop {
-        match cancel_rx.try_recv() {
-            Ok(_) => {
-                let mut cancels = codex_login_cancels.lock().await;
-                cancels.remove(&workspace_id);
-                return Err("Codex login canceled.".to_string());
-            }
-            Err(TryRecvError::Closed) => {
-                let mut cancels = codex_login_cancels.lock().await;
-                cancels.remove(&workspace_id);
-                return Err("Codex login canceled.".to_string());
-            }
-            Err(TryRecvError::Empty) => {}
-        }
-
-        let elapsed = start.elapsed();
-        if elapsed >= LOGIN_START_TIMEOUT {
-            let mut cancels = codex_login_cancels.lock().await;
-            cancels.remove(&workspace_id);
-            return Err("Codex login start timed out.".to_string());
-        }
-
-        let tick = Duration::from_millis(150);
-        let remaining = LOGIN_START_TIMEOUT.saturating_sub(elapsed);
-        let wait_for = remaining.min(tick);
-
-        match timeout(wait_for, &mut login_request).await {
-            Ok(result) => break result?,
-            Err(_elapsed) => continue,
-        }
-    };
-
-    let payload = response.get("result").unwrap_or(&response);
-    let login_id = payload
-        .get("loginId")
-        .or_else(|| payload.get("login_id"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| "missing login id in account/login/start response".to_string())?;
-    let auth_url = payload
-        .get("authUrl")
-        .or_else(|| payload.get("auth_url"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| "missing auth url in account/login/start response".to_string())?;
-
-    {
-        let mut cancels = codex_login_cancels.lock().await;
-        cancels.insert(
-            workspace_id,
-            CodexLoginCancelState::LoginId(login_id.clone()),
-        );
-    }
-
-    Ok(json!({
-        "loginId": login_id,
-        "authUrl": auth_url,
-        "raw": response,
-    }))
-}
-
-pub(crate) async fn codex_login_cancel_core(
-    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
-    codex_login_cancels: &Mutex<HashMap<String, CodexLoginCancelState>>,
-    workspace_id: String,
-) -> Result<Value, String> {
-    let cancel_state = {
-        let mut cancels = codex_login_cancels.lock().await;
-        cancels.remove(&workspace_id)
-    };
-
-    let Some(cancel_state) = cancel_state else {
-        return Ok(json!({ "canceled": false }));
-    };
-
-    match cancel_state {
-        CodexLoginCancelState::PendingStart(cancel_tx) => {
-            let _ = cancel_tx.send(());
-            return Ok(json!({
-                "canceled": true,
-                "status": "canceled",
-            }));
-        }
-        CodexLoginCancelState::LoginId(login_id) => {
-            let session = get_session_clone(sessions, &workspace_id).await?;
-            let response = session
-                .send_request_for_workspace(
-                    &workspace_id,
-                    "account/login/cancel",
-                    json!({
-                        "loginId": login_id,
-                    }),
-                )
-                .await?;
-
-            let payload = response.get("result").unwrap_or(&response);
-            let status = payload
-                .get("status")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let canceled = status.eq_ignore_ascii_case("canceled");
-
-            Ok(json!({
-                "canceled": canceled,
-                "status": status,
-                "raw": response,
-            }))
-        }
-    }
+    Ok(response)
 }
 
 pub(crate) async fn skills_list_core(
@@ -910,20 +765,6 @@ pub(crate) async fn skills_list_core(
     }
 
     Ok(response)
-}
-
-pub(crate) async fn apps_list_core(
-    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
-    workspace_id: String,
-    cursor: Option<String>,
-    limit: Option<u32>,
-    thread_id: Option<String>,
-) -> Result<Value, String> {
-    let session = get_session_clone(sessions, &workspace_id).await?;
-    let params = json!({ "cursor": cursor, "limit": limit, "threadId": thread_id });
-    session
-        .send_request_for_workspace(&workspace_id, "app/list", params)
-        .await
 }
 
 pub(crate) async fn respond_to_server_request_core(

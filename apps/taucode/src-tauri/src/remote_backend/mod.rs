@@ -145,10 +145,7 @@ pub(crate) async fn call_remote(
 fn can_retry_after_disconnect(method: &str) -> bool {
     matches!(
         method,
-        "account_rate_limits"
-            | "account_read"
-            | "apps_list"
-            | "collaboration_mode_list"
+        "collaboration_mode_list"
             | "connect_workspace"
             | "experimental_feature_list"
             | "set_workspace_runtime_codex_args"

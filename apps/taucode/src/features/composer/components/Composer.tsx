@@ -7,8 +7,8 @@ import {
   type ClipboardEvent,
 } from "react";
 import type {
-  AppMention,
-  AppOption,
+
+
   ComposerSendIntent,
   ComposerEditorSettings,
   CustomPromptOption,
@@ -22,11 +22,6 @@ import type {
   ReviewPromptState,
   ReviewPromptStep,
 } from "../../threads/hooks/useReviewPrompt";
-import {
-  connectorMentionSlug,
-  resolveBoundAppMentions,
-  type AppMentionBinding,
-} from "../../apps/utils/appMentions";
 import {
   getFenceTriggerLine,
   getLineIndent,
@@ -49,13 +44,12 @@ type ComposerProps = {
   onSend: (
     text: string,
     images: string[],
-    appMentions?: AppMention[],
     submitIntent?: ComposerSendIntent,
   ) => void;
   onStop: () => void;
   canStop: boolean;
   disabled?: boolean;
-  appsEnabled: boolean;
+
   isProcessing: boolean;
   steerAvailable: boolean;
   followUpMessageBehavior: FollowUpMessageBehavior;
@@ -63,7 +57,9 @@ type ComposerProps = {
   collaborationModes: { id: string; label: string }[];
   selectedCollaborationModeId: string | null;
   onSelectCollaborationMode: (id: string | null) => void;
-  models: { id: string; displayName: string; model: string }[];
+  engine?: import("@/types").EngineKind;
+  onSelectEngine?: (engine: import("@/types").EngineKind) => void;
+  models: (Pick<import("@/types").ModelOption, "id" | "displayName" | "model" | "providerId" | "providerName" | "engines">)[];
   selectedModelId: string | null;
   onSelectModel: (id: string) => void;
   reasoningOptions: string[];
@@ -77,7 +73,7 @@ type ComposerProps = {
   accessMode: "read-only" | "current" | "full-access";
   onSelectAccessMode: (mode: "read-only" | "current" | "full-access") => void;
   skills: { name: string; description?: string }[];
-  apps: AppOption[];
+
   prompts: CustomPromptOption[];
   files: string[];
   contextUsage?: ThreadTokenUsage | null;
@@ -164,7 +160,7 @@ export const Composer = memo(function Composer({
   onStop,
   canStop,
   disabled = false,
-  appsEnabled,
+
   isProcessing,
   steerAvailable,
   followUpMessageBehavior,
@@ -172,6 +168,7 @@ export const Composer = memo(function Composer({
   collaborationModes,
   selectedCollaborationModeId,
   onSelectCollaborationMode,
+  engine = "codex", onSelectEngine,
   models,
   selectedModelId,
   onSelectModel,
@@ -186,7 +183,7 @@ export const Composer = memo(function Composer({
   accessMode,
   onSelectAccessMode,
   skills,
-  apps,
+
   prompts,
   files,
   contextUsage = null,
@@ -246,7 +243,6 @@ export const Composer = memo(function Composer({
 }: ComposerProps) {
   const [text, setText] = useState(draftText);
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
-  const [appMentionBindings, setAppMentionBindings] = useState<AppMentionBinding[]>([]);
   const internalRef = useRef<HTMLTextAreaElement | null>(null);
   const textareaRef = externalTextareaRef ?? internalRef;
   const editorSettings = editorSettingsProp ?? DEFAULT_EDITOR_SETTINGS;
@@ -292,14 +288,6 @@ export const Composer = memo(function Composer({
     setText((prev) => (prev === next ? prev : next));
   }, []);
 
-  const bindingsFromMentions = useCallback(
-    (mentions?: AppMention[]) =>
-      (mentions ?? []).map((mention) => ({
-        slug: connectorMentionSlug(mention.name),
-        mention,
-      })),
-    [],
-  );
 
   const {
     isAutocompleteOpen,
@@ -316,40 +304,15 @@ export const Composer = memo(function Composer({
     text,
     selectionStart,
     disabled,
-    appsEnabled,
+
     skills,
-    apps,
+
     prompts,
     files,
     textareaRef,
     setText: setComposerText,
     setSelectionStart,
-    onItemApplied: (item, context) => {
-      if (context.triggerChar !== "$" || item.group !== "Apps" || !item.mentionPath) {
-        return;
-      }
-      const slug = context.insertedText.trim().toLowerCase();
-      if (!slug) {
-        return;
-      }
-      const nextBinding: AppMentionBinding = {
-        slug,
-        mention: {
-          name: item.label,
-          path: item.mentionPath,
-        },
-      };
-      setAppMentionBindings((prev) => {
-        const filtered = prev.filter(
-          (binding) =>
-            !(
-              binding.slug === nextBinding.slug &&
-              binding.mention.path === nextBinding.mention.path
-            ),
-        );
-        return [...filtered, nextBinding];
-      });
-    },
+
   });
   useEffect(() => {
     onFileAutocompleteActiveChange?.(fileTriggerActive);
@@ -400,17 +363,11 @@ export const Composer = memo(function Composer({
     if (trimmed) {
       recordHistory(trimmed);
     }
-    const resolvedMentions = resolveBoundAppMentions(trimmed, appMentionBindings);
-    if (resolvedMentions.length > 0) {
-      onSend(trimmed, attachedImages, resolvedMentions, submitIntent);
-    } else {
-      onSend(trimmed, attachedImages, undefined, submitIntent);
-    }
+    onSend(trimmed, attachedImages, submitIntent);
     resetHistoryNavigation();
     setComposerText("");
-    setAppMentionBindings([]);
   }, [
-    appMentionBindings,
+
     attachedImages,
     disabled,
     onSend,
@@ -434,8 +391,8 @@ export const Composer = memo(function Composer({
     syncDraftText,
     text,
     setComposerText,
-    setAppMentionBindings,
-    bindingsFromMentions,
+
+
     resetHistoryNavigation,
     handleSelectionChange,
   });
@@ -679,6 +636,8 @@ export const Composer = memo(function Composer({
         collaborationModes={collaborationModes}
         selectedCollaborationModeId={selectedCollaborationModeId}
         onSelectCollaborationMode={onSelectCollaborationMode}
+        engine={engine}
+        onSelectEngine={onSelectEngine}
         models={models}
         selectedModelId={selectedModelId}
         onSelectModel={onSelectModel}

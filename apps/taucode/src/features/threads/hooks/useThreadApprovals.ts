@@ -36,7 +36,7 @@ export function useThreadApprovals({ dispatch, onDebug }: UseThreadApprovalsOpti
   }, []);
 
   const handleApprovalDecision = useCallback(
-    async (request: ApprovalRequest, decision: "accept" | "decline") => {
+    async (request: ApprovalRequest, decision: "accept" | "acceptForSession" | "decline") => {
       await respondToServerRequest(
         request.workspace_id,
         request.request_id,

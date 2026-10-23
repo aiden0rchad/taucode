@@ -150,6 +150,7 @@ type UseMainAppModalsResult = {
 };
 
 type BuildSettingsViewPropsArgs = {
+  activeWorkspace: WorkspaceInfo | null;
   groupedWorkspaces: GroupedWorkspaceInfo;
   workspaceGroups: WorkspaceGroup[];
   ungroupedLabel: string;
@@ -157,12 +158,14 @@ type BuildSettingsViewPropsArgs = {
 };
 
 function buildSettingsViewProps({
+  activeWorkspace,
   groupedWorkspaces,
   workspaceGroups,
   ungroupedLabel,
   settings,
 }: BuildSettingsViewPropsArgs): Omit<SettingsViewProps, "initialSection" | "onClose"> {
   return {
+    activeWorkspace,
     workspaceGroups,
     groupedWorkspaces,
     ungroupedLabel,
@@ -456,12 +459,13 @@ export function useMainAppModals({
   const settingsViewProps = useMemo<Omit<SettingsViewProps, "initialSection" | "onClose">>(
     () =>
       buildSettingsViewProps({
+        activeWorkspace,
         groupedWorkspaces,
         workspaceGroups,
         ungroupedLabel,
         settings,
       }),
-    [groupedWorkspaces, settings, ungroupedLabel, workspaceGroups],
+    [activeWorkspace, groupedWorkspaces, settings, ungroupedLabel, workspaceGroups],
   );
 
   const appModalsProps = useMemo<AppModalsProps>(

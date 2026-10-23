@@ -116,6 +116,7 @@ impl Slot {
 pub struct Proxy {
     command: Vec<OsString>,
     state_dir: Option<PathBuf>,
+    default_key: String,
     info: ServerConfig,
     slots: Mutex<HashMap<String, Arc<Mutex<Slot>>>>,
     permits: Arc<Semaphore>,
@@ -131,6 +132,7 @@ impl Proxy {
         );
         let (changes, change_rx) = mpsc::unbounded_channel();
         let mut proxy = Self {
+            default_key: std::env::var("TAUCODE_SESSION_KEY").unwrap_or_else(|_| "default".into()),
             command,
             state_dir,
             info: ServerConfig::default(),
@@ -139,7 +141,9 @@ impl Proxy {
             changes,
             change_rx: Mutex::new(Some(change_rx)),
         };
-        let session = proxy.spawn("default", proxy.epoch("default")).await?;
+        let session = proxy
+            .spawn(&proxy.default_key, proxy.epoch(&proxy.default_key))
+            .await?;
         let info = session
             .service
             .peer_info()
@@ -153,7 +157,7 @@ impl Proxy {
         proxy.info.meta = info.meta.clone();
         proxy.info.capabilities.tools = info.capabilities.tools.clone();
         proxy.slots.get_mut().insert(
-            "default".into(),
+            proxy.default_key.clone(),
             Arc::new(Mutex::new(Slot {
                 session: Some(session),
                 used: Instant::now(),
@@ -169,7 +173,7 @@ impl Proxy {
     }
 
     async fn spawn(&self, key: &str, epoch: u64) -> Result<Session> {
-        let permit = if key == "default" {
+        let permit = if key == self.default_key {
             None
         } else {
             Some(self.permits.clone().acquire_owned().await?)
@@ -179,7 +183,7 @@ impl Proxy {
         let service = timeout(
             Duration::from_secs(30),
             UpstreamHandler {
-                changes: (key == "default").then(|| self.changes.clone()),
+                changes: (key == self.default_key).then(|| self.changes.clone()),
             }
             .serve(PreserveMeta(TokioChildProcess::new(command)?)),
         )
@@ -199,7 +203,9 @@ impl Proxy {
             if !slots.contains_key(key) && slots.len() > MAX_THREADS {
                 let oldest = slots
                     .iter()
-                    .filter(|(key, slot)| key.as_str() != "default" && Arc::strong_count(slot) == 1)
+                    .filter(|(key, slot)| {
+                        key.as_str() != self.default_key && Arc::strong_count(slot) == 1
+                    })
                     .filter_map(|(key, slot)| {
                         slot.try_lock().ok().map(|slot| (key.clone(), slot.used))
                     })
@@ -250,7 +256,7 @@ impl Proxy {
                     && slot.used.elapsed() >= IDLE_TIMEOUT
                 {
                     retired.extend(slot.session.take());
-                    return key == "default";
+                    return key == &self.default_key;
                 }
                 true
             });
@@ -322,7 +328,7 @@ impl ServerHandler for Proxy {
         if !context.meta.is_empty() {
             request.get_or_insert_with(Default::default).meta = Some(context.meta);
         }
-        let mut slot = self.session("default").await?;
+        let mut slot = self.session(&self.default_key).await?;
         let result = slot
             .session
             .as_ref()
@@ -351,7 +357,7 @@ impl ServerHandler for Proxy {
             .meta
             .get("threadId")
             .and_then(serde_json::Value::as_str)
-            .unwrap_or("default")
+            .unwrap_or(&self.default_key)
             .to_owned();
         if !context.meta.is_empty() {
             request.meta = Some(context.meta);
@@ -386,6 +392,43 @@ impl ServerHandler for Proxy {
     }
 }
 
+/// Run the stdio proxy with its own runtime, before host initialization.
+pub fn run_cli(args: Vec<OsString>) -> anyhow::Result<()> {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(async move {
+            let mut args = args.into_iter();
+            anyhow::ensure!(
+                args.next().as_deref() == Some(std::ffi::OsStr::new("--")),
+                "usage: tau-mcp-proxy -- <upstream cmd> [args...]"
+            );
+            let proxy = Arc::new(
+                Proxy::new(
+                    args.collect(),
+                    std::env::var_os("TAUCODE_STATE_DIR").map(PathBuf::from),
+                )
+                .await?,
+            );
+            let result = async {
+                let service = proxy.clone().serve(rmcp::transport::stdio()).await?;
+                let waiting = service.waiting();
+                tokio::pin!(waiting);
+                let mut interval = tokio::time::interval(Duration::from_secs(60));
+                loop {
+                    tokio::select! {
+                        result = &mut waiting => { result?; break; }
+                        _ = interval.tick() => proxy.reap_idle().await,
+                    }
+                }
+                anyhow::Ok(())
+            }
+            .await;
+            proxy.shutdown().await;
+            result
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,6 +444,7 @@ mod tests {
         };
         let busy = expired();
         let proxy = Proxy {
+            default_key: "default".into(),
             command: vec![],
             state_dir: None,
             info: ServerConfig::default(),

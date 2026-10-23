@@ -1,7 +1,6 @@
 import { useEffect, type RefObject } from "react";
-import type { AppMention, DictationTranscript, QueuedMessage } from "../../../types";
+import type {  DictationTranscript, QueuedMessage } from "../../../types";
 import { computeDictationInsertion } from "../../../utils/dictation";
-import type { AppMentionBinding } from "../../apps/utils/appMentions";
 
 type UseComposerDraftEffectsArgs = {
   draftText: string;
@@ -17,8 +16,8 @@ type UseComposerDraftEffectsArgs = {
   syncDraftText: (next: string) => void;
   text: string;
   setComposerText: (next: string) => void;
-  setAppMentionBindings: (next: AppMentionBinding[]) => void;
-  bindingsFromMentions: (mentions?: AppMention[]) => AppMentionBinding[];
+
+
   resetHistoryNavigation: () => void;
   handleSelectionChange: (cursor: number | null) => void;
 };
@@ -27,19 +26,18 @@ function applyQueuedMessage({
   message,
   handled,
   setComposerText,
-  setAppMentionBindings,
-  bindingsFromMentions,
+
+
   resetHistoryNavigation,
 }: {
   message: QueuedMessage;
   handled?: (id: string) => void;
   setComposerText: (next: string) => void;
-  setAppMentionBindings: (next: AppMentionBinding[]) => void;
-  bindingsFromMentions: (mentions?: AppMention[]) => AppMentionBinding[];
+
+
   resetHistoryNavigation: () => void;
 }) {
   setComposerText(message.text);
-  setAppMentionBindings(bindingsFromMentions(message.appMentions));
   resetHistoryNavigation();
   handled?.(message.id);
 }
@@ -58,8 +56,8 @@ export function useComposerDraftEffects({
   syncDraftText,
   text,
   setComposerText,
-  setAppMentionBindings,
-  bindingsFromMentions,
+
+
   resetHistoryNavigation,
   handleSelectionChange,
 }: UseComposerDraftEffectsArgs) {
@@ -68,8 +66,7 @@ export function useComposerDraftEffects({
   }, [draftText, syncDraftText]);
 
   useEffect(() => {
-    setAppMentionBindings([]);
-  }, [historyKey, setAppMentionBindings]);
+  }, [historyKey, ]);
 
   useEffect(() => {
     if (!prefillDraft) {
@@ -79,16 +76,16 @@ export function useComposerDraftEffects({
       message: prefillDraft,
       handled: onPrefillHandled,
       setComposerText,
-      setAppMentionBindings,
-      bindingsFromMentions,
+
+
       resetHistoryNavigation,
     });
   }, [
-    bindingsFromMentions,
+
     onPrefillHandled,
     prefillDraft,
     resetHistoryNavigation,
-    setAppMentionBindings,
+
     setComposerText,
   ]);
 
@@ -100,16 +97,16 @@ export function useComposerDraftEffects({
       message: insertText,
       handled: onInsertHandled,
       setComposerText,
-      setAppMentionBindings,
-      bindingsFromMentions,
+
+
       resetHistoryNavigation,
     });
   }, [
-    bindingsFromMentions,
+
     insertText,
     onInsertHandled,
     resetHistoryNavigation,
-    setAppMentionBindings,
+
     setComposerText,
   ]);
 

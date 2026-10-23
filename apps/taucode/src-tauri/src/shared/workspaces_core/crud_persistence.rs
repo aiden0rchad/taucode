@@ -9,7 +9,6 @@ use uuid::Uuid;
 use crate::backend::app_server::WorkspaceSession;
 use crate::codex::args::resolve_workspace_codex_args;
 use crate::codex::home::resolve_workspace_codex_home;
-use crate::shared::process_core::kill_child_process_tree;
 use crate::shared::{git_core, worktree_core};
 use crate::storage::write_workspaces;
 use crate::types::{AppSettings, WorkspaceEntry, WorkspaceInfo, WorkspaceKind, WorkspaceSettings};
@@ -54,7 +53,7 @@ where
     };
 
     let _spawn_guard = workspace_session_spawn_lock().lock().await;
-    let existing_session = take_live_shared_session(sessions).await;
+    let existing_session = take_live_shared_session(sessions, &entry, app_settings).await;
     let (session, spawned_new_session) = if let Some(existing_session) = existing_session {
         (existing_session, false)
     } else {
@@ -83,8 +82,7 @@ where
             workspaces.remove(&entry.id);
         }
         if spawned_new_session {
-            let mut child = session.child.lock().await;
-            kill_child_process_tree(&mut child).await;
+            session.shutdown().await;
         }
         return Err(error);
     }
@@ -205,7 +203,7 @@ where
     };
 
     let _spawn_guard = workspace_session_spawn_lock().lock().await;
-    let existing_session = take_live_shared_session(sessions).await;
+    let existing_session = take_live_shared_session(sessions, &entry, app_settings).await;
     let (session, spawned_new_session) = if let Some(existing_session) = existing_session {
         (existing_session, false)
     } else {
@@ -237,8 +235,7 @@ where
             workspaces.remove(&entry.id);
         }
         if spawned_new_session {
-            let mut child = session.child.lock().await;
-            kill_child_process_tree(&mut child).await;
+            session.shutdown().await;
         }
         let _ = tokio::fs::remove_dir_all(&destination_path).await;
         return Err(error);
@@ -370,7 +367,7 @@ where
     };
 
     let _spawn_guard = workspace_session_spawn_lock().lock().await;
-    let existing_session = take_live_shared_session(sessions).await;
+    let existing_session = take_live_shared_session(sessions, &entry, app_settings).await;
     let (session, spawned_new_session) = if let Some(existing_session) = existing_session {
         (existing_session, false)
     } else {
@@ -402,8 +399,7 @@ where
             workspaces.remove(&entry.id);
         }
         if spawned_new_session {
-            let mut child = session.child.lock().await;
-            kill_child_process_tree(&mut child).await;
+            session.shutdown().await;
         }
         let _ = tokio::fs::remove_dir_all(&clone_path).await;
         return Err(error);
@@ -557,12 +553,28 @@ where
     FSpawn: Fn(WorkspaceEntry, Option<String>, Option<String>, Option<PathBuf>) -> FutSpawn,
     FutSpawn: Future<Output = Result<Arc<WorkspaceSession>, String>>,
 {
+    {
+        let app = _app_settings.lock().await;
+        let policy = crate::shared::providers::effective_policy(
+            &app.agent_policy,
+            settings.agent_policy.as_ref(),
+        );
+        crate::shared::providers::validate(&app.providers, &policy)?;
+        crate::shared::connectors::effective(&app, &settings, None)?;
+        let workspaces = workspaces.lock().await;
+        crate::shared::connectors::validate_workspaces(
+            &app,
+            workspaces
+                .values()
+                .map(|w| if w.id == id { &settings } else { &w.settings }),
+        )?;
+    }
     settings.worktree_setup_script = normalize_setup_script(settings.worktree_setup_script);
     settings.worktrees_folder = settings
         .worktrees_folder
         .map(|path| normalize_windows_namespace_path(&path));
 
-    let (entry_snapshot, previous_worktree_setup_script, child_entries) = {
+    let (entry_snapshot, previous_worktree_setup_script, child_entries, previous_connectors) = {
         let mut workspaces = workspaces.lock().await;
         let previous_entry = workspaces
             .get(&id)
@@ -579,6 +591,7 @@ where
             entry_snapshot,
             previous_worktree_setup_script,
             child_entries,
+            previous_entry.settings.mcp_servers,
         )
     };
 
@@ -606,6 +619,20 @@ where
         workspaces.values().cloned().collect()
     };
     write_workspaces(storage_path, &list)?;
+    let app = _app_settings.lock().await;
+    if !matches!(app.backend_mode, crate::types::BackendMode::Remote) {
+        crate::shared::connectors::delete_removed_secrets(
+            &previous_connectors,
+            &entry_snapshot.settings.mcp_servers,
+            &crate::shared::providers::Keychain,
+        )?;
+        crate::shared::pi::config::sync_policies(
+            storage_path
+                .parent()
+                .ok_or("Missing workspace storage directory")?,
+            &app,
+        )?;
+    }
     Ok(WorkspaceInfo {
         id: entry_snapshot.id,
         name: entry_snapshot.name,

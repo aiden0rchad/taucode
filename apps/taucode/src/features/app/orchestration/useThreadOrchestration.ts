@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { pushErrorToast } from "@/services/toasts";
+import { setThreadAccessMode } from "@services/tauri";
 import type {
   AccessMode,
-  AppMention,
+
   AppSettings,
   ComposerSendIntent,
   ServiceTier,
@@ -35,6 +36,7 @@ type PersistThreadCodexParams = (
 ) => void;
 
 type UseThreadSelectionHandlersOrchestrationParams = {
+  activeWorkspaceId?: string | null;
   appSettingsLoading: boolean;
   setAppSettings: SetState<AppSettings>;
   queueSaveSettings: (next: AppSettings) => Promise<AppSettings | void>;
@@ -84,7 +86,6 @@ type MainTab = "home" | "projects" | "codex" | "git" | "log";
 type SendOrQueueHandler = (
   text: string,
   images: string[],
-  appMentions?: AppMention[],
   submitIntent?: ComposerSendIntent,
 ) => Promise<void>;
 
@@ -274,6 +275,7 @@ export function useThreadCodexSyncOrchestration({
 }
 
 export function useThreadSelectionHandlersOrchestration({
+  activeWorkspaceId,
   appSettingsLoading,
   setAppSettings,
   queueSaveSettings,
@@ -359,8 +361,11 @@ export function useThreadSelectionHandlersOrchestration({
     (mode: AccessMode) => {
       setAccessMode(mode);
       persistThreadCodexParams({ accessMode: mode });
+      if (activeWorkspaceId && activeThreadIdRef.current) {
+        void setThreadAccessMode(activeWorkspaceId, activeThreadIdRef.current, mode).catch(error => pushErrorToast({ title: "Could not update thread access", message: String(error) }));
+      }
     },
-    [persistThreadCodexParams, setAccessMode],
+    [activeWorkspaceId, activeThreadIdRef, persistThreadCodexParams, setAccessMode],
   );
 
   const handleSelectCodexArgsOverride = useCallback(
@@ -432,14 +437,11 @@ export function useThreadUiOrchestration({
     (
       text: string,
       images: string[],
-      appMentions?: AppMention[],
       submitIntent?: ComposerSendIntent,
     ) => {
       rememberPendingNewThreadSeed();
       return runWithDraftStart(() =>
-        appMentions && appMentions.length > 0
-          ? handleComposerSend(text, images, appMentions, submitIntent)
-          : handleComposerSend(text, images, undefined, submitIntent),
+        handleComposerSend(text, images, submitIntent),
       );
     },
     [handleComposerSend, rememberPendingNewThreadSeed, runWithDraftStart],

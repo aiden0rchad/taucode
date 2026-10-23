@@ -1,12 +1,11 @@
 import { useCallback, useRef } from "react";
 import type { Dispatch, MutableRefObject } from "react";
-import type { RateLimitSnapshot, TurnPlan } from "@/types";
+import type { TurnPlan } from "@/types";
 import { interruptTurn as interruptTurnService } from "@services/tauri";
 import { getThreadTimestamp } from "@utils/threadItems";
 import {
   asString,
   normalizePlanUpdate,
-  normalizeRateLimits,
   normalizeTokenUsage,
 } from "@threads/utils/threadNormalize";
 import {
@@ -26,7 +25,6 @@ import type { ThreadAction } from "./useThreadsReducer";
 type UseThreadTurnEventsOptions = {
   dispatch: Dispatch<ThreadAction>;
   planByThreadRef: MutableRefObject<Record<string, TurnPlan | null>>;
-  getCurrentRateLimits?: (workspaceId: string) => RateLimitSnapshot | null;
   getCustomName: (workspaceId: string, threadId: string) => string | undefined;
   isThreadHidden: (workspaceId: string, threadId: string) => boolean;
   setThreadLoaded: (threadId: string, isLoaded: boolean) => void;
@@ -43,7 +41,6 @@ type UseThreadTurnEventsOptions = {
 export function useThreadTurnEvents({
   dispatch,
   planByThreadRef,
-  getCurrentRateLimits,
   getCustomName,
   isThreadHidden,
   setThreadLoaded,
@@ -129,6 +126,7 @@ export function useThreadTurnEvents({
       }
       const subagentSummaryPatch = getLiveThreadSubagentSummaryPatch(thread);
       dispatch({ type: "ensureThread", workspaceId, threadId });
+      dispatch({ type: "mergeThreadSummary", workspaceId, threadId, patch: { engine: thread.engine === "pi" ? "pi" : "codex", modelProvider: asString(thread.modelProvider) } });
       if (subagentSummaryPatch) {
         dispatch({
           type: "mergeThreadSummary",
@@ -396,17 +394,6 @@ export function useThreadTurnEvents({
     [dispatch],
   );
 
-  const onAccountRateLimitsUpdated = useCallback(
-    (workspaceId: string, rateLimits: Record<string, unknown>) => {
-      const previousRateLimits = getCurrentRateLimits?.(workspaceId) ?? null;
-      dispatch({
-        type: "setRateLimits",
-        workspaceId,
-        rateLimits: normalizeRateLimits(rateLimits, previousRateLimits),
-      });
-    },
-    [dispatch, getCurrentRateLimits],
-  );
 
   const onTurnError = useCallback(
     (
@@ -463,7 +450,6 @@ export function useThreadTurnEvents({
     onTurnPlanUpdated,
     onTurnDiffUpdated,
     onThreadTokenUsageUpdated,
-    onAccountRateLimitsUpdated,
     onTurnError,
   };
 }

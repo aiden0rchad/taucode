@@ -1,4 +1,4 @@
-use tauri::{State, Window};
+use tauri::{Manager, State, Window};
 
 use crate::shared::settings_core::{
     get_app_settings_core, get_codex_config_path_core, update_app_settings_core,
@@ -12,7 +12,22 @@ pub(crate) async fn get_app_settings(
     state: State<'_, AppState>,
     window: Window,
 ) -> Result<AppSettings, String> {
-    let settings = get_app_settings_core(&state.app_settings).await;
+    let mut settings = get_app_settings_core(&state.app_settings).await;
+    if crate::remote_backend::is_remote_mode(&state).await {
+        if let Ok(value) = crate::remote_backend::call_remote(
+            &state,
+            window.app_handle().clone(),
+            "get_app_settings",
+            serde_json::json!({}),
+        )
+        .await
+        {
+            if let Ok(remote) = serde_json::from_value::<AppSettings>(value) {
+                settings.providers = remote.providers;
+                settings.agent_policy = remote.agent_policy;
+            }
+        }
+    }
     let _ = window::apply_window_appearance(&window, settings.theme.as_str());
     Ok(settings)
 }
@@ -24,6 +39,20 @@ pub(crate) async fn update_app_settings(
     window: Window,
 ) -> Result<AppSettings, String> {
     let previous = state.app_settings.lock().await.clone();
+    if crate::remote_backend::is_remote_mode(&state).await
+        && (serde_json::to_value(&previous.providers).ok()
+            != serde_json::to_value(&settings.providers).ok()
+            || serde_json::to_value(&previous.agent_policy).ok()
+                != serde_json::to_value(&settings.agent_policy).ok())
+    {
+        crate::remote_backend::call_remote(
+            &state,
+            window.app_handle().clone(),
+            "registry_update",
+            serde_json::json!({"providers":settings.providers,"agentPolicy":settings.agent_policy}),
+        )
+        .await?;
+    }
     let updated =
         update_app_settings_core(settings, &state.app_settings, &state.settings_path).await?;
     if should_reset_remote_backend(&previous, &updated) {

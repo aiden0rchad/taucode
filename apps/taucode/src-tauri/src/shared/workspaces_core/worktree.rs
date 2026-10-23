@@ -221,7 +221,7 @@ where
     };
 
     let _spawn_guard = workspace_session_spawn_lock().lock().await;
-    let existing_session = take_live_shared_session(sessions).await;
+    let existing_session = take_live_shared_session(sessions, &entry, app_settings).await;
     let session = if let Some(existing_session) = existing_session {
         existing_session
     } else {

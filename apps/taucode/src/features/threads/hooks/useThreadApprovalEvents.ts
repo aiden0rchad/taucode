@@ -22,7 +22,7 @@ export function useThreadApprovalEvents({
       const commandInfo = getApprovalCommandInfo(approval.params ?? {});
       const allowlist =
         approvalAllowlistRef.current[approval.workspace_id] ?? [];
-      if (commandInfo && matchesCommandPrefix(commandInfo.tokens, allowlist)) {
+      if (!String(approval.request_id).startsWith("pi:") && commandInfo && matchesCommandPrefix(commandInfo.tokens, allowlist)) {
         void respondToServerRequest(
           approval.workspace_id,
           approval.request_id,

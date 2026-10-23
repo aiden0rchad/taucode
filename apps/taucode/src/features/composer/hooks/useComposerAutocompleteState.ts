@@ -1,8 +1,7 @@
 import { useCallback, useMemo } from "react";
 import type { AutocompleteItem } from "./useComposerAutocomplete";
 import { useComposerAutocomplete } from "./useComposerAutocomplete";
-import type { AppOption, CustomPromptOption } from "../../../types";
-import { connectorMentionSlug } from "../../apps/utils/appMentions";
+import type {  CustomPromptOption } from "../../../types";
 import {
   buildPromptInsertText,
   findNextPromptArgCursor,
@@ -16,9 +15,9 @@ type UseComposerAutocompleteStateArgs = {
   text: string;
   selectionStart: number | null;
   disabled: boolean;
-  appsEnabled: boolean;
+
   skills: Skill[];
-  apps: AppOption[];
+
   prompts: CustomPromptOption[];
   files: string[];
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -74,9 +73,9 @@ export function useComposerAutocompleteState({
   text,
   selectionStart,
   disabled,
-  appsEnabled,
+
   skills,
-  apps,
+
   prompts,
   files,
   textareaRef,
@@ -93,18 +92,9 @@ export function useComposerAutocompleteState({
         insertText: skill.name,
         group: "Skills" as const,
       })),
-      ...apps
-        .filter((app) => app.isAccessible)
-        .map((app) => ({
-          id: `app:${app.id}`,
-          label: app.name,
-          description: app.description,
-          insertText: connectorMentionSlug(app.name),
-          group: "Apps" as const,
-          mentionPath: `app://${app.id}`,
-        })),
+
     ],
-    [apps, skills],
+    [ skills],
   );
 
   const fileTriggerActive = useMemo(
@@ -206,17 +196,8 @@ export function useComposerAutocompleteState({
         group: "Slash",
       },
     ];
-    if (appsEnabled) {
-      commands.push({
-        id: "apps",
-        label: "apps",
-        description: "list available apps",
-        insertText: "apps",
-        group: "Slash",
-      });
-    }
     return commands.sort((a, b) => a.label.localeCompare(b.label));
-  }, [appsEnabled]);
+  }, []);
 
   const slashItems = useMemo<AutocompleteItem[]>(
     () => [...slashCommandItems, ...promptItems],

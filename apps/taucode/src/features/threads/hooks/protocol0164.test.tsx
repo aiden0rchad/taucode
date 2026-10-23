@@ -37,8 +37,40 @@ function useReplay(onDebug: (entry: DebugEntry) => void) {
 }
 
 afterEach(cleanup);
+it("renders a pi thread through canonical streaming, model, question and compaction events", () => {
+  const { result } = renderHook(() => useReplay(vi.fn()));
+  const send = (method: string, params: Record<string, unknown>) => act(() => receive({
+    workspace_id: "pi-workspace", message: { method, params },
+  }));
+  send("thread/started", { thread: { id: "pi-session", engine: "pi", modelProvider: "first", turns: [] } });
+  send("turn/started", { threadId: "pi-session", turn: { id: "pi-turn", status: "inProgress", items: [] } });
+  const item = { type: "agentMessage", id: "pi-message", text: "", phase: null, memoryCitation: null, delivery: null, questions: null };
+  send("item/started", { threadId: "pi-session", turnId: "pi-turn", item });
+  send("item/agentMessage/delta", { threadId: "pi-session", turnId: "pi-turn", itemId: "pi-message", delta: "Hello from pi" });
+  send("item/completed", { threadId: "pi-session", turnId: "pi-turn", item: { ...item, text: "Hello from pi" } });
+  send("thread/settings/updated", { threadId: "pi-session", threadSettings: { modelProvider: "second", model: "model-2" } });
+  send("item/completed", { threadId: "pi-session", turnId: "pi-turn", item: { type: "contextCompaction", id: "pi-compact" } });
+  send("turn/completed", { threadId: "pi-session", turn: { id: "pi-turn", status: "completed", items: [] } });
+  expect(result.current.threadsByWorkspace["pi-workspace"][0]).toMatchObject({ engine: "pi", modelProvider: "second" });
+  expect(result.current.itemsByThread["pi-session"]).toEqual(expect.arrayContaining([
+    expect.objectContaining({ text: "Hello from pi" }), expect.objectContaining({ toolType: "contextCompaction" }),
+  ]));
+  expect(result.current.threadStatusById["pi-session"].isProcessing).toBe(false);
+});
 const fixtures = import.meta.glob<string>("/src-tauri/tests/fixtures/codex-0.164/*.jsonl", {
   query: "?raw", import: "default", eager: true,
+});
+
+it("updates pi subagent progress in place and retains each model, output and usage", () => {
+  const { result } = renderHook(() => useReplay(vi.fn()));
+  const send = (method: string, item: Record<string, unknown>) => act(() => receive({ workspace_id: "pi-workspace", message: { method, params: { threadId: "pi-session", turnId: "pi-turn", item } } }));
+  const base = { type: "collabAgentToolCall", id: "subagent", tool: "spawnAgent", status: "inProgress", senderThreadId: "pi-session", receiverThreadIds: ["subagent:agent:0"], prompt: "Find add", model: null, reasoningEffort: null };
+  send("item/started", { ...base, agentsStates: { "subagent:agent:0": { status: "running", agent: "scout", message: "Searching", model: "local/small", usage: { input: 4, output: 1, cost: 0.01 } } } });
+  send("item/started", { ...base, agentsStates: { "subagent:agent:0": { status: "running", agent: "scout", message: "Found source", model: "local/small", usage: { input: 8, output: 2, cost: 0.02 } } } });
+  expect(result.current.itemsByThread["pi-session"]).toHaveLength(1);
+  expect(result.current.itemsByThread["pi-session"][0]).toMatchObject({ output: expect.stringContaining("Found source") });
+  send("item/completed", { ...base, status: "completed", agentsStates: { "subagent:agent:0": { status: "completed", agent: "scout", message: "src/add.ts:3", model: "local/small", usage: { input: 8, output: 3, cost: 0.03 } } } });
+  expect(result.current.itemsByThread["pi-session"][0]).toMatchObject({ output: expect.stringContaining("src/add.ts:3"), collabStatuses: [{ status: "completed", model: "local/small", message: "src/add.ts:3", usage: { input: 8, output: 3, cost: 0.03 } }] });
 });
 
 describe("0.164 recorded frontend traffic", () => {

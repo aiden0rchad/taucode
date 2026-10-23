@@ -79,14 +79,12 @@ fn extract_related_thread_ids(value: &Value) -> Vec<String> {
         push_thread_id(out, record.get("id"));
         push_thread_id(
             out,
-            record
-                .get("thread")
-                .and_then(|thread| {
-                    thread
-                        .get("id")
-                        .or_else(|| thread.get("threadId"))
-                        .or_else(|| thread.get("thread_id"))
-                }),
+            record.get("thread").and_then(|thread| {
+                thread
+                    .get("id")
+                    .or_else(|| thread.get("threadId"))
+                    .or_else(|| thread.get("thread_id"))
+            }),
         );
     }
 
@@ -94,13 +92,16 @@ fn extract_related_thread_ids(value: &Value) -> Vec<String> {
         let Some(container) = container.and_then(|value| value.as_object()) else {
             return;
         };
-        push_thread_id(out, container.get("threadId").or_else(|| container.get("thread_id")));
-        push_thread_id(out, container.get("agentThreadId"));
         push_thread_id(
             out,
             container
-                .get("thread")
-                .and_then(|thread| thread.get("id")),
+                .get("threadId")
+                .or_else(|| container.get("thread_id")),
+        );
+        push_thread_id(out, container.get("agentThreadId"));
+        push_thread_id(
+            out,
+            container.get("thread").and_then(|thread| thread.get("id")),
         );
         push_thread_id(
             out,
@@ -150,7 +151,11 @@ fn extract_related_thread_ids(value: &Value) -> Vec<String> {
                 .or_else(|| container.get("agent_statuses")),
             out,
         );
-        if let Some(status_map) = container.get("agentsStates").or_else(|| container.get("statuses")).and_then(|value| value.as_object()) {
+        if let Some(status_map) = container
+            .get("agentsStates")
+            .or_else(|| container.get("statuses"))
+            .and_then(|value| value.as_object())
+        {
             out.extend(
                 status_map
                     .keys()
@@ -193,10 +198,8 @@ fn normalize_root_path(value: &str) -> String {
     }
 
     let bytes = normalized.as_bytes();
-    let is_drive_path = bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && bytes[2] == b'/';
+    let is_drive_path =
+        bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/';
     if is_drive_path || normalized.starts_with("//") {
         normalized.to_ascii_lowercase()
     } else {
@@ -394,23 +397,6 @@ fn should_suppress_hidden_thread_event(
         )
 }
 
-fn is_global_workspace_notification(method: &str) -> bool {
-    matches!(
-        method,
-        "account/updated" | "account/rateLimits/updated" | "account/login/completed"
-    )
-}
-
-fn should_broadcast_global_workspace_notification(
-    method_name: Option<&str>,
-    thread_id: Option<&String>,
-    request_workspace: Option<&str>,
-) -> bool {
-    method_name.is_some_and(is_global_workspace_notification)
-        && thread_id.is_none()
-        && request_workspace.is_none()
-}
-
 #[derive(Clone)]
 pub(crate) struct RequestContext {
     workspace_id: String,
@@ -432,7 +418,13 @@ fn build_initialize_params(client_version: &str) -> Value {
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
-pub(crate) struct WorkspaceSession {
+pub(crate) use crate::shared::engines::WorkspaceSession;
+
+pub(crate) struct CodexEngine {
+    pub(crate) events: tokio::sync::broadcast::Sender<Value>,
+    pub(crate) active_threads: Mutex<HashSet<String>>,
+    pub(crate) codegraph: Option<crate::codegraph::CodegraphSetup>,
+    #[cfg(test)]
     pub(crate) codex_args: Option<String>,
     pub(crate) child: Mutex<Child>,
     pub(crate) stdin: Mutex<ChildStdin>,
@@ -448,7 +440,7 @@ pub(crate) struct WorkspaceSession {
     pub(crate) workspace_roots: Mutex<HashMap<String, String>>,
 }
 
-impl WorkspaceSession {
+impl CodexEngine {
     pub(crate) async fn register_workspace(&self, workspace_id: &str) {
         self.register_workspace_with_path(workspace_id, None).await;
     }
@@ -476,10 +468,6 @@ impl WorkspaceSession {
     pub(crate) async fn unregister_workspace(&self, workspace_id: &str) {
         self.workspace_ids.lock().await.remove(workspace_id);
         self.workspace_roots.lock().await.remove(workspace_id);
-    }
-
-    pub(crate) async fn workspace_ids_snapshot(&self) -> Vec<String> {
-        self.workspace_ids.lock().await.iter().cloned().collect()
     }
 
     async fn write_message(&self, value: Value) -> Result<(), String> {
@@ -747,7 +735,34 @@ pub(crate) async fn check_codex_installation(
     })
 }
 
-pub(crate) async fn route_app_server_message<E: EventSink>(session: &WorkspaceSession, fallback_workspace_id: &str, event_sink: &E, value: Value) {
+pub(crate) async fn route_app_server_message<E: EventSink>(
+    session: &CodexEngine,
+    fallback_workspace_id: &str,
+    event_sink: &E,
+    value: Value,
+) {
+    if value
+        .get("method")
+        .and_then(Value::as_str)
+        .is_some_and(|m| m.starts_with("account/") || m.starts_with("app/"))
+    {
+        return;
+    }
+    if let Some(id) = extract_thread_id(&value) {
+        match value.get("method").and_then(Value::as_str) {
+            Some("turn/started") => {
+                session.active_threads.lock().await.insert(id);
+            }
+            Some("turn/completed") => {
+                session.active_threads.lock().await.remove(&id);
+            }
+            _ => (),
+        }
+    }
+    let _ = session.events.send(value.clone());
+    if let Some(setup) = &session.codegraph {
+        setup.on_engine_message(&value);
+    }
     let maybe_id = value.get("id").and_then(|id| id.as_u64());
     let has_method = value.get("method").is_some();
     let has_result_or_error = value.get("result").is_some() || value.get("error").is_some();
@@ -812,12 +827,7 @@ pub(crate) async fn route_app_server_message<E: EventSink>(session: &WorkspaceSe
     }
 
     let mapped_thread_workspace = if let Some(ref tid) = thread_id {
-        session
-            .thread_workspace
-            .lock()
-            .await
-            .get(tid)
-            .cloned()
+        session.thread_workspace.lock().await.get(tid).cloned()
     } else {
         None
     };
@@ -901,34 +911,11 @@ pub(crate) async fn route_app_server_message<E: EventSink>(session: &WorkspaceSe
             }
             // Don't emit to frontend if this is a background thread event
             if !sent_to_background {
-                if should_broadcast_global_workspace_notification(
-                    method_name,
-                    thread_id.as_ref(),
-                    request_workspace.as_deref(),
-                ) {
-                    let workspace_ids = session.workspace_ids_snapshot().await;
-                    if workspace_ids.is_empty() {
-                        let payload = AppServerEvent {
-                            workspace_id: routed_workspace_id.clone(),
-                            message: value,
-                        };
-                        event_sink.emit_app_server_event(payload);
-                    } else {
-                        for workspace_id in workspace_ids {
-                            let payload = AppServerEvent {
-                                workspace_id,
-                                message: value.clone(),
-                            };
-                            event_sink.emit_app_server_event(payload);
-                        }
-                    }
-                } else {
-                    let payload = AppServerEvent {
-                        workspace_id: routed_workspace_id.clone(),
-                        message: value,
-                    };
-                    event_sink.emit_app_server_event(payload);
-                }
+                let payload = AppServerEvent {
+                    workspace_id: routed_workspace_id.clone(),
+                    message: value,
+                };
+                event_sink.emit_app_server_event(payload);
             }
         } else if let Some(tx) = session.pending.lock().await.remove(&id) {
             let _ = tx.send(value);
@@ -945,34 +932,11 @@ pub(crate) async fn route_app_server_message<E: EventSink>(session: &WorkspaceSe
         }
         // Don't emit to frontend if this is a background thread event
         if !sent_to_background {
-            if should_broadcast_global_workspace_notification(
-                method_name,
-                thread_id.as_ref(),
-                request_workspace.as_deref(),
-            ) {
-                let workspace_ids = session.workspace_ids_snapshot().await;
-                if workspace_ids.is_empty() {
-                    let payload = AppServerEvent {
-                        workspace_id: routed_workspace_id,
-                        message: value,
-                    };
-                    event_sink.emit_app_server_event(payload);
-                } else {
-                    for workspace_id in workspace_ids {
-                        let payload = AppServerEvent {
-                            workspace_id,
-                            message: value.clone(),
-                        };
-                        event_sink.emit_app_server_event(payload);
-                    }
-                }
-            } else {
-                let payload = AppServerEvent {
-                    workspace_id: routed_workspace_id,
-                    message: value,
-                };
-                event_sink.emit_app_server_event(payload);
-            }
+            let payload = AppServerEvent {
+                workspace_id: routed_workspace_id,
+                message: value,
+            };
+            event_sink.emit_app_server_event(payload);
         }
     }
 }
@@ -984,7 +948,130 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
     codex_home: Option<PathBuf>,
     client_version: String,
     event_sink: E,
+    codegraph: Option<crate::codegraph::CodegraphSetup>,
+    settings: crate::types::AppSettings,
 ) -> Result<Arc<WorkspaceSession>, String> {
+    let policy = crate::shared::providers::effective_policy(
+        &settings.agent_policy,
+        entry.settings.agent_policy.as_ref(),
+    );
+    crate::shared::providers::validate(&settings.providers, &policy)?;
+    let workspace_id = entry.id.clone();
+    let providers = settings.providers.clone();
+    let args = codex_args.clone();
+    let graph = codegraph.clone();
+    let sink = event_sink.clone();
+    let pi_cwd = entry.path.clone();
+    let pi_home = codex_home
+        .clone()
+        .or_else(crate::codex::home::resolve_default_codex_home);
+    let pi_data = pi_home
+        .as_deref()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .ok_or("Missing taucode app data directory for pi")?;
+    let factory = Box::new(move || {
+        let (mut entry, bin, args, home, version, sink, graph, mut settings) = (
+            entry.clone(),
+            default_codex_bin.clone(),
+            codex_args.clone(),
+            codex_home.clone(),
+            client_version.clone(),
+            event_sink.clone(),
+            codegraph.clone(),
+            settings.clone(),
+        );
+        if let Some(data) = home
+            .as_deref()
+            .and_then(Path::parent)
+            .and_then(Path::parent)
+        {
+            if let Ok(latest) = crate::storage::read_settings(&data.join("settings.json")) {
+                settings = latest;
+            }
+            if let Ok(workspaces) = crate::storage::read_workspaces(&data.join("workspaces.json")) {
+                if let Some(latest) = workspaces.get(&entry.id) {
+                    entry.settings = latest.settings.clone();
+                }
+            }
+        }
+        Box::pin(spawn_codex_engine(
+            entry, bin, args, home, version, sink, graph, settings,
+        )) as crate::shared::providers::BoxFuture<'static, Result<Arc<CodexEngine>, String>>
+    });
+    let mut session = WorkspaceSession::lazy(
+        factory,
+        providers,
+        policy,
+        args,
+        graph,
+        workspace_id.clone(),
+    );
+    let pi_sink = sink.clone();
+    session.pi = crate::shared::pi::PiEngine::new(
+        pi_data,
+        workspace_id.clone(),
+        pi_cwd,
+        session.codegraph.clone(),
+        Arc::new(move |workspace, message| {
+            pi_sink.emit_app_server_event(AppServerEvent {
+                workspace_id: workspace.into(),
+                message,
+            })
+        }),
+    );
+    sink.emit_app_server_event(AppServerEvent {
+        workspace_id: workspace_id.clone(),
+        message: json!({"method":"codex/connected","params":{"workspaceId":workspace_id}}),
+    });
+    Ok(Arc::new(session))
+}
+
+async fn spawn_codex_engine<E: EventSink>(
+    entry: WorkspaceEntry,
+    default_codex_bin: Option<String>,
+    codex_args: Option<String>,
+    codex_home: Option<PathBuf>,
+    client_version: String,
+    event_sink: E,
+    codegraph: Option<crate::codegraph::CodegraphSetup>,
+    settings: crate::types::AppSettings,
+) -> Result<Arc<CodexEngine>, String> {
+    if !settings.providers.iter().any(|p| {
+        p.enabled && crate::shared::providers::codex_usable(p) && p.models.iter().any(|m| m.enabled)
+    }) {
+        return Err("Add and enable a codex-compatible provider and model in Settings".into());
+    }
+    let policy = crate::shared::providers::effective_policy(
+        &settings.agent_policy,
+        entry.settings.agent_policy.as_ref(),
+    );
+    let home = codex_home.ok_or("Managed CODEX_HOME unavailable")?;
+    for arg in parse_codex_args(codex_args.as_deref())? {
+        if [
+            "forced_login_method",
+            "chatgpt_base_url",
+            "credentials_store",
+            "model_provider",
+            "mcp_servers",
+        ]
+        .iter()
+        .any(|key| arg.contains(key))
+            || arg == "--model"
+            || arg == "-m"
+            || arg.starts_with("--model=")
+            || arg.contains("model=")
+        {
+            return Err("Configure providers and models in taucode Settings; account and provider overrides in Codex arguments are disabled".into());
+        }
+    }
+    let mut provider_env = crate::shared::engines::prepare_codex(
+        &home,
+        &settings.providers,
+        &policy,
+        &crate::shared::providers::Keychain,
+    )?;
     let codex_bin = default_codex_bin;
     let _ = check_codex_installation(codex_bin.clone()).await?;
 
@@ -993,10 +1080,29 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
         codex_args.as_deref(),
         vec!["app-server".to_string()],
     )?;
+    command.args(crate::shared::engines::codex_config_args(
+        &settings.providers,
+        &policy,
+        &home,
+    )?);
+    let connectors =
+        crate::shared::connectors::effective(&settings, &entry.settings, codegraph.as_ref())?;
+    let delivery =
+        crate::shared::connectors::delivery(&connectors, &crate::shared::providers::Keychain)?;
+    command.args(delivery.codex);
     command.current_dir(&entry.path);
-    if let Some(path) = codex_home.as_ref() {
-        command.env("CODEX_HOME", path);
-    }
+    let mut secrets: Vec<String> = provider_env
+        .iter()
+        .map(|(_, value)| value.clone())
+        .collect();
+    secrets.extend(delivery.secrets);
+    provider_env.extend(delivery.env);
+    command
+        .env("CODEX_HOME", &home)
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("CODEX_API_KEY")
+        .env_remove("CODEX_APP_SERVER_TEST_USER_CONFIG_FILE")
+        .envs(provider_env);
     command.stdin(std::process::Stdio::piped());
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
@@ -1006,8 +1112,12 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
     let stdout = child.stdout.take().ok_or("missing stdout")?;
     let stderr = child.stderr.take().ok_or("missing stderr")?;
 
-    let session = Arc::new(WorkspaceSession {
+    let session = Arc::new(CodexEngine {
+        events: tokio::sync::broadcast::channel(256).0,
+        active_threads: Mutex::new(HashSet::new()),
+        #[cfg(test)]
         codex_args,
+        codegraph,
         child: Mutex::new(child),
         stdin: Mutex::new(stdin),
         pending: Mutex::new(HashMap::new()),
@@ -1027,9 +1137,11 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
     let session_clone = Arc::clone(&session);
     let fallback_workspace_id = entry.id.clone();
     let event_sink_clone = event_sink.clone();
+    let output_secrets = secrets.clone();
     tokio::spawn(async move {
         let mut lines = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            let line = redact_credentials(line, &output_secrets);
             if line.trim().is_empty() {
                 continue;
             }
@@ -1048,7 +1160,13 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
                 }
             };
 
-            route_app_server_message(&session_clone, &fallback_workspace_id, &event_sink_clone, value).await;
+            route_app_server_message(
+                &session_clone,
+                &fallback_workspace_id,
+                &event_sink_clone,
+                value,
+            )
+            .await;
         }
 
         // Ensure pending foreground requests cannot accumulate after process output ends.
@@ -1061,6 +1179,7 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
     tokio::spawn(async move {
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            let line = redact_credentials(line, &secrets);
             if line.trim().is_empty() {
                 continue;
             }
@@ -1095,16 +1214,16 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
     init_response?;
     session.send_notification("initialized", None).await?;
 
-    let payload = AppServerEvent {
-        workspace_id: entry.id.clone(),
-        message: json!({
-            "method": "codex/connected",
-            "params": { "workspaceId": entry.id.clone() }
-        }),
-    };
-    event_sink.emit_app_server_event(payload);
-
     Ok(session)
+}
+
+fn redact_credentials(mut text: String, secrets: &[String]) -> String {
+    for secret in secrets.iter().filter(|value| !value.is_empty()) {
+        let escaped = serde_json::to_string(secret).expect("string serialization");
+        text = text.replace(&escaped[1..escaped.len() - 1], "[REDACTED]");
+        text = text.replace(secret, "[REDACTED]");
+    }
+    text
 }
 
 #[cfg(test)]
@@ -1114,13 +1233,31 @@ pub(crate) mod protocol_tests;
 #[cfg(test)]
 mod tests {
     use super::{
-        build_initialize_params, extract_related_thread_ids, extract_thread_entries_from_thread_list_result,
-        extract_thread_id, normalize_root_path, resolve_workspace_for_cwd,
-        should_suppress_hidden_thread_event, source_subagent_kind,
+        build_initialize_params, extract_related_thread_ids,
+        extract_thread_entries_from_thread_list_result, extract_thread_id, normalize_root_path,
+        resolve_workspace_for_cwd, should_suppress_hidden_thread_event, source_subagent_kind,
         thread_started_is_memory_consolidation,
     };
-    use std::collections::HashMap;
     use serde_json::json;
+    #[test]
+    fn credentials_are_redacted_from_engine_output() {
+        let secret = "private-\"token".to_string();
+        let raw = format!("error: {secret}");
+        assert_eq!(
+            super::redact_credentials(raw, &[secret.clone()]),
+            "error: [REDACTED]"
+        );
+        let message = json!({"error": secret}).to_string();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&super::redact_credentials(
+                message,
+                &[secret]
+            ))
+            .unwrap(),
+            json!({"error": "[REDACTED]"})
+        );
+    }
+    use std::collections::HashMap;
 
     #[test]
     fn extract_thread_id_reads_camel_case() {
@@ -1374,8 +1511,14 @@ mod tests {
 
     #[test]
     fn hidden_thread_suppression_allows_rpc_responses() {
-        assert!(!should_suppress_hidden_thread_event(Some("thread/archived"), true));
-        assert!(!should_suppress_hidden_thread_event(Some("thread/updated"), true));
+        assert!(!should_suppress_hidden_thread_event(
+            Some("thread/archived"),
+            true
+        ));
+        assert!(!should_suppress_hidden_thread_event(
+            Some("thread/updated"),
+            true
+        ));
         assert!(!should_suppress_hidden_thread_event(None, true));
     }
 

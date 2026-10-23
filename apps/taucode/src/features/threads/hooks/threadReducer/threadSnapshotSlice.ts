@@ -26,22 +26,6 @@ export function reduceThreadSnapshots(
           [action.threadId]: action.tokenUsage,
         },
       };
-    case "setRateLimits":
-      return {
-        ...state,
-        rateLimitsByWorkspace: {
-          ...state.rateLimitsByWorkspace,
-          [action.workspaceId]: action.rateLimits,
-        },
-      };
-    case "setAccountInfo":
-      return {
-        ...state,
-        accountByWorkspace: {
-          ...state.accountByWorkspace,
-          [action.workspaceId]: action.account,
-        },
-      };
     case "setThreadTurnDiff":
       return {
         ...state,

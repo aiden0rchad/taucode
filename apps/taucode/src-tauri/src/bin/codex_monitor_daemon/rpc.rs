@@ -152,6 +152,11 @@ pub(super) async fn handle_rpc_request(
     params: Value,
     client_version: String,
 ) -> Result<Value, String> {
+    if matches!(method, "codegraph_status" | "codegraph_rebuild") {
+        let id = parse_string(&params, "workspaceId")?;
+        let status = shared::codegraph_core::workspace_status(&state.codegraph, &state.workspaces, &state.app_settings, &id, method == "codegraph_rebuild", state.event_sink.clone()).await?;
+        return serde_json::to_value(status).map_err(|e| e.to_string());
+    }
     dispatcher::dispatch_rpc_request(state, method, &params, &client_version).await
 }
 

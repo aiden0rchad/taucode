@@ -14,7 +14,7 @@ import type {
   TrayRecentThreadEntry,
   TraySessionUsage,
   WorkspaceInfo,
-  AppMention,
+
   WorkspaceSettings,
 } from "../types";
 import type {
@@ -387,12 +387,12 @@ export async function setWorkspaceRuntimeCodexArgs(
   });
 }
 
-export async function startThread(workspaceId: string) {
-  return invoke<any>("start_thread", { workspaceId });
+export async function startThread(workspaceId: string, engine?: import("../types").EngineKind, model?: string | null) {
+  return invoke<any>("start_thread", { workspaceId, ...(engine ? { engine } : {}), ...(model ? { model } : {}) });
 }
 
-export async function forkThread(workspaceId: string, threadId: string) {
-  return invoke<any>("fork_thread", { workspaceId, threadId });
+export async function forkThread(workspaceId: string, threadId: string, model?: string) {
+  return invoke<any>("fork_thread", { workspaceId, threadId, ...(model ? { model } : {}) });
 }
 
 export async function compactThread(workspaceId: string, threadId: string) {
@@ -456,7 +456,7 @@ export async function sendUserMessage(
     accessMode?: "read-only" | "current" | "full-access";
     images?: string[];
     collaborationMode?: Record<string, unknown> | null;
-    appMentions?: AppMention[];
+
   },
 ) {
   const images = await normalizeImagesForRpc(options?.images);
@@ -475,9 +475,6 @@ export async function sendUserMessage(
   if (options?.collaborationMode) {
     payload.collaborationMode = options.collaborationMode;
   }
-  if (options?.appMentions && options.appMentions.length > 0) {
-    payload.appMentions = options.appMentions;
-  }
   return invoke("send_user_message", payload);
 }
 
@@ -495,8 +492,7 @@ export async function steerTurn(
   turnId: string,
   text: string,
   images?: string[],
-  appMentions?: AppMention[],
-) {
+  ) {
   const normalizedImages = await normalizeImagesForRpc(images);
   const payload: Record<string, unknown> = {
     workspaceId,
@@ -505,9 +501,6 @@ export async function steerTurn(
     text,
     images: normalizedImages,
   };
-  if (appMentions && appMentions.length > 0) {
-    payload.appMentions = appMentions;
-  }
   return invoke("turn_steer", payload);
 }
 
@@ -527,7 +520,7 @@ export async function startReview(
 export async function respondToServerRequest(
   workspaceId: string,
   requestId: number | string,
-  decision: "accept" | "decline",
+  decision: "accept" | "acceptForSession" | "decline",
 ) {
   return invoke("respond_to_server_request", {
     workspaceId,
@@ -760,39 +753,14 @@ export async function getCollaborationModes(workspaceId: string) {
   return invoke<any>("collaboration_mode_list", { workspaceId });
 }
 
-export async function getAccountRateLimits(workspaceId: string) {
-  return invoke<any>("account_rate_limits", { workspaceId });
-}
 
-export async function getAccountInfo(workspaceId: string) {
-  return invoke<any>("account_read", { workspaceId });
-}
 
-export async function runCodexLogin(workspaceId: string) {
-  return invoke<{ loginId: string; authUrl: string; raw?: unknown }>("codex_login", {
-    workspaceId,
-  });
-}
 
-export async function cancelCodexLogin(workspaceId: string) {
-  return invoke<{ canceled: boolean; status?: string; raw?: unknown }>(
-    "codex_login_cancel",
-    { workspaceId },
-  );
-}
 
 export async function getSkillsList(workspaceId: string) {
   return invoke<any>("skills_list", { workspaceId });
 }
 
-export async function getAppsList(
-  workspaceId: string,
-  cursor?: string | null,
-  limit?: number | null,
-  threadId?: string | null,
-) {
-  return invoke<any>("apps_list", { workspaceId, cursor, limit, threadId });
-}
 
 export async function getPromptsList(workspaceId: string) {
   return invoke<any>("prompts_list", { workspaceId });
@@ -865,12 +833,20 @@ export async function getAppSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("get_app_settings");
 }
 
+export function connectorRequest<T>(params: { action: "list" | "test" | "secrets" | "setSecret" | "deleteSecret"; id?: string; workspaceId?: string; name?: string; value?: string }): Promise<T> {
+  return invoke<T>("connector_request", { params });
+}
+
 export async function isMobileRuntime(): Promise<boolean> {
   return invoke<boolean>("is_mobile_runtime");
 }
 
 export async function updateAppSettings(settings: AppSettings): Promise<AppSettings> {
   return invoke<AppSettings>("update_app_settings", { settings });
+}
+
+export async function setThreadAccessMode(workspaceId: string, threadId: string, accessMode: import("@/types").AccessMode): Promise<void> {
+  await invoke("set_thread_access_mode", { workspaceId, threadId, accessMode });
 }
 
 export async function tailscaleStatus(): Promise<TailscaleStatus> {
@@ -1200,3 +1176,21 @@ export async function sendNotification(
 
   await attemptFallback();
 }
+
+export type CodegraphStatus = {
+  state: "indexing" | "ready" | "failed" | "unavailable" | "disabled";
+  detail: string;
+};
+
+export function codegraphStatus(workspaceId: string): Promise<CodegraphStatus> {
+  return invoke("codegraph_status", { workspaceId });
+}
+
+export function rebuildCodegraph(workspaceId: string): Promise<CodegraphStatus> {
+  return invoke("codegraph_rebuild", { workspaceId });
+}
+
+export const providerSetApiKey = (id: string, key: string) => invoke<void>("provider_set_api_key", { id, key });
+export const providerHasApiKey = (id: string) => invoke<boolean>("provider_has_api_key", { id });
+export const providerDeleteApiKey = (id: string) => invoke<void>("provider_delete_api_key", { id });
+export const providerTestAndFetch = (id: string) => invoke<{ ok: boolean; latencyMs: number; models: import("../types").ProviderModel[]; error?: string }>("provider_test_and_fetch", { id });

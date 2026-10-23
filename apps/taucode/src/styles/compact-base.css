@@ -39,9 +39,6 @@
   align-self: flex-start;
 }
 
-.app.layout-compact .sidebar-account-popover {
-  bottom: calc(100% + 8px);
-}
 
 .compact-topbar {
   padding: 10px 16px 8px;

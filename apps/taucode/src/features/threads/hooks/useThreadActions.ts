@@ -46,6 +46,8 @@ const THREAD_LIST_MAX_PAGES_DEFAULT = 6;
 const THREAD_LIST_CURSOR_PAGE_START = "__codex_monitor_page_start__";
 
 type UseThreadActionsOptions = {
+  engine?: import("@/types").EngineKind;
+  model?: string | null;
   dispatch: Dispatch<ThreadAction>;
   itemsByThread: ThreadState["itemsByThread"];
   threadsByWorkspace: ThreadState["threadsByWorkspace"];
@@ -75,6 +77,7 @@ type UseThreadActionsOptions = {
 };
 
 export function useThreadActions({
+  engine, model,
   dispatch,
   itemsByThread,
   threadsByWorkspace,
@@ -183,7 +186,7 @@ export function useThreadActions({
         payload: { workspaceId },
       });
       try {
-        const response = await startThreadService(workspaceId);
+        const response = await (engine || model ? startThreadService(workspaceId, engine, model) : startThreadService(workspaceId));
         onDebug?.({
           id: `${Date.now()}-server-thread-start`,
           timestamp: Date.now(),
@@ -194,6 +197,8 @@ export function useThreadActions({
         const threadId = extractThreadId(response);
         if (threadId) {
           dispatch({ type: "ensureThread", workspaceId, threadId });
+          const thread = extractThreadFromResponse(response);
+          dispatch({ type: "mergeThreadSummary", workspaceId, threadId, patch: { engine: thread?.engine === "pi" ? "pi" : "codex", modelProvider: String(thread?.modelProvider ?? "") } });
           if (shouldActivate) {
             dispatch({ type: "setActiveThreadId", workspaceId, threadId });
           }
@@ -212,7 +217,7 @@ export function useThreadActions({
         throw error;
       }
     },
-    [dispatch, extractThreadId, loadedThreadsRef, onDebug],
+    [dispatch, engine, model, extractThreadId, loadedThreadsRef, onDebug],
   );
 
   const resumeThreadForWorkspace = useCallback(
@@ -388,7 +393,7 @@ export function useThreadActions({
     async (
       workspaceId: string,
       threadId: string,
-      options?: { activate?: boolean },
+      options?: { activate?: boolean; model?: string },
     ) => {
       if (!threadId) {
         return null;
@@ -402,7 +407,7 @@ export function useThreadActions({
         payload: { workspaceId, threadId },
       });
       try {
-        const response = await forkThreadService(workspaceId, threadId);
+        const response = await (options?.model ? forkThreadService(workspaceId, threadId, options.model) : forkThreadService(workspaceId, threadId));
         onDebug?.({
           id: `${Date.now()}-server-thread-fork`,
           timestamp: Date.now(),

@@ -7,7 +7,7 @@ import {
   steerTurn as steerTurnService,
   startReview as startReviewService,
   interruptTurn as interruptTurnService,
-  getAppsList as getAppsListService,
+
   listMcpServerStatus as listMcpServerStatusService,
   compactThread as compactThreadService,
 } from "@services/tauri";
@@ -25,7 +25,7 @@ vi.mock("@services/tauri", () => ({
   steerTurn: vi.fn(),
   startReview: vi.fn(),
   interruptTurn: vi.fn(),
-  getAppsList: vi.fn(),
+
   listMcpServerStatus: vi.fn(),
   compactThread: vi.fn(),
 }));
@@ -86,9 +86,6 @@ describe("useThreadMessaging telemetry", () => {
     vi.mocked(interruptTurnService).mockResolvedValue(
       {} as Awaited<ReturnType<typeof interruptTurnService>>,
     );
-    vi.mocked(getAppsListService).mockResolvedValue(
-      {} as Awaited<ReturnType<typeof getAppsListService>>,
-    );
     vi.mocked(listMcpServerStatusService).mockResolvedValue(
       {} as Awaited<ReturnType<typeof listMcpServerStatusService>>,
     );
@@ -113,7 +110,7 @@ describe("useThreadMessaging telemetry", () => {
         ensureWorkspaceRuntimeCodexArgs,
         threadStatusById: {},
         activeTurnIdByThread: {},
-        rateLimitsByWorkspace: {},
+
         pendingInterruptsRef: { current: new Set<string>() },
         dispatch: vi.fn(),
         getCustomName: vi.fn(() => undefined),
@@ -158,54 +155,7 @@ describe("useThreadMessaging telemetry", () => {
     expect(ensureWorkspaceRuntimeCodexArgs).toHaveBeenCalledWith("ws-1", "thread-1");
   });
 
-  it("forwards explicit app mentions to turn/start", async () => {
-    const { result } = renderHook(() =>
-      useThreadMessaging({
-        activeWorkspace: workspace,
-        activeThreadId: "thread-1",
-        accessMode: "current",
-        model: null,
-        effort: null,
-        collaborationMode: null,
-        reviewDeliveryMode: "inline",
-        steerEnabled: false,
-        customPrompts: [],
-        threadStatusById: {},
-        activeTurnIdByThread: {},
-        rateLimitsByWorkspace: {},
-        pendingInterruptsRef: { current: new Set<string>() },
-        dispatch: vi.fn(),
-        getCustomName: vi.fn(() => undefined),
-        markProcessing: vi.fn(),
-        markReviewing: vi.fn(),
-        setActiveTurnId: vi.fn(),
-        recordThreadActivity: vi.fn(),
-        safeMessageActivity: vi.fn(),
-        onDebug: vi.fn(),
-        pushThreadErrorMessage: vi.fn(),
-        ensureThreadForActiveWorkspace: vi.fn(async () => "thread-1"),
-        ensureThreadForWorkspace: vi.fn(async () => "thread-1"),
-        refreshThread: vi.fn(async () => null),
-        forkThreadForWorkspace: vi.fn(async () => null),
-        updateThreadParent: vi.fn(),
-      }),
-    );
 
-    await act(async () => {
-      await result.current.sendUserMessage("hello $calendar", [], [
-        { name: "Calendar App", path: "app://connector_calendar" },
-      ]);
-    });
-
-    expect(sendUserMessageService).toHaveBeenCalledWith(
-      "ws-1",
-      "thread-1",
-      "hello $calendar",
-      expect.objectContaining({
-        appMentions: [{ name: "Calendar App", path: "app://connector_calendar" }],
-      }),
-    );
-  });
 
   it("forwards the selected service tier to turn/start", async () => {
     const { result } = renderHook(() =>
@@ -222,7 +172,7 @@ describe("useThreadMessaging telemetry", () => {
         customPrompts: [],
         threadStatusById: {},
         activeTurnIdByThread: {},
-        rateLimitsByWorkspace: {},
+
         pendingInterruptsRef: { current: new Set<string>() },
         dispatch: vi.fn(),
         getCustomName: vi.fn(() => undefined),
@@ -270,7 +220,7 @@ describe("useThreadMessaging telemetry", () => {
         customPrompts: [],
         threadStatusById: {},
         activeTurnIdByThread: {},
-        rateLimitsByWorkspace: {},
+
         pendingInterruptsRef: { current: new Set<string>() },
         dispatch: vi.fn(),
         getCustomName: vi.fn(() => undefined),
@@ -318,7 +268,7 @@ describe("useThreadMessaging telemetry", () => {
         customPrompts: [],
         threadStatusById: {},
         activeTurnIdByThread: {},
-        rateLimitsByWorkspace: {},
+
         pendingInterruptsRef: { current: new Set<string>() },
         dispatch: vi.fn(),
         getCustomName: vi.fn(() => undefined),
@@ -367,7 +317,7 @@ describe("useThreadMessaging telemetry", () => {
         customPrompts: [],
         threadStatusById: {},
         activeTurnIdByThread: {},
-        rateLimitsByWorkspace: {},
+
         pendingInterruptsRef: { current: new Set<string>() },
         dispatch,
         getCustomName: vi.fn(() => undefined),
@@ -425,7 +375,7 @@ describe("useThreadMessaging telemetry", () => {
         activeTurnIdByThread: {
           "thread-1": "turn-1",
         },
-        rateLimitsByWorkspace: {},
+
         pendingInterruptsRef: { current: new Set<string>() },
         dispatch,
         getCustomName: vi.fn(() => undefined),
@@ -498,7 +448,7 @@ describe("useThreadMessaging telemetry", () => {
         activeTurnIdByThread: {
           "thread-1": "turn-1",
         },
-        rateLimitsByWorkspace: {},
+
         pendingInterruptsRef: { current: new Set<string>() },
         dispatch: vi.fn(),
         getCustomName: vi.fn(() => undefined),
@@ -569,7 +519,7 @@ describe("useThreadMessaging telemetry", () => {
         activeTurnIdByThread: {
           "thread-1": "turn-1",
         },
-        rateLimitsByWorkspace: {},
+
         pendingInterruptsRef: { current: new Set<string>() },
         dispatch: vi.fn(),
         getCustomName: vi.fn(() => undefined),
@@ -640,7 +590,7 @@ describe("useThreadMessaging telemetry", () => {
         activeTurnIdByThread: {
           "thread-1": "turn-1",
         },
-        rateLimitsByWorkspace: {},
+
         pendingInterruptsRef: { current: new Set<string>() },
         dispatch: vi.fn(),
         getCustomName: vi.fn(() => undefined),
@@ -696,7 +646,7 @@ describe("useThreadMessaging telemetry", () => {
         customPrompts: [],
         threadStatusById: {},
         activeTurnIdByThread: {},
-        rateLimitsByWorkspace: {},
+
         pendingInterruptsRef: { current: new Set<string>() },
         dispatch: vi.fn(),
         getCustomName: vi.fn(() => undefined),
@@ -750,7 +700,7 @@ describe("useThreadMessaging telemetry", () => {
         customPrompts: [],
         threadStatusById: {},
         activeTurnIdByThread: {},
-        rateLimitsByWorkspace: {},
+
         pendingInterruptsRef: { current: new Set<string>() },
         dispatch: vi.fn(),
         getCustomName: vi.fn(() => undefined),
@@ -781,5 +731,47 @@ describe("useThreadMessaging telemetry", () => {
       "thread-review-1",
       "Review abcdef1: Tighten sidebar commit…",
     );
+  });
+  it("confirms codex cross-provider forks with the latest token estimate", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const fork = vi.fn(async () => "forked");
+    const usage = { totalTokens: 1234, inputTokens: 1000, cachedInputTokens: 0, outputTokens: 234, reasoningOutputTokens: 0 };
+    const { result } = renderHook(() => useThreadMessaging({
+      activeWorkspace: workspace, activeThreadId: "thread-1",
+      model: "second/model", steerEnabled: true, customPrompts: [],
+      threadsByWorkspace: { [workspace.id]: [{ id: "thread-1", name: "Thread", updatedAt: 0, engine: "codex", modelProvider: "first" }] },
+      tokenUsageByThread: { "thread-1": { last: usage, total: usage, modelContextWindow: 10000 } },
+      threadStatusById: {}, activeTurnIdByThread: {}, pendingInterruptsRef: { current: new Set() },
+      dispatch: vi.fn(), getCustomName: vi.fn(), markProcessing: vi.fn(), markReviewing: vi.fn(),
+      setActiveTurnId: vi.fn(), recordThreadActivity: vi.fn(), safeMessageActivity: vi.fn(), pushThreadErrorMessage: vi.fn(),
+      ensureThreadForActiveWorkspace: vi.fn(async () => "thread-1"), ensureThreadForWorkspace: vi.fn(async () => "thread-1"),
+      refreshThread: vi.fn(async () => null), forkThreadForWorkspace: fork, updateThreadParent: vi.fn(),
+    }));
+    await act(async () => { await result.current.sendUserMessage("hello"); });
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("~1,234 tokens re-sent"));
+    expect(fork).toHaveBeenCalledWith(workspace.id, "thread-1", { activate: true, model: "second/model" });
+    expect(sendUserMessageService).toHaveBeenCalledWith(workspace.id, "forked", "hello", expect.objectContaining({ model: "second/model" }));
+    confirm.mockRestore();
+  });
+  it("switches pi providers in place on the next turn without a fork dialog", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const fork = vi.fn(async () => "forked");
+    const usage = { totalTokens: 1234, inputTokens: 1000, cachedInputTokens: 0, outputTokens: 234, reasoningOutputTokens: 0 };
+    const { result } = renderHook(() => useThreadMessaging({
+      activeWorkspace: workspace, activeThreadId: "thread-1",
+      model: "second/model", steerEnabled: true, customPrompts: [],
+      threadsByWorkspace: { [workspace.id]: [{ id: "thread-1", name: "Thread", updatedAt: 0, engine: "pi", modelProvider: "first" }] },
+      tokenUsageByThread: { "thread-1": { last: usage, total: usage, modelContextWindow: 10000 } },
+      threadStatusById: {}, activeTurnIdByThread: {}, pendingInterruptsRef: { current: new Set() },
+      dispatch: vi.fn(), getCustomName: vi.fn(), markProcessing: vi.fn(), markReviewing: vi.fn(),
+      setActiveTurnId: vi.fn(), recordThreadActivity: vi.fn(), safeMessageActivity: vi.fn(), pushThreadErrorMessage: vi.fn(),
+      ensureThreadForActiveWorkspace: vi.fn(async () => "thread-1"), ensureThreadForWorkspace: vi.fn(async () => "thread-1"),
+      refreshThread: vi.fn(async () => null), forkThreadForWorkspace: fork, updateThreadParent: vi.fn(),
+    }));
+    await act(async () => { await result.current.sendUserMessage("hello"); });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(fork).not.toHaveBeenCalled();
+    expect(sendUserMessageService).toHaveBeenCalledWith(workspace.id, "thread-1", "hello", expect.objectContaining({ model: "second/model" }));
+    confirm.mockRestore();
   });
 });

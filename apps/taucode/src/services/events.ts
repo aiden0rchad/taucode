@@ -1,3 +1,4 @@
+import type { CodegraphStatus } from "@services/tauri";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AppServerEvent,
@@ -367,4 +368,15 @@ export function subscribeMenuComposerCycleCollaboration(
   return menuComposerCycleCollaborationHub.subscribe(() => {
     onEvent();
   }, options);
+}
+
+export function subscribeCodegraphStatus(onStatus: (workspaceId: string, status: CodegraphStatus) => void): Unsubscribe {
+  return subscribeAppServerEvents((event) => {
+    if (event.message.method !== "codegraph/status") return;
+    const status = event.message.params as Partial<CodegraphStatus> | undefined;
+    if (status && typeof status.detail === "string" &&
+      ["indexing", "ready", "failed", "unavailable", "disabled"].includes(status.state ?? "")) {
+      onStatus(event.workspace_id, status as CodegraphStatus);
+    }
+  });
 }

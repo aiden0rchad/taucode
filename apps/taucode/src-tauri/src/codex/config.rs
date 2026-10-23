@@ -14,10 +14,6 @@ pub(crate) fn read_unified_exec_enabled() -> Result<Option<bool>, String> {
     read_feature_flag("unified_exec")
 }
 
-pub(crate) fn read_apps_enabled() -> Result<Option<bool>, String> {
-    read_feature_flag("apps")
-}
-
 pub(crate) fn read_personality() -> Result<Option<String>, String> {
     let Some(root) = resolve_default_codex_home() else {
         return Ok(None);
@@ -38,12 +34,11 @@ pub(crate) fn write_unified_exec_enabled(enabled: bool) -> Result<(), String> {
     write_feature_flag("unified_exec", enabled)
 }
 
-pub(crate) fn write_apps_enabled(enabled: bool) -> Result<(), String> {
-    write_feature_flag("apps", enabled)
-}
-
 pub(crate) fn write_feature_enabled(feature_key: &str, enabled: bool) -> Result<(), String> {
     let key = feature_key.trim();
+    if matches!(key, "apps" | "plugins") {
+        return Err("Account-backed apps and plugins are disabled in taucode".into());
+    }
     if key.is_empty() {
         return Err("feature key is empty".to_string());
     }

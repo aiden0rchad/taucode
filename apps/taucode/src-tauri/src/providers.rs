@@ -1,0 +1,109 @@
+use crate::{
+    remote_backend,
+    shared::providers::{self, KeyStore},
+    state::AppState,
+};
+use serde_json::{json, Value};
+use tauri::{AppHandle, State};
+#[tauri::command]
+pub(crate) async fn provider_test_and_fetch(
+    id: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Value, String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        return remote_backend::call_remote(
+            &*state,
+            app,
+            "provider_test_and_fetch",
+            json!({"id":id}),
+        )
+        .await;
+    }
+    providers::test_and_fetch(id, &state.app_settings, &state.settings_path).await
+}
+#[tauri::command]
+pub(crate) async fn provider_set_api_key(
+    id: String,
+    key: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        let result = remote_backend::call_remote(
+            &*state,
+            app,
+            "provider_set_api_key",
+            json!({"id":id,"key":key}),
+        )
+        .await?;
+        return serde_json::from_value(result).map_err(|_| "Invalid provider response".into());
+    }
+    if !state
+        .app_settings
+        .lock()
+        .await
+        .providers
+        .iter()
+        .any(|p| p.id == id)
+    {
+        return Err("Provider not found".into());
+    }
+    providers::Keychain.set(&id, &key)?;
+    for session in state.sessions.lock().await.values() {
+        session.credentials_changed().await;
+    }
+    Ok(())
+}
+#[tauri::command]
+pub(crate) async fn provider_has_api_key(
+    id: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<bool, String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        let result =
+            remote_backend::call_remote(&*state, app, "provider_has_api_key", json!({"id":id}))
+                .await?;
+        return serde_json::from_value(result).map_err(|_| "Invalid provider response".into());
+    }
+    if !state
+        .app_settings
+        .lock()
+        .await
+        .providers
+        .iter()
+        .any(|p| p.id == id)
+    {
+        return Err("Provider not found".into());
+    }
+    Ok(providers::Keychain.get(&id)?.is_some())
+}
+#[tauri::command]
+pub(crate) async fn provider_delete_api_key(
+    id: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        let result =
+            remote_backend::call_remote(&*state, app, "provider_delete_api_key", json!({"id":id}))
+                .await?;
+        return serde_json::from_value(result).map_err(|_| "Invalid provider response".into());
+    }
+    if !state
+        .app_settings
+        .lock()
+        .await
+        .providers
+        .iter()
+        .any(|p| p.id == id)
+    {
+        return Err("Provider not found".into());
+    }
+    providers::Keychain.delete(&id)?;
+    for session in state.sessions.lock().await.values() {
+        session.credentials_changed().await;
+    }
+    Ok(())
+}

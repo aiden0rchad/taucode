@@ -10,6 +10,7 @@ import type {
 import {
   SettingsSection,
   SettingsToggleRow,
+  SettingsToggleSwitch,
 } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { FileEditorCard } from "@/features/shared/components/FileEditorCard";
 
@@ -232,6 +233,11 @@ export function SettingsCodexSection({
       title="Codex"
       subtitle="Configure the Codex CLI used by taucode and validate the install."
     >
+      <SettingsToggleRow title="CodeGraph" subtitle="Give agents a private code index with compaction-safe deduplication. Changes apply on the next app-server spawn.">
+        <SettingsToggleSwitch aria-label="Enable CodeGraph" pressed={appSettings.mcpServers?.find(s => s.id === "codegraph")?.enabled ?? appSettings.codegraphEnabled ?? true}
+          onClick={() => { const enabled = !(appSettings.mcpServers?.find(s => s.id === "codegraph")?.enabled ?? appSettings.codegraphEnabled ?? true); void onUpdateAppSettings({ ...appSettings, codegraphEnabled: enabled, mcpServers: [...(appSettings.mcpServers ?? []).filter(s => s.id !== "codegraph"), { ...(appSettings.mcpServers?.find(s => s.id === "codegraph") ?? { id: "codegraph", name: "CodeGraph" }), enabled }] }); }} />
+      </SettingsToggleRow>
+
       <div className="settings-field">
         <label className="settings-field-label" htmlFor="codex-path">
           Default Codex path
@@ -538,7 +544,7 @@ export function SettingsCodexSection({
         onSave={onSaveGlobalAgents}
         helpText={
           <>
-            Stored at <code>~/.codex/AGENTS.md</code>.
+            Stored in taucode’s managed Codex home.
           </>
         }
         classNames={{
@@ -569,7 +575,7 @@ export function SettingsCodexSection({
         onSave={onSaveGlobalConfig}
         helpText={
           <>
-            Stored at <code>~/.codex/config.toml</code>.
+            Taucode regenerates this file from Providers and Agents settings when Codex starts.
           </>
         }
         classNames={{

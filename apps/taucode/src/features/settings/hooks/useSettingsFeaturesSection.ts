@@ -122,9 +122,6 @@ function mapFeatureToAppSettings(
   featureKey: string,
   enabled: boolean,
 ): AppSettings | null {
-  if (featureKey === "apps") {
-    return { ...appSettings, experimentalAppsEnabled: enabled };
-  }
   if (featureKey === "collaboration_modes") {
     return { ...appSettings, collaborationModesEnabled: enabled };
   }

@@ -5,7 +5,6 @@ import type {
   CollabAgentRef,
   ConversationItem,
   DebugEntry,
-  RateLimitSnapshot,
   TurnPlan,
 } from "@/types";
 import { getAppServerRawMethod, getAppServerParams, IGNORED_APP_SERVER_METHODS } from "@utils/appServerEvents";
@@ -25,7 +24,6 @@ type ThreadEventHandlersOptions = {
   dispatch: Dispatch<ThreadAction>;
   getItemsForThread: (threadId: string) => ConversationItem[];
   planByThreadRef: MutableRefObject<Record<string, TurnPlan | null>>;
-  getCurrentRateLimits?: (workspaceId: string) => RateLimitSnapshot | null;
   getCustomName: (workspaceId: string, threadId: string) => string | undefined;
   isThreadHidden: (workspaceId: string, threadId: string) => boolean;
   setThreadLoaded: (threadId: string, isLoaded: boolean) => void;
@@ -66,7 +64,6 @@ export function useThreadEventHandlers({
   dispatch,
   getItemsForThread,
   planByThreadRef,
-  getCurrentRateLimits,
   getCustomName,
   isThreadHidden,
   setThreadLoaded,
@@ -170,12 +167,10 @@ export function useThreadEventHandlers({
     onTurnPlanUpdated,
     onTurnDiffUpdated,
     onThreadTokenUsageUpdated,
-    onAccountRateLimitsUpdated,
     onTurnError,
   } = useThreadTurnEvents({
     dispatch,
     planByThreadRef,
-    getCurrentRateLimits,
     getCustomName,
     isThreadHidden,
     setThreadLoaded,
@@ -228,6 +223,13 @@ export function useThreadEventHandlers({
           activeFlags: status?.type === "active" ? status.activeFlags ?? [] : [],
         } });
       }
+      if (method === "thread/settings/updated" && typeof params.threadId === "string") {
+        const settings = params.threadSettings as { modelProvider?: string } | undefined;
+        if (typeof settings?.modelProvider === "string") {
+          dispatch({ type: "mergeThreadSummary", workspaceId: event.workspace_id,
+            threadId: params.threadId, patch: { modelProvider: settings.modelProvider } });
+        }
+      }
       if (method === "turn/completed" && typeof params.threadId === "string" && params.turn) {
         dispatch({ type: "setThreadProtocolState", threadId: params.threadId, patch: { lastTurn: params.turn as Turn } });
       }
@@ -274,7 +276,6 @@ export function useThreadEventHandlers({
       onTurnPlanUpdated,
       onTurnDiffUpdated,
       onThreadTokenUsageUpdated,
-      onAccountRateLimitsUpdated,
       onTurnError,
     }),
     [
@@ -307,7 +308,6 @@ export function useThreadEventHandlers({
       onTurnPlanUpdated,
       onTurnDiffUpdated,
       onThreadTokenUsageUpdated,
-      onAccountRateLimitsUpdated,
       onTurnError,
     ],
   );

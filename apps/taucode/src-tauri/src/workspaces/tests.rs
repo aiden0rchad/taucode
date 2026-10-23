@@ -50,6 +50,9 @@ fn workspace_with_id_and_kind(
         parent_id,
         worktree,
         settings: WorkspaceSettings {
+            mcp_servers: Vec::new(),
+            agent_policy: None,
+            codegraph_enabled: None,
             sidebar_collapsed: false,
             sort_order,
             group_id: None,

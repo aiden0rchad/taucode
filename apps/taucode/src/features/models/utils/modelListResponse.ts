@@ -87,6 +87,8 @@ export function parseModelListResponse(response: unknown): ModelOption[] {
       return {
         id: String(record.id ?? record.model ?? ""),
         model: modelSlug,
+        ...(typeof record.providerId === "string" ? { providerId: record.providerId, providerName: String(record.providerName ?? record.providerId), modelId: String(record.modelId ?? "") } : {}),
+        ...(Array.isArray(record.engines) ? { engines: record.engines.filter((v): v is "pi" | "codex" => v === "pi" || v === "codex") } : {}),
         displayName,
         description: String(record.description ?? ""),
         supportedReasoningEfforts: parseReasoningEfforts(record),

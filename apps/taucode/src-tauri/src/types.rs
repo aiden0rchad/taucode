@@ -313,6 +313,12 @@ pub(crate) struct WorkspaceGroup {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub(crate) struct WorkspaceSettings {
+    #[serde(default, rename = "mcpServers")]
+    pub(crate) mcp_servers: Vec<McpServerEntry>,
+    #[serde(default, rename = "agentPolicy")]
+    pub(crate) agent_policy: Option<AgentPolicyOverride>,
+    #[serde(default, rename = "codegraphEnabled")]
+    pub(crate) codegraph_enabled: Option<bool>,
     #[serde(default, rename = "sidebarCollapsed")]
     pub(crate) sidebar_collapsed: bool,
     #[serde(default, rename = "sortOrder")]
@@ -377,6 +383,14 @@ pub(crate) struct RemoteBackendTarget {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct AppSettings {
+    #[serde(default = "default_mcp_servers", rename = "mcpServers")]
+    pub(crate) mcp_servers: Vec<McpServerEntry>,
+    #[serde(default)]
+    pub(crate) providers: Vec<ProviderEntry>,
+    #[serde(default, rename = "agentPolicy")]
+    pub(crate) agent_policy: AgentPolicy,
+    #[serde(default = "default_codegraph_enabled", rename = "codegraphEnabled")]
+    pub(crate) codegraph_enabled: bool,
     #[serde(default, rename = "codexBin")]
     pub(crate) codex_bin: Option<String>,
     #[serde(default, rename = "codexArgs")]
@@ -580,11 +594,6 @@ pub(crate) struct AppSettings {
         alias = "experimentalUnifiedExecEnabled"
     )]
     pub(crate) unified_exec_enabled: bool,
-    #[serde(
-        default = "default_experimental_apps_enabled",
-        rename = "experimentalAppsEnabled"
-    )]
-    pub(crate) experimental_apps_enabled: bool,
     #[serde(default = "default_personality", rename = "personality")]
     pub(crate) personality: String,
     #[serde(default = "default_dictation_enabled", rename = "dictationEnabled")]
@@ -940,10 +949,6 @@ fn default_unified_exec_enabled() -> bool {
     true
 }
 
-fn default_experimental_apps_enabled() -> bool {
-    false
-}
-
 fn default_personality() -> String {
     "friendly".to_string()
 }
@@ -1120,9 +1125,17 @@ fn default_selected_open_app_id() -> String {
     }
 }
 
+fn default_codegraph_enabled() -> bool {
+    true
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            mcp_servers: default_mcp_servers(),
+            providers: Vec::new(),
+            agent_policy: AgentPolicy::default(),
+            codegraph_enabled: true,
             codex_bin: None,
             codex_args: None,
             backend_mode: default_backend_mode(),
@@ -1178,7 +1191,6 @@ impl Default for AppSettings {
             pause_queued_messages_when_response_required:
                 default_pause_queued_messages_when_response_required(),
             unified_exec_enabled: true,
-            experimental_apps_enabled: false,
             personality: default_personality(),
             dictation_enabled: false,
             dictation_model_id: default_dictation_model_id(),
@@ -1342,7 +1354,6 @@ mod tests {
         assert!(settings.composer_follow_up_hint_enabled);
         assert!(settings.pause_queued_messages_when_response_required);
         assert!(settings.unified_exec_enabled);
-        assert!(!settings.experimental_apps_enabled);
         assert_eq!(settings.personality, "friendly");
         assert!(!settings.dictation_enabled);
         assert_eq!(settings.dictation_model_id, "base");
@@ -1415,4 +1426,217 @@ mod tests {
         assert!(settings.group_id.is_none());
         assert!(settings.git_root.is_none());
     }
+}
+// Registry and engine policy are owned by taucode, independent of engine config.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum EngineKind {
+    #[default]
+    Pi,
+    Codex,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ModelRef {
+    pub provider_id: String,
+    pub model_id: String,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ProviderKind {
+    Openai,
+    Anthropic,
+    Google,
+    Openrouter,
+    Groq,
+    Mistral,
+    Xai,
+    Deepseek,
+    Zai,
+    Ollama,
+    Lmstudio,
+    OpenaiCompatible,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ApiStyle {
+    #[default]
+    ChatCompletions,
+    Responses,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub(crate) enum ProviderAuth {
+    #[default]
+    None,
+    ApiKey,
+    Env {
+        var: String,
+    },
+    Command {
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+    },
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProviderModel {
+    pub id: String,
+    pub display_name: Option<String>,
+    pub enabled: bool,
+    pub context_window: Option<u64>,
+    pub supports_tools: Option<bool>,
+    pub supports_images: Option<bool>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProviderEntry {
+    pub id: String,
+    pub name: String,
+    pub kind: ProviderKind,
+    pub base_url: Option<String>,
+    pub api_style: Option<ApiStyle>,
+    #[serde(default)]
+    pub auth: ProviderAuth,
+    #[serde(default)]
+    pub models: Vec<ProviderModel>,
+    pub models_fetched_at: Option<u64>,
+    pub enabled: bool,
+    #[serde(default)]
+    pub extra_headers: std::collections::BTreeMap<String, String>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ToolAccess {
+    ReadOnly,
+    Full,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AgentRole {
+    pub name: String,
+    pub description: String,
+    pub model: Option<ModelRef>,
+    pub tool_access: ToolAccess,
+    pub instructions: String,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default, rename_all = "camelCase")]
+pub(crate) struct SubagentPolicy {
+    pub enabled: bool,
+    pub max_concurrent: u8,
+    pub max_per_turn: u8,
+    pub max_depth: u8,
+    pub allowed_models: Vec<ModelRef>,
+    pub default_model: Option<ModelRef>,
+    pub roles: Vec<AgentRole>,
+}
+impl Default for SubagentPolicy {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_concurrent: 4,
+            max_per_turn: 8,
+            max_depth: 1,
+            allowed_models: vec![],
+            default_model: None,
+            roles: [
+                ("scout", "Explore quickly", ToolAccess::ReadOnly),
+                ("planner", "Plan changes", ToolAccess::ReadOnly),
+                ("worker", "Implement changes", ToolAccess::Full),
+            ]
+            .into_iter()
+            .map(|(name, description, tool_access)| AgentRole {
+                name: name.into(),
+                description: description.into(),
+                tool_access,
+                model: None,
+                instructions: String::new(),
+            })
+            .collect(),
+        }
+    }
+}
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub(crate) struct AgentPolicy {
+    pub default_model: Option<ModelRef>,
+    pub default_engine: EngineKind,
+    pub subagents: SubagentPolicy,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub(crate) struct SubagentPolicyOverride {
+    pub enabled: Option<bool>,
+    pub max_concurrent: Option<u8>,
+    pub max_per_turn: Option<u8>,
+    pub max_depth: Option<u8>,
+    pub allowed_models: Option<Vec<ModelRef>>,
+    pub default_model: Option<ModelRef>,
+    pub roles: Option<Vec<AgentRole>>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub(crate) struct AgentPolicyOverride {
+    pub default_model: Option<ModelRef>,
+    pub default_engine: Option<EngineKind>,
+    pub subagents: Option<SubagentPolicyOverride>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(untagged, deny_unknown_fields)]
+pub(crate) enum McpCredential {
+    Value { value: String },
+    Secret { secret: bool },
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
+pub(crate) enum McpTransport {
+    Stdio {
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+        cwd: Option<String>,
+        #[serde(default)]
+        env: std::collections::BTreeMap<String, McpCredential>,
+    },
+    Http {
+        url: String,
+        #[serde(default)]
+        headers: std::collections::BTreeMap<String, McpCredential>,
+        bearer: Option<McpCredential>,
+    },
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum McpApproval {
+    #[default]
+    Auto,
+    Ask,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct McpServerEntry {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    pub enabled: bool,
+    pub transport: Option<McpTransport>,
+    pub tool_allowlist: Option<Vec<String>>,
+    pub tool_denylist: Option<Vec<String>>,
+    #[serde(default)]
+    pub approval: McpApproval,
+}
+
+pub(crate) fn default_mcp_servers() -> Vec<McpServerEntry> {
+    vec![McpServerEntry {
+        id: "codegraph".into(),
+        name: "CodeGraph".into(),
+        enabled: true,
+        transport: None,
+        tool_allowlist: None,
+        tool_denylist: None,
+        approval: McpApproval::Auto,
+    }]
 }

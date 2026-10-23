@@ -19,6 +19,16 @@ vi.mock("@utils/approvalRules", () => ({
 }));
 
 describe("useThreadApprovalEvents", () => {
+  it("keeps pi protected-path requests interactive despite a Codex allowlist", () => {
+    const dispatch = vi.fn();
+    const approval: ApprovalRequest = { workspace_id: "ws-1", request_id: "pi:thread:approval", method: "item/commandExecution/requestApproval", params: { command: "git status" } };
+    vi.mocked(getApprovalCommandInfo).mockReturnValue({ tokens: ["git", "status"], preview: "git status" });
+    vi.mocked(matchesCommandPrefix).mockReturnValue(true);
+    const { result } = renderHook(() => useThreadApprovalEvents({ dispatch, approvalAllowlistRef: { current: { "ws-1": [["git", "status"]] } } }));
+    act(() => result.current(approval));
+    expect(dispatch).toHaveBeenCalledWith({ type: "addApproval", approval });
+    expect(respondToServerRequest).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
   });

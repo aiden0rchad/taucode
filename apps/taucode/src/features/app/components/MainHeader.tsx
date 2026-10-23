@@ -20,6 +20,7 @@ import type { WorkspaceLaunchScriptsState } from "../hooks/useWorkspaceLaunchScr
 import { useMenuController } from "../hooks/useMenuController";
 
 type MainHeaderProps = {
+  engine?: import("@/types").EngineKind;
   workspace: WorkspaceInfo;
   parentName?: string | null;
   worktreeLabel?: string | null;
@@ -73,6 +74,7 @@ type MainHeaderProps = {
 };
 
 export function MainHeader({
+  engine,
   workspace,
   parentName = null,
   worktreeLabel = null,
@@ -190,6 +192,7 @@ export function MainHeader({
         <div className="workspace-title-line">
           <span className="workspace-title">
             {parentName ? parentName : workspace.name}
+            {engine && <span className="engine-badge">{engine}</span>}
           </span>
           <span className="workspace-separator" aria-hidden>
             ›

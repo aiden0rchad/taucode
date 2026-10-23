@@ -23,7 +23,7 @@ describe("useModels", () => {
     vi.clearAllMocks();
   });
 
-  it("adds the config model when it is missing from model/list", async () => {
+  it("does not add config models outside the registry", async () => {
     vi.mocked(getModelList).mockResolvedValueOnce({
       result: {
         data: [
@@ -47,11 +47,9 @@ describe("useModels", () => {
     await waitFor(() => expect(result.current.models.length).toBeGreaterThan(0));
 
     expect(getConfigModel).toHaveBeenCalledWith("workspace-1");
-    expect(result.current.models[0]).toMatchObject({
-      id: "custom-model",
-      model: "custom-model",
-    });
-    expect(result.current.selectedModel?.model).toBe("custom-model");
+    expect(result.current.models).toHaveLength(1);
+    expect(result.current.models[0]).toMatchObject({ id: "remote-1", model: "gpt-5.1" });
+    expect(result.current.selectedModel?.model).toBe("gpt-5.1");
     expect(result.current.reasoningSupported).toBe(false);
   });
 
@@ -90,6 +88,7 @@ describe("useModels", () => {
     vi.mocked(getModelList).mockResolvedValueOnce({
       result: {
         data: [
+          { id: "custom-model", model: "custom-model", displayName: "Custom", supportedReasoningEfforts: [], defaultReasoningEffort: null, isDefault: false },
           {
             id: "remote-1",
             model: "gpt-5.1",

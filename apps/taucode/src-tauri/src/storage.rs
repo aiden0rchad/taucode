@@ -157,6 +157,11 @@ pub(crate) fn read_settings(path: &PathBuf) -> Result<AppSettings, String> {
     }
     let data = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     let mut value: Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
+    if value.get("mcpServers").is_none() {
+        let mut servers = crate::types::default_mcp_servers();
+        servers[0].enabled = value["codegraphEnabled"].as_bool().unwrap_or(true);
+        value["mcpServers"] = serde_json::to_value(servers).map_err(|e| e.to_string())?;
+    }
     migrate_follow_up_message_behavior(&mut value);
     match serde_json::from_value(value.clone()) {
         Ok(settings) => Ok(finalize_loaded_settings(path, settings)),
@@ -320,7 +325,10 @@ mod tests {
         let persisted_entries: Vec<WorkspaceEntry> =
             serde_json::from_str(&persisted).expect("deserialize persisted workspaces");
         assert_eq!(persisted_entries.len(), 1);
-        assert_eq!(persisted_entries[0].path, r"\\?\I:\gpt-projects\json-composer");
+        assert_eq!(
+            persisted_entries[0].path,
+            r"\\?\I:\gpt-projects\json-composer"
+        );
     }
 
     #[test]

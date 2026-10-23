@@ -1,13 +1,11 @@
 import type {
   AccessMode,
-  AppMention,
+
   ComposerSendIntent,
-  RateLimitSnapshot,
   ReviewTarget,
   ServiceTier,
 } from "@/types";
 import { clampThreadName } from "@threads/utils/threadNaming";
-import { formatRelativeTime } from "@utils/time";
 
 export type SendMessageOptions = {
   skipPromptExpansion?: boolean;
@@ -16,7 +14,7 @@ export type SendMessageOptions = {
   serviceTier?: ServiceTier | null | undefined;
   collaborationMode?: Record<string, unknown> | null;
   accessMode?: AccessMode;
-  appMentions?: AppMention[];
+
   sendIntent?: ComposerSendIntent;
 };
 
@@ -42,7 +40,7 @@ export type ResolvedSendMessageOptions = {
   resolvedServiceTier?: ServiceTier | null | undefined;
   sanitizedCollaborationMode: Record<string, unknown> | null;
   resolvedAccessMode?: AccessMode;
-  appMentions: AppMention[];
+
   sendIntent: ComposerSendIntent;
   shouldSteer: boolean;
   requestMode: "start" | "steer";
@@ -55,7 +53,7 @@ export type TurnStartPayload = {
   collaborationMode?: Record<string, unknown> | null;
   accessMode?: AccessMode;
   images?: string[];
-  appMentions?: AppMention[];
+
 };
 
 export function buildReviewThreadTitle(target: ReviewTarget): string | null {
@@ -129,7 +127,6 @@ export function resolveSendMessageOptions({
       : null;
   const resolvedAccessMode =
     options?.accessMode !== undefined ? options.accessMode : defaults.accessMode;
-  const appMentions = options?.appMentions ?? [];
   const sendIntent = options?.sendIntent ?? "default";
   const canSteerCurrentTurn =
     defaults.isProcessing && defaults.steerEnabled && Boolean(defaults.activeTurnId);
@@ -146,7 +143,7 @@ export function resolveSendMessageOptions({
     resolvedServiceTier,
     sanitizedCollaborationMode,
     resolvedAccessMode,
-    appMentions,
+
     sendIntent,
     shouldSteer,
     requestMode: shouldSteer ? "steer" : "start",
@@ -160,7 +157,7 @@ export function buildTurnStartPayload({
   collaborationMode,
   accessMode,
   images,
-  appMentions,
+
 }: {
   model?: string | null;
   effort?: string | null;
@@ -168,7 +165,7 @@ export function buildTurnStartPayload({
   collaborationMode?: Record<string, unknown> | null;
   accessMode?: AccessMode;
   images: string[];
-  appMentions: AppMention[];
+
 }): TurnStartPayload {
   const payload: TurnStartPayload = {
     model,
@@ -180,23 +177,10 @@ export function buildTurnStartPayload({
   if (serviceTier !== undefined) {
     payload.serviceTier = serviceTier;
   }
-  if (appMentions.length > 0) {
-    payload.appMentions = appMentions;
-  }
   return payload;
 }
 
-function normalizeReset(value?: number | null): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return null;
-  }
-  return value > 1_000_000_000_000 ? value : value * 1000;
-}
 
-function resetLabel(value?: number | null): string | null {
-  const resetAt = normalizeReset(value);
-  return resetAt ? formatRelativeTime(resetAt) : null;
-}
 
 function getCollaborationModeId(
   collaborationMode?: Record<string, unknown> | null,
@@ -220,14 +204,12 @@ export function buildStatusLines({
   effort,
   accessMode,
   collaborationMode,
-  rateLimits,
 }: {
   model?: string | null;
   serviceTier?: ServiceTier | null | undefined;
   effort?: string | null;
   accessMode?: AccessMode;
   collaborationMode?: Record<string, unknown> | null;
-  rateLimits: RateLimitSnapshot | null;
 }): string[] {
   const lines = [
     "Session status:",
@@ -237,35 +219,6 @@ export function buildStatusLines({
     `- Access: ${accessMode ?? "current"}`,
     `- Collaboration: ${getCollaborationModeId(collaborationMode) || "off"}`,
   ];
-
-  const primaryUsed = rateLimits?.primary?.usedPercent;
-  const secondaryUsed = rateLimits?.secondary?.usedPercent;
-
-  if (typeof primaryUsed === "number") {
-    const reset = resetLabel(rateLimits?.primary?.resetsAt);
-    lines.push(
-      `- Session usage: ${Math.round(primaryUsed)}%${
-        reset ? ` (resets ${reset})` : ""
-      }`,
-    );
-  }
-  if (typeof secondaryUsed === "number") {
-    const reset = resetLabel(rateLimits?.secondary?.resetsAt);
-    lines.push(
-      `- Weekly usage: ${Math.round(secondaryUsed)}%${
-        reset ? ` (resets ${reset})` : ""
-      }`,
-    );
-  }
-
-  const credits = rateLimits?.credits ?? null;
-  if (credits?.hasCredits) {
-    if (credits.unlimited) {
-      lines.push("- Credits: unlimited");
-    } else if (credits.balance) {
-      lines.push(`- Credits: ${credits.balance}`);
-    }
-  }
 
   return lines;
 }
@@ -284,6 +237,11 @@ export function buildMcpStatusLines(
   );
   for (const server of servers) {
     const name = String(server.name ?? "unknown");
+    if (typeof server.enabled === "boolean") {
+      lines.push(`- ${name} (${server.enabled ? "enabled" : "disabled"}; approval: ${server.approval ?? "auto"})`);
+      lines.push("  Test connection and view tools in Settings → Connectors.");
+      continue;
+    }
     const authStatus = server.authStatus ?? server.auth_status ?? null;
     const authLabel =
       typeof authStatus === "string"
@@ -317,43 +275,6 @@ export function buildMcpStatusLines(
         : 0;
     if (resources > 0 || templates > 0) {
       lines.push(`  resources: ${resources}, templates: ${templates}`);
-    }
-  }
-
-  return lines;
-}
-
-export function buildAppsLines(data: Array<Record<string, unknown>>): string[] {
-  const lines: string[] = ["Apps:"];
-  if (data.length === 0) {
-    lines.push("- No apps available.");
-    return lines;
-  }
-
-  const apps = [...data].sort((a, b) =>
-    String(a.name ?? "").localeCompare(String(b.name ?? "")),
-  );
-  for (const app of apps) {
-    const name = String(app.name ?? app.id ?? "unknown");
-    const appId = String(app.id ?? "");
-    const isAccessible = Boolean(app.isAccessible ?? app.is_accessible ?? false);
-    const status = isAccessible ? "connected" : "can be installed";
-    const description =
-      typeof app.description === "string" && app.description.trim().length > 0
-        ? app.description.trim()
-        : "";
-    lines.push(
-      `- ${name}${appId ? ` (${appId})` : ""} — ${status}${description ? `: ${description}` : ""}`,
-    );
-
-    const installUrl =
-      typeof app.installUrl === "string"
-        ? app.installUrl
-        : typeof app.install_url === "string"
-          ? app.install_url
-          : "";
-    if (!isAccessible && installUrl) {
-      lines.push(`  install: ${installUrl}`);
     }
   }
 

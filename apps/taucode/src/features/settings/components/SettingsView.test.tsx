@@ -43,6 +43,7 @@ vi.mock("@services/tauri", async () => {
     getAgentsSettings: vi.fn(),
     isMobileRuntime: vi.fn(),
     listWorkspaces: vi.fn(),
+    codegraphStatus: vi.fn().mockResolvedValue({ state: "ready", detail: "Private index is ready." }),
   };
 });
 
@@ -68,6 +69,7 @@ getAgentsSettingsMock.mockResolvedValue({
 });
 
 const baseSettings: AppSettings = {
+  codegraphEnabled: true,
   codexBin: null,
   codexArgs: null,
   backendMode: "local",
@@ -109,7 +111,7 @@ const baseSettings: AppSettings = {
   lastComposerReasoningEffort: null,
   uiScale: 1,
   theme: "system",
-  usageShowRemaining: false,
+
   showMessageFilePath: true,
   chatHistoryScrollbackItems: 200,
   threadTitleAutogenerationEnabled: false,
@@ -133,7 +135,7 @@ const baseSettings: AppSettings = {
   composerFollowUpHintEnabled: true,
   pauseQueuedMessagesWhenResponseRequired: true,
   unifiedExecEnabled: true,
-  experimentalAppsEnabled: false,
+
   personality: "friendly",
   dictationEnabled: false,
   dictationModelId: "base",
@@ -522,30 +524,6 @@ describe("SettingsView Display", () => {
     });
   });
 
-  it("toggles remaining limits display", async () => {
-    const onUpdateAppSettings = vi.fn().mockResolvedValue(undefined);
-    renderDisplaySection({ onUpdateAppSettings });
-
-    const row = screen
-      .getByText("Show remaining Codex limits")
-      .closest(".settings-toggle-row") as HTMLElement | null;
-    if (!row) {
-      throw new Error("Expected remaining limits row");
-    }
-    const toggle = row.querySelector(
-      "button.settings-toggle",
-    ) as HTMLButtonElement | null;
-    if (!toggle) {
-      throw new Error("Expected remaining limits toggle");
-    }
-    fireEvent.click(toggle);
-
-    await waitFor(() => {
-      expect(onUpdateAppSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ usageShowRemaining: true }),
-      );
-    });
-  });
 
   it("toggles file path visibility in messages", async () => {
     const onUpdateAppSettings = vi.fn().mockResolvedValue(undefined);
@@ -1079,7 +1057,7 @@ describe("SettingsView Environments", () => {
 });
 
 describe("SettingsView Codex section", () => {
-  it("updates review mode in codex section", async () => {
+  it("updates CodeGraph and review mode in codex section", async () => {
     cleanup();
     const onUpdateAppSettings = vi.fn().mockResolvedValue(undefined);
     render(
@@ -1114,6 +1092,12 @@ describe("SettingsView Codex section", () => {
         initialSection="codex"
       />,
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "Enable CodeGraph" }));
+    await waitFor(() => expect(onUpdateAppSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ codegraphEnabled: false }),
+    ));
+    expect(screen.getByText(/Changes apply on the next app-server spawn/)).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Review mode"), {
       target: { value: "detached" },

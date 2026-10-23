@@ -1,7 +1,5 @@
 import type {
-  CreditsSnapshot,
-  RateLimitWindow,
-  RateLimitSnapshot,
+
   ReviewTarget,
   ThreadTokenUsage,
   TurnPlan,
@@ -26,117 +24,11 @@ function asNumber(value: unknown): number {
   return 0;
 }
 
-function asFiniteNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-  return null;
-}
 
-function clampPercent(value: number): number {
-  return Math.min(Math.max(value, 0), 100);
-}
 
-function hasOwn(source: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(source, key);
-}
 
-function readOptionalNumber(
-  candidate: unknown,
-  fallback: number | null,
-): number | null {
-  const parsed = asFiniteNumber(candidate);
-  return parsed !== null ? parsed : fallback;
-}
 
-function normalizeRateLimitWindow(
-  source: Record<string, unknown>,
-  previousWindow: RateLimitWindow | null,
-): RateLimitWindow | null {
-  const directUsed = asFiniteNumber(source.usedPercent ?? source.used_percent);
-  const remaining = asFiniteNumber(
-    source.remainingPercent ?? source.remaining_percent ?? source.remaining,
-  );
 
-  let usedPercent: number | null = null;
-  if (directUsed !== null) {
-    usedPercent = clampPercent(directUsed);
-  } else if (remaining !== null) {
-    usedPercent = clampPercent(100 - remaining);
-  } else if (previousWindow) {
-    usedPercent = previousWindow.usedPercent;
-  }
-
-  if (usedPercent === null) {
-    return null;
-  }
-
-  return {
-    usedPercent,
-    windowDurationMins: readOptionalNumber(
-      source.windowDurationMins ?? source.window_duration_mins,
-      previousWindow?.windowDurationMins ?? null,
-    ),
-    resetsAt: readOptionalNumber(
-      source.resetsAt ?? source.resets_at,
-      previousWindow?.resetsAt ?? null,
-    ),
-  };
-}
-
-function normalizeCreditsSnapshot(
-  source: Record<string, unknown>,
-  previousCredits: CreditsSnapshot | null,
-): CreditsSnapshot {
-  const hasCreditsRaw = source.hasCredits ?? source.has_credits;
-  const unlimitedRaw = source.unlimited;
-  const balanceRaw = source.balance;
-  const normalizedUnlimited =
-    typeof unlimitedRaw === "boolean"
-      ? unlimitedRaw
-      : previousCredits?.unlimited ?? false;
-  const balanceHasExplicitValue = hasOwn(source, "balance");
-  const normalizedBalance =
-    typeof balanceRaw === "string"
-      ? balanceRaw
-      : typeof balanceRaw === "number" && Number.isFinite(balanceRaw)
-        ? String(balanceRaw)
-        : balanceRaw === null
-          ? null
-          : previousCredits?.balance ?? null;
-  const explicitBalanceHasCredits =
-    balanceRaw === null
-      ? false
-      : typeof balanceRaw === "string"
-        ? (() => {
-            const parsed = Number.parseFloat(balanceRaw.trim());
-            return Number.isFinite(parsed) ? parsed > 0 : null;
-          })()
-        : typeof balanceRaw === "number" && Number.isFinite(balanceRaw)
-          ? balanceRaw > 0
-          : null;
-  const inferredHasCredits =
-    normalizedUnlimited
-      ? true
-      : balanceHasExplicitValue
-        ? explicitBalanceHasCredits
-        : null;
-
-  return {
-    hasCredits:
-      typeof hasCreditsRaw === "boolean"
-        ? hasCreditsRaw
-        : inferredHasCredits ?? previousCredits?.hasCredits ?? false,
-    unlimited: normalizedUnlimited,
-    balance: normalizedBalance,
-  };
-}
 
 export function normalizeStringList(value: unknown) {
   if (Array.isArray(value)) {
@@ -250,71 +142,7 @@ export function normalizeTokenUsage(
   };
 }
 
-export function normalizeRateLimits(
-  raw: Record<string, unknown>,
-  previous: RateLimitSnapshot | null = null,
-): RateLimitSnapshot {
-  const previousPrimary = previous?.primary ?? null;
-  const previousSecondary = previous?.secondary ?? null;
-  const previousCredits = previous?.credits ?? null;
 
-  const primary =
-    hasOwn(raw, "primary")
-      ? raw.primary === null
-        ? null
-        : raw.primary &&
-            typeof raw.primary === "object" &&
-            !Array.isArray(raw.primary)
-          ? normalizeRateLimitWindow(
-              raw.primary as Record<string, unknown>,
-              previousPrimary,
-            )
-          : previousPrimary
-      : previousPrimary;
-
-  const secondary =
-    hasOwn(raw, "secondary")
-      ? raw.secondary === null
-        ? null
-        : raw.secondary &&
-            typeof raw.secondary === "object" &&
-            !Array.isArray(raw.secondary)
-          ? normalizeRateLimitWindow(
-              raw.secondary as Record<string, unknown>,
-              previousSecondary,
-            )
-          : previousSecondary
-      : previousSecondary;
-
-  const credits =
-    hasOwn(raw, "credits")
-      ? raw.credits === null
-        ? null
-        : raw.credits &&
-            typeof raw.credits === "object" &&
-            !Array.isArray(raw.credits)
-          ? normalizeCreditsSnapshot(
-              raw.credits as Record<string, unknown>,
-              previousCredits,
-            )
-          : previousCredits
-      : previousCredits;
-
-  const hasPlanTypeKey = hasOwn(raw, "planType") || hasOwn(raw, "plan_type");
-  const planTypeValue =
-    typeof raw.planType === "string"
-      ? raw.planType
-      : typeof raw.plan_type === "string"
-        ? raw.plan_type
-        : null;
-
-  return {
-    primary,
-    secondary,
-    credits,
-    planType: planTypeValue ?? (hasPlanTypeKey ? null : previous?.planType ?? null),
-  };
-}
 
 function normalizePlanStepStatus(value: unknown): TurnPlanStepStatus {
   const raw = typeof value === "string" ? value : "";

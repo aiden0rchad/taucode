@@ -14,7 +14,7 @@ import {
 type ApprovalToastsProps = {
   approvals: ApprovalRequest[];
   workspaces: WorkspaceInfo[];
-  onDecision: (request: ApprovalRequest, decision: "accept" | "decline") => void;
+  onDecision: (request: ApprovalRequest, decision: "accept" | "acceptForSession" | "decline") => void;
   onRemember?: (request: ApprovalRequest, command: string[]) => void;
 };
 
@@ -143,7 +143,10 @@ export function ApprovalToasts({
               >
                 Decline
               </button>
-              {commandInfo && onRemember ? (
+              {Array.isArray(params.availableDecisions) && params.availableDecisions.includes("acceptForSession") && (
+                <button className="secondary" onClick={() => onDecision(request, "acceptForSession")}>Allow for session</button>
+              )}
+              {commandInfo && onRemember && !String(request.request_id).startsWith("pi:") ? (
                 <button
                   className="ghost approval-toast-remember"
                   onClick={() => onRemember(request, commandInfo.tokens)}
