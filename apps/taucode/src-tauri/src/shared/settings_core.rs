@@ -59,6 +59,17 @@ pub(crate) async fn update_app_settings_core(
 
     let _ = codex_config::write_personality(settings.personality.as_str());
     write_settings(settings_path, &settings)?;
+    if !matches!(settings.backend_mode, crate::types::BackendMode::Remote) {
+        let home = settings_path
+            .parent()
+            .ok_or("Missing settings directory")?
+            .join("pi/agent");
+        std::fs::create_dir_all(&home).map_err(|e| e.to_string())?;
+        super::pi::config::write_json(
+            &home.join("models.json"),
+            &super::pi::config::models(&settings.providers),
+        )?;
+    }
     let mut current = app_settings.lock().await;
     *current = settings.clone();
     Ok(settings)

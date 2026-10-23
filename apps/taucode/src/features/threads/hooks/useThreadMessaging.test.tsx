@@ -753,4 +753,25 @@ describe("useThreadMessaging telemetry", () => {
     expect(sendUserMessageService).toHaveBeenCalledWith(workspace.id, "forked", "hello", expect.objectContaining({ model: "second/model" }));
     confirm.mockRestore();
   });
+  it("switches pi providers in place on the next turn without a fork dialog", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const fork = vi.fn(async () => "forked");
+    const usage = { totalTokens: 1234, inputTokens: 1000, cachedInputTokens: 0, outputTokens: 234, reasoningOutputTokens: 0 };
+    const { result } = renderHook(() => useThreadMessaging({
+      activeWorkspace: workspace, activeThreadId: "thread-1",
+      model: "second/model", steerEnabled: true, customPrompts: [],
+      threadsByWorkspace: { [workspace.id]: [{ id: "thread-1", name: "Thread", updatedAt: 0, engine: "pi", modelProvider: "first" }] },
+      tokenUsageByThread: { "thread-1": { last: usage, total: usage, modelContextWindow: 10000 } },
+      threadStatusById: {}, activeTurnIdByThread: {}, pendingInterruptsRef: { current: new Set() },
+      dispatch: vi.fn(), getCustomName: vi.fn(), markProcessing: vi.fn(), markReviewing: vi.fn(),
+      setActiveTurnId: vi.fn(), recordThreadActivity: vi.fn(), safeMessageActivity: vi.fn(), pushThreadErrorMessage: vi.fn(),
+      ensureThreadForActiveWorkspace: vi.fn(async () => "thread-1"), ensureThreadForWorkspace: vi.fn(async () => "thread-1"),
+      refreshThread: vi.fn(async () => null), forkThreadForWorkspace: fork, updateThreadParent: vi.fn(),
+    }));
+    await act(async () => { await result.current.sendUserMessage("hello"); });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(fork).not.toHaveBeenCalled();
+    expect(sendUserMessageService).toHaveBeenCalledWith(workspace.id, "thread-1", "hello", expect.objectContaining({ model: "second/model" }));
+    confirm.mockRestore();
+  });
 });

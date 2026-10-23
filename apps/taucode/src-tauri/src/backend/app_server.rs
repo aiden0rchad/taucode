@@ -961,6 +961,16 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
     let args = codex_args.clone();
     let graph = codegraph.clone();
     let sink = event_sink.clone();
+    let pi_cwd = entry.path.clone();
+    let pi_home = codex_home
+        .clone()
+        .or_else(crate::codex::home::resolve_default_codex_home);
+    let pi_data = pi_home
+        .as_deref()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .ok_or("Missing taucode app data directory for pi")?;
     let factory = Box::new(move || {
         let (mut entry, bin, args, home, version, sink, graph, mut settings) = (
             entry.clone(),
@@ -990,13 +1000,26 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
             entry, bin, args, home, version, sink, graph, settings,
         )) as crate::shared::providers::BoxFuture<'static, Result<Arc<CodexEngine>, String>>
     });
-    let session = WorkspaceSession::lazy(
+    let mut session = WorkspaceSession::lazy(
         factory,
         providers,
         policy,
         args,
         graph,
         workspace_id.clone(),
+    );
+    let pi_sink = sink.clone();
+    session.pi = crate::shared::pi::PiEngine::new(
+        pi_data,
+        workspace_id.clone(),
+        pi_cwd,
+        session.codegraph.clone(),
+        Arc::new(move |workspace, message| {
+            pi_sink.emit_app_server_event(AppServerEvent {
+                workspace_id: workspace.into(),
+                message,
+            })
+        }),
     );
     sink.emit_app_server_event(AppServerEvent {
         workspace_id: workspace_id.clone(),

@@ -223,6 +223,13 @@ export function useThreadEventHandlers({
           activeFlags: status?.type === "active" ? status.activeFlags ?? [] : [],
         } });
       }
+      if (method === "thread/settings/updated" && typeof params.threadId === "string") {
+        const settings = params.threadSettings as { modelProvider?: string } | undefined;
+        if (typeof settings?.modelProvider === "string") {
+          dispatch({ type: "mergeThreadSummary", workspaceId: event.workspace_id,
+            threadId: params.threadId, patch: { modelProvider: settings.modelProvider } });
+        }
+      }
       if (method === "turn/completed" && typeof params.threadId === "string" && params.turn) {
         dispatch({ type: "setThreadProtocolState", threadId: params.threadId, patch: { lastTurn: params.turn as Turn } });
       }

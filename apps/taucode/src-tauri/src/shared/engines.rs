@@ -137,41 +137,7 @@ impl EngineBackend for CodexEngine {
         })
     }
 }
-pub(crate) struct PiEngine {
-    events: broadcast::Sender<Value>,
-}
-impl Default for PiEngine {
-    fn default() -> Self {
-        Self {
-            events: broadcast::channel(256).0,
-        }
-    }
-}
-impl EngineBackend for PiEngine {
-    fn request<'a>(
-        &'a self,
-        _: &'a str,
-        method: &'a str,
-        _: Value,
-    ) -> BoxFuture<'a, Result<Value, String>> {
-        Box::pin(async move {
-            if method == "thread/list" {
-                Ok(json!({"result":{"data":[],"nextCursor":null}}))
-            } else {
-                Err("pi engine not yet available".into())
-            }
-        })
-    }
-    fn respond_to_server_request(&self, _: Value, _: Value) -> BoxFuture<'_, Result<(), String>> {
-        Box::pin(async { Err("pi engine not yet available".into()) })
-    }
-    fn events(&self) -> broadcast::Receiver<Value> {
-        self.events.subscribe()
-    }
-    fn shutdown(&self) -> BoxFuture<'_, Result<(), String>> {
-        Box::pin(async { Ok(()) })
-    }
-}
+pub(crate) use super::pi::PiEngine;
 pub(crate) struct WorkspaceSession {
     pub codex: Mutex<Option<Arc<CodexEngine>>>,
     configuration: Mutex<Option<String>>,
@@ -270,6 +236,7 @@ impl WorkspaceSession {
     pub async fn credentials_changed(&self) {
         // Reload child environment on the next request, after active turns finish.
         *self.configuration.lock().await = Some(String::new());
+        self.pi.credentials_changed().await;
     }
     async fn backend(&self, refresh: bool) -> Result<Arc<CodexEngine>, String> {
         let mut backend = self.codex.lock().await;
@@ -313,6 +280,9 @@ impl WorkspaceSession {
         let _ = self.pi.shutdown().await;
     }
     pub async fn register_workspace_with_path(&self, id: &str, path: Option<&str>) {
+        if let Some(path) = path {
+            self.pi.paths.lock().await.insert(id.into(), path.into());
+        }
         if let Some(c) = self.codex.lock().await.as_ref() {
             c.register_workspace_with_path(id, path).await;
         }
@@ -329,6 +299,7 @@ impl WorkspaceSession {
         mut params: Value,
     ) -> Result<Value, String> {
         let (providers, policy) = self.current_configuration();
+        self.pi.configure(providers.clone(), policy.clone()).await;
         if method == "model/list" {
             return Ok(providers::catalog(&providers));
         }
@@ -336,6 +307,11 @@ impl WorkspaceSession {
             .get("threadId")
             .and_then(Value::as_str)
             .map(str::to_owned);
+        let pi_thread = if let Some(id) = thread_id.as_ref() {
+            self.pi.owns(workspace, id).await
+        } else {
+            false
+        };
         let owners = self.owners.lock().await;
         let engine = if method == "thread/start" {
             params
@@ -349,14 +325,25 @@ impl WorkspaceSession {
             thread_id
                 .as_ref()
                 .and_then(|id| owners.get(id).copied())
-                .unwrap_or(EngineKind::Codex)
+                .unwrap_or(if pi_thread {
+                    EngineKind::Pi
+                } else {
+                    EngineKind::Codex
+                })
         };
         drop(owners);
         if let Some(obj) = params.as_object_mut() {
             obj.remove("engine");
         }
         if engine == EngineKind::Pi {
-            return self.pi.request(workspace, method, params).await;
+            let response = self.pi.request(workspace, method, params).await?;
+            if let Some(id) = response
+                .pointer("/result/thread/id")
+                .and_then(Value::as_str)
+            {
+                self.owners.lock().await.insert(id.into(), EngineKind::Pi);
+            }
+            return Ok(response);
         }
         if method == "turn/start" && params.get("model").and_then(Value::as_str).is_none() {
             let id = thread_id.as_deref().ok_or("Missing thread ID")?;
@@ -518,6 +505,9 @@ impl WorkspaceSession {
         Ok(response)
     }
     pub async fn send_response(&self, id: Value, result: Value) -> Result<(), String> {
+        if id.as_str().is_some_and(|id| id.starts_with("pi:")) {
+            return self.pi.respond_to_server_request(id, result).await;
+        }
         self.codex_backend()
             .await?
             .respond_to_server_request(id, result)
@@ -766,7 +756,7 @@ mod tests {
                 .send_request_for_workspace("workspace", "thread/start", json!({}))
                 .await
                 .unwrap_err(),
-            "pi engine not yet available"
+            "Add and enable a provider and model in Settings"
         );
         session
             .owners
@@ -782,7 +772,7 @@ mod tests {
                 )
                 .await
                 .unwrap_err(),
-            "pi engine not yet available"
+            "Unknown pi thread"
         );
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert!(session

@@ -18,3 +18,5 @@ pub(crate) mod workspaces_core;
 pub(crate) mod worktree_core;
 
 pub(crate) mod engines;
+
+pub(crate) mod pi;

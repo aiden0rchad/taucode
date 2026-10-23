@@ -83,7 +83,7 @@ export function AgentPolicyEditor({ policy, providers, onChange }: { policy: Age
   const sub = policy.subagents;
   const modelSelect = (label: string, value: string, change: (value: string) => void) => <label>{label}<select value={value} onChange={e => change(e.target.value)}><option value="">Inherit</option>{models.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</select></label>;
   return <div className="registry-policy">
-    <label>Default engine<select value={policy.defaultEngine} onChange={e => onChange({ ...policy, defaultEngine: e.target.value as AgentPolicy["defaultEngine"] })}><option value="pi">pi (not yet available)</option><option value="codex">codex</option></select></label>
+    <label>Default engine<select value={policy.defaultEngine} onChange={e => onChange({ ...policy, defaultEngine: e.target.value as AgentPolicy["defaultEngine"] })}><option value="pi">pi</option><option value="codex">codex</option></select></label>
     {modelSelect("Default model", modelKey(policy.defaultModel), v => onChange({ ...policy, defaultModel: modelRef(v) }))}
     <label><input type="checkbox" checked={sub.enabled} onChange={e => onChange({ ...policy, subagents: { ...sub, enabled: e.target.checked } })} />Enable subagents</label>
     {([["maxConcurrent", "Max concurrent", 16], ["maxPerTurn", "Max per turn", 32], ["maxDepth", "Max depth", 3]] as const).map(([field, label, max]) => <label key={field}>{label}<input type="number" min={1} max={max} value={sub[field]} onChange={e => onChange({ ...policy, subagents: { ...sub, [field]: Number(e.target.value) } })} /></label>)}
