@@ -501,3 +501,20 @@ the M0 engine module is kept only where it beats CodexMonitor's backend.
 | Computer use is slow (seconds per step) | Prefer browser tools and shell over GUI; route to CU only for native apps. |
 | Bundled Python signing/notarization | Solve in M3, not M5: build a signed bundle in CI as soon as the sidecar exists. |
 | Scope creep toward a full IDE | No editor beyond a viewer; "Open in editor" hands off to the user's IDE. |
+
+## 16. Follow-ups found in review (2026-10-23)
+
+- **Packaging (M5):** the pi runtime, `no-accounts.mjs` and engine packages are located via
+  `CARGO_MANIFEST_DIR` (a dev-time source path). Resolve from bundled resources and bundle a
+  Node runtime.
+- **pi auth guard:** `no-accounts.mjs` intercepts only sync `fs` reads and writes of
+  `auth.json`. Also cover `fs.promises` / async writes, or point pi's auth storage at a
+  read-only empty location.
+- **History paging:** loading a page of codex history makes one `thread/items/list` call per
+  turn, sequentially. Parallelize, bounded.
+- **Proxy:** the per-thread lock is held for the whole tool call, so same-thread codegraph
+  calls serialize; upstream progress notifications aren't forwarded.
+- **Images:** codex `imageGeneration` items that carry only a `fileId` can't be previewed (no
+  download method in 0.164).
+- **pi compaction on tiny sessions** returns "Nothing to compact"; the UI should say "nothing
+  to compact yet" rather than show an error toast.
