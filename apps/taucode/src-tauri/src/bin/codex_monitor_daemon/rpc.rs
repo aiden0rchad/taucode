@@ -85,10 +85,7 @@ pub(super) fn parse_optional_string(value: &Value, key: &str) -> Option<String> 
     }
 }
 
-pub(super) fn parse_optional_nullable_string(
-    value: &Value,
-    key: &str,
-) -> Option<Option<String>> {
+pub(super) fn parse_optional_nullable_string(value: &Value, key: &str) -> Option<Option<String>> {
     match value {
         Value::Object(map) => match map.get(key) {
             Some(Value::Null) => Some(None),
@@ -152,9 +149,20 @@ pub(super) async fn handle_rpc_request(
     params: Value,
     client_version: String,
 ) -> Result<Value, String> {
+    if method == "browser_request" {
+        return state.browser.request(params["params"].clone()).await;
+    }
     if matches!(method, "codegraph_status" | "codegraph_rebuild") {
         let id = parse_string(&params, "workspaceId")?;
-        let status = shared::codegraph_core::workspace_status(&state.codegraph, &state.workspaces, &state.app_settings, &id, method == "codegraph_rebuild", state.event_sink.clone()).await?;
+        let status = shared::codegraph_core::workspace_status(
+            &state.codegraph,
+            &state.workspaces,
+            &state.app_settings,
+            &id,
+            method == "codegraph_rebuild",
+            state.event_sink.clone(),
+        )
+        .await?;
         return serde_json::to_value(status).map_err(|e| e.to_string());
     }
     dispatcher::dispatch_rpc_request(state, method, &params, &client_version).await

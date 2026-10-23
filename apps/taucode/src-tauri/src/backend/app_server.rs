@@ -1085,8 +1085,14 @@ async fn spawn_codex_engine<E: EventSink>(
         &policy,
         &home,
     )?);
-    let connectors =
+    let mut connectors =
         crate::shared::connectors::effective(&settings, &entry.settings, codegraph.as_ref())?;
+    crate::shared::connectors::configure_browser(
+        &mut connectors,
+        home.parent()
+            .and_then(Path::parent)
+            .ok_or("Missing browser app data directory")?,
+    )?;
     let delivery =
         crate::shared::connectors::delivery(&connectors, &crate::shared::providers::Keychain)?;
     command.args(delivery.codex);

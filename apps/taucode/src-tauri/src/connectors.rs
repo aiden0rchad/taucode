@@ -31,6 +31,10 @@ pub(crate) async fn connector_request(
         &state.workspaces,
         state.codegraph.setup.as_ref(),
         &Keychain,
+        state
+            .settings_path
+            .parent()
+            .ok_or("Missing app data directory")?,
     )
     .await?;
     if changed {

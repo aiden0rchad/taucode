@@ -154,6 +154,9 @@ export function buildConversationItem(
     const server = asString(item.server ?? "");
     const tool = asString(item.tool ?? "");
     const args = item.arguments ? JSON.stringify(item.arguments, null, 2) : "";
+    const result = item.result as { content?: Array<Record<string, unknown>>; structuredContent?: unknown } | null;
+    const content = Array.isArray(result?.content) ? result.content : [];
+    const images = content.flatMap(c => c.type === "image" && typeof c.data === "string" && typeof c.mimeType === "string" && /^image\/(png|jpeg|webp|gif)$/.test(c.mimeType) ? [`data:${c.mimeType};base64,${c.data}`] : []);
     return {
       id,
       kind: "tool",
@@ -161,7 +164,8 @@ export function buildConversationItem(
       title: `Tool: ${server}${tool ? ` / ${tool}` : ""}`,
       detail: args,
       status: asString(item.status ?? ""),
-      output: asString(item.result ?? item.error ?? ""),
+      images,
+      output: content.length ? content.filter(c => c.type !== "image").map(c => c.type === "text" ? asString(c.text) : JSON.stringify(c)).join("\n") : item.result || item.error ? JSON.stringify(item.result ?? item.error, null, 2) : "",
     };
   }
   if (type === "collabToolCall" || type === "collabAgentToolCall") {

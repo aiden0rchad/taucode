@@ -12,7 +12,10 @@ type Props = { appSettings: AppSettings; onUpdateAppSettings: (s: AppSettings) =
 export function SettingsConnectorsSection({ appSettings, onUpdateAppSettings, workspace, onUpdateWorkspaceSettings }: Props) {
   const [scope, setScope] = useState("app");
   const local = scope === "workspace" && !!workspace;
-  const globals = appSettings.mcpServers?.some(s => s.id === "codegraph") ? appSettings.mcpServers : [{ ...builtin, enabled: appSettings.codegraphEnabled ?? true }, ...(appSettings.mcpServers ?? [])];
+  const globals = [...(appSettings.mcpServers ?? [])];
+  for (const entry of [{ ...builtin, enabled: appSettings.codegraphEnabled ?? true }, { id: "taucode-browser", name: "Browser", enabled: true, approval: appSettings.browser?.approval ?? "ask" } satisfies McpServerEntry]) {
+    if (!globals.some(s => s.id === entry.id)) globals.push(entry);
+  }
   const overrides = workspace?.settings.mcpServers ?? [];
   const entries = local ? [...globals.map(s => ({ ...s, enabled: overrides.find(o => o.id === s.id)?.enabled ?? (s.enabled && (s.id !== "codegraph" || (workspace?.settings.codegraphEnabled ?? true))) })), ...overrides.filter(s => !globals.some(g => g.id === s.id))] : globals;
   const [draft, setDraft] = useState<McpServerEntry | null>(null);
@@ -68,7 +71,7 @@ export function SettingsConnectorsSection({ appSettings, onUpdateAppSettings, wo
         }); }} />{s.name || s.id}</label>
         {reserved.includes(s.id) && <span>Built in</span>}
         {inherited ? <button disabled={busy || !overrides.some(o => o.id === s.id)} onClick={() => void run(() => persist(overrides.filter(o => o.id !== s.id)))}>Use global setting for {s.name}</button> : <>
-          <button disabled={busy} onClick={() => { setDraft(structuredClone(s)); setEditing(s.id); setResult(null); }}>Edit {s.name}</button>
+          {s.id === "taucode-browser" ? <span>Configure in Settings → Browser</span> : <button disabled={busy} onClick={() => { setDraft(structuredClone(s)); setEditing(s.id); setResult(null); }}>Edit {s.name}</button>}
           {!reserved.includes(s.id) && <button disabled={busy} onClick={() => void run(async () => { await persist((local ? overrides : globals).filter(o => o.id !== s.id)); if (editing === s.id) { setDraft(null); setEditing(null); } })}>Delete {s.name}</button>}
         </>}
         <button disabled={busy} onClick={() => void run(async () => setResult(await connectorRequest<McpConnectionResult>({ action: "test", id: s.id, workspaceId })))}>Test {s.name}</button>

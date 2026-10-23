@@ -77,6 +77,7 @@ import {
 import { useAppShellOrchestration } from "@app/orchestration/useLayoutOrchestration";
 import { normalizeCodexArgsInput } from "@/utils/codexArgsInput";
 import { subscribeTrayOpenThread } from "@services/events";
+import { BrowserDock } from "@/features/browser/BrowserDock";
 
 const SettingsView = lazy(() =>
   import("@settings/components/SettingsView").then((module) => ({
@@ -1843,5 +1844,5 @@ export default function MainApp() {
     },
   });
 
-  return <MainAppShell {...mainAppShellProps} />;
+  return <BrowserDock searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><MainAppShell {...mainAppShellProps} /></BrowserDock>;
 }

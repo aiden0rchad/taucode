@@ -136,6 +136,18 @@ Offline sandbox; the venv and Rust deps are pre-installed. Always set
 or move the mouse. Follow `apps/taucode/AGENTS.md`. Don't touch
 protocol/fixtures/crates/docs/agent configs.
 
+## Verification
+
+From `/Users/rolandleyco/taucode-m1w`:
+
+```
+export CARGO_HOME=/Users/rolandleyco/taucode-m1w/.cargo-home TMPDIR=$PWD/.tmp && mkdir -p $TMPDIR && (cd crates/tau-mcp-proxy && cargo test) && (cd apps/taucode/engines/pi && npm test) && (cd apps/taucode/engines/computer && .venv/bin/python -m pytest -q) && (cd apps/taucode/src-tauri && cargo build --bins && cargo test) && (cd apps/taucode && npm run typecheck && npm test && npm run build && npm run lint)
+```
+
+The sidecar venv (`engines/computer/.venv`, Python 3.12) is pre-built with the locked deps
+plus pytest. Run Python only through `.venv/bin/python`; don't run `uv sync` (no network).
+Known sandbox-only failure: `tailscale::tests::listen_addr_preflight_fails_when_port_is_in_use`.
+
 ## Out of scope
 
 Windows/Linux capture and input, multi-display selection UI, Agent-S4, a local UI-TARS

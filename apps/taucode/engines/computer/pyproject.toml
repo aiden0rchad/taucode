@@ -1,0 +1,16 @@
+[project]
+name = "taucode-cua"
+version = "0.1.0"
+description = "taucode computer-use planner sidecar: vendored Agent-S3 planner + grounding; never executes input"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "numpy",
+  "pillow",
+  "backoff",
+  "openai",
+  "anthropic",
+  "google-genai",
+]
+
+[dependency-groups]
+dev = ["pytest"]

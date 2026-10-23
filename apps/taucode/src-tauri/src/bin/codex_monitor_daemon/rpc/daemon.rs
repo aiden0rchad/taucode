@@ -9,7 +9,9 @@ pub(super) async fn try_handle(
         "ping" => Some(Ok(json!({ "ok": true }))),
         "daemon_info" => Some(Ok(state.daemon_info())),
         "daemon_shutdown" => {
-            tokio::spawn(async {
+            let browser = state.browser.clone();
+            tokio::spawn(async move {
+                browser.shutdown().await;
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 std::process::exit(0);
             });

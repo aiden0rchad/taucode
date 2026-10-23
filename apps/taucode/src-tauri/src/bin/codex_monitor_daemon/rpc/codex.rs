@@ -25,6 +25,7 @@ pub(super) async fn try_handle(
                 &state.workspaces,
                 state.codegraph.setup.as_ref(),
                 &crate::shared::providers::Keychain,
+                &state.data_dir,
             )
             .await;
             if result.is_ok() && changed {
