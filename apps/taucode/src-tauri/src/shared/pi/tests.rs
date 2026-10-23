@@ -258,6 +258,32 @@ fn recorded_subagents_stream_states_outputs_and_usage_without_double_counting() 
 }
 
 #[test]
+fn connector_items_names_and_every_call_approvals() {
+    let mut t = Translator::new("thread", "/workspace")
+        .with_connectors(HashMap::from([("my_server".into(), "My server".into())]));
+    t.apply(&json!({"type":"agent_start"}));
+    let events = t.apply(&json!({"type":"tool_execution_start","toolCallId":"call","toolName":"mcp__my_server__read","args":{}}));
+    let item = &events
+        .iter()
+        .find(|e| e["method"] == "item/started")
+        .unwrap()["params"]["item"];
+    assert_eq!(item["type"], "mcpToolCall");
+    assert_eq!(item["server"], "My server");
+    assert_eq!(item["tool"], "read");
+    let request = json!({"type":"extension_ui_request","id":"approval","method":"select","title":format!("taucode:approval:{}",json!({"toolCallId":"call","tool":"mcp__my_server__read","command":"mcp__my_server__read","cwd":"/workspace"})),"options":["Allow","Block"]});
+    let mapped = translate::ui_request(&request, "thread", "turn");
+    assert_eq!(mapped["method"], "item/commandExecution/requestApproval");
+    assert_eq!(
+        mapped["params"]["availableDecisions"],
+        json!(["accept", "decline", "cancel"])
+    );
+    assert_eq!(
+        translate::ui_response(&request, &json!({"decision":"accept"}))["value"],
+        "Allow"
+    );
+}
+
+#[test]
 fn managed_policy_and_access_files_update_and_preserve_session_rules() {
     let dir = temp();
     let home = dir.join("pi/agent/workspace");
@@ -396,6 +422,7 @@ async fn fake(idle: Duration, marker: &Path) -> (Arc<Process>, Arc<StdMutex<Vec<
         Arc::new(move |e| sink.lock().unwrap().push(e)),
         None,
         idle,
+        vec![],
     )
     .await
     .unwrap();
@@ -751,6 +778,7 @@ async fn recorded_compaction_resets_only_successful_thread_epoch() {
             Arc::new(|_| {}),
             Some(graph),
             Duration::from_secs(600),
+            vec![],
         )
         .await
         .unwrap();

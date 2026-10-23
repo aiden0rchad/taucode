@@ -261,7 +261,13 @@ impl PiEngine {
         registry: &[ProviderEntry],
         policy: &AgentPolicy,
     ) -> Result<Arc<Process>, String> {
-        let fingerprint = serde_json::to_string(registry).map_err(|e| e.to_string())?;
+        let connectors = super::connectors::load(
+            self.data.as_ref().ok_or("Pi runtime is not configured")?,
+            &s.workspace,
+            self.graph.as_ref(),
+        )?;
+        let fingerprint =
+            serde_json::to_string(&(registry, &connectors)).map_err(|e| e.to_string())?;
         if let Some(p) = &s.process {
             if p.alive.load(Ordering::SeqCst) && s.configuration == fingerprint {
                 return Ok(p.clone());
@@ -281,6 +287,10 @@ impl PiEngine {
             .join("pi/agent")
             .join(&s.workspace);
         let mut env = config::prepare(&home, registry, self.graph.as_ref(), self.keys.as_ref())?;
+        let delivery = super::connectors::delivery(&connectors, self.keys.as_ref())?;
+        config::write_json(&home.join("mcp.json"), &delivery.pi)?;
+        config::write_json(&home.join("taucode/connectors.json"), &json!(connectors))?;
+        env.extend(delivery.env);
         let id = s.thread["id"].as_str().ok_or("Pi session missing ID")?;
         config::write_policy(&home, registry, policy)?;
         config::write_access(&home, id, None)?;
@@ -354,6 +364,10 @@ impl PiEngine {
             .envs(env);
         let (_, history) = read_session(&s.file, registry)?;
         let mut translator = history;
+        translator.connectors = connectors
+            .iter()
+            .map(|s| (s.id.replace('-', "_"), s.name.clone()))
+            .collect();
         translator.access_mode = serde_json::from_slice::<Value>(
             &std::fs::read(home.join("taucode/threads").join(format!("{id}.json")))
                 .map_err(|e| e.to_string())?,
@@ -371,7 +385,15 @@ impl PiEngine {
             let _ = events.send(e.clone());
             sink(&workspace, e);
         });
-        let p = Process::spawn(command, translator, emit, self.graph.clone(), self.idle).await?;
+        let p = Process::spawn(
+            command,
+            translator,
+            emit,
+            self.graph.clone(),
+            self.idle,
+            delivery.secrets,
+        )
+        .await?;
         let state = match p.request(json!({"type":"get_state"})).await {
             Ok(v) => v,
             Err(e) => {
@@ -528,6 +550,7 @@ impl PiEngine {
                         .map(Vec::as_slice)
                         .unwrap_or(&[]),
                 )
+                .with_connectors(t.connectors.clone())
                 .turns;
                 if !t.turns.is_empty() {
                     // get_messages omits compacted history. Refresh matching items
@@ -910,7 +933,24 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
             _ => (),
         }
     }
-    let translator = Translator::history(id, cwd, &messages);
+    let mut translator = Translator::history(id, cwd, &messages);
+    if let Some(workspace_dir) = file.parent() {
+        if let (Some(workspace), Some(data)) = (
+            workspace_dir.file_name().and_then(|s| s.to_str()),
+            workspace_dir
+                .parent()
+                .and_then(Path::parent)
+                .and_then(Path::parent),
+        ) {
+            let connectors = super::connectors::load(data, workspace, None)?;
+            translator = translator.with_connectors(
+                connectors
+                    .into_iter()
+                    .map(|s| (s.id.replace('-', "_"), s.name))
+                    .collect(),
+            );
+        }
+    }
     thread["turns"] = json!(translator.turns);
     Ok((thread, translator))
 }

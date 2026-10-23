@@ -35,6 +35,7 @@ pub(super) struct Translator {
     pub active: bool,
     pub model: Value,
     pub provider: String,
+    pub connectors: HashMap<String, String>,
     pub access_mode: String,
     pub total: Value,
     pub cost: f64,
@@ -58,6 +59,7 @@ impl Translator {
             active: false,
             model: Value::Null,
             provider: String::new(),
+            connectors: HashMap::new(),
             access_mode: "ask".into(),
             total: json!({"totalTokens":0,"inputTokens":0,"cachedInputTokens":0,"cacheWriteInputTokens":0,"outputTokens":0,"reasoningOutputTokens":0}),
             cost: 0.0,
@@ -305,7 +307,18 @@ impl Translator {
                 json!({"type":"fileChange","id":id,"changes":[{"path":path,"kind":if name=="write" && !self.files.contains_key(path){json!({"type":"add"})}else{json!({"type":"update","move_path":null})},"diff":diff}],"status":"inProgress"})
             }
             _ if name.starts_with("mcp__") => {
-                let (server, tool) = name[5..].split_once("__").unwrap_or(("", name));
+                let (server, tool) = self
+                    .connectors
+                    .keys()
+                    .filter(|id| name.starts_with(&format!("mcp__{id}__")))
+                    .max_by_key(|id| id.len())
+                    .map(|id| (id.as_str(), &name[7 + id.len()..]))
+                    .unwrap_or_else(|| name[5..].split_once("__").unwrap_or(("", name)));
+                let server = self
+                    .connectors
+                    .get(server)
+                    .map(String::as_str)
+                    .unwrap_or(server);
                 json!({"type":"mcpToolCall","id":id,"server":server,"tool":tool,"arguments":a,"status":"inProgress","appContext":null,"mcpAppUi":null,"pluginId":null,"readOnlyHint":null,"result":null,"error":null,"durationMs":null})
             }
             _ => {
@@ -564,6 +577,19 @@ impl Translator {
         }
         out
     }
+    pub fn with_connectors(mut self, names: HashMap<String, String>) -> Self {
+        for turn in &mut self.turns {
+            for item in turn["items"].as_array_mut().into_iter().flatten() {
+                if item["type"] == "mcpToolCall" {
+                    if let Some(name) = item["server"].as_str().and_then(|id| names.get(id)) {
+                        item["server"] = json!(name);
+                    }
+                }
+            }
+        }
+        self.connectors = names;
+        self
+    }
     pub fn history(thread: &str, cwd: &str, messages: &[Value]) -> Self {
         let mut t = Self::new(thread, cwd);
         let mut end = 0u64;
@@ -629,8 +655,11 @@ pub(super) fn login_requested(m: &Value) -> bool {
 }
 pub(super) fn ui_request(m: &Value, thread: &str, turn: &str) -> Value {
     if let Some(approval) = approval(m) {
-        let bash = approval["tool"] == "bash";
-        return json!({"id":format!("pi:{thread}:{}",m["id"].as_str().unwrap_or("")),"method":if bash {"item/commandExecution/requestApproval"} else {"item/fileChange/requestApproval"},"params":{"threadId":thread,"turnId":turn,"itemId":approval["toolCallId"],"approvalId":m["id"],"command":approval["command"],"cwd":approval["cwd"],"reason":if bash {json!("Pi requests permission to run this command")}else{json!(format!("Pi requests permission to change {}",approval["path"].as_str().unwrap_or("")))},"availableDecisions":["accept","acceptForSession","decline","cancel"],"grantRoot":null,"diffPreview":approval["diffPreview"]}});
+        let mcp = approval["tool"]
+            .as_str()
+            .is_some_and(|t| t.starts_with("mcp__"));
+        let bash = approval["tool"] == "bash" || mcp;
+        return json!({"id":format!("pi:{thread}:{}",m["id"].as_str().unwrap_or("")),"method":if bash {"item/commandExecution/requestApproval"} else {"item/fileChange/requestApproval"},"params":{"threadId":thread,"turnId":turn,"itemId":approval["toolCallId"],"approvalId":m["id"],"command":approval["command"],"cwd":approval["cwd"],"reason":if mcp {json!("Connector requests permission to call this tool")}else if bash {json!("Pi requests permission to run this command")}else{json!(format!("Pi requests permission to change {}",approval["path"].as_str().unwrap_or("")))},"availableDecisions":if mcp {json!(["accept","decline","cancel"])}else{json!(["accept","acceptForSession","decline","cancel"])},"grantRoot":null,"diffPreview":approval["diffPreview"]}});
     }
     let options = if m["method"] == "confirm" {
         json!(["Yes", "No"])
@@ -670,7 +699,10 @@ pub(super) fn approval(m: &Value) -> Option<Value> {
     }
     let value: Value =
         serde_json::from_str(m["title"].as_str()?.strip_prefix("taucode:approval:")?).ok()?;
-    if !matches!(value["tool"].as_str(), Some("bash" | "write" | "edit"))
+    if !(matches!(value["tool"].as_str(), Some("bash" | "write" | "edit"))
+        || value["tool"]
+            .as_str()
+            .is_some_and(|t| t.starts_with("mcp__")))
         || value["toolCallId"].as_str()?.is_empty()
         || !value["cwd"].is_string()
     {

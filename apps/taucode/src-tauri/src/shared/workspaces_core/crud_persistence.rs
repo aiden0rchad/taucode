@@ -560,13 +560,21 @@ where
             settings.agent_policy.as_ref(),
         );
         crate::shared::providers::validate(&app.providers, &policy)?;
+        crate::shared::connectors::effective(&app, &settings, None)?;
+        let workspaces = workspaces.lock().await;
+        crate::shared::connectors::validate_workspaces(
+            &app,
+            workspaces
+                .values()
+                .map(|w| if w.id == id { &settings } else { &w.settings }),
+        )?;
     }
     settings.worktree_setup_script = normalize_setup_script(settings.worktree_setup_script);
     settings.worktrees_folder = settings
         .worktrees_folder
         .map(|path| normalize_windows_namespace_path(&path));
 
-    let (entry_snapshot, previous_worktree_setup_script, child_entries) = {
+    let (entry_snapshot, previous_worktree_setup_script, child_entries, previous_connectors) = {
         let mut workspaces = workspaces.lock().await;
         let previous_entry = workspaces
             .get(&id)
@@ -583,6 +591,7 @@ where
             entry_snapshot,
             previous_worktree_setup_script,
             child_entries,
+            previous_entry.settings.mcp_servers,
         )
     };
 
@@ -612,6 +621,11 @@ where
     write_workspaces(storage_path, &list)?;
     let app = _app_settings.lock().await;
     if !matches!(app.backend_mode, crate::types::BackendMode::Remote) {
+        crate::shared::connectors::delete_removed_secrets(
+            &previous_connectors,
+            &entry_snapshot.settings.mcp_servers,
+            &crate::shared::providers::Keychain,
+        )?;
         crate::shared::pi::config::sync_policies(
             storage_path
                 .parent()

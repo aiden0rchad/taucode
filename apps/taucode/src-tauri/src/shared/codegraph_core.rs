@@ -25,13 +25,17 @@ pub(crate) async fn workspace_status<E: EventSink>(
     rebuild: bool,
     sink: E,
 ) -> Result<CodegraphStatus, String> {
-    let entry = workspaces
+    let mut entry = workspaces
         .lock()
         .await
         .get(workspace_id)
         .cloned()
         .ok_or("Workspace not found")?;
-    let global = settings.lock().await.codegraph_enabled;
+    let settings = settings.lock().await.clone();
+    let global = super::connectors::effective(&settings, &entry.settings, manager.setup.as_ref())?
+        .iter()
+        .any(|s| s.id == "codegraph" && s.enabled);
+    entry.settings.codegraph_enabled = None;
     Ok(if rebuild {
         manager.start(entry, global, true, sink).await
     } else {

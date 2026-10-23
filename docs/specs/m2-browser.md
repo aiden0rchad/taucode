@@ -15,6 +15,22 @@ not a taucode login.
 
 Done = the verification command passes. A live test is run outside your sandbox.
 
+## Verified by prototype (2026-10-23, Chrome + @playwright/mcp 0.0.83)
+
+- Chrome `--headless=new --remote-debugging-port=0 --user-data-dir=…` writes the port to
+  `<profile>/DevToolsActivePort`.
+- playwright-mcp attached with `--cdp-endpoint http://127.0.0.1:<port>` exposes 25 tools
+  and drives the existing default context. `browser_snapshot` returns refs (e.g. `e3`), and
+  `browser_click` takes `{ target: "<ref or selector>", element?: "<description>" }` (not the
+  older `ref` argument). The click took real effect, confirmed with `browser_evaluate`.
+- A second CDP client on the same page target (the pane's role) gets
+  `Page.screencastFrame`s after **`Page.enable`** then `Page.startScreencast`. Frames only
+  arrive on visual change, so on attach the pane must force a first frame (e.g.
+  `Page.captureScreenshot` once, or a 1px no-op `Emulation.setDeviceMetricsOverride`).
+- **Chrome rejects CDP websocket handshakes that carry an `Origin` header** (403, "use
+  --remote-allow-origins"). The bridge must connect **without** an Origin header
+  (tokio-tungstenite's default). Do **not** pass `--remote-allow-origins=*`.
+
 ## Architecture (decided; don't redesign)
 
 1. **Browser process**, owned by the Rust backend (`src-tauri/src/browser/`), one per app

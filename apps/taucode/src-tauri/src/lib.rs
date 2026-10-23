@@ -1,5 +1,6 @@
 mod codegraph;
 mod codegraph_commands;
+mod connectors;
 mod providers;
 #[cfg(desktop)]
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -189,6 +190,7 @@ pub fn run() {
             providers::provider_has_api_key,
             providers::provider_delete_api_key,
             providers::provider_test_and_fetch,
+            connectors::connector_request,
             settings::get_app_settings,
             settings::update_app_settings,
             settings::get_codex_config_path,

@@ -214,10 +214,16 @@ pub(crate) trait KeyStore: Send + Sync {
 }
 pub(crate) struct Keychain;
 fn key_entry(id: &str) -> Result<keyring::Entry, String> {
-    if !valid_slug(id) {
-        return Err("Invalid provider ID".into());
-    }
-    keyring::Entry::new("dev.taucode.desktop", &format!("provider:{id}"))
+    let account = if let Some(rest) = id.strip_prefix("mcp:") {
+        let (server, name) = rest.split_once(':').ok_or("Invalid connector credential")?;
+        super::connectors::account(server, name)?
+    } else {
+        if !valid_slug(id) {
+            return Err("Invalid provider ID".into());
+        }
+        format!("provider:{id}")
+    };
+    keyring::Entry::new("dev.taucode.desktop", &account)
         .map_err(|_| "Cannot access provider Keychain".into())
 }
 impl KeyStore for Keychain {

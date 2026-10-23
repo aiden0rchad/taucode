@@ -1066,7 +1066,7 @@ async fn spawn_codex_engine<E: EventSink>(
             return Err("Configure providers and models in taucode Settings; account and provider overrides in Codex arguments are disabled".into());
         }
     }
-    let provider_env = crate::shared::engines::prepare_codex(
+    let mut provider_env = crate::shared::engines::prepare_codex(
         &home,
         &settings.providers,
         &policy,
@@ -1085,14 +1085,18 @@ async fn spawn_codex_engine<E: EventSink>(
         &policy,
         &home,
     )?);
-    if let Some(setup) = &codegraph {
-        command.args(setup.codex_config_args());
-    }
+    let connectors =
+        crate::shared::connectors::effective(&settings, &entry.settings, codegraph.as_ref())?;
+    let delivery =
+        crate::shared::connectors::delivery(&connectors, &crate::shared::providers::Keychain)?;
+    command.args(delivery.codex);
     command.current_dir(&entry.path);
-    let secrets: Vec<String> = provider_env
+    let mut secrets: Vec<String> = provider_env
         .iter()
         .map(|(_, value)| value.clone())
         .collect();
+    secrets.extend(delivery.secrets);
+    provider_env.extend(delivery.env);
     command
         .env("CODEX_HOME", &home)
         .env_remove("OPENAI_API_KEY")

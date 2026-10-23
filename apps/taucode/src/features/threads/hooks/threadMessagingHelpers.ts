@@ -237,6 +237,11 @@ export function buildMcpStatusLines(
   );
   for (const server of servers) {
     const name = String(server.name ?? "unknown");
+    if (typeof server.enabled === "boolean") {
+      lines.push(`- ${name} (${server.enabled ? "enabled" : "disabled"}; approval: ${server.approval ?? "auto"})`);
+      lines.push("  Test connection and view tools in Settings → Connectors.");
+      continue;
+    }
     const authStatus = server.authStatus ?? server.auth_status ?? null;
     const authLabel =
       typeof authStatus === "string"

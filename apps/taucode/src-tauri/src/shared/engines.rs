@@ -244,8 +244,14 @@ impl WorkspaceSession {
     async fn backend(&self, refresh: bool) -> Result<Arc<CodexEngine>, String> {
         let mut backend = self.codex.lock().await;
         let mut fingerprint = self.configuration.lock().await;
-        let current =
-            serde_json::to_string(&self.current_configuration()).map_err(|e| e.to_string())?;
+        let connectors = crate::codex::home::resolve_default_codex_home()
+            .and_then(|home| home.parent().and_then(Path::parent).map(Path::to_path_buf))
+            .map(|data| {
+                super::connectors::load(&data, &self.owner_workspace_id, self.codegraph.as_ref())
+            })
+            .transpose()?;
+        let current = serde_json::to_string(&(self.current_configuration(), connectors))
+            .map_err(|e| e.to_string())?;
         if refresh && self.factory.is_some() && fingerprint.as_ref().is_some_and(|v| *v != current)
         {
             if let Some(c) = backend.as_ref() {
@@ -538,7 +544,7 @@ pub(crate) fn codex_config(
     home: &Path,
 ) -> Result<(String, Vec<(PathBuf, String)>), String> {
     providers::validate(providers, policy)?;
-    let mut config = String::from("cli_auth_credentials_store = \"ephemeral\"\ncheck_for_update_on_startup = false\n[analytics]\nenabled = false\n[feedback]\nenabled = false\n[apps._default]\nenabled = false\n[plugins._default]\nenabled = false\n[features]\napps = false\nplugins = false\n");
+    let mut config = String::from("cli_auth_credentials_store = \"ephemeral\"\nmcp_oauth_credentials_store = \"file\"\ncheck_for_update_on_startup = false\n[analytics]\nenabled = false\n[feedback]\nenabled = false\n[apps._default]\nenabled = false\n[plugins._default]\nenabled = false\n[features]\napps = false\nplugins = false\n");
     config.push_str(&format!("multi_agent = {}\n", policy.subagents.enabled));
     let mut files = vec![];
     use std::hash::{Hash, Hasher};
@@ -648,6 +654,9 @@ pub(crate) fn prepare_codex(
     keys: &dyn KeyStore,
 ) -> Result<Vec<(String, String)>, String> {
     let (config, files) = codex_config(providers, policy, home)?;
+    if home.join(".credentials.json").exists() {
+        return Err("Remove .credentials.json from taucode's isolated Codex home; MCP OAuth sign-in is not supported".into());
+    }
     std::fs::create_dir_all(home.join("roles")).map_err(|e| e.to_string())?;
     // This directory is exclusively taucode-owned. Never import user credentials.
     let auth = home.join("auth.json");

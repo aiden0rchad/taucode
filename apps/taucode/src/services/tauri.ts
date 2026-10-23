@@ -833,6 +833,10 @@ export async function getAppSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("get_app_settings");
 }
 
+export function connectorRequest<T>(params: { action: "list" | "test" | "secrets" | "setSecret" | "deleteSecret"; id?: string; workspaceId?: string; name?: string; value?: string }): Promise<T> {
+  return invoke<T>("connector_request", { params });
+}
+
 export async function isMobileRuntime(): Promise<boolean> {
   return invoke<boolean>("is_mobile_runtime");
 }

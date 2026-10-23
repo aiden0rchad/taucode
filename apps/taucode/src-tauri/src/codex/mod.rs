@@ -41,18 +41,17 @@ pub(crate) async fn spawn_workspace_session(
     use tauri::Manager;
     let state = app_handle.state::<AppState>();
     let settings = state.app_settings.lock().await.clone();
-    let global = settings.codegraph_enabled;
     let manager = state.codegraph.clone();
-    let setup = if crate::shared::codegraph_core::enabled(global, entry.settings.codegraph_enabled)
-    {
-        manager.setup.clone()
-    } else {
-        None
-    };
+    let setup = manager.setup.clone();
+    let global = crate::shared::connectors::effective(&settings, &entry.settings, setup.as_ref())?
+        .iter()
+        .any(|s| s.id == "codegraph" && s.enabled);
     let client_version = app_handle.package_info().version.to_string();
     let event_sink = TauriEventSink::new(app_handle);
+    let mut graph_entry = entry.clone();
+    graph_entry.settings.codegraph_enabled = None;
     manager
-        .start(entry.clone(), global, false, event_sink.clone())
+        .start(graph_entry, global, false, event_sink.clone())
         .await;
     spawn_workspace_session_inner(
         entry,
@@ -317,7 +316,14 @@ pub(crate) async fn list_mcp_server_status(
         .await;
     }
 
-    codex_core::list_mcp_server_status_core(&state.sessions, workspace_id, cursor, limit).await
+    codex_core::list_mcp_server_status_core(
+        &state.app_settings,
+        &state.workspaces,
+        workspace_id,
+        cursor,
+        limit,
+    )
+    .await
 }
 
 #[tauri::command]

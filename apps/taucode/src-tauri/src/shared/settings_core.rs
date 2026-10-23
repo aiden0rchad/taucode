@@ -43,7 +43,22 @@ pub(crate) async fn update_app_settings_core(
     settings_path: &PathBuf,
 ) -> Result<AppSettings, String> {
     crate::shared::providers::validate(&settings.providers, &settings.agent_policy)?;
+    super::connectors::validate(&settings.mcp_servers, false)?;
+    if !settings.mcp_servers.iter().any(|s| s.id == "codegraph") {
+        settings.mcp_servers.extend(super::connectors::defaults());
+    }
+    let old_connectors = app_settings.lock().await.mcp_servers.clone();
     if !matches!(settings.backend_mode, crate::types::BackendMode::Remote) {
+        let workspaces = crate::storage::read_workspaces(
+            &settings_path
+                .parent()
+                .ok_or("Missing settings directory")?
+                .join("workspaces.json"),
+        )?;
+        super::connectors::validate_workspaces(
+            &settings,
+            workspaces.values().map(|w| &w.settings),
+        )?;
         crate::shared::providers::delete_removed_keys(
             &app_settings.lock().await.providers,
             &settings.providers,
@@ -76,6 +91,14 @@ pub(crate) async fn update_app_settings_core(
     }
     let mut current = app_settings.lock().await;
     *current = settings.clone();
+    drop(current);
+    if !matches!(settings.backend_mode, crate::types::BackendMode::Remote) {
+        super::connectors::delete_removed_secrets(
+            &old_connectors,
+            &settings.mcp_servers,
+            &super::providers::Keychain,
+        )?;
+    }
     Ok(settings)
 }
 

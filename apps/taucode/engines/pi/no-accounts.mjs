@@ -3,20 +3,24 @@
 // keys independently from env/commands; any attempt to persist credentials fails.
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-import { resolve } from "node:path";
+import { resolve, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const agentDir = process.env.PI_CODING_AGENT_DIR;
 if (!agentDir) throw new Error("Taucode requires an isolated PI_CODING_AGENT_DIR");
-const authPath = resolve(agentDir, "auth.json");
+const authPaths = ["auth.json", "mcp-auth.json"].map(name => resolve(agentDir, name));
 const isAuth = (path) => {
   if (path instanceof URL) path = fileURLToPath(path);
   if (Buffer.isBuffer(path)) path = path.toString();
-  return typeof path === "string" && resolve(path) === authPath;
+  return typeof path === "string" && authPaths.includes(resolve(path));
 };
 const read = fs.readFileSync;
 const write = fs.writeFileSync;
 fs.readFileSync = function (path, options) {
+  const resolved = typeof path === "string" ? resolve(path) : null;
+  if (resolved && basename(resolved) === "mcp.json" && basename(dirname(resolved)) === ".pi" && dirname(resolved) !== resolve(agentDir)) {
+    return typeof options === "string" || options?.encoding ? "{}" : Buffer.from("{}");
+  }
   if (!isAuth(path)) return read.call(this, path, options);
   return typeof options === "string" || options?.encoding ? "{}" : Buffer.from("{}");
 };

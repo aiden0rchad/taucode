@@ -4,6 +4,7 @@
   max-width: 760px;
   margin-top: 20px;
 }
+.connector-fields, .connector-credential { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border-muted); border-radius: 8px; }
 .registry-settings label, .registry-policy label {
   display: grid;
   gap: 6px;

@@ -77,13 +77,15 @@ pub(crate) fn models(registry: &[ProviderEntry]) -> Value {
 }
 
 pub(super) fn mcp(setup: Option<&CodegraphSetup>) -> Value {
-    match setup {
-        None => json!({"mcpServers":{},"autoEnableCodemode":false}),
-        Some(s) => json!({"autoEnableCodemode":false,"mcpServers":{"codegraph":{
-            "command":s.proxy_exe,"args":std::iter::once("--tau-mcp-proxy").chain(std::iter::once("--")).chain(s.upstream.iter().map(String::as_str)).collect::<Vec<_>>(),
-            "env":{"TAUCODE_STATE_DIR":s.state_dir,"CODEGRAPH_EXPLORE_DEDUP":"1","CODEGRAPH_DIR":crate::codegraph::CODEGRAPH_DIR,"TAUCODE_SESSION_KEY":"${TAUCODE_SESSION_KEY}"},"exposure":"direct"
-        }}}),
-    }
+    let entries = crate::shared::connectors::effective(
+        &AppSettings::default(),
+        &WorkspaceSettings::default(),
+        setup,
+    )
+    .expect("valid built-in connector");
+    crate::shared::connectors::delivery(&entries, &providers::Keychain)
+        .expect("built-in connector has no secrets")
+        .pi
 }
 
 pub(crate) fn write_json(path: &Path, value: &Value) -> Result<(), String> {
@@ -155,6 +157,14 @@ pub(crate) fn sync_policies(data: &Path, settings: &AppSettings) -> Result<(), S
                     workspace.settings.agent_policy.as_ref(),
                 ),
             )?;
+            write_json(
+                &home.join("taucode/connectors.json"),
+                &json!(crate::shared::connectors::effective(
+                    settings,
+                    &workspace.settings,
+                    None
+                )?),
+            )?;
         }
     }
     Ok(())
@@ -196,6 +206,7 @@ pub(super) fn prepare(
 ) -> Result<HashMap<String, String>, String> {
     std::fs::create_dir_all(home.join("extensions")).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(home.join("extensions/lib")).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(home.join("taucode")).map_err(|e| e.to_string())?;
     for (name, source) in [
         (
             "taucode-gate.ts",
@@ -208,6 +219,10 @@ pub(super) fn prepare(
         (
             "lib/policy.ts",
             include_str!("../../../../engines/pi/extensions/lib/policy.ts"),
+        ),
+        (
+            "lib/connectors.ts",
+            include_str!("../../../../engines/pi/extensions/lib/connectors.ts"),
         ),
         (
             "LICENSE",

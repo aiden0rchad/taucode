@@ -108,15 +108,15 @@ async fn spawn_with_client(
     codex_home: Option<PathBuf>,
 ) -> Result<Arc<WorkspaceSession>, String> {
     let settings = state.app_settings.lock().await.clone();
-    let global = settings.codegraph_enabled;
-    let setup = if shared::codegraph_core::enabled(global, entry.settings.codegraph_enabled) {
-        state.codegraph.setup.clone()
-    } else {
-        None
-    };
+    let setup = state.codegraph.setup.clone();
+    let global = shared::connectors::effective(&settings, &entry.settings, setup.as_ref())?
+        .iter()
+        .any(|s| s.id == "codegraph" && s.enabled);
+    let mut graph_entry = entry.clone();
+    graph_entry.settings.codegraph_enabled = None;
     state
         .codegraph
-        .start(entry.clone(), global, false, event_sink.clone())
+        .start(graph_entry, global, false, event_sink.clone())
         .await;
     spawn_workspace_session(
         entry,
@@ -811,7 +811,14 @@ impl DaemonState {
         cursor: Option<String>,
         limit: Option<u32>,
     ) -> Result<Value, String> {
-        codex_core::list_mcp_server_status_core(&self.sessions, workspace_id, cursor, limit).await
+        codex_core::list_mcp_server_status_core(
+            &self.app_settings,
+            &self.workspaces,
+            workspace_id,
+            cursor,
+            limit,
+        )
+        .await
     }
 
     async fn archive_thread(

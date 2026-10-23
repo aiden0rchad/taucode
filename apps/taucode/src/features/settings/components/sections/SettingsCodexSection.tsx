@@ -234,8 +234,8 @@ export function SettingsCodexSection({
       subtitle="Configure the Codex CLI used by taucode and validate the install."
     >
       <SettingsToggleRow title="CodeGraph" subtitle="Give agents a private code index with compaction-safe deduplication. Changes apply on the next app-server spawn.">
-        <SettingsToggleSwitch aria-label="Enable CodeGraph" pressed={appSettings.codegraphEnabled ?? true}
-          onClick={() => void onUpdateAppSettings({ ...appSettings, codegraphEnabled: !(appSettings.codegraphEnabled ?? true) })} />
+        <SettingsToggleSwitch aria-label="Enable CodeGraph" pressed={appSettings.mcpServers?.find(s => s.id === "codegraph")?.enabled ?? appSettings.codegraphEnabled ?? true}
+          onClick={() => { const enabled = !(appSettings.mcpServers?.find(s => s.id === "codegraph")?.enabled ?? appSettings.codegraphEnabled ?? true); void onUpdateAppSettings({ ...appSettings, codegraphEnabled: enabled, mcpServers: [...(appSettings.mcpServers ?? []).filter(s => s.id !== "codegraph"), { ...(appSettings.mcpServers?.find(s => s.id === "codegraph") ?? { id: "codegraph", name: "CodeGraph" }), enabled }] }); }} />
       </SettingsToggleRow>
 
       <div className="settings-field">

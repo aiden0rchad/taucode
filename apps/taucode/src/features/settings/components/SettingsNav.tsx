@@ -28,6 +28,7 @@ export function SettingsNav({
   return (
     <aside className="settings-sidebar">
       <PanelNavList className="settings-nav-list">
+        <PanelNavItem className="settings-nav" icon={<ServerCog aria-hidden />} active={activeSection === "connectors"} showDisclosure={showDisclosure} onClick={() => onSelectSection("connectors")}>Connectors</PanelNavItem>
         <PanelNavItem className="settings-nav" icon={<ServerCog aria-hidden />} active={activeSection === "providers"} showDisclosure={showDisclosure} onClick={() => onSelectSection("providers")}>Providers</PanelNavItem>
         <PanelNavItem
           className="settings-nav"

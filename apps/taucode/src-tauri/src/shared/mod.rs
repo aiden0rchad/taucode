@@ -19,4 +19,5 @@ pub(crate) mod worktree_core;
 
 pub(crate) mod engines;
 
+pub(crate) mod connectors;
 pub(crate) mod pi;

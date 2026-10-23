@@ -39,6 +39,7 @@ impl Process {
         emit: Emit,
         graph: Option<CodegraphSetup>,
         idle: Duration,
+        secrets: Vec<String>,
     ) -> Result<Arc<Self>, String> {
         command
             .stdin(std::process::Stdio::piped())
@@ -67,13 +68,17 @@ impl Process {
             graph,
         });
         let reader = p.clone();
+        let output_secrets = secrets.clone();
         tokio::spawn(async move {
             // split(b'\n') is deliberately LF-only (including U+2028/U+2029 in strings).
             let mut lines = BufReader::new(stdout).split(b'\n');
             let reason = loop {
                 match lines.next_segment().await {
                     Ok(Some(line)) if line.iter().all(u8::is_ascii_whitespace) => continue,
-                    Ok(Some(line)) => match serde_json::from_slice::<Value>(&line) {
+                    Ok(Some(line)) => match serde_json::from_str::<Value>(&redact(
+                        String::from_utf8_lossy(&line).into_owned(),
+                        &output_secrets,
+                    )) {
                         Ok(m) => reader.receive(m).await,
                         Err(e) => break format!("Pi returned invalid JSON: {e}"),
                     },
@@ -109,10 +114,9 @@ impl Process {
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).split(b'\n');
             while let Ok(Some(line)) = lines.next_segment().await {
-                eprintln!("pi: {}", String::from_utf8_lossy(&line));
-                stderr_emit(
-                    json!({"method":"codex/stderr","params":{"message":String::from_utf8_lossy(&line)}}),
-                );
+                let line = redact(String::from_utf8_lossy(&line).into_owned(), &secrets);
+                eprintln!("pi: {line}");
+                stderr_emit(json!({"method":"codex/stderr","params":{"message":line}}));
             }
         });
         let weak = Arc::downgrade(&p);
@@ -281,6 +285,16 @@ impl Process {
         self.alive.store(false, Ordering::SeqCst);
         Ok(())
     }
+}
+
+fn redact(mut text: String, secrets: &[String]) -> String {
+    for secret in secrets.iter().filter(|s| !s.is_empty()) {
+        let escaped = serde_json::to_string(secret).unwrap();
+        text = text
+            .replace(&escaped[1..escaped.len() - 1], "[REDACTED]")
+            .replace(secret, "[REDACTED]");
+    }
+    text
 }
 
 pub(super) async fn check_node(node: &str) -> Result<(), String> {

@@ -313,6 +313,8 @@ pub(crate) struct WorkspaceGroup {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub(crate) struct WorkspaceSettings {
+    #[serde(default, rename = "mcpServers")]
+    pub(crate) mcp_servers: Vec<McpServerEntry>,
     #[serde(default, rename = "agentPolicy")]
     pub(crate) agent_policy: Option<AgentPolicyOverride>,
     #[serde(default, rename = "codegraphEnabled")]
@@ -381,6 +383,8 @@ pub(crate) struct RemoteBackendTarget {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct AppSettings {
+    #[serde(default = "default_mcp_servers", rename = "mcpServers")]
+    pub(crate) mcp_servers: Vec<McpServerEntry>,
     #[serde(default)]
     pub(crate) providers: Vec<ProviderEntry>,
     #[serde(default, rename = "agentPolicy")]
@@ -1128,6 +1132,7 @@ fn default_codegraph_enabled() -> bool {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            mcp_servers: default_mcp_servers(),
             providers: Vec::new(),
             agent_policy: AgentPolicy::default(),
             codegraph_enabled: true,
@@ -1577,4 +1582,61 @@ pub(crate) struct AgentPolicyOverride {
     pub default_model: Option<ModelRef>,
     pub default_engine: Option<EngineKind>,
     pub subagents: Option<SubagentPolicyOverride>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(untagged, deny_unknown_fields)]
+pub(crate) enum McpCredential {
+    Value { value: String },
+    Secret { secret: bool },
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
+pub(crate) enum McpTransport {
+    Stdio {
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+        cwd: Option<String>,
+        #[serde(default)]
+        env: std::collections::BTreeMap<String, McpCredential>,
+    },
+    Http {
+        url: String,
+        #[serde(default)]
+        headers: std::collections::BTreeMap<String, McpCredential>,
+        bearer: Option<McpCredential>,
+    },
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum McpApproval {
+    #[default]
+    Auto,
+    Ask,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct McpServerEntry {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    pub enabled: bool,
+    pub transport: Option<McpTransport>,
+    pub tool_allowlist: Option<Vec<String>>,
+    pub tool_denylist: Option<Vec<String>>,
+    #[serde(default)]
+    pub approval: McpApproval,
+}
+
+pub(crate) fn default_mcp_servers() -> Vec<McpServerEntry> {
+    vec![McpServerEntry {
+        id: "codegraph".into(),
+        name: "CodeGraph".into(),
+        enabled: true,
+        transport: None,
+        tool_allowlist: None,
+        tool_denylist: None,
+        approval: McpApproval::Auto,
+    }]
 }

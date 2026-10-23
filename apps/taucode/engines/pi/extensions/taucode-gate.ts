@@ -2,16 +2,31 @@ import { readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { decide, normalizeRule, safeReadOnlyCommand, type Access } from "./lib/policy.ts";
+import { connectorDecision, type Connector } from "./lib/connectors.ts";
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => { ctx.ui.setStatus("taucode-gate", "ready"); });
   pi.on("tool_call", async (event, ctx) => {
-    if (!["bash", "write", "edit"].includes(event.toolName)) return;
+    if (!["bash", "write", "edit"].includes(event.toolName) && !event.toolName.startsWith("mcp__")) return;
     const home = process.env.PI_CODING_AGENT_DIR!;
     const session = process.env.TAUCODE_SESSION_KEY;
     if (!home || !session || !/^[\w-]+$/.test(session)) return { block: true, reason: "Missing taucode thread access policy" };
     const file = join(home, "taucode", "threads", `${session}.json`);
     const read = () => JSON.parse(readFileSync(file, "utf8")) as Access;
+    if (event.toolName.startsWith("mcp__")) {
+      const decideMcp = () => {
+        try {
+          return connectorDecision(JSON.parse(readFileSync(join(home, "taucode/connectors.json"), "utf8")) as Connector[], event.toolName, process.env.TAUCODE_SUBAGENT_DEPTH && process.env.TAUCODE_TOOL_ACCESS === "read-only" ? "read-only" : read().accessMode, ctx.hasUI && !process.env.TAUCODE_SUBAGENT_DEPTH);
+        } catch { return "block"; }
+      };
+      const decision = decideMcp();
+      if (decision === "allow") return;
+      if (decision === "block") return { block: true, reason: "Connector tool blocked by taucode policy" };
+      const title = "taucode:approval:" + JSON.stringify({ toolCallId: event.toolCallId, tool: event.toolName, command: event.toolName, cwd: ctx.cwd });
+      const answer = await ctx.ui.select(title, ["Allow", "Block"]);
+      if (answer !== "Allow" || decideMcp() === "block") return { block: true, reason: "Connector call denied" };
+      return;
+    }
     const input = event.input as Record<string, unknown>;
     const call = { tool: event.toolName, cwd: ctx.cwd, command: input.command as string, path: input.path as string };
     const child = process.env.TAUCODE_SUBAGENT_DEPTH ? { workspace: process.env.TAUCODE_WORKSPACE!, toolAccess: process.env.TAUCODE_TOOL_ACCESS ?? "read-only" } : undefined;

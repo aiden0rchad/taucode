@@ -16,6 +16,24 @@ pub(super) async fn try_handle(
     params: &Value,
 ) -> Option<Result<Value, String>> {
     match method {
+        "connector_request" => {
+            let input = params["params"].clone();
+            let changed = matches!(input["action"].as_str(), Some("setSecret" | "deleteSecret"));
+            let result = crate::shared::connectors::request(
+                input,
+                &state.app_settings,
+                &state.workspaces,
+                state.codegraph.setup.as_ref(),
+                &crate::shared::providers::Keychain,
+            )
+            .await;
+            if result.is_ok() && changed {
+                for session in state.sessions.lock().await.values() {
+                    session.credentials_changed().await;
+                }
+            }
+            Some(result)
+        }
         "get_codex_config_path" => {
             let path = match settings_core::get_codex_config_path_core() {
                 Ok(value) => value,

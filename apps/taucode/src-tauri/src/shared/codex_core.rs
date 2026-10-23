@@ -469,16 +469,23 @@ pub(crate) async fn list_threads_core(
 }
 
 pub(crate) async fn list_mcp_server_status_core(
-    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    settings: &Mutex<crate::types::AppSettings>,
+    workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
     workspace_id: String,
-    cursor: Option<String>,
-    limit: Option<u32>,
+    _cursor: Option<String>,
+    _limit: Option<u32>,
 ) -> Result<Value, String> {
-    let session = get_session_clone(sessions, &workspace_id).await?;
-    let params = json!({ "cursor": cursor, "limit": limit });
-    session
-        .send_request_for_workspace(&workspace_id, "mcpServerStatus/list", params)
+    let app = settings.lock().await.clone();
+    let workspace = workspaces
+        .lock()
         .await
+        .get(&workspace_id)
+        .cloned()
+        .ok_or("Workspace not found")?;
+    let entries = super::connectors::effective(&app, &workspace.settings, None)?;
+    Ok(
+        json!({"result":{"data":entries.iter().map(|s| json!({"name":s.name,"enabled":s.enabled,"approval":s.approval})).collect::<Vec<_>>(),"nextCursor":null}}),
+    )
 }
 
 pub(crate) async fn archive_thread_core(

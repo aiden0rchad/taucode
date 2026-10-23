@@ -15,6 +15,7 @@ export type AgentPolicy = {
 };
 export type AgentPolicyOverride = Partial<Omit<AgentPolicy, "subagents">> & { subagents?: Partial<AgentPolicy["subagents"]> };
 export type WorkspaceSettings = {
+  mcpServers?: McpServerEntry[];
   agentPolicy?: AgentPolicyOverride | null;
   codegraphEnabled?: boolean | null;
   sidebarCollapsed: boolean;
@@ -264,7 +265,16 @@ export type OpenAppTarget = {
   args: string[];
 };
 
+export type McpCredential = { value: string } | { secret: true };
+export type McpServerEntry = {
+  id: string; name?: string; enabled: boolean;
+  transport?: { type: "stdio"; command: string; args: string[]; cwd?: string | null; env: Record<string, McpCredential> } | { type: "http"; url: string; headers: Record<string, McpCredential>; bearer?: { secret: true } | null } | null;
+  toolAllowlist?: string[] | null; toolDenylist?: string[] | null; approval?: "auto" | "ask";
+};
+export type McpConnectionResult = { ok: boolean; latencyMs: number; tools?: { name: string; description?: string }[]; error?: string };
+
 export type AppSettings = {
+  mcpServers?: McpServerEntry[];
   providers?: ProviderEntry[];
   agentPolicy?: AgentPolicy;
   codegraphEnabled: boolean;

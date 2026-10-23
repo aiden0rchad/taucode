@@ -54,11 +54,20 @@ grants; they're run outside your sandbox.
 ## Components
 
 1. **Sidecar** `apps/taucode/engines/computer/` (Python, managed by `uv`):
-   - `pyproject.toml` pins `gui-agents==0.3.2`, installed with `--no-deps`, plus exactly
-     `numpy`, `backoff`, `openai`, `anthropic`, `pytesseract` (an import-only wrapper; OCR
-     paths stay disabled) and `google-genai` (Gemini planners). Verified: this set imports
-     `gui_agents.s3.agents.agent_s` and `...grounding` cleanly in a 74 MB venv, without
-     paddle, pyautogui or OpenCV. Keep an import test.
+   - **Vendor, don't depend.** `gui-agents`' declared dependencies drag in PaddlePaddle/OCR
+     (uv can't lock it without them; verified). Copy only the Agent-S3 modules the planner
+     and grounding path need from `/Users/rolandleyco/taucode-refs/Agent-S/gui_agents/s3`
+     (about 3.8k lines, Apache-2.0) into `taucode_cua/vendor/agent_s3/`:
+     `agents/{agent_s,worker,grounding}.py`, `core/{engine,mllm,module}.py`,
+     `memory/procedural_memory.py`, `utils/{common_utils,formatters}.py` (plus `bbon/` only
+     if worker needs it). Keep the Apache-2.0 LICENSE and add a NOTICE with the upstream
+     commit. Patch the vendored code to:
+     - remove `eval` in `create_pyautogui_code`, replaced by the safe parser below
+     - drop the pyautogui, cv2, pytesseract and subprocess/code-agent paths
+     - rewrite imports to the vendored package path
+   - `pyproject.toml` (Python 3.12) depends only on `numpy`, `pillow`, `backoff`, `openai`,
+     `anthropic` and `google-genai` (+ `pytest` dev). Lock with uv; the lock must contain
+     no paddle, opencv, pyautogui or pytesseract.
    - `taucode_cua/server.py`: a stdio JSON-RPC process (not MCP; the Rust host is its only
      client) with methods `configure(planner, grounding, platform)`, `reset()`,
      `predict(instruction, screenshot_png_b64, screen_size)` →

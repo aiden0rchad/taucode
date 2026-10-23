@@ -9,14 +9,16 @@ type Props = {
 };
 
 export function CodegraphProjectSettings({ workspace, globalEnabled, onUpdate }: Props) {
-  const override = workspace.settings.codegraphEnabled;
-  const enabled = globalEnabled && (override ?? true);
+  const registryOverride = workspace.settings.mcpServers?.find(s => s.id === "codegraph");
+  const override = registryOverride?.enabled ?? workspace.settings.codegraphEnabled;
+  const enabled = registryOverride?.enabled ?? (globalEnabled && (override ?? true));
+  const update = (enabled: boolean | null) => onUpdate(workspace.id, { codegraphEnabled: enabled, ...(registryOverride ? { mcpServers: [...(workspace.settings.mcpServers ?? []).filter(s => s.id !== "codegraph"), ...(enabled === null ? [] : [{ id: "codegraph", enabled }])] } : {}) });
   const { status, error, busy, run, rebuild } = useCodegraphStatus(workspace.id, globalEnabled, override);
   return <div>
     <SettingsToggleRow title="CodeGraph" subtitle="Changes apply on the next app-server spawn.">
       <SettingsToggleSwitch aria-label={`CodeGraph for ${workspace.name}`} pressed={enabled}
-        disabled={!globalEnabled || busy}
-        onClick={() => void run(() => onUpdate(workspace.id, { codegraphEnabled: !enabled }))} />
+        disabled={(!globalEnabled && !registryOverride) || busy}
+        onClick={() => void run(() => update(!enabled))} />
     </SettingsToggleRow>
     <div className="settings-help" role="status">
       {!enabled ? "disabled" : status ? `${status.state}: ${status.detail}` : "Loading CodeGraph status…"}
@@ -25,6 +27,6 @@ export function CodegraphProjectSettings({ workspace, globalEnabled, onUpdate }:
     <button type="button" className="ghost settings-button-compact" disabled={busy || !enabled || status?.state === "indexing"}
       onClick={() => void rebuild()}>Rebuild index</button>
     {override != null && <button type="button" className="ghost settings-button-compact" disabled={busy}
-      onClick={() => void run(() => onUpdate(workspace.id, { codegraphEnabled: null }))}>Use app setting</button>}
+      onClick={() => void run(() => update(null))}>Use app setting</button>}
   </div>;
 }

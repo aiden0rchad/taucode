@@ -1,7 +1,4 @@
-use std::{
-    ffi::OsString,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
@@ -16,32 +13,6 @@ pub struct CodegraphSetup {
 }
 
 impl CodegraphSetup {
-    pub fn codex_config_args(&self) -> Vec<OsString> {
-        let args = ["--tau-mcp-proxy", "--"]
-            .into_iter()
-            .chain(self.upstream.iter().map(String::as_str))
-            .map(quote)
-            .collect::<Vec<_>>()
-            .join(", ");
-        [
-            format!(
-                "mcp_servers.codegraph.command={}",
-                quote(&self.proxy_exe.to_string_lossy())
-            ),
-            format!("mcp_servers.codegraph.args=[{args}]"),
-            format!(
-                // Cross-call dedup is safe only because the proxy resets sessions on compaction.
-                // A private CODEGRAPH_DIR gives taucode its own daemon, so other codegraph
-                // clients of the project (e.g. Claude Code) keep dedup off.
-                "mcp_servers.codegraph.env={{ TAUCODE_STATE_DIR = {}, CODEGRAPH_EXPLORE_DEDUP = \"1\", CODEGRAPH_DIR = \"{CODEGRAPH_DIR}\" }}",
-                quote(&self.state_dir.to_string_lossy())
-            ),
-        ]
-        .into_iter()
-        .flat_map(|value| [OsString::from("-c"), OsString::from(value)])
-        .collect()
-    }
-
     pub fn on_engine_message(&self, msg: &Value) {
         if msg.get("id").is_none()
             && (matches!(
@@ -105,50 +76,10 @@ fn executable(path: &Path) -> bool {
     }
 }
 
-fn quote(value: &str) -> String {
-    use std::fmt::Write;
-    let mut result = String::from("\"");
-    for c in value.chars() {
-        match c {
-            '"' => result.push_str("\\\""),
-            '\\' => result.push_str("\\\\"),
-            c if c.is_control() => {
-                write!(result, "\\u{:04X}", c as u32).expect("write to string");
-            }
-            c => result.push(c),
-        }
-    }
-    result.push('"');
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn quotes_config_overrides() {
-        let setup = CodegraphSetup {
-            proxy_exe: PathBuf::from("/path with spaces/proxy\"\\"),
-            upstream: vec!["codegraph".into(), "serve".into(), "--mcp".into()],
-            state_dir: PathBuf::from("/state\n\t\u{c}"),
-        };
-        let args = setup.codex_config_args();
-        assert_eq!(args[0], "-c");
-        assert_eq!(
-            args[1],
-            "mcp_servers.codegraph.command=\"/path with spaces/proxy\\\"\\\\\""
-        );
-        assert_eq!(
-            args[3],
-            "mcp_servers.codegraph.args=[\"--tau-mcp-proxy\", \"--\", \"codegraph\", \"serve\", \"--mcp\"]"
-        );
-        assert_eq!(
-            args[5],
-            "mcp_servers.codegraph.env={ TAUCODE_STATE_DIR = \"/state\\u000A\\u0009\\u000C\", CODEGRAPH_EXPLORE_DEDUP = \"1\", CODEGRAPH_DIR = \".codegraph-taucode\" }"
-        );
-    }
 
     #[test]
     fn completed_compaction_items_bump_only_their_thread() {
