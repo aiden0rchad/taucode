@@ -84,14 +84,37 @@ pub struct Process {
     pub child: Child,
     pub port: u16,
     pub websocket: String,
+    #[cfg(unix)]
+    data: PathBuf,
+    #[cfg(unix)]
+    group: Option<u32>,
 }
 impl Process {
     pub fn alive(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(None))
     }
     pub async fn stop(&mut self) {
+        #[cfg(unix)]
+        if let Some(pid) = self.group {
+            if let Err(e) = super::lifecycle::stop(&self.data, pid).await {
+                eprintln!("Browser cleanup: {e}");
+                super::lifecycle::kill_group(pid);
+            }
+        }
         let _ = self.child.kill().await;
         let _ = self.child.wait().await;
+        #[cfg(unix)]
+        {
+            self.group = None;
+        }
+    }
+}
+#[cfg(unix)]
+impl Drop for Process {
+    fn drop(&mut self) {
+        if let Some(pid) = self.group {
+            super::lifecycle::kill_group(pid);
+        }
     }
 }
 pub async fn launch(
@@ -103,37 +126,61 @@ pub async fn launch(
     let binary = discover(settings, Path::is_file)?;
     let dir = profile(data);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    super::lifecycle::cleanup(data)
+        .await
+        .map_err(|e| format!("Cannot stop stale browser: {e}"))?;
     let active = dir.join("DevToolsActivePort");
     match std::fs::remove_file(&active) {
         Ok(()) => (),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
         Err(e) => return Err(e.to_string()),
     }
-    let mut child = Command::new(binary)
+    let mut command = Command::new(binary);
+    command
         .args(arguments(data, width, height))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    command.process_group(0);
+    let child = command
         .spawn()
         .map_err(|e| format!("Cannot launch browser: {e}"))?;
+    let mut process = Process {
+        #[cfg(unix)]
+        group: child.id(),
+        child,
+        port: 0,
+        websocket: String::new(),
+        #[cfg(unix)]
+        data: data.to_path_buf(),
+    };
+    #[cfg(unix)]
+    if let Err(e) = super::lifecycle::record(
+        data,
+        process.child.id().ok_or("Browser exited during launch")?,
+    ) {
+        process.stop().await;
+        return Err(format!("Cannot record browser process: {e}"));
+    }
     for _ in 0..150 {
-        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+        if let Some(status) = process.child.try_wait().map_err(|e| e.to_string())? {
+            process.stop().await;
             return Err(format!(
                 "Browser exited ({status}). The taucode profile may already be in use."
             ));
         }
         if let Ok(text) = std::fs::read_to_string(&active) {
             if let Ok((port, websocket)) = parse_port(&text) {
-                return Ok(Process {
-                    child,
-                    port,
-                    websocket,
-                });
+                process.port = port;
+                process.websocket = websocket;
+                return Ok(process);
             }
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    let _ = child.kill().await;
+    process.stop().await;
     Err("Browser did not create DevToolsActivePort within 15 seconds".into())
 }

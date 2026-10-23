@@ -7,7 +7,8 @@ async fn pinned_playwright_lists_verified_schemas_without_a_browser_or_sockets()
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let cli = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../engines/browser/node_modules/@playwright/mcp/cli.js");
-    let mut child = launcher::spawn(&cli, 1, &Settings::default()).unwrap();
+    let data = std::env::temp_dir().join(format!("browser-mcp-{}", uuid::Uuid::new_v4()));
+    let mut child = launcher::spawn(&cli, &data, 1, &Settings::default()).unwrap();
     let mut input = child.stdin.take().unwrap();
     let mut output = BufReader::new(child.stdout.take().unwrap()).lines();
     input.write_all(format!("{}\n",json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"taucode-test","version":"1"}}})).as_bytes()).await.unwrap();
@@ -34,11 +35,25 @@ async fn pinned_playwright_lists_verified_schemas_without_a_browser_or_sockets()
     assert!(tools.iter().any(|t| t["name"] == "browser_snapshot"));
     child.kill().await.unwrap();
     child.wait().await.unwrap();
+    std::fs::remove_dir_all(data).unwrap();
 }
 
 struct Fake {
     sent: Arc<StdMutex<Vec<Value>>>,
     replies: VecDeque<Value>,
+}
+
+#[tokio::test]
+async fn shutdown_prevents_queued_requests_from_relaunching_chrome() {
+    let browser = Browser::new(PathBuf::from("/unused-browser-data"));
+    browser.shutdown().await;
+    let error = browser
+        .local_request(json!({"action":"ensure"}))
+        .await
+        .unwrap_err();
+    assert_eq!(error, "Browser host is shutting down");
+    assert!(browser.running.lock().await.is_none());
+    browser.shutdown().await; // Repeated shutdown (signal, then app exit) is harmless.
 }
 
 #[tokio::test]
@@ -252,13 +267,46 @@ fn launch_paths_arguments_and_validation() {
         blocked_origins: vec!["https://blocked.test".into()],
         ..Default::default()
     };
-    let args = launcher::arguments(Path::new("/runtime/cli.js"), 1234, &settings);
+    let args = launcher::arguments(
+        Path::new("/runtime/cli.js"),
+        Path::new("/app data"),
+        1234,
+        &settings,
+    );
+    // Both schema-only startup and the real CDP connection use this command.
+    for port in [1, 1234] {
+        let command = launcher::command(
+            Path::new("/runtime/cli.js"),
+            Path::new("/app data"),
+            port,
+            &settings,
+        );
+        assert_eq!(
+            command.as_std().get_current_dir(),
+            Some(Path::new("/app data/browser/output"))
+        );
+        assert_eq!(
+            command
+                .as_std()
+                .get_args()
+                .map(|s| s.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            launcher::arguments(
+                Path::new("/runtime/cli.js"),
+                Path::new("/app data"),
+                port,
+                &settings
+            )
+        );
+    }
     assert_eq!(
         args,
         [
             "/runtime/cli.js",
             "--cdp-endpoint",
             "http://127.0.0.1:1234",
+            "--output-dir",
+            "/app data/browser/output",
             "--allowed-origins",
             "https://a.test;https://b.test",
             "--blocked-origins",

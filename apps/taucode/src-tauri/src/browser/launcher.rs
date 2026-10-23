@@ -8,11 +8,13 @@ use std::{
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-pub fn arguments(cli: &Path, port: u16, settings: &Settings) -> Vec<String> {
+pub fn arguments(cli: &Path, data: &Path, port: u16, settings: &Settings) -> Vec<String> {
     let mut args = vec![
         cli.to_string_lossy().into(),
         "--cdp-endpoint".into(),
         format!("http://127.0.0.1:{port}"),
+        "--output-dir".into(),
+        data.join("browser/output").to_string_lossy().into(),
     ];
     for (flag, origins) in [
         ("--allowed-origins", &settings.allowed_origins),
@@ -59,14 +61,18 @@ fn selection(result: &Value, id: &str) -> Option<Value> {
     )
 }
 pub async fn run(data: PathBuf) -> Result<(), String> {
+    let mut signal = super::signal::Shutdown::new()?;
     let browser = Browser::new(data);
     browser.serve().await?;
-    let result = proxy(&browser).await;
+    let result = proxy(&browser, &mut signal).await;
     // Only stops a browser owned by this launcher (daemon-less mode).
     browser.shutdown().await;
     result
 }
-async fn proxy(browser: &std::sync::Arc<Browser>) -> Result<(), String> {
+async fn proxy(
+    browser: &std::sync::Arc<Browser>,
+    signal: &mut super::signal::Shutdown,
+) -> Result<(), String> {
     let settings = browser.settings()?;
     super::validate(&settings)?;
     let cli = std::env::var_os("TAUCODE_BROWSER_CLI")
@@ -83,7 +89,7 @@ async fn proxy(browser: &std::sync::Arc<Browser>) -> Result<(), String> {
     }
     // Playwright lists its unchanged schemas without connecting to CDP. Recreate
     // the MCP session with the real endpoint only on the first browser tool.
-    let mut child = spawn(&cli, 1, &settings)?;
+    let mut child = spawn(&cli, &browser.data, 1, &settings)?;
     let mut port = None;
     let mut initialize = None;
     let mut input = child.stdin.take().ok_or("Missing MCP input")?;
@@ -103,6 +109,7 @@ async fn proxy(browser: &std::sync::Arc<Browser>) -> Result<(), String> {
     let result = async {
         loop {
             tokio::select! {
+                _ = signal.wait() => break,
                 line = rx.recv() => {
                     let Some(line) = line else { break; };
                     let line = line.map_err(|e| e.to_string())?;
@@ -133,7 +140,7 @@ async fn proxy(browser: &std::sync::Arc<Browser>) -> Result<(), String> {
                                     emit(&json!({"jsonrpc":"2.0","id":id,"error":{"code":-32000,"message":"Browser restarted; retry the tool call"}}).to_string())?;
                                 }
                                 pending.clear();
-                                child = spawn(&cli,current_port,&settings)?;
+                                child = spawn(&cli,&browser.data,current_port,&settings)?;
                                 input = child.stdin.take().ok_or("Missing MCP input")?;
                                 output = BufReader::new(child.stdout.take().ok_or("Missing MCP output")?).lines();
                                 let init_id = format!("{tab_id}-initialize");
@@ -234,17 +241,32 @@ pub(super) fn cancel_pending(
     }
     ids
 }
-pub(super) fn spawn(
+pub(super) fn command(
     cli: &Path,
+    data: &Path,
     port: u16,
     settings: &Settings,
-) -> Result<tokio::process::Child, String> {
-    tokio::process::Command::new(std::env::var_os("TAUCODE_NODE").unwrap_or_else(|| "node".into()))
-        .args(arguments(&cli, port, &settings))
+) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(
+        std::env::var_os("TAUCODE_NODE").unwrap_or_else(|| "node".into()),
+    );
+    command
+        .args(arguments(cli, data, port, settings))
+        .current_dir(data.join("browser/output"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+    command
+}
+pub(super) fn spawn(
+    cli: &Path,
+    data: &Path,
+    port: u16,
+    settings: &Settings,
+) -> Result<tokio::process::Child, String> {
+    std::fs::create_dir_all(data.join("browser/output")).map_err(|e| e.to_string())?;
+    command(cli, data, port, settings)
         .spawn()
         .map_err(|e| format!("Cannot start Playwright MCP: {e}"))
 }

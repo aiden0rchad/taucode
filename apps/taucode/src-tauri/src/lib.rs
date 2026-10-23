@@ -121,6 +121,20 @@ pub fn run() {
             let state = state::AppState::load(&app.handle());
             #[cfg(desktop)]
             tauri::async_runtime::block_on(state.browser.serve()).map_err(std::io::Error::other)?;
+            #[cfg(desktop)]
+            {
+                let mut signal = tauri::async_runtime::block_on(async {
+                    shared::browser::signal::Shutdown::new()
+                })
+                .map_err(std::io::Error::other)?;
+                let browser = state.browser.clone();
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    signal.wait().await;
+                    browser.shutdown().await;
+                    handle.exit(0);
+                });
+            }
             app.manage(state);
             #[cfg(target_os = "macos")]
             {

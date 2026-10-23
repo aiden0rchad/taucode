@@ -1954,7 +1954,9 @@ fn main() {
         .build()
         .expect("failed to build tokio runtime");
 
-    runtime.block_on(async move {
+    let exit_code = runtime.block_on(async move {
+        let mut shutdown =
+            shared::browser::signal::Shutdown::new().expect("install shutdown signals");
         let (events_tx, _events_rx) = broadcast::channel::<DaemonEvent>(2048);
         let event_sink = DaemonEventSink {
             tx: events_tx.clone(),
@@ -1969,7 +1971,8 @@ fn main() {
             Ok(listener) => listener,
             Err(err) => {
                 eprintln!("failed to bind {}: {err}", config.listen);
-                std::process::exit(2);
+                state.browser.shutdown().await;
+                return 2;
             }
         };
         eprintln!(
@@ -1983,7 +1986,11 @@ fn main() {
         );
 
         loop {
-            match listener.accept().await {
+            let accepted = tokio::select! {
+                _ = shutdown.wait() => break,
+                accepted = listener.accept() => accepted,
+            };
+            match accepted {
                 Ok((socket, _addr)) => {
                     let config = Arc::clone(&config);
                     let state = Arc::clone(&state);
@@ -1995,5 +2002,10 @@ fn main() {
                 Err(_) => continue,
             }
         }
+        state.browser.shutdown().await;
+        0
     });
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
 }

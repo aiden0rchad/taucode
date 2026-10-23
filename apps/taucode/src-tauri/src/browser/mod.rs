@@ -1,6 +1,11 @@
 pub(crate) mod bridge;
 mod launcher;
+#[cfg(unix)]
+mod lifecycle;
+#[cfg(unix)]
+mod paths;
 mod process;
+pub(crate) mod signal;
 #[cfg(test)]
 mod tests;
 
@@ -80,6 +85,7 @@ async fn ensure_running<R: Managed, F: std::future::Future<Output = Result<R, St
     Ok(())
 }
 pub struct Browser {
+    shutting_down: std::sync::atomic::AtomicBool,
     data: PathBuf,
     running: Mutex<Option<Running>>,
     pub state: watch::Sender<Value>,
@@ -91,6 +97,7 @@ impl Browser {
     pub fn new(data: PathBuf) -> Arc<Self> {
         let (state, _) = watch::channel(json!({"tabs":[],"active":"","frame":null,"agent":false}));
         Arc::new(Self {
+            shutting_down: std::sync::atomic::AtomicBool::new(false),
             data,
             running: Mutex::new(None),
             state,
@@ -103,26 +110,40 @@ impl Browser {
         Ok(crate::storage::read_settings(&self.data.join("settings.json"))?.browser)
     }
     async fn ensure(&self, running: &mut Option<Running>, p: &Value) -> Result<(), String> {
+        if self.shutting_down.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("Browser host is shutting down".into());
+        }
         ensure_running(running, || async {
             let settings = self.settings()?;
             validate(&settings)?;
-            let process = process::launch(
+            let mut process = process::launch(
                 &self.data,
                 &settings,
                 p["width"].as_u64().unwrap_or(1000).clamp(1, 7680) as u32,
                 p["height"].as_u64().unwrap_or(700).clamp(1, 4320) as u32,
             )
             .await?;
-            let socket = bridge::Socket::connect(&process.websocket).await?;
-            self.state
-                .send_replace(json!({"tabs":[],"active":"","frame":null,"agent":false}));
-            let mut bridge = bridge::Bridge::new(socket, self.state.clone());
-            let downloads = std::env::var_os("HOME")
-                .or_else(|| std::env::var_os("USERPROFILE"))
-                .map(PathBuf::from)
-                .ok_or("Cannot locate Downloads directory")?
-                .join("Downloads");
-            bridge.initialize(&downloads.to_string_lossy()).await?;
+            let connected = async {
+                let socket = bridge::Socket::connect(&process.websocket).await?;
+                self.state
+                    .send_replace(json!({"tabs":[],"active":"","frame":null,"agent":false}));
+                let mut bridge = bridge::Bridge::new(socket, self.state.clone());
+                let downloads = std::env::var_os("HOME")
+                    .or_else(|| std::env::var_os("USERPROFILE"))
+                    .map(PathBuf::from)
+                    .ok_or("Cannot locate Downloads directory")?
+                    .join("Downloads");
+                bridge.initialize(&downloads.to_string_lossy()).await?;
+                Ok::<_, String>(bridge)
+            }
+            .await;
+            let bridge = match connected {
+                Ok(bridge) => bridge,
+                Err(error) => {
+                    process.stop().await;
+                    return Err(error);
+                }
+            };
             let (requests, receiver) = mpsc::channel(128);
             let task = tokio::spawn(bridge.run(receiver));
             Ok(Running {
@@ -142,12 +163,14 @@ impl Browser {
             .send_replace(json!({"tabs":[],"active":"","frame":null,"agent":false}));
     }
     pub async fn shutdown(&self) {
+        self.shutting_down
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         self.stop().await;
         if let Some(server) = self.server.lock().await.take() {
             server.abort();
-            let _ = std::fs::remove_file(self.data.join("browser/control.sock"));
             #[cfg(unix)]
             {
+                paths::cleanup(&self.data);
                 self.owner_lock.lock().await.take();
             }
         }
@@ -227,7 +250,6 @@ impl Browser {
         {
             use std::os::fd::AsRawFd;
             use std::os::unix::fs::PermissionsExt;
-            use tokio::net::UnixListener;
             let mut server = self.server.lock().await;
             if server.is_some() {
                 return Ok(());
@@ -251,28 +273,7 @@ impl Browser {
                 }
                 return Err(error.to_string());
             }
-            let path = dir.join("control.sock");
-            if path.exists() {
-                match tokio::net::UnixStream::connect(&path).await {
-                    Ok(_) => return Ok(()), // Another app/daemon owns the profile.
-                    Err(e)
-                        if matches!(
-                            e.kind(),
-                            std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound
-                        ) =>
-                    {
-                        let _ = std::fs::remove_file(&path);
-                    }
-                    Err(e) => return Err(e.to_string()),
-                }
-            }
-            let listener = match UnixListener::bind(&path) {
-                Ok(l) => l,
-                Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => return Ok(()),
-                Err(e) => return Err(e.to_string()),
-            };
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-                .map_err(|e| e.to_string())?;
+            let listener = paths::bind(&self.data).await?;
             *self.owner_lock.lock().await = Some(lock);
             let browser = Arc::downgrade(self);
             *server = Some(tokio::spawn(async move {
@@ -334,7 +335,7 @@ async fn ipc(data: &Path, p: Value) -> Result<Value, String> {
         let mut socket = {
             let mut attempts = 0;
             loop {
-                match tokio::net::UnixStream::connect(data.join("browser/control.sock")).await {
+                match paths::connect(data).await {
                     Ok(socket) => break socket,
                     Err(e)
                         if attempts < 50
