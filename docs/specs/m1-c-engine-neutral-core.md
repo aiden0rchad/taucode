@@ -114,9 +114,10 @@ once in Rust and unit-test it.
 
 A model is addressed everywhere as `provider/model` (a `ModelRef { providerId, modelId }`).
 `list_models(workspaceId)` returns enabled models across all enabled providers, each tagged
-with the engines that can run it (see the capability rule in 4), plus codex's own
-`model/list` models under a synthetic provider `codex-default` when the codex engine is
-available.
+with the engines that can run it (see the capability rule in 4). The registry is the
+**only** model source: no `codex-default` provider and no codex `model/list` catalog in the
+picker. codex's `model/list` may still be used internally to read reasoning-effort metadata
+for a registry model.
 
 ## 3. Subagent policy
 
