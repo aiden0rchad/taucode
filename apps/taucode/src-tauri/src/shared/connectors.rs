@@ -41,7 +41,12 @@ pub(crate) fn validate(entries: &[McpServerEntry], overrides: bool) -> Result<()
             .iter()
             .any(|id| id.replace('-', "_") == s.id.replace('-', "_"))
         {
-            if s.transport.is_some() || !matches!(s.id.as_str(), "codegraph" | "taucode-browser") {
+            if s.transport.is_some()
+                || !matches!(
+                    s.id.as_str(),
+                    "codegraph" | "taucode-browser" | "taucode-computer"
+                )
+            {
                 return Err("Reserved built-in connector ID".into());
             }
         } else if s.transport.is_none() && !overrides {
@@ -204,6 +209,15 @@ pub(crate) fn effective(
         .find(|s| s.id == "taucode-browser")
         .unwrap();
     browser.approval = app.browser.approval.clone();
+    if let Some(c) = entries.iter_mut().find(|s| s.id == "taucode-computer") {
+        c.enabled = app.computer.enabled
+            && !workspace
+                .mcp_servers
+                .iter()
+                .any(|s| s.id == c.id && !s.enabled)
+            && !app.mcp_servers.iter().any(|s| s.id == c.id && !s.enabled);
+        c.approval = Approval::Auto;
+    }
     Ok(entries)
 }
 
@@ -227,16 +241,21 @@ pub(crate) fn load(
 }
 
 pub(crate) fn configure_browser(entries: &mut [McpServerEntry], data: &Path) -> Result<(), String> {
-    if let Some(browser) = entries.iter_mut().find(|s| s.id == "taucode-browser") {
-        browser.transport = Some(Transport::Stdio {
-            command: std::env::current_exe()
-                .map_err(|e| e.to_string())?
-                .to_string_lossy()
-                .into(),
-            args: vec!["--tau-browser-mcp".into(), data.to_string_lossy().into()],
-            cwd: None,
-            env: BTreeMap::new(),
-        });
+    for (id, flag) in [
+        ("taucode-browser", "--tau-browser-mcp"),
+        ("taucode-computer", "--tau-computer-mcp"),
+    ] {
+        if let Some(browser) = entries.iter_mut().find(|s| s.id == id) {
+            browser.transport = Some(Transport::Stdio {
+                command: std::env::current_exe()
+                    .map_err(|e| e.to_string())?
+                    .to_string_lossy()
+                    .into(),
+                args: vec![flag.into(), data.to_string_lossy().into()],
+                cwd: None,
+                env: BTreeMap::new(),
+            });
+        }
     }
     Ok(())
 }

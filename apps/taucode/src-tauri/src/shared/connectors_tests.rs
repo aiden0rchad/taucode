@@ -101,7 +101,7 @@ fn reserved_ids_and_overrides() {
         ..Default::default()
     };
     let entries = effective(&app, &workspace, None).unwrap();
-    assert_eq!(entries.len(), 4);
+    assert_eq!(entries.len(), 5);
     assert!(!entries[0].enabled);
     assert_eq!(entries[0].transport, s.transport);
     assert_eq!(entries[0].approval, Approval::Ask);

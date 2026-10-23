@@ -21,5 +21,7 @@ pub(crate) mod engines;
 
 #[path = "../browser/mod.rs"]
 pub(crate) mod browser;
+#[path = "../computer/mod.rs"]
+pub(crate) mod computer;
 pub(crate) mod connectors;
 pub(crate) mod pi;

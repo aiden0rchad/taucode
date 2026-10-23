@@ -29,3 +29,15 @@ test("connector allow/deny and approval rules apply across access modes", () => 
   assert.equal(decide("read"), "block");
   assert.equal(connectorDecision([], "mcp__unknown__read", "full-access", true), "block");
 });
+
+test("computer actions use host policy while connector restrictions still apply", () => {
+  const computer: Connector = { id: "taucode-computer", enabled: true, approval: "ask" };
+  const decide = (tool: string, mode = "full-access") => connectorDecision([computer], `mcp__taucode_computer__${tool}`, mode, false);
+  assert.equal(decide("computer_run_task"), "allow");
+  assert.equal(decide("computer_run_task", "read-only"), "block");
+  assert.equal(decide("computer_screenshot", "read-only"), "allow");
+  computer.toolDenylist = ["computer_screenshot"];
+  assert.equal(decide("computer_screenshot"), "block");
+  computer.enabled = false;
+  assert.equal(decide("computer_run_task"), "block");
+});

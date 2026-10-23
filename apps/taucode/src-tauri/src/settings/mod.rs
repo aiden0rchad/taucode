@@ -39,6 +39,11 @@ pub(crate) async fn update_app_settings(
     window: Window,
 ) -> Result<AppSettings, String> {
     let previous = state.app_settings.lock().await.clone();
+    if serde_json::to_value(&previous.computer).ok()
+        != serde_json::to_value(&settings.computer).ok()
+    {
+        state.computer.stop();
+    }
     if crate::remote_backend::is_remote_mode(&state).await
         && (serde_json::to_value(&previous.providers).ok()
             != serde_json::to_value(&settings.providers).ok()

@@ -385,6 +385,8 @@ pub(crate) struct RemoteBackendTarget {
 pub(crate) struct AppSettings {
     #[serde(default)]
     pub(crate) browser: BrowserSettings,
+    #[serde(default)]
+    pub(crate) computer: ComputerSettings,
     #[serde(default = "default_mcp_servers", rename = "mcpServers")]
     pub(crate) mcp_servers: Vec<McpServerEntry>,
     #[serde(default)]
@@ -1135,6 +1137,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             browser: Default::default(),
+            computer: Default::default(),
             mcp_servers: default_mcp_servers(),
             providers: Vec::new(),
             agent_policy: AgentPolicy::default(),
@@ -1644,6 +1647,15 @@ pub(crate) fn default_mcp_servers() -> Vec<McpServerEntry> {
             approval: McpApproval::Auto,
         },
         McpServerEntry {
+            id: "taucode-computer".into(),
+            name: "Computer Use".into(),
+            enabled: true,
+            transport: None,
+            tool_allowlist: None,
+            tool_denylist: None,
+            approval: McpApproval::Auto,
+        },
+        McpServerEntry {
             id: "taucode-browser".into(),
             name: "Browser".into(),
             enabled: true,
@@ -1672,6 +1684,39 @@ impl Default for BrowserSettings {
             blocked_origins: vec![],
             approval: crate::types::McpApproval::Ask,
             search_url: "https://www.google.com/search?q={query}".into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub(crate) struct ComputerSettings {
+    pub enabled: bool,
+    pub planner: Option<ModelRef>,
+    pub grounding: Option<ModelRef>,
+    pub grounding_mode: String,
+    pub grounding_width: u32,
+    pub grounding_height: u32,
+    pub allowed_apps: Vec<String>,
+    pub denied_apps: Vec<String>,
+    pub max_steps: u32,
+    pub max_seconds: u64,
+    pub shortcut: String,
+}
+impl Default for ComputerSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            planner: None,
+            grounding: None,
+            grounding_mode: "pixels".into(),
+            grounding_width: 1920,
+            grounding_height: 1080,
+            allowed_apps: vec![],
+            denied_apps: vec![],
+            max_steps: 30,
+            max_seconds: 300,
+            shortcut: "Control+Alt+Super+Period".into(),
         }
     }
 }

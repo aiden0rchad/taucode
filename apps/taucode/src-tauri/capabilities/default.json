@@ -4,7 +4,7 @@
     {
       "identifier": "desktop-default",
       "description": "Capability for desktop windows",
-      "windows": ["main", "about"],
+      "windows": ["main", "about", "computer-hud"],
       "platforms": ["macOS", "windows", "linux"],
       "permissions": [
         "core:default",

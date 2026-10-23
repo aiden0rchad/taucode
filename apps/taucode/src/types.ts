@@ -275,6 +275,7 @@ export type McpServerEntry = {
 export type McpConnectionResult = { ok: boolean; latencyMs: number; tools?: { name: string; description?: string }[]; error?: string };
 
 export type AppSettings = {
+  computer?: import("@/features/computer/computer").ComputerSettings;
   browser?: BrowserSettings;
   mcpServers?: McpServerEntry[];
   providers?: ProviderEntry[];

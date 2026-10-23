@@ -45,6 +45,7 @@ pub(crate) async fn update_app_settings_core(
     crate::shared::providers::validate(&settings.providers, &settings.agent_policy)?;
     super::connectors::validate(&settings.mcp_servers, false)?;
     super::browser::validate(&settings.browser)?;
+    super::computer::policy::validate(&settings.computer)?;
     for entry in super::connectors::defaults() {
         if !settings.mcp_servers.iter().any(|s| s.id == entry.id) {
             settings.mcp_servers.push(entry);

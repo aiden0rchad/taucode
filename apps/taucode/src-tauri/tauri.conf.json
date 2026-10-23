@@ -59,6 +59,11 @@
     "macOS": {
       "entitlements": "./Entitlements.plist",
       "infoPlist": "./Info.plist"
+    },
+    "resources": {
+      "../engines/computer/taucode_cua/": "engines/computer/taucode_cua/",
+      "../engines/computer/pyproject.toml": "engines/computer/pyproject.toml",
+      "../engines/computer/uv.lock": "engines/computer/uv.lock"
     }
   },
   "plugins": {
