@@ -219,7 +219,7 @@ export function useSettingsViewOrchestration({
       appSettings,
       onToggleAutomaticAppUpdateChecks,
     },
-    projectsSectionProps,
+    projectsSectionProps: { ...projectsSectionProps, codegraphEnabled: appSettings.codegraphEnabled ?? true, onUpdateWorkspaceSettings },
     environmentsSectionProps,
     displaySectionProps,
     composerSectionProps: {

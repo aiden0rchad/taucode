@@ -1,3 +1,7 @@
+#[path = "../proxy_cli.rs"]
+mod proxy_cli;
+#[path = "../codegraph.rs"]
+mod codegraph;
 #[allow(dead_code)]
 #[path = "../backend/mod.rs"]
 mod backend;
@@ -96,14 +100,18 @@ const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:4732";
 const MAX_IN_FLIGHT_RPC_PER_CONNECTION: usize = 32;
 const DAEMON_NAME: &str = "codex-monitor-daemon";
 
-fn spawn_with_client(
+async fn spawn_with_client(
+    state: &DaemonState,
     event_sink: DaemonEventSink,
     client_version: String,
     entry: WorkspaceEntry,
     default_bin: Option<String>,
     codex_args: Option<String>,
     codex_home: Option<PathBuf>,
-) -> impl std::future::Future<Output = Result<Arc<WorkspaceSession>, String>> {
+) -> Result<Arc<WorkspaceSession>, String> {
+    let global = state.app_settings.lock().await.codegraph_enabled;
+    let setup = if shared::codegraph_core::enabled(global, entry.settings.codegraph_enabled) { state.codegraph.setup.clone() } else { None };
+    state.codegraph.start(entry.clone(), global, false, event_sink.clone()).await;
     spawn_workspace_session(
         entry,
         default_bin,
@@ -111,7 +119,8 @@ fn spawn_with_client(
         codex_home,
         client_version,
         event_sink,
-    )
+        setup,
+    ).await
 }
 
 #[derive(Clone)]
@@ -149,6 +158,7 @@ struct DaemonConfig {
 }
 
 struct DaemonState {
+    codegraph: Arc<shared::codegraph_core::Codegraph>,
     data_dir: PathBuf,
     workspaces: Mutex<HashMap<String, WorkspaceEntry>>,
     sessions: Mutex<HashMap<String, Arc<WorkspaceSession>>>,
@@ -176,6 +186,7 @@ impl DaemonState {
             .ok()
             .and_then(|path| path.to_str().map(str::to_string));
         Self {
+            codegraph: shared::codegraph_core::Codegraph::new(config.data_dir.clone()),
             data_dir: config.data_dir.clone(),
             workspaces: Mutex::new(workspaces),
             sessions: Mutex::new(HashMap::new()),
@@ -261,6 +272,7 @@ impl DaemonState {
             &self.storage_path,
             move |entry, default_bin, codex_args, codex_home| {
                 spawn_with_client(
+                    self,
                     self.event_sink.clone(),
                     client_version.clone(),
                     entry,
@@ -291,6 +303,7 @@ impl DaemonState {
             &self.storage_path,
             move |entry, default_bin, codex_args, codex_home| {
                 spawn_with_client(
+                    self,
                     self.event_sink.clone(),
                     client_version.clone(),
                     entry,
@@ -339,6 +352,7 @@ impl DaemonState {
             },
             move |entry, default_bin, codex_args, codex_home| {
                 spawn_with_client(
+                    self,
                     self.event_sink.clone(),
                     client_version.clone(),
                     entry,
@@ -440,6 +454,7 @@ impl DaemonState {
             },
             move |entry, default_bin, codex_args, codex_home| {
                 spawn_with_client(
+                    self,
                     self.event_sink.clone(),
                     client_version.clone(),
                     entry,
@@ -513,6 +528,7 @@ impl DaemonState {
             },
             move |entry, default_bin, codex_args, codex_home| {
                 spawn_with_client(
+                    self,
                     self.event_sink.clone(),
                     client_version.clone(),
                     entry,
@@ -541,6 +557,7 @@ impl DaemonState {
             &self.app_settings,
             move |entry, default_bin, codex_args, codex_home| {
                 spawn_with_client(
+                    self,
                     self.event_sink.clone(),
                     client_version.clone(),
                     entry,
@@ -567,6 +584,7 @@ impl DaemonState {
             &self.app_settings,
             move |entry, default_bin, next_args, codex_home| {
                 spawn_with_client(
+                    self,
                     self.event_sink.clone(),
                     client_version.clone(),
                     entry,
@@ -968,6 +986,7 @@ impl DaemonState {
             &self.storage_path,
             |entry, default_bin, codex_args, codex_home| {
                 spawn_with_client(
+                    self,
                     self.event_sink.clone(),
                     client_version.clone(),
                     entry,
@@ -1606,6 +1625,7 @@ mod tests {
     fn test_state(data_dir: &std::path::Path) -> DaemonState {
         let (tx, _rx) = broadcast::channel::<DaemonEvent>(32);
         DaemonState {
+            codegraph: shared::codegraph_core::Codegraph::new(data_dir.to_path_buf()),
             data_dir: data_dir.to_path_buf(),
             workspaces: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
@@ -1669,6 +1689,7 @@ mod tests {
         let stdin = child.stdin.take().expect("dummy child stdin");
 
         Arc::new(WorkspaceSession {
+            codegraph: None,
             codex_args: None,
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),
@@ -1911,6 +1932,8 @@ mod tests {
 }
 
 fn main() {
+    proxy_cli::dispatch();
+    if let Err(err) = fix_path_env::fix() { eprintln!("Failed to sync PATH from shell: {err}"); }
     let config = match parse_args() {
         Ok(config) => config,
         Err(err) => {

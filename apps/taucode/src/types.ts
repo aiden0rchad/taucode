@@ -1,4 +1,5 @@
 export type WorkspaceSettings = {
+  codegraphEnabled?: boolean | null;
   sidebarCollapsed: boolean;
   sortOrder?: number | null;
   groupId?: string | null;
@@ -242,6 +243,7 @@ export type OpenAppTarget = {
 };
 
 export type AppSettings = {
+  codegraphEnabled: boolean;
   codexBin: string | null;
   codexArgs: string | null;
   backendMode: BackendMode;

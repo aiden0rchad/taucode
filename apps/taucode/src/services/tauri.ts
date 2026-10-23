@@ -1200,3 +1200,16 @@ export async function sendNotification(
 
   await attemptFallback();
 }
+
+export type CodegraphStatus = {
+  state: "indexing" | "ready" | "failed" | "unavailable" | "disabled";
+  detail: string;
+};
+
+export function codegraphStatus(workspaceId: string): Promise<CodegraphStatus> {
+  return invoke("codegraph_status", { workspaceId });
+}
+
+export function rebuildCodegraph(workspaceId: string): Promise<CodegraphStatus> {
+  return invoke("codegraph_rebuild", { workspaceId });
+}

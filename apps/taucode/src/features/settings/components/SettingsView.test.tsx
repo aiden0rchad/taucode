@@ -43,6 +43,7 @@ vi.mock("@services/tauri", async () => {
     getAgentsSettings: vi.fn(),
     isMobileRuntime: vi.fn(),
     listWorkspaces: vi.fn(),
+    codegraphStatus: vi.fn().mockResolvedValue({ state: "ready", detail: "Private index is ready." }),
   };
 });
 
@@ -68,6 +69,7 @@ getAgentsSettingsMock.mockResolvedValue({
 });
 
 const baseSettings: AppSettings = {
+  codegraphEnabled: true,
   codexBin: null,
   codexArgs: null,
   backendMode: "local",
@@ -1079,7 +1081,7 @@ describe("SettingsView Environments", () => {
 });
 
 describe("SettingsView Codex section", () => {
-  it("updates review mode in codex section", async () => {
+  it("updates CodeGraph and review mode in codex section", async () => {
     cleanup();
     const onUpdateAppSettings = vi.fn().mockResolvedValue(undefined);
     render(
@@ -1114,6 +1116,12 @@ describe("SettingsView Codex section", () => {
         initialSection="codex"
       />,
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "Enable CodeGraph" }));
+    await waitFor(() => expect(onUpdateAppSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ codegraphEnabled: false }),
+    ));
+    expect(screen.getByText(/Changes apply on the next app-server spawn/)).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Review mode"), {
       target: { value: "detached" },

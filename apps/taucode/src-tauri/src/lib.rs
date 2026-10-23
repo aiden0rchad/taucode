@@ -1,3 +1,5 @@
+mod codegraph;
+mod codegraph_commands;
 #[cfg(desktop)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
@@ -180,6 +182,8 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
+            codegraph_commands::codegraph_status,
+            codegraph_commands::codegraph_rebuild,
             settings::get_app_settings,
             settings::update_app_settings,
             settings::get_codex_config_path,

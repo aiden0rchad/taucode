@@ -1,3 +1,5 @@
+import { CodegraphProjectSettings } from "./CodegraphProjectSettings";
+import type { WorkspaceSettings } from "@/types";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2";
@@ -15,6 +17,8 @@ type GroupedWorkspaces = Array<{
 }>;
 
 type SettingsProjectsSectionProps = {
+  codegraphEnabled: boolean;
+  onUpdateWorkspaceSettings: (id: string, settings: Partial<WorkspaceSettings>) => Promise<void>;
   workspaceGroups: WorkspaceGroup[];
   groupedWorkspaces: GroupedWorkspaces;
   ungroupedLabel: string;
@@ -37,6 +41,8 @@ type SettingsProjectsSectionProps = {
 };
 
 export function SettingsProjectsSection({
+  codegraphEnabled,
+  onUpdateWorkspaceSettings,
   workspaceGroups,
   groupedWorkspaces,
   ungroupedLabel,
@@ -207,6 +213,7 @@ export function SettingsProjectsSection({
                   <div className="settings-project-info">
                     <div className="settings-project-name">{workspace.name}</div>
                     <div className="settings-project-path">{workspace.path}</div>
+                    <CodegraphProjectSettings workspace={workspace} globalEnabled={codegraphEnabled} onUpdate={onUpdateWorkspaceSettings} />
                   </div>
                   <div className="settings-project-actions">
                     <select

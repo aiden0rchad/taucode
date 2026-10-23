@@ -38,8 +38,14 @@ pub(crate) async fn spawn_workspace_session(
     app_handle: AppHandle,
     codex_home: Option<PathBuf>,
 ) -> Result<Arc<WorkspaceSession>, String> {
+    use tauri::Manager;
+    let state = app_handle.state::<AppState>();
+    let global = state.app_settings.lock().await.codegraph_enabled;
+    let manager = state.codegraph.clone();
+    let setup = if crate::shared::codegraph_core::enabled(global, entry.settings.codegraph_enabled) { manager.setup.clone() } else { None };
     let client_version = app_handle.package_info().version.to_string();
     let event_sink = TauriEventSink::new(app_handle);
+    manager.start(entry.clone(), global, false, event_sink.clone()).await;
     spawn_workspace_session_inner(
         entry,
         default_codex_bin,
@@ -47,6 +53,7 @@ pub(crate) async fn spawn_workspace_session(
         codex_home,
         client_version,
         event_sink,
+        setup,
     )
     .await
 }

@@ -134,6 +134,7 @@ function buildDefaultSettings(): AppSettings {
     lastConnectedAtMs: null,
   };
   return {
+    codegraphEnabled: true,
     codexBin: null,
     codexArgs: null,
     backendMode: isMobile ? "remote" : "local",
@@ -243,6 +244,7 @@ function normalizeAppSettings(settings: AppSettings): AppSettings {
   return {
     ...settings,
     ...remoteBackendSettings,
+    codegraphEnabled: settings.codegraphEnabled ?? true,
     codexBin: settings.codexBin?.trim() ? settings.codexBin.trim() : null,
     codexArgs: settings.codexArgs?.trim() ? settings.codexArgs.trim() : null,
     uiScale: clampUiScale(settings.uiScale),

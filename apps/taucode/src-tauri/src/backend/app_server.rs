@@ -433,6 +433,7 @@ fn build_initialize_params(client_version: &str) -> Value {
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub(crate) struct WorkspaceSession {
+    pub(crate) codegraph: Option<crate::codegraph::CodegraphSetup>,
     pub(crate) codex_args: Option<String>,
     pub(crate) child: Mutex<Child>,
     pub(crate) stdin: Mutex<ChildStdin>,
@@ -748,6 +749,7 @@ pub(crate) async fn check_codex_installation(
 }
 
 pub(crate) async fn route_app_server_message<E: EventSink>(session: &WorkspaceSession, fallback_workspace_id: &str, event_sink: &E, value: Value) {
+    if let Some(setup) = &session.codegraph { setup.on_engine_message(&value); }
     let maybe_id = value.get("id").and_then(|id| id.as_u64());
     let has_method = value.get("method").is_some();
     let has_result_or_error = value.get("result").is_some() || value.get("error").is_some();
@@ -984,6 +986,7 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
     codex_home: Option<PathBuf>,
     client_version: String,
     event_sink: E,
+    codegraph: Option<crate::codegraph::CodegraphSetup>,
 ) -> Result<Arc<WorkspaceSession>, String> {
     let codex_bin = default_codex_bin;
     let _ = check_codex_installation(codex_bin.clone()).await?;
@@ -993,6 +996,7 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
         codex_args.as_deref(),
         vec!["app-server".to_string()],
     )?;
+    if let Some(setup) = &codegraph { command.args(setup.codex_config_args()); }
     command.current_dir(&entry.path);
     if let Some(path) = codex_home.as_ref() {
         command.env("CODEX_HOME", path);
@@ -1008,6 +1012,7 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
 
     let session = Arc::new(WorkspaceSession {
         codex_args,
+        codegraph,
         child: Mutex::new(child),
         stdin: Mutex::new(stdin),
         pending: Mutex::new(HashMap::new()),

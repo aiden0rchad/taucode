@@ -35,11 +35,14 @@ async fn remove_session_references(
 
 pub(super) async fn take_live_shared_session(
     sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    entry: &WorkspaceEntry,
+    app_settings: &Mutex<AppSettings>,
 ) -> Option<Arc<WorkspaceSession>> {
+    if crate::shared::codegraph_core::enabled(app_settings.lock().await.codegraph_enabled, entry.settings.codegraph_enabled) { return None; }
     loop {
         let existing_session = {
             let sessions = sessions.lock().await;
-            sessions.values().next().cloned()
+            sessions.values().find(|session| session.codegraph.is_none()).cloned()
         };
         let Some(existing_session) = existing_session else {
             return None;
@@ -73,7 +76,7 @@ where
         }
         remove_session_references(sessions, &existing_for_entry).await;
     }
-    if let Some(existing_session) = take_live_shared_session(sessions).await {
+    if let Some(existing_session) = take_live_shared_session(sessions, &entry, app_settings).await {
         existing_session
             .register_workspace_with_path(&entry.id, Some(&entry.path))
             .await;
@@ -168,6 +171,7 @@ mod tests {
         let stdin = child.stdin.take().expect("dummy child stdin");
 
         Arc::new(WorkspaceSession {
+            codegraph: None,
             codex_args: None,
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),

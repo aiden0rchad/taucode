@@ -58,7 +58,7 @@ where
         let sessions = sessions.lock().await;
         (
             sessions.contains_key(&entry.id),
-            sessions.values().next().cloned(),
+            sessions.get(&entry.id).cloned(),
         )
     };
     if !workspace_connected {
@@ -87,7 +87,9 @@ where
         spawn_session(entry.clone(), default_bin, target_args.clone(), codex_home).await?;
     let workspace_ids = {
         let mut sessions = sessions.lock().await;
-        let keys: Vec<String> = sessions.keys().cloned().collect();
+        let keys: Vec<String> = sessions.iter()
+            .filter(|(id, session)| if new_session.codegraph.is_some() { *id == &entry.id } else { Arc::ptr_eq(session, &current_session) })
+            .map(|(id, _)| id.clone()).collect();
         for key in &keys {
             sessions.insert(key.clone(), Arc::clone(&new_session));
         }
@@ -116,8 +118,10 @@ where
             .register_workspace_with_path(workspace_id, path)
             .await;
     }
-    let mut child = current_session.child.lock().await;
-    kill_child_process_tree(&mut child).await;
+    if !sessions.lock().await.values().any(|session| Arc::ptr_eq(session, &current_session)) {
+        let mut child = current_session.child.lock().await;
+        kill_child_process_tree(&mut child).await;
+    }
 
     Ok(WorkspaceRuntimeCodexArgsResult {
         applied_codex_args: target_args,
@@ -168,6 +172,7 @@ mod tests {
         let stdin = child.stdin.take().expect("dummy child stdin");
 
         WorkspaceSession {
+            codegraph: None,
             codex_args,
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),
@@ -268,7 +273,11 @@ mod tests {
             let entry = make_workspace_entry("ws-1");
             let workspaces = Mutex::new(HashMap::from([(entry.id.clone(), entry.clone())]));
             let current_session = Arc::new(make_session(entry.clone(), Some("--old".to_string())));
-            let sessions = Mutex::new(HashMap::from([(entry.id.clone(), current_session)]));
+            let unrelated = Arc::new(make_session(make_workspace_entry("ws-other"), None));
+            let sessions = Mutex::new(HashMap::from([
+                (entry.id.clone(), current_session),
+                ("ws-other".into(), unrelated.clone()),
+            ]));
             let app_settings = Mutex::new(AppSettings::default());
 
             let spawn_calls = Arc::new(AtomicUsize::new(0));
@@ -298,6 +307,9 @@ mod tests {
                     respawned: true
                 }
             );
+            assert!(Arc::ptr_eq(sessions.lock().await.get("ws-other").unwrap(), &unrelated));
+            assert!(unrelated.child.lock().await.try_wait().unwrap().is_none());
+            kill_child_process_tree(&mut *unrelated.child.lock().await).await;
             assert_eq!(spawn_calls.load(Ordering::SeqCst), 1);
 
             let next = sessions

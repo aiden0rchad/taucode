@@ -10,14 +10,15 @@ pub const CODEGRAPH_DIR: &str = ".codegraph-taucode";
 
 #[derive(Clone, Debug)]
 pub struct CodegraphSetup {
-    pub proxy_bin: PathBuf,
+    pub proxy_exe: PathBuf,
     pub upstream: Vec<String>,
     pub state_dir: PathBuf,
 }
 
 impl CodegraphSetup {
     pub fn codex_config_args(&self) -> Vec<OsString> {
-        let args = std::iter::once("--")
+        let args = ["--tau-mcp-proxy", "--"]
+            .into_iter()
             .chain(self.upstream.iter().map(String::as_str))
             .map(quote)
             .collect::<Vec<_>>()
@@ -25,7 +26,7 @@ impl CodegraphSetup {
         [
             format!(
                 "mcp_servers.codegraph.command={}",
-                quote(&self.proxy_bin.to_string_lossy())
+                quote(&self.proxy_exe.to_string_lossy())
             ),
             format!("mcp_servers.codegraph.args=[{args}]"),
             format!(
@@ -48,9 +49,10 @@ impl CodegraphSetup {
                 Some("thread/compacted" | "thread/reverted")
             ) || (msg["method"] == "item/completed"
                 && msg["params"]["item"]["type"] == "contextCompaction"))
-            && let Some(thread) = msg["params"]["threadId"].as_str()
         {
-            self.bump_epoch(thread);
+            if let Some(thread) = msg["params"]["threadId"].as_str() {
+                self.bump_epoch(thread);
+            }
         }
     }
 
@@ -60,24 +62,26 @@ impl CodegraphSetup {
 }
 
 pub fn discover(app_state_dir: PathBuf) -> Option<CodegraphSetup> {
-    let proxy = std::env::var_os("TAUCODE_MCP_PROXY_BIN")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::current_exe()
-                .ok()
-                .map(|exe| exe.with_file_name("tau-mcp-proxy"))
-        });
     let codegraph_available = std::env::var_os("PATH").is_some_and(|paths| {
-        std::env::split_paths(&paths).any(|dir| executable(&dir.join("codegraph")))
+        std::env::split_paths(&paths).any(|dir| {
+            executable(&dir.join(if cfg!(windows) {
+                "codegraph.exe"
+            } else {
+                "codegraph"
+            }))
+        })
     });
-    match proxy.filter(|path| executable(path)) {
-        Some(proxy_bin) if codegraph_available => Some(CodegraphSetup {
-            proxy_bin,
+    match std::env::current_exe().ok() {
+        Some(proxy_exe) if codegraph_available => Some(CodegraphSetup {
+            proxy_exe,
             upstream: vec!["codegraph".into(), "serve".into(), "--mcp".into()],
-            state_dir: app_state_dir,
+            state_dir: app_state_dir.join("codegraph"),
         }),
         _ => {
-            eprintln!("codegraph disabled: tau-mcp-proxy or codegraph executable is missing");
+            static LOG: std::sync::Once = std::sync::Once::new();
+            LOG.call_once(|| {
+                eprintln!("codegraph disabled: codegraph executable is missing from PATH")
+            });
             None
         }
     }
@@ -126,7 +130,7 @@ mod tests {
     #[test]
     fn quotes_config_overrides() {
         let setup = CodegraphSetup {
-            proxy_bin: PathBuf::from("/path with spaces/proxy\"\\"),
+            proxy_exe: PathBuf::from("/path with spaces/proxy\"\\"),
             upstream: vec!["codegraph".into(), "serve".into(), "--mcp".into()],
             state_dir: PathBuf::from("/state\n\t\u{c}"),
         };
@@ -138,7 +142,7 @@ mod tests {
         );
         assert_eq!(
             args[3],
-            "mcp_servers.codegraph.args=[\"--\", \"codegraph\", \"serve\", \"--mcp\"]"
+            "mcp_servers.codegraph.args=[\"--tau-mcp-proxy\", \"--\", \"codegraph\", \"serve\", \"--mcp\"]"
         );
         assert_eq!(
             args[5],
@@ -157,7 +161,7 @@ mod tests {
                 .as_nanos()
         ));
         let setup = CodegraphSetup {
-            proxy_bin: PathBuf::new(),
+            proxy_exe: PathBuf::new(),
             upstream: vec![],
             state_dir: dir.clone(),
         };
@@ -203,7 +207,7 @@ mod tests {
                 .as_nanos()
         ));
         let setup = CodegraphSetup {
-            proxy_bin: PathBuf::new(),
+            proxy_exe: PathBuf::new(),
             upstream: vec![],
             state_dir: dir.clone(),
         };

@@ -10,6 +10,7 @@ import type {
 import {
   SettingsSection,
   SettingsToggleRow,
+  SettingsToggleSwitch,
 } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { FileEditorCard } from "@/features/shared/components/FileEditorCard";
 
@@ -232,6 +233,11 @@ export function SettingsCodexSection({
       title="Codex"
       subtitle="Configure the Codex CLI used by taucode and validate the install."
     >
+      <SettingsToggleRow title="CodeGraph" subtitle="Give agents a private code index with compaction-safe deduplication. Changes apply on the next app-server spawn.">
+        <SettingsToggleSwitch aria-label="Enable CodeGraph" pressed={appSettings.codegraphEnabled ?? true}
+          onClick={() => void onUpdateAppSettings({ ...appSettings, codegraphEnabled: !(appSettings.codegraphEnabled ?? true) })} />
+      </SettingsToggleRow>
+
       <div className="settings-field">
         <label className="settings-field-label" htmlFor="codex-path">
           Default Codex path

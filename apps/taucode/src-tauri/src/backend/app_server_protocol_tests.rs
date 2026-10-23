@@ -29,6 +29,7 @@ pub(crate) fn make_session() -> Arc<WorkspaceSession> {
         .unwrap();
     let stdin = child.stdin.take().unwrap();
     Arc::new(WorkspaceSession {
+        codegraph: None,
         codex_args: None,
         child: Mutex::new(child),
         stdin: Mutex::new(stdin),
@@ -138,5 +139,35 @@ fn routes_string_request_ids_and_resolutions_to_thread_workspace() {
         assert_eq!(events.last().unwrap().workspace_id, "other");
     }
     session.child.lock().await.kill().await.unwrap();
+    });
+}
+
+#[test]
+fn lifecycle_compaction_bumps_exactly_its_thread_epoch() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let dir = std::env::temp_dir().join(format!("codegraph-replay-{}", uuid::Uuid::new_v4()));
+        let mut session = make_session();
+        Arc::get_mut(&mut session).unwrap().codegraph = Some(crate::codegraph::CodegraphSetup {
+            proxy_exe: PathBuf::new(), upstream: vec![], state_dir: dir.clone(),
+        });
+        let sink = RecordingSink::default();
+        let rows: Vec<Value> = include_str!("../../tests/fixtures/codex-0.164/lifecycle.jsonl")
+            .lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        let compacted: Vec<&str> = rows.iter().filter(|row| row["dir"] == "s2c"
+            && row["msg"]["method"] == "item/completed"
+            && row["msg"]["params"]["item"]["type"] == "contextCompaction")
+            .map(|row| row["msg"]["params"]["threadId"].as_str().unwrap()).collect();
+        assert_eq!(compacted.len(), 1);
+        let thread = compacted[0];
+        assert_eq!(tau_mcp_proxy::epoch::read_epoch(&dir, thread), 0);
+        for row in &rows {
+            if row["dir"] == "s2c" {
+                route_app_server_message(&session, "fixture", &sink, row["msg"].clone()).await;
+            }
+        }
+        assert_eq!(tau_mcp_proxy::epoch::read_epoch(&dir, thread), 1);
+        assert_eq!(tau_mcp_proxy::epoch::read_epoch(&dir, "unrelated"), 0);
+        assert_eq!(std::fs::read_dir(dir.join("codegraph-epochs")).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
     });
 }

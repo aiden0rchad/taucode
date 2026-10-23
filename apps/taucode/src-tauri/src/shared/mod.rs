@@ -1,3 +1,4 @@
+pub(crate) mod codegraph_core;
 pub(crate) mod account;
 pub(crate) mod agents_config_core;
 pub(crate) mod codex_aux_core;

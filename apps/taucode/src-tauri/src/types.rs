@@ -313,6 +313,8 @@ pub(crate) struct WorkspaceGroup {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub(crate) struct WorkspaceSettings {
+    #[serde(default, rename = "codegraphEnabled")]
+    pub(crate) codegraph_enabled: Option<bool>,
     #[serde(default, rename = "sidebarCollapsed")]
     pub(crate) sidebar_collapsed: bool,
     #[serde(default, rename = "sortOrder")]
@@ -377,6 +379,8 @@ pub(crate) struct RemoteBackendTarget {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct AppSettings {
+    #[serde(default = "default_codegraph_enabled", rename = "codegraphEnabled")]
+    pub(crate) codegraph_enabled: bool,
     #[serde(default, rename = "codexBin")]
     pub(crate) codex_bin: Option<String>,
     #[serde(default, rename = "codexArgs")]
@@ -1120,9 +1124,12 @@ fn default_selected_open_app_id() -> String {
     }
 }
 
+fn default_codegraph_enabled() -> bool { true }
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            codegraph_enabled: true,
             codex_bin: None,
             codex_args: None,
             backend_mode: default_backend_mode(),
