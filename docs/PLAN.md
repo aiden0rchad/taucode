@@ -7,6 +7,18 @@ subagents, integrated browser) and adds Agent-S computer use.
 Status: plan, nothing built. Checked against `openai/codex` main and `simular-ai/Agent-S`
 main on 2026-10-22.
 
+> **Decisions, 2026-10-23 (these override older text below where they conflict):**
+> - **pi is the default engine; codex is optional.** taucode owns the provider registry
+>   (keychain keys, Test & fetch models per provider), the model catalog and the subagent
+>   policy (max concurrent, max per turn, max depth, allowed models, default model, roles).
+>   Engines are adapters into the app's canonical (codex v2-shaped) event model.
+> - **No account logins or connections**: no ChatGPT/OpenAI sign-in, plan or rate-limit UI.
+>   codex and pi run with isolated, taucode-managed homes.
+> - **The app base is CodexMonitor** (MIT), ported to codex 0.164 in `apps/taucode`; the M0
+>   spike is retired.
+> - Specs: `docs/specs/m1-c-engine-neutral-core.md`, `m1-d1-pi-engine.md`,
+>   `m1-d2-pi-gate-and-subagents.md`.
+
 ---
 
 ## 1. Principles
