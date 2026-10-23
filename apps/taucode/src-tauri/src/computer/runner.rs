@@ -25,6 +25,19 @@ pub trait Environment {
         frame: &'a Frame,
     ) -> BoxFuture<'a, Result<Prediction, String>>;
     fn context(&self) -> Result<Context, String>;
+    fn ground_target(
+        &self,
+        prediction: &Prediction,
+        _: &mut Action,
+    ) -> Result<(String, bool), String> {
+        if prediction.element_target()?.is_some() {
+            return Err("Element snapshots unavailable".into());
+        }
+        Ok((String::new(), false))
+    }
+    fn verify_target(&self) -> Result<(), String> {
+        Ok(())
+    }
     fn prepare(&self, _: &Action, _: &Control, _: &Context) -> Result<Preparation, String> {
         Ok(Preparation::Events)
     }
@@ -318,13 +331,24 @@ pub async fn run(
                 }
             };
             let predict_ms = phase_start.elapsed().as_millis() as u64;
-            let action = prediction
+            let mut action = prediction
                 .validated(frame.display)
                 .map_err(|e| env.planner_error(e))?;
-            let description = prediction.action["target"].as_str().unwrap_or("");
+            let (element_label, secure) = env.ground_target(&prediction, &mut action)?;
+            let description = format!(
+                "{} {}",
+                prediction.action["target"].as_str().unwrap_or(""),
+                element_label
+            )
+            .trim()
+            .to_owned();
             pending = Some(
                 json!({"step":step+1,"thumbnail":frame.thumbnail,"action":action,"target":description,"reflection":prediction.reflection,"planText":prediction.plan_text,"predictMs":predict_ms,"executeMs":0,"waitMs":0}),
             );
+            if let Some((id, index)) = prediction.element_target()? {
+                pending.as_mut().unwrap()["action"]["snapshot_id"] = json!(id);
+                pending.as_mut().unwrap()["action"]["element_index"] = json!(index);
+            }
             phase = "waitMs";
             phase_start = Instant::now();
             control.checkpoint().await?;
@@ -341,10 +365,15 @@ pub async fn run(
             if current != context {
                 return Err("Focus changed while planning; action cancelled".into());
             }
+            let policy_context = Context {
+                secure: current.secure || secure,
+                ..current.clone()
+            };
+            env.verify_target()?;
             match decide(
                 &policy_action,
-                description,
-                &current,
+                &description,
+                &policy_context,
                 settings,
                 apps,
                 step,
@@ -374,7 +403,7 @@ pub async fn run(
             }
             if let Decision::Deny(reason) = decide(
                 &policy_action,
-                description,
+                &description,
                 &after,
                 settings,
                 apps,
@@ -390,6 +419,7 @@ pub async fn run(
                 "executeMs"
             };
             phase_start = Instant::now();
+            env.verify_target()?;
             let preparation = env.prepare(&action, control, &after)?;
             if preparation == Preparation::NeedsForeground {
                 if !settings.allow_foreground_fallback {
@@ -412,7 +442,7 @@ pub async fn run(
                 }
                 if let Decision::Deny(reason) = decide(
                     &policy_action,
-                    description,
+                    &description,
                     &after,
                     settings,
                     apps,
@@ -421,6 +451,7 @@ pub async fn run(
                 ) {
                     return Err(reason);
                 }
+                env.verify_target()?;
                 env.begin_foreground(control, &after)?;
                 entry["waitMs"] = json!(
                     entry["waitMs"].as_u64().unwrap_or(0)

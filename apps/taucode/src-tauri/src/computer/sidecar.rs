@@ -330,11 +330,12 @@ impl Sidecar {
         instruction: &str,
         png: &str,
         size: [u32; 2],
+        snapshot: Value,
     ) -> Result<Prediction, String> {
         serde_json::from_value(
             self.call(
                 "predict",
-                json!({"instruction":instruction,"screenshot_png_b64":png,"screen_size":size}),
+                json!({"instruction":instruction,"screenshot_png_b64":png,"screen_size":size,"ax_snapshot":snapshot}),
             )
             .await?,
         )

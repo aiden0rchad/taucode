@@ -8,7 +8,7 @@ pub fn validate(s: &Settings) -> Result<(), String> {
     if !matches!(s.mode.as_str(), "background" | "foreground") {
         return Err("Invalid computer mode".into());
     }
-    if !matches!(s.grounding_mode.as_str(), "pixels" | "ui-tars") {
+    if !matches!(s.grounding_mode.as_str(), "elements" | "pixels" | "ui-tars") {
         return Err("Invalid grounding mode".into());
     }
     if !(1..=500).contains(&s.max_steps)
@@ -114,9 +114,37 @@ pub fn map_point(p: [f64; 2], space: [f64; 2], display: Display) -> Result<[f64;
     ])
 }
 impl Prediction {
+    pub fn element_target(&self) -> Result<Option<(u64, usize)>, String> {
+        match (
+            self.action.get("snapshot_id"),
+            self.action.get("element_index"),
+        ) {
+            (None, None) => Ok(None),
+            (Some(id), Some(index))
+                if matches!(
+                    self.action["kind"].as_str(),
+                    Some("click" | "type" | "scroll")
+                ) =>
+            {
+                let id = id
+                    .as_u64()
+                    .filter(|n| *n > 0)
+                    .ok_or("Invalid snapshot id")?;
+                let index = index
+                    .as_u64()
+                    .filter(|n| *n < 250)
+                    .ok_or("Invalid element index")?;
+                Ok(Some((id, index as usize)))
+            }
+            _ => Err("Invalid element target".into()),
+        }
+    }
     pub fn validated(&self, display: Display) -> Result<Action, String> {
+        self.element_target()?;
         let mut value = self.action.clone();
         let obj = value.as_object_mut().ok_or("Expected action object")?;
+        obj.remove("snapshot_id");
+        obj.remove("element_index");
         if let Some(target) = obj.remove("target") {
             if target
                 .as_str()

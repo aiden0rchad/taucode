@@ -1717,7 +1717,7 @@ impl Default for ComputerSettings {
             enabled: false,
             planner: None,
             grounding: None,
-            grounding_mode: "pixels".into(),
+            grounding_mode: "elements".into(),
             grounding_width: 1920,
             grounding_height: 1080,
             allowed_apps: vec![],

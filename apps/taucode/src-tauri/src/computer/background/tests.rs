@@ -28,7 +28,7 @@ fn execution_table_uses_fake_ax_and_posting() {
                 clicks: 1,
                 hold_keys: vec![],
             },
-            false,
+            true,
         ),
         (
             Action::Click {
@@ -67,7 +67,7 @@ fn execution_table_uses_fake_ax_and_posting() {
                 clicks: 1,
                 shift: false,
             },
-            false,
+            true,
         ),
         (
             Action::Hotkey {
@@ -193,9 +193,9 @@ fn recoverable_ax_errors_and_lookup_failure_fall_through_once() {
         false
     )
     .is_err());
-    assert_eq!(event_path(true, "skylight"), "ax→skylight");
-    assert_eq!(event_path(true, "postToPid"), "ax→postToPid");
-    assert_eq!(event_path(false, "skylight"), "skylight");
+    assert_eq!(event_path(true, "skylight"), "pixel-skylight");
+    assert_eq!(event_path(true, "postToPid"), "pixel-skylight");
+    assert_eq!(event_path(false, "skylight"), "pixel-skylight");
 }
 
 #[test]

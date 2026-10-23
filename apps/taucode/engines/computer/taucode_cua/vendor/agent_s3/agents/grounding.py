@@ -34,7 +34,7 @@ class OSWorldACI(ACI):
         self.grounding_model.reset()
 
         image = obs.get("grounding_screenshot", obs["screenshot"])
-        if self.engine_params_for_grounding.get("grounding_mode", "pixels") == "pixels":
+        if self.engine_params_for_grounding.get("grounding_mode", "pixels") != "ui-tars":
             image, (width, height) = downscale(image)
             self.engine_params_for_grounding.update(grounding_width=width, grounding_height=height)
             prompt = f"This is a {width}x{height} screenshot. Give the pixel coordinates of the center of {ref_expr}. Answer ONLY as (x, y) in pixels."

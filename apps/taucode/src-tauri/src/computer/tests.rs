@@ -218,6 +218,9 @@ fn stop_releases_keys_buttons_and_prevents_late_input() {
         .is_err());
 }
 struct Fake {
+    element_label: String,
+    element_secure: bool,
+    target_changes: bool,
     needs_foreground: bool,
     takeovers: std::cell::Cell<usize>,
     predictions: std::collections::VecDeque<Prediction>,
@@ -323,6 +326,16 @@ fn stop_releases_target_input_before_overlay_cleanup_and_rejects_late_work() {
         .is_err());
 }
 impl Environment for Fake {
+    fn ground_target(&self, _: &Prediction, _: &mut Action) -> Result<(String, bool), String> {
+        Ok((self.element_label.clone(), self.element_secure))
+    }
+    fn verify_target(&self) -> Result<(), String> {
+        if self.target_changes && self.approved > 0 {
+            Err("AX target changed".into())
+        } else {
+            Ok(())
+        }
+    }
     fn prepare(
         &self,
         action: &Action,
@@ -398,6 +411,9 @@ impl Environment for Fake {
 }
 fn fake(actions: Vec<Value>) -> Fake {
     Fake {
+        element_label: String::new(),
+        element_secure: false,
+        target_changes: false,
         needs_foreground: false,
         takeovers: std::cell::Cell::new(0),
         predictions: actions.into_iter().map(prediction).collect(),
@@ -670,7 +686,7 @@ async fn wall_limit_cancels_wait_and_denied_app_is_never_captured() {
 #[test]
 fn grounding_mode_defaults_and_pixel_space_maps_to_display_points() {
     let mut s: Settings = serde_json::from_value(json!({})).unwrap();
-    assert_eq!(s.grounding_mode, "pixels");
+    assert_eq!(s.grounding_mode, "elements");
     validate(&s).unwrap();
     s.grounding_mode = "ui-tars".into();
     validate(&s).unwrap();
@@ -867,4 +883,73 @@ async fn approval_timeout_logs_reason_target_and_wait_duration_without_input() {
     assert_eq!(env.steps[0]["executeMs"], 0);
     assert!(input.0.lock().unwrap().is_empty());
     assert!(control.stopped());
+}
+
+#[test]
+fn element_target_requires_snapshot_and_strict_index() {
+    let mut p =
+        prediction(json!({"kind":"click","x":1,"y":1,"button":"left","clicks":1,"hold_keys":[]}));
+    p.action["snapshot_id"] = json!(1);
+    assert!(p.validated(display()).is_err());
+    for index in [json!(-1), json!(true), json!(1.5), json!("1"), json!(250)] {
+        p.action["element_index"] = index;
+        assert!(p.validated(display()).is_err());
+    }
+    p.action["element_index"] = json!(0);
+    assert_eq!(p.element_target().unwrap(), Some((1, 0)));
+    assert!(p.validated(display()).is_ok());
+}
+
+#[tokio::test]
+async fn element_label_policy_cannot_be_bypassed_by_benign_description() {
+    let mut env = fake(vec![
+        json!({"kind":"click","x":1,"y":1,"button":"left","clicks":1,"hold_keys":[],"target":"ordinary button"}),
+    ]);
+    env.element_label = "AXButton Buy now".into();
+    env.approval = false;
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let s = settings();
+    assert!(runner::run(
+        &mut env,
+        &control,
+        &s,
+        &s.allowed_apps,
+        "test",
+        Instant::now()
+    )
+    .await
+    .is_err());
+    assert_eq!(env.approved, 1);
+    assert!(input.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn changed_element_after_approval_cancels_input() {
+    let mut env = fake(vec![
+        json!({"kind":"type","text":"secret","overwrite":true,"enter":false}),
+    ]);
+    env.element_secure = true;
+    env.target_changes = true;
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let s = settings();
+    assert!(runner::run(
+        &mut env,
+        &control,
+        &s,
+        &s.allowed_apps,
+        "test",
+        Instant::now()
+    )
+    .await
+    .is_err());
+    assert_eq!(env.approved, 1);
+    assert!(env
+        .steps
+        .iter()
+        .any(|step| step["reason"] == "Typing into a secure text field"));
+    assert!(input.0.lock().unwrap().is_empty());
 }

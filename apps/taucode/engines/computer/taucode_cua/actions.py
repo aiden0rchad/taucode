@@ -5,6 +5,9 @@ import json
 import math
 
 from .requests import ProviderError
+from .elements import usable_elements, grounding_prompt, parse_element
+from .images import downscale
+from .vendor.agent_s3.utils.common_utils import call_llm_safe
 
 from .vendor.agent_s3.agents.grounding import OSWorldACI, agent_action
 
@@ -78,20 +81,39 @@ class StructuredACI(OSWorldACI):
             raise ValueError('Grounding coordinates outside screen')
         return point
 
+    def ground(self, description):
+        description = check_text(description)
+        snapshot = self.obs.get('ax_snapshot') if self.obs else None
+        if self.engine_params_for_grounding.get('grounding_mode') == 'elements' and snapshot:
+            elements = usable_elements(snapshot)
+            if elements:
+                image, (width, height) = downscale(self.obs.get('grounding_screenshot', self.obs['screenshot']))
+                self.engine_params_for_grounding.update(grounding_width=width, grounding_height=height)
+                self.grounding_model.reset()
+                self.grounding_model.add_message(text_content=grounding_prompt(description, elements), image_content=image, put_text_last=True)
+                index = parse_element(call_llm_safe(self.grounding_model), elements)
+                if index is not None:
+                    e = next(e for e in elements if e['index'] == index)
+                    x, y, w, h = e['frame']
+                    if not (0 <= x + w / 2 < width and 0 <= y + h / 2 < height):
+                        raise ValueError('Element center outside screenshot')
+                    return dict(x=x + w / 2, y=y + h / 2, element_index=index, snapshot_id=snapshot['snapshot_id'])
+        x, y = self.point(description)
+        return dict(x=x, y=y)
+
     @agent_action
     def click(self, element_description: str, num_clicks: int = 1, button_type: str = 'left', hold_keys: list = ()):
         """Click a described element; button left/right/middle, 1–3 clicks."""
         if type(num_clicks) is not int or not 1 <= num_clicks <= 3 or button_type not in ('left', 'right', 'middle'):
             raise ValueError('Invalid click')
-        x, y = self.point(element_description)
-        return dict(kind='click', x=x, y=y, clicks=num_clicks, button=button_type, hold_keys=check_keys(hold_keys))
+        return dict(self.ground(element_description), kind='click', clicks=num_clicks, button=button_type, hold_keys=check_keys(hold_keys))
 
     @agent_action
     def type(self, element_description: str | None = None, text: str = '', overwrite: bool = False, enter: bool = False):
         """Type Unicode text, optionally in a described field; overwrite/enter are booleans."""
         action = dict(kind='type', text=check_text(text), overwrite=boolean(overwrite), enter=boolean(enter))
         if element_description is not None:
-            action['x'], action['y'] = self.point(element_description)
+            action.update(self.ground(element_description))
         return action
 
     @agent_action
@@ -99,8 +121,7 @@ class StructuredACI(OSWorldACI):
         """Scroll at a described element; positive up, negative down; shift for horizontal."""
         if type(clicks) is not int or abs(clicks) > 100:
             raise ValueError('Invalid scroll distance')
-        x, y = self.point(element_description)
-        return dict(kind='scroll', x=x, y=y, clicks=clicks, shift=boolean(shift))
+        return dict(self.ground(element_description), kind='scroll', clicks=clicks, shift=boolean(shift))
 
     @agent_action
     def drag_and_drop(self, starting_description: str, ending_description: str, hold_keys: list = ()):

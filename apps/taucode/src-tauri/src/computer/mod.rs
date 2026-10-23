@@ -447,11 +447,32 @@ impl runner::Environment for Live {
         instruction: &'a str,
         frame: &'a runner::Frame,
     ) -> crate::shared::providers::BoxFuture<'a, Result<Prediction, String>> {
-        Box::pin(self.sidecar.predict(
-            instruction,
-            &frame.png,
-            [frame.display.pixel_width, frame.display.pixel_height],
-        ))
+        Box::pin(
+            self.sidecar.predict(
+                instruction,
+                &frame.png,
+                [frame.display.pixel_width, frame.display.pixel_height],
+                self.session
+                    .as_ref()
+                    .map(|s| s.snapshot_json())
+                    .unwrap_or(Value::Null),
+            ),
+        )
+    }
+    fn ground_target(
+        &self,
+        prediction: &Prediction,
+        action: &mut Action,
+    ) -> Result<(String, bool), String> {
+        let target = prediction.element_target()?;
+        match &self.session {
+            Some(s) => s.select_element(target, action),
+            None if target.is_none() => Ok((String::new(), false)),
+            None => Err("Element snapshots unavailable".into()),
+        }
+    }
+    fn verify_target(&self) -> Result<(), String> {
+        self.session.as_ref().map_or(Ok(()), |s| s.verify_element())
     }
     fn planner_error(&self, error: String) -> String {
         self.sidecar.with_log(error)
@@ -499,6 +520,22 @@ impl runner::Environment for Live {
         ) {
             return Ok(runner::Preparation::Events);
         }
+        if let Action::Scroll { clicks, .. } = action {
+            let mut handled = false;
+            for _ in 0..clicks.unsigned_abs().max(1) {
+                let next = control.guarded(context, || s.context(), || s.try_ax(action))?;
+                if !next {
+                    if handled {
+                        return Err("AX scroll interrupted after partial delivery".into());
+                    }
+                    break;
+                }
+                handled = true;
+            }
+            if handled {
+                return Ok(runner::Preparation::Handled);
+            }
+        }
         control.guarded(
             context,
             || s.context(),
@@ -507,7 +544,13 @@ impl runner::Environment for Live {
                 Ok(
                     match background::prepare_action(
                         action,
-                        || s.try_ax(action),
+                        || {
+                            if matches!(action, Action::Scroll { .. }) {
+                                Ok(false)
+                            } else {
+                                s.try_ax(action)
+                            }
+                        },
                         || s.prepare_events(action),
                         true,
                     )? {

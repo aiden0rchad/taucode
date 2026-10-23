@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 // Background routing adapted from input/mouse.rs and input/keyboard.rs; see NOTICE.
 mod ax_actions;
+mod ax_tree;
+use ax_tree::Provider;
 mod bezier;
 mod capture;
 mod delivery;
@@ -37,7 +39,8 @@ pub fn choose_path(
     events_available: bool,
     fallback: bool,
 ) -> Path {
-    let ax_eligible = matches!(action, Action::Click { button, clicks: 1, hold_keys, .. } if button == "left" && hold_keys.is_empty())
+    let ax_eligible = matches!(action, Action::Scroll { .. })
+        || matches!(action, Action::Click { button, clicks: 1, hold_keys, .. } if matches!(button.as_str(), "left" | "right") && hold_keys.is_empty())
         || matches!(action, Action::Type { enter: false, .. });
     if ax_eligible && ax_available {
         Path::Ax
@@ -80,6 +83,8 @@ pub struct Session {
     pub overlay: overlay::Overlay,
     pub path: Mutex<Option<&'static str>>,
     ax_fallback: AtomicBool,
+    snapshot: Mutex<ax_tree::Snapshot<ax_actions::Element>>,
+    selected: Mutex<Option<(u64, usize)>>,
     delivery: Mutex<Option<delivery::Scope>>,
     observed: Mutex<Option<[u8; 32]>>,
     attempted: Mutex<Option<(Action, [u8; 32])>>,
@@ -132,6 +137,8 @@ impl Session {
             overlay: overlay::Overlay::new(app, cursor),
             path: Mutex::new(None),
             ax_fallback: AtomicBool::new(false),
+            snapshot: Mutex::new(ax_tree::Snapshot::default()),
+            selected: Mutex::new(None),
             delivery: Mutex::new(None),
             observed: Mutex::new(None),
             attempted: Mutex::new(None),
@@ -191,6 +198,15 @@ impl Session {
         let (frame, window) = capture::capture(self.pid)?;
         self.ax_fallback.store(false, Ordering::SeqCst);
         *self.observed.lock().unwrap() = Some(Sha256::digest(frame.png.as_bytes()).into());
+        *self.selected.lock().unwrap() = None;
+        let started = std::time::Instant::now();
+        let root = ax_actions::window_element(self.pid, window.id);
+        self.snapshot.lock().unwrap().replace(
+            &ax_tree::Native(&window),
+            root,
+            ax_tree::MAX_ELEMENTS,
+            std::time::Duration::from_millis(250).saturating_sub(started.elapsed()),
+        );
         *self.window.lock().unwrap() = Some(window);
         Ok(frame)
     }
@@ -205,13 +221,125 @@ impl Session {
         windows::validate(&expected, self.pid)?;
         Ok(expected)
     }
+    pub fn snapshot_json(&self) -> serde_json::Value {
+        let snapshot = self.snapshot.lock().unwrap();
+        let size = self.window.lock().unwrap().as_ref().map(|w| w.size);
+        serde_json::json!({"snapshot_id":snapshot.id,"elements":snapshot.elements,"size":size})
+    }
+    pub fn select_element(
+        &self,
+        target: Option<(u64, usize)>,
+        action: &mut Action,
+    ) -> Result<(String, bool), String> {
+        *self.selected.lock().unwrap() = None;
+        let Some((id, index)) = target else {
+            return Ok((String::new(), false));
+        };
+        let window = self.window()?;
+        let snapshot = self.snapshot.lock().unwrap();
+        let (node, element) = snapshot.resolve(id, index)?;
+        if !element.belongs_to(self.pid, window.id) {
+            return Err("AX element left target window".into());
+        }
+        let [x, y, w, h] = node.frame.ok_or("AX element has no frame")?;
+        let point = super::policy::map_point(
+            [x + w / 2., y + h / 2.],
+            window.size,
+            super::policy::Display {
+                origin: window.origin,
+                width: window.size[0],
+                height: window.size[1],
+                pixel_width: 1,
+                pixel_height: 1,
+            },
+        )?;
+        match action {
+            Action::Click { x, y, .. } | Action::Scroll { x, y, .. } => {
+                *x = point[0];
+                *y = point[1];
+            }
+            Action::Type { x, y, .. } => {
+                *x = Some(point[0]);
+                *y = Some(point[1]);
+            }
+            _ => return Err("Unsupported element action".into()),
+        }
+        *self.selected.lock().unwrap() = target;
+        Ok((format!("{} {}", node.role, node.label), node.secure))
+    }
+    pub fn verify_element(&self) -> Result<(), String> {
+        let Some((id, index)) = *self.selected.lock().unwrap() else {
+            return Ok(());
+        };
+        let window = self.window()?;
+        let snapshot = self.snapshot.lock().unwrap();
+        let (prior, element) = snapshot.resolve(id, index)?;
+        if !element.belongs_to(self.pid, window.id) {
+            return Err("AX element left target window".into());
+        }
+        let current = ax_tree::Native(&window).read(element);
+        if prior.role != current.role
+            || prior.label != current.label
+            || prior.secure != current.secure
+            || prior.frame != current.frame
+            || !current.enabled
+        {
+            return Err("AX target changed after planning; capture again".into());
+        }
+        Ok(())
+    }
     pub fn try_ax(&self, action: &Action) -> Result<bool, String> {
         let window = self.window()?;
         self.guard.arm();
-        let handled = ax_actions::try_action(self.pid, window.id, action)?;
+        let selected = *self.selected.lock().unwrap();
+        let handled = if let Some((id, index)) = selected {
+            let snapshot = self.snapshot.lock().unwrap();
+            let (_, element) = snapshot.resolve(id, index)?;
+            if !element.belongs_to(self.pid, window.id) {
+                return Err("AX target changed".into());
+            }
+            if let Action::Scroll {
+                clicks,
+                shift: false,
+                ..
+            } = action
+            {
+                if *clicks == 0 {
+                    true
+                } else if let Some(button) = snapshot.scroll_button(index, *clicks > 0) {
+                    let (_, button) = snapshot.resolve(id, button)?;
+                    ax_actions::element_action(
+                        button,
+                        &Action::Click {
+                            x: 0.,
+                            y: 0.,
+                            button: "left".into(),
+                            clicks: 1,
+                            hold_keys: vec![],
+                        },
+                    )?
+                } else {
+                    false
+                }
+            } else {
+                if let Some(focused) =
+                    ax_actions::focused_insertion(self.pid, window.id, element, action)
+                {
+                    if let Action::Type { text, .. } = action {
+                        focused.set_text("AXSelectedText", text)?
+                    } else {
+                        false
+                    }
+                } else {
+                    ax_actions::element_action(element, action)?
+                }
+            }
+        } else {
+            ax_actions::try_action(self.pid, window.id, action)?
+        };
         self.ax_fallback.store(!handled, Ordering::SeqCst);
         if handled {
-            *self.path.lock().unwrap() = Some("ax");
+            *self.path.lock().unwrap() = Some("ax-element");
             if let Some(point) = action_point(action) {
                 self.overlay
                     .move_to(point, matches!(action, Action::Click { .. }));
@@ -367,13 +495,10 @@ pub fn post_event(
     *session.path.lock().unwrap() =
         Some(event_path(session.ax_fallback.load(Ordering::SeqCst), path));
 }
-fn event_path(ax_fallback: bool, path: &'static str) -> &'static str {
-    match (ax_fallback, path) {
-        (true, "skylight") => "ax→skylight",
-        (true, _) => "ax→postToPid",
-        _ => path,
-    }
+fn event_path(_ax_fallback: bool, _path: &'static str) -> &'static str {
+    "pixel-skylight"
 }
+
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
     fn CGEventPostToPid(pid: i32, event: *mut std::ffi::c_void);

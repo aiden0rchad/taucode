@@ -9,6 +9,7 @@ import sys
 from PIL import Image
 from .actions import StructuredACI
 from .images import downscale
+from .elements import usable_elements, observation_summary
 from .requests import ProviderError, predict_budget, redact
 from .vendor.agent_s3.agents.agent_s import AgentS3
 
@@ -27,8 +28,8 @@ def engine_params(config, role):
     if config.get('base_url'):
         params['base_url'] = config['base_url']
     if role == 'grounding':
-        mode = config.get('mode', 'pixels')
-        if mode not in ('pixels', 'ui-tars'):
+        mode = config.get('mode', 'elements')
+        if mode not in ('elements', 'pixels', 'ui-tars'):
             raise ValueError('Invalid grounding mode')
         params['grounding_mode'] = mode
         for key in ('width', 'height'):
@@ -42,7 +43,7 @@ def engine_params(config, role):
 class Server:
     def __init__(self):
         self.agent = None
-        self.mode = "pixels"
+        self.mode = "elements"
 
     def dispatch(self, method, params):
         if method == 'health':
@@ -76,11 +77,21 @@ class Server:
             if img.format != 'PNG' or list(img.size) != size:
                 raise ValueError('Expected PNG matching screen size')
             img.verify()
+        snapshot = params.get('ax_snapshot')
+        if snapshot is not None:
+            usable_elements(snapshot)
         with predict_budget():
             planner_png, size = downscale(png)
-            info, actions = self.agent.predict(instruction, {'screenshot': planner_png, 'grounding_screenshot': png})
+            # Frames arrive in window-local points; scale to the planner image.
+            if snapshot is not None:
+                bounds = snapshot.get('size')
+                if not isinstance(bounds, list) or len(bounds) != 2 or any(type(n) not in (int, float) or not 0 < n <= 16384 for n in bounds):
+                    raise ValueError('Invalid snapshot size')
+                snapshot = {**snapshot, 'elements': [{**e, 'frame': [v * size[i % 2] / bounds[i % 2] for i, v in enumerate(e['frame'])] if e.get('frame') else None} for e in snapshot['elements']]}
+            info, actions = self.agent.predict(instruction, {'screenshot': planner_png, 'grounding_screenshot': png, 'ax_snapshot': snapshot,
+                'element_summary': observation_summary(snapshot['elements']) if snapshot else ''})
         action = actions[0]
-        action['grounding_width'], action['grounding_height'] = size if self.mode == 'pixels' else self.size
+        action['grounding_width'], action['grounding_height'] = self.size if self.mode == 'ui-tars' else size
         return {'action': action, 'reflection': info.get('reflection') or '', 'plan_text': info.get('plan') or ''}
 
 

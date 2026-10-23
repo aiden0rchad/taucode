@@ -113,7 +113,7 @@ describe("computer use", () => {
     render(<SettingsComputerSection appSettings={settings} onUpdateAppSettings={save} />);
     await screen.findByText("Screen Recording: Granted"); expect(screen.getByText("Accessibility: Not granted")).toBeTruthy();
     expect(screen.getAllByText("Local / vision")).toHaveLength(2);
-    expect((screen.getByLabelText("Grounding mode") as HTMLSelectElement).value).toBe("pixels");
+    expect((screen.getByLabelText("Grounding mode") as HTMLSelectElement).value).toBe("elements");
     expect(screen.queryByLabelText("Grounding coordinates")).toBeNull();
     fireEvent.change(screen.getByLabelText("Grounding mode"), { target: { value: "ui-tars" } });
     fireEvent.change(screen.getByLabelText("Grounding coordinates"), { target: { value: "1000x1000" } });
