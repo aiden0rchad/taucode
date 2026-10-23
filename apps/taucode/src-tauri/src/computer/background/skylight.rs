@@ -420,16 +420,84 @@ pub fn get_process_psn_for_window(window_id: u32, pid: libc::pid_t, out_psn: &mu
     false
 }
 
-// Target-only half of activate_without_raise_with(..., false). Never defocuses the user's app.
-pub fn prime_window(pid: i32, window: u32) -> bool {
+pub fn is_focus_without_raise_available() -> bool {
+    let has_psn = (connection_id_fn().is_some()
+        && get_window_owner_fn().is_some()
+        && get_connection_psn_fn().is_some())
+        || get_process_for_pid_fn().is_some();
+    has_psn && get_front_process_fn().is_some() && post_event_record_to_fn().is_some()
+}
+
+// Port of activate_without_raise_with. Background input deliberately uses false:
+// the target receives AppKit's focus record without defocusing the user's window.
+pub fn activate_without_raise_with(pid: i32, window: u32, defocus_front: bool) -> bool {
     let Some(post) = post_event_record_to_fn() else {
         return false;
     };
+    let Some(front) = get_front_process_fn() else {
+        return false;
+    };
+    let mut previous = [0u8; 8];
+    if unsafe { front(previous.as_mut_ptr().cast()) } != 0 {
+        return false;
+    }
     let mut psn = [0u8; 8];
     if !get_process_psn_for_window(window, pid, &mut psn) {
         return false;
     }
     let mut record = focus_record(window);
+    record[0x8A] = 0x02;
+    let defocused =
+        !defocus_front || unsafe { post(previous.as_ptr().cast(), record.as_ptr()) == 0 };
     record[0x8A] = 0x01;
-    unsafe { post(psn.as_ptr().cast(), record.as_ptr()) == 0 }
+    let focused = unsafe { post(psn.as_ptr().cast(), record.as_ptr()) == 0 };
+    defocused && focused
+}
+
+pub fn key_window_of_pid(pid: i32) -> Option<u32> {
+    super::ax_actions::focused_window(pid).or_else(|| super::windows::order(pid).first().copied())
+}
+
+// Port of restore_focus_after_without_raise: target defocus precedes user focus.
+pub fn restore_focus_after_without_raise(
+    previous: i32,
+    previous_window: Option<u32>,
+    pid: i32,
+    window: u32,
+) -> bool {
+    let Some(post) = post_event_record_to_fn() else {
+        return false;
+    };
+    let Some(previous_window) = previous_window.or_else(|| key_window_of_pid(previous)) else {
+        return false;
+    };
+    let mut prior_psn = [0u8; 8];
+    let mut target_psn = [0u8; 8];
+    if !get_process_psn_for_window(previous_window, previous, &mut prior_psn)
+        || !get_process_psn_for_window(window, pid, &mut target_psn)
+    {
+        return false;
+    }
+    let mut record = focus_record(window);
+    record[0x8A] = 0x02;
+    let defocused = unsafe { post(target_psn.as_ptr().cast(), record.as_ptr()) == 0 };
+    let mut record = focus_record(previous_window);
+    record[0x8A] = 0x01;
+    let focused = unsafe { post(prior_psn.as_ptr().cast(), record.as_ptr()) == 0 };
+    defocused && focused
+}
+
+// Same theft options and release ID as the reference key-focus guard, but lease
+// the destination connection for a keyboard action, never taucode's connection.
+pub fn steal_window_key_focus(window: u32) -> Option<i32> {
+    let steal = steal_key_focus_fn()?;
+    release_key_focus_fn()?; // Never acquire a lease we cannot release.
+    let mut owner = 0;
+    if unsafe { get_window_owner_fn()?(main_connection_id()?, window, &mut owner) } != 0
+        || owner == 0
+    {
+        return None;
+    }
+    let mut id = 0;
+    (unsafe { steal(owner, 0xC80, &mut id) } == 0 && id != 0).then_some(id)
 }

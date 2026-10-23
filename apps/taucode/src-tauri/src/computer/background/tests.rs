@@ -139,6 +139,66 @@ fn missing_skylight_symbol_posts_once_to_public_pid_route() {
 }
 
 #[test]
+fn recoverable_ax_errors_and_lookup_failure_fall_through_once() {
+    let action = Action::Click {
+        x: 1.,
+        y: 2.,
+        button: "left".into(),
+        clicks: 1,
+        hold_keys: vec![],
+    };
+    for status in [-25204, -25205, -25206] {
+        for events_available in [false, true] {
+            let calls = Cell::new(0);
+            let result = prepare_action(
+                &action,
+                || ax_actions::action_status(status),
+                || {
+                    calls.set(calls.get() + 1);
+                    events_available
+                },
+                false,
+            )
+            .unwrap();
+            assert_eq!(calls.get(), 1);
+            assert_eq!(
+                result,
+                if events_available {
+                    Path::Events
+                } else {
+                    Path::Unavailable
+                }
+            );
+        }
+    }
+    // Missing elements return false from AX lookup, sharing the one-shot fallback.
+    assert_eq!(
+        prepare_action(&action, || Ok(false), || true, false).unwrap(),
+        Path::Events
+    );
+    assert_eq!(
+        prepare_action(
+            &action,
+            || Ok(true),
+            || panic!("AX already handled action"),
+            false
+        )
+        .unwrap(),
+        Path::Ax
+    );
+    assert!(prepare_action(
+        &action,
+        || ax_actions::action_status(-25201),
+        || panic!("not retryable"),
+        false
+    )
+    .is_err());
+    assert_eq!(event_path(true, "skylight"), "ax→skylight");
+    assert_eq!(event_path(true, "postToPid"), "ax→postToPid");
+    assert_eq!(event_path(false, "skylight"), "skylight");
+}
+
+#[test]
 fn window_coordinates_include_retina_and_negative_display_offsets() {
     let display = Display {
         origin: [-1920., -300.],
@@ -165,6 +225,7 @@ fn focus_guard_fake_workspace_preserves_user_switches() {
     let mut s = focus_guard::State {
         previous: 10,
         target: 20,
+        host: 99,
         window: Some(100),
         armed_until: now + Duration::from_millis(250),
     };
@@ -175,6 +236,8 @@ fn focus_guard_fake_workspace_preserves_user_switches() {
     assert_eq!(s.previous, 40);
     assert_eq!(s.observe(20, false, now), Some(40));
     assert_eq!(s.observe(50, false, now + Duration::from_secs(1)), None);
+    assert_eq!(s.observe(99, true, now + Duration::from_secs(2)), Some(50));
+    assert_eq!(s.previous, 50); // taucode is theft even outside the armed interval
     let mut tried = vec![];
     assert_eq!(
         focus_guard::release_newest_theft_below(8, |id| {

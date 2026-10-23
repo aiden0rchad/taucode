@@ -5,7 +5,10 @@ use super::{ax_actions, skylight, Session};
 use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication, NSWorkspace};
 use serde_json::{json, Value};
 use std::{
-    sync::{atomic::Ordering, Mutex, OnceLock, Weak},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex, OnceLock, Weak,
+    },
     time::{Duration, Instant},
 };
 
@@ -13,6 +16,7 @@ pub struct State {
     pub previous: i32,
     pub window: Option<u32>,
     pub target: i32,
+    pub host: i32,
     pub armed_until: Instant,
 }
 impl State {
@@ -21,7 +25,9 @@ impl State {
         if front == self.previous {
             return None;
         }
-        if !user_switched && (front == self.target || now < self.armed_until) {
+        if front == self.host
+            || (!user_switched && (front == self.target || now < self.armed_until))
+        {
             Some(self.previous)
         } else {
             self.previous = front;
@@ -32,25 +38,43 @@ impl State {
 }
 pub struct Guard {
     state: Mutex<State>,
+    pub delivering: AtomicBool,
     pub restorations: Mutex<Vec<Value>>,
 }
+pub struct UserFocus {
+    pid: Option<i32>,
+    window: Option<u32>,
+}
+impl UserFocus {
+    // Capture before any run UI is created or shown.
+    pub fn capture() -> Self {
+        let pid = front_pid();
+        Self {
+            pid,
+            window: pid.and_then(skylight::key_window_of_pid),
+        }
+    }
+}
 impl Guard {
-    pub fn new(target: i32) -> Self {
-        let previous = front_pid().unwrap_or(target);
+    pub fn new(target: i32, prior: UserFocus) -> Self {
+        let previous = prior.pid.unwrap_or(target);
         Self {
             state: Mutex::new(State {
                 previous,
                 target,
-                window: ax_actions::focused_window(previous),
+                host: std::process::id() as i32,
+                window: prior.window,
                 armed_until: Instant::now(),
             }),
             restorations: Mutex::new(vec![]),
+            delivering: AtomicBool::new(false),
         }
     }
     pub fn arm(&self) {
         self.state.lock().unwrap().armed_until = Instant::now() + Duration::from_millis(250);
     }
     pub fn start(&self, session: Weak<Session>) {
+        self.tick();
         install_observer(session.clone());
         std::thread::spawn(move || loop {
             let Some(session) = session.upgrade() else {
@@ -71,6 +95,13 @@ impl Guard {
             return;
         };
         let mut s = self.state.lock().unwrap();
+        // The no-raise prologue must settle before posting. It may temporarily
+        // report the target active; the scope restores it after queued input.
+        // Never exempt taucode, even during a delivery lease or recent mouse input.
+        let delivering = self.delivering.load(Ordering::SeqCst);
+        if delivering && front == s.target {
+            return;
+        }
         let previous = s.previous;
         if s.observe(front, user_switched_recently(), Instant::now())
             .is_some()
@@ -80,9 +111,12 @@ impl Guard {
             s.window = ax_actions::focused_window(s.previous);
         }
         // A non-activating menu can take key focus without an activation notification.
-        if skylight::key_focus_pid().is_some_and(|pid| {
-            pid != s.previous && (pid == s.target || Instant::now() < s.armed_until)
-        }) && !user_switched_recently()
+        if !delivering
+            && skylight::key_focus_pid().is_some_and(|pid| {
+                pid != s.previous
+                    && (pid == s.target || pid == s.host || Instant::now() < s.armed_until)
+            })
+            && !user_switched_recently()
         {
             if let Some(own) = skylight::steal_key_focus() {
                 skylight::release_key_focus(own);
@@ -95,6 +129,19 @@ impl Guard {
     pub fn restore(&self) {
         self.restore_locked(&self.state.lock().unwrap(), "foregroundFallback");
     }
+    pub fn restore_pid(&self, pid: i32, reason: &str) {
+        let s = self.state.lock().unwrap();
+        // A real user switch supersedes a scope's snapshot.
+        if s.previous == pid {
+            self.restore_locked(&s, reason);
+        }
+    }
+    pub fn record(&self, pid: i32, window: Option<u32>, reason: &str) {
+        self.restorations
+            .lock()
+            .unwrap()
+            .push(json!({"pid":pid,"windowId":window,"reason":reason}));
+    }
     fn restore_locked(&self, s: &State, reason: &str) {
         if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(s.previous)
         {
@@ -103,10 +150,7 @@ impl Guard {
                 if let Some(window) = s.window {
                     ax_actions::restore_window(s.previous, window);
                 }
-                self.restorations
-                    .lock()
-                    .unwrap()
-                    .push(json!({"pid":s.previous,"windowId":s.window,"reason":reason}));
+                self.record(s.previous, s.window, reason);
             }
         }
     }
@@ -146,12 +190,11 @@ fn install_observer(session: Weak<Session>) {
         std::mem::forget(queue);
     });
 }
-fn front_pid() -> Option<i32> {
-    skylight::front_process_pid().or_else(|| {
-        NSWorkspace::sharedWorkspace()
-            .frontmostApplication()
-            .map(|a| a.processIdentifier())
-    })
+pub(super) fn front_pid() -> Option<i32> {
+    NSWorkspace::sharedWorkspace()
+        .frontmostApplication()
+        .map(|a| a.processIdentifier())
+        .or_else(skylight::front_process_pid)
 }
 
 pub fn release_newest_theft_below(own: i32, mut release: impl FnMut(i32) -> i32) -> Option<i32> {

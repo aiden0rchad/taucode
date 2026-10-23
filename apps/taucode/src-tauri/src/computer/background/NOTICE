@@ -3,6 +3,7 @@ Commit: ac7a167431329ae04a09dbb7332360cb4e5f4d61
 
 Sources: libs/cua-driver/rust/crates/platform-macos/src/
 input/{skylight,mouse,keyboard,ax_actions}.rs, focus_guard.rs,
+tools/{click,scroll,drag,hotkey,type_text}.rs,
 key_focus_guard.rs, focus_steal.rs, capture.rs, windows.rs, ax/bindings.rs, cursor/overlay.rs;
 libs/cua-driver/rust/crates/cursor-overlay/src/{lib,motion,bezier,capture_exclusion,z_order}.rs.
 Adapted to taucode dependencies and safety policy.

@@ -315,6 +315,9 @@ impl NativeInput {
     }
 }
 impl Input for NativeInput {
+    fn end_action(&mut self, cancelled: bool) -> Option<Box<dyn FnOnce() + Send>> {
+        self.session.as_ref()?.finish_delivery(cancelled)
+    }
     fn stop(&mut self) {
         if let Some(session) = &self.session {
             session.stop();

@@ -231,6 +231,44 @@ struct Fake {
 }
 
 #[test]
+fn focus_settle_does_not_hold_the_kill_switch_input_lock() {
+    use std::sync::{mpsc, Mutex};
+    struct DeferredInput(Mutex<Option<Box<dyn FnOnce() + Send>>>);
+    impl Input for DeferredInput {
+        fn post(&mut self, _: &Event) -> Result<(), String> {
+            Ok(())
+        }
+        fn end_action(&mut self, _: bool) -> Option<Box<dyn FnOnce() + Send>> {
+            self.0.lock().unwrap().take()
+        }
+    }
+    let control = Arc::new(Control::new(FakeInput::default()));
+    control.start();
+    let (entered, started) = mpsc::channel();
+    let (resume, wait) = mpsc::channel();
+    control
+        .install_input(DeferredInput(Mutex::new(Some(Box::new(move || {
+            entered.send(()).unwrap();
+            wait.recv().unwrap();
+        })))))
+        .unwrap();
+    let releasing = control.clone();
+    let thread = std::thread::spawn(move || releasing.release());
+    started.recv_timeout(Duration::from_secs(1)).unwrap();
+    let stopping = control.clone();
+    let (stopped, done) = mpsc::channel();
+    let stop_thread = std::thread::spawn(move || {
+        stopping.stop();
+        stopped.send(()).unwrap();
+    });
+    let result = done.recv_timeout(Duration::from_millis(100));
+    resume.send(()).unwrap(); // Always unblock cleanup, including a failing assertion.
+    thread.join().unwrap();
+    stop_thread.join().unwrap();
+    assert!(result.is_ok(), "focus restoration blocked Stop");
+}
+
+#[test]
 fn stop_releases_target_input_before_overlay_cleanup_and_rejects_late_work() {
     struct LifecycleInput(Arc<std::sync::Mutex<Vec<&'static str>>>);
     impl Input for LifecycleInput {

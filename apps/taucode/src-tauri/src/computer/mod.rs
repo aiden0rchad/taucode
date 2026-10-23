@@ -3,6 +3,8 @@ mod background;
 mod control;
 #[cfg(target_os = "macos")]
 mod native;
+#[cfg(target_os = "macos")]
+mod panels;
 pub mod policy;
 mod runner;
 mod sidecar;
@@ -75,20 +77,23 @@ impl Computer {
         let _ = sender.send(accept);
         Ok(())
     }
-    fn arm(&self, app: &AppHandle, s: &Settings) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    async fn arm(&self, app: &AppHandle, s: &Settings) -> Result<(), String> {
         use tauri_plugin_global_shortcut::GlobalShortcutExt;
-        let mut old = self.shortcut.lock().map_err(|_| "Shortcut unavailable")?;
-        if old.as_deref() != Some(s.shortcut.as_str()) {
-            app.global_shortcut()
-                .register(s.shortcut.as_str())
-                .map_err(|e| format!("Cannot register kill switch: {e}"))?;
-            if let Some(old) = old.take() {
-                let _ = app.global_shortcut().unregister(old.as_str());
+        {
+            let mut old = self.shortcut.lock().map_err(|_| "Shortcut unavailable")?;
+            if old.as_deref() != Some(s.shortcut.as_str()) {
+                app.global_shortcut()
+                    .register(s.shortcut.as_str())
+                    .map_err(|e| format!("Cannot register kill switch: {e}"))?;
+                if let Some(old) = old.take() {
+                    let _ = app.global_shortcut().unregister(old.as_str());
+                }
+                *old = Some(s.shortcut.clone());
             }
-            *old = Some(s.shortcut.clone());
         }
-        if let Some(hud) = app.get_webview_window("computer-hud") {
-            hud.show().map_err(|e| e.to_string())?;
+        let hud = if let Some(hud) = app.get_webview_window("computer-hud") {
+            hud
         } else {
             tauri::WebviewWindowBuilder::new(
                 app,
@@ -99,12 +104,14 @@ impl Computer {
             .inner_size(440., 420.)
             .always_on_top(true)
             .skip_taskbar(true)
-            .focused(false)
-            .focusable(false)
+            .focused(panels::FOCUS)
+            .focusable(panels::FOCUSABLE)
+            .accept_first_mouse(true)
+            .visible(panels::INITIALLY_VISIBLE)
             .build()
-            .map_err(|e| e.to_string())?;
-        }
-        Ok(())
+            .map_err(|e| e.to_string())?
+        };
+        panels::show_hud(hud).await
     }
     pub async fn request(self: &Arc<Self>, app: AppHandle, p: Value) -> Result<Value, String> {
         if !self.owned.load(std::sync::atomic::Ordering::SeqCst) {
@@ -255,7 +262,8 @@ impl Computer {
                 return Err("Select allowed apps in Computer Use settings".into());
             }
             self.private_dir()?;
-            self.arm(&app, &limits)?;
+            let previous_focus = background::UserFocus::capture();
+            self.arm(&app, &limits).await?;
             self.control.replace_input(native::NativeInput::default());
             self.control.start();
             let _stop = StopOnDrop(self.clone());
@@ -295,6 +303,7 @@ impl Computer {
                                     &apps[0],
                                     app.clone(),
                                     limits.virtual_cursor,
+                                    previous_focus,
                                 ),
                             )
                             .await

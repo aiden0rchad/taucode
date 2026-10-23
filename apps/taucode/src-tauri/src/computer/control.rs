@@ -20,6 +20,9 @@ pub enum Event {
 pub trait Input: Send {
     fn post(&mut self, event: &Event) -> Result<(), String>;
     fn stop(&mut self) {}
+    fn end_action(&mut self, _cancelled: bool) -> Option<Box<dyn FnOnce() + Send>> {
+        None
+    }
 }
 struct Held {
     input: Box<dyn Input>,
@@ -86,7 +89,7 @@ impl Control {
         self.paused.store(paused, Ordering::SeqCst);
         if paused {
             self.epoch.fetch_add(1, Ordering::SeqCst);
-            self.release();
+            self.release_with(true);
         }
     }
     pub fn stopped(&self) -> bool {
@@ -139,7 +142,7 @@ impl Control {
     }
     pub fn stop(&self) {
         self.stopped.store(true, Ordering::SeqCst);
-        self.release();
+        self.release_with(true);
         self.held
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -147,6 +150,9 @@ impl Control {
             .stop();
     }
     pub fn release(&self) {
+        self.release_with(false);
+    }
+    fn release_with(&self, cancelled: bool) {
         let mut held = self.held.lock().unwrap_or_else(|e| e.into_inner());
         for key in std::mem::take(&mut held.keys).into_iter().rev() {
             let _ = held.input.post(&Event::Key(key, false));
@@ -158,6 +164,11 @@ impl Control {
                 down: false,
                 clicks: 1,
             });
+        }
+        let finish = held.input.end_action(cancelled);
+        drop(held); // Focus settle/restore must never block the kill-switch input lock.
+        if let Some(finish) = finish {
+            finish();
         }
     }
     pub async fn checkpoint(&self) -> Result<(), String> {

@@ -4,6 +4,7 @@
 mod ax_actions;
 mod bezier;
 mod capture;
+mod delivery;
 mod focus_guard;
 mod overlay;
 pub(super) mod skylight;
@@ -18,6 +19,7 @@ use std::sync::{
     Arc, Mutex,
 };
 
+pub use focus_guard::UserFocus;
 pub use windows::Window;
 
 #[derive(Debug, PartialEq)]
@@ -77,6 +79,8 @@ pub struct Session {
     pub guard: focus_guard::Guard,
     pub overlay: overlay::Overlay,
     pub path: Mutex<Option<&'static str>>,
+    ax_fallback: AtomicBool,
+    delivery: Mutex<Option<delivery::Scope>>,
     observed: Mutex<Option<[u8; 32]>>,
     attempted: Mutex<Option<(Action, [u8; 32])>>,
 }
@@ -85,6 +89,7 @@ impl Session {
         bundle: &str,
         app: tauri::AppHandle,
         cursor: bool,
+        previous: UserFocus,
     ) -> Result<Arc<Self>, String> {
         let running = || {
             NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str(
@@ -123,9 +128,11 @@ impl Session {
             foreground: AtomicBool::new(false),
             dragging: AtomicBool::new(false),
             active: AtomicBool::new(true),
-            guard: focus_guard::Guard::new(pid),
+            guard: focus_guard::Guard::new(pid, previous),
             overlay: overlay::Overlay::new(app, cursor),
             path: Mutex::new(None),
+            ax_fallback: AtomicBool::new(false),
+            delivery: Mutex::new(None),
             observed: Mutex::new(None),
             attempted: Mutex::new(None),
         });
@@ -182,6 +189,7 @@ impl Session {
     pub fn capture(&self) -> Result<super::native::Frame, String> {
         self.check()?;
         let (frame, window) = capture::capture(self.pid)?;
+        self.ax_fallback.store(false, Ordering::SeqCst);
         *self.observed.lock().unwrap() = Some(Sha256::digest(frame.png.as_bytes()).into());
         *self.window.lock().unwrap() = Some(window);
         Ok(frame)
@@ -201,6 +209,7 @@ impl Session {
         let window = self.window()?;
         self.guard.arm();
         let handled = ax_actions::try_action(self.pid, window.id, action)?;
+        self.ax_fallback.store(!handled, Ordering::SeqCst);
         if handled {
             *self.path.lock().unwrap() = Some("ax");
             if let Some(point) = action_point(action) {
@@ -222,19 +231,46 @@ impl Session {
             .is_some_and(|w| ax_actions::focused_window(self.pid) == Some(w.id))
     }
     pub fn prepare_events(&self, action: &Action) -> bool {
-        if self.repeated_without_change(action) {
+        // A fresh AX failure still gets its one requested event attempt, even
+        // when the previous step left the screenshot unchanged.
+        if self.repeated_without_change(action) && !self.ax_fallback.load(Ordering::SeqCst) {
             return false;
         }
-        let window = self.window.lock().unwrap().clone();
-        if let Some(w) = window {
-            if ax_actions::focused_window(self.pid) != Some(w.id)
-                && skylight::prime_window(self.pid, w.id)
-            {
-                // Upstream target-only AppKit key-window settle interval.
-                std::thread::sleep(std::time::Duration::from_millis(50));
+        let Some(window) = self.window.lock().unwrap().clone() else {
+            return false;
+        };
+        self.guard.delivering.store(true, Ordering::SeqCst);
+        let keyboard = match action {
+            Action::Type { .. } | Action::Hotkey { .. } | Action::HoldAndPress { .. } => true,
+            Action::Click { hold_keys, .. } | Action::Drag { hold_keys, .. } => {
+                !hold_keys.is_empty()
             }
+            _ => false,
+        };
+        *self.delivery.lock().unwrap() =
+            Some(delivery::Scope::enter(self, self.pid, window.id, keyboard));
+        if self.events_available(action) {
+            true
+        } else {
+            self.end_delivery(false);
+            false
         }
-        self.events_available(action)
+    }
+    pub fn finish_delivery(self: &Arc<Self>, cancelled: bool) -> Option<Box<dyn FnOnce() + Send>> {
+        let mut scope = self.delivery.lock().unwrap().take()?;
+        scope.release_key(&**self);
+        let session = self.clone();
+        Some(Box::new(move || {
+            scope.finish(&*session, !cancelled);
+            session.guard.delivering.store(false, Ordering::SeqCst);
+        }))
+    }
+    fn end_delivery(&self, settle: bool) {
+        let scope = self.delivery.lock().unwrap().take();
+        if let Some(scope) = scope {
+            scope.finish(self, settle);
+        }
+        self.guard.delivering.store(false, Ordering::SeqCst);
     }
     pub fn repeated_without_change(&self, action: &Action) -> bool {
         let observed = *self.observed.lock().unwrap();
@@ -272,6 +308,7 @@ impl Session {
             return;
         }
         self.end_foreground();
+        self.end_delivery(false);
         self.overlay.hide();
     }
 }
@@ -327,7 +364,15 @@ pub fn post_event(
         skylight::post_to_pid(session.pid, ptr, keyboard),
         || unsafe { CGEventPostToPid(session.pid, ptr) },
     );
-    *session.path.lock().unwrap() = Some(path);
+    *session.path.lock().unwrap() =
+        Some(event_path(session.ax_fallback.load(Ordering::SeqCst), path));
+}
+fn event_path(ax_fallback: bool, path: &'static str) -> &'static str {
+    match (ax_fallback, path) {
+        (true, "skylight") => "ax→skylight",
+        (true, _) => "ax→postToPid",
+        _ => path,
+    }
 }
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {

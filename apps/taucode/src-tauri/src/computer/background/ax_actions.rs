@@ -204,11 +204,14 @@ pub fn try_action(pid: i32, window: u32, action: &Action) -> Result<bool, String
         }
         _ => return Ok(false),
     };
-    // An AX timeout can mean the action ran. Never duplicate it through event delivery.
-    if status != 0 {
-        return Err(format!(
-            "AX action failed ({status}); delivery is uncertain, no automatic retry"
-        ));
+    action_status(status)
+}
+
+pub fn action_status(status: i32) -> Result<bool, String> {
+    match status {
+        0 => Ok(true),
+        // CannotComplete, AttributeUnsupported, ActionUnsupported: one event fallback.
+        -25204 | -25205 | -25206 => Ok(false),
+        _ => Err(format!("AX action failed ({status})")),
     }
-    Ok(true)
 }

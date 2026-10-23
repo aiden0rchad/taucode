@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Adapted from cursor-overlay/{lib,motion,bezier,z_order,capture_exclusion}.rs
 // and platform-macos/src/cursor/overlay.rs. See NOTICE.
+use super::super::panels;
 use super::bezier::{CubicBezier, Point};
 use objc2::{class, msg_send, rc::Retained, runtime::AnyObject};
 use objc2_foundation::{NSArray, NSPoint, NSRect, NSSize, NSString};
@@ -15,7 +16,7 @@ use std::{
 };
 
 pub const SHARING_TYPE: u64 = 0;
-pub const NONACTIVATING_PANEL: u64 = 1 << 7;
+pub const NONACTIVATING_PANEL: u64 = panels::NONACTIVATING;
 pub const IGNORE_MOUSE: bool = true;
 struct Motion {
     from: [f64; 2],
@@ -150,7 +151,7 @@ unsafe fn draw(point: [f64; 2], ripple: Option<f64>) {
         if panels.is_empty() {
             for screen in screens.iter() {
                 let frame: NSRect = msg_send![&*screen, frame];
-                let allocated: *mut AnyObject = msg_send![class!(NSPanel), alloc];
+                let allocated: *mut AnyObject = msg_send![panels::panel_class(), alloc];
                 let raw: *mut AnyObject = msg_send![allocated, initWithContentRect:frame, styleMask:NONACTIVATING_PANEL, backing:2u64, defer:false];
                 let Some(window) = Retained::from_raw(raw) else { continue; };
                 let clear: *mut AnyObject = msg_send![class!(NSColor), clearColor];
@@ -159,10 +160,7 @@ unsafe fn draw(point: [f64; 2], ripple: Option<f64>) {
                 let _: () = msg_send![&*window, setHasShadow:false];
                 let _: () = msg_send![&*window, setIgnoresMouseEvents:IGNORE_MOUSE];
                 let _: () = msg_send![&*window, setSharingType:SHARING_TYPE];
-                let _: () = msg_send![&*window, setLevel:25i64];
-                let _: () = msg_send![&*window, setCollectionBehavior:(1u64 | (1 << 8) | (1 << 4))];
-                let _: () = msg_send![&*window, setReleasedWhenClosed:false];
-                let _: () = msg_send![&*window, setHidesOnDeactivate:false];
+                panels::configure(&window);
                 let allocated: *mut AnyObject = msg_send![class!(NSImageView), alloc];
                 let raw: *mut AnyObject = msg_send![allocated, initWithFrame:NSRect::new(NSPoint::new(0., 0.), NSSize::new(100., 80.))];
                 let Some(view) = Retained::from_raw(raw) else { continue; };
