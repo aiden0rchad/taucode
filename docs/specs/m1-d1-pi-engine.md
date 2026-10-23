@@ -51,6 +51,13 @@ Use codegraph (`codegraph explore "<names>"`) to look things up; never list big 
      binary).
    - Require node ≥ 22.19. Check the version once and surface a clear, actionable error.
 2. **Isolated pi home**, managed by taucode. Never read or write the user's `~/.pi`.
+   - **No accounts or logins** (taucode-wide rule, see M1-C §0):
+     - never write `auth.json`; never use pi's `/login`, OAuth or subscription-based
+       providers (e.g. `openai-codex`, `github-copilot`, token-plan providers)
+     - credentials come only from the registry, as API key via keychain→env, env var, or
+       command
+     - an `extension_ui_request` or provider error asking for login surfaces as an error,
+       never as a login flow
    - Set `PI_CODING_AGENT_DIR=<app data>/pi/agent`, `PI_TELEMETRY=0` and
      `PI_SKIP_VERSION_CHECK=1` for every pi process. Sessions go in
      `<app data>/pi/sessions/<workspace id>/`, passed with `--session-dir`.
