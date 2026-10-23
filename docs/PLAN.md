@@ -432,7 +432,31 @@ role-routing defaults and catches regressions when codex, codegraph or a model i
 Agree on the event schema (codex items + our `browser`/`computer` extras) in M0 so both can
 work against recorded fixtures.
 
-## 14. Risks
+## 14. Reuse map: take code, don't write it
+
+Reference clones live in `~/taucode-refs/` (outside the repo), indexed with codegraph so agents
+query them instead of reading files. Checked 2026-10-23.
+
+| Need | Take from | License | How |
+|---|---|---|---|
+| Desktop shell, sidebar, threads, composer (steer/queue, `@`/`$`/`/`), approvals, diffs, git, worktrees, terminal, model picker | **Dimillian/CodexMonitor**: Tauri + React on `codex app-server` | MIT | Fork as the M1 base instead of building the UI from scratch. Last pushed 2026-03-26, so update it to the 0.164 protocol first. |
+| Engine abstraction across Codex, ACP agents, pi, OpenCode | **pingdotgg/t3code** `packages/provider-core`, `provider-acp`, `effect-codex-app-server`, `provider-pi` | MIT | Port the adapter contracts to our `Engine` trait; read their event normalization before writing ours. |
+| Model-agnostic engine with native multi-provider support and mid-session hand-off | **earendil-works/pi**: `pi-coding-agent` (engine), `pi-ai` (unified LLM API, cost tracking, context hand-off) | MIT | Run pi as engine #2 for non-OpenAI models instead of forcing them through codex; reuse `pi-ai`'s model catalog and pricing for `tau-providers`. |
+| Claude in its native harness | **agentclientprotocol/claude-agent-acp** + `agent-client-protocol` Rust crate | Apache-2.0 | ACP engine adapter in the host. |
+| MCP server/client | **modelcontextprotocol/rust-sdk** (`rmcp`) | Apache-2.0 | Used by `tau-mcp-proxy`. |
+| MCP client/process patterns, sandboxing, patch format | **openai/codex** `codex-rs/rmcp-client`, sandbox crates | Apache-2.0 | Reference; sandboxing comes for free through app-server. |
+| Browser snapshot and ref format | **microsoft/playwright-mcp** | Apache-2.0 | Port its accessibility-snapshot format to the WKWebView bridge; use it as-is for Chrome mode. |
+| Computer use | **simular-ai/Agent-S** | Apache-2.0 | As in §6. |
+| Code graph | **colbymchenry/codegraph** | MIT | As in §8. |
+
+Keep a `THIRD_PARTY_NOTICES.md` with each copied file's origin and license from the first
+copied line.
+
+**Effect on milestones:** if CodexMonitor is forked, M1 shrinks to "port CodexMonitor onto the
+0.164 protocol, then add providers, codegraph and our panes" (about 2 weeks instead of 4), and
+the M0 engine module is kept only where it beats CodexMonitor's backend.
+
+## 15. Risks
 
 | Risk | Mitigation |
 |---|---|
