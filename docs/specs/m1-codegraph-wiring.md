@@ -40,6 +40,10 @@ listing folders.
      `argv[1] == "--tau-mcp-proxy"`, call `tau_mcp_proxy::run_cli(rest of args)` and exit with
      its status, **before** any Tauri/daemon initialisation (and before `fix_path_env`, which
      is not needed there). The remaining args start with `--`, as the proxy CLI expects.
+   - Engine-neutral session key: if the env var `TAUCODE_SESSION_KEY` is set, the proxy uses
+     it instead of `"default"` as the key for calls without `_meta.threadId`, for epochs too.
+     Engines other than codex (pi, next milestone) run one process per session and don't send
+     `threadId`, so this keeps their resets independent. Add a test.
 2. **Codegraph setup in the backend** (new module `src-tauri/src/codegraph.rs`, shared by the app
    and the daemon like the other `shared`/`backend` modules):
    - `CodegraphSetup { proxy_exe: PathBuf /* std::env::current_exe() */, upstream: ["codegraph","serve","--mcp"], state_dir: <app data dir>/codegraph }`
