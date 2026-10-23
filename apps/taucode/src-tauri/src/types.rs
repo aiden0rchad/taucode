@@ -1693,6 +1693,9 @@ impl Default for BrowserSettings {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct ComputerSettings {
+    pub mode: String,
+    pub allow_foreground_fallback: bool,
+    pub virtual_cursor: bool,
     pub enabled: bool,
     pub planner: Option<ModelRef>,
     pub grounding: Option<ModelRef>,
@@ -1708,6 +1711,9 @@ pub(crate) struct ComputerSettings {
 impl Default for ComputerSettings {
     fn default() -> Self {
         Self {
+            mode: "background".into(),
+            allow_foreground_fallback: false,
+            virtual_cursor: true,
             enabled: false,
             planner: None,
             grounding: None,

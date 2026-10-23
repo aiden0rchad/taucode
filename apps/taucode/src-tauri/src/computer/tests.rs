@@ -52,6 +52,7 @@ impl Input for FakeInput {
 }
 fn display() -> Display {
     Display {
+        origin: [0., 0.],
         width: 1440.,
         height: 900.,
         pixel_width: 2880,
@@ -60,6 +61,7 @@ fn display() -> Display {
 }
 fn settings() -> Settings {
     Settings {
+        mode: "foreground".into(),
         allowed_apps: vec!["com.apple.TextEdit".into()],
         ..Default::default()
     }
@@ -216,6 +218,8 @@ fn stop_releases_keys_buttons_and_prevents_late_input() {
         .is_err());
 }
 struct Fake {
+    needs_foreground: bool,
+    takeovers: std::cell::Cell<usize>,
     predictions: std::collections::VecDeque<Prediction>,
     steps: Vec<Value>,
     approval: bool,
@@ -225,7 +229,80 @@ struct Fake {
     change_after_approval: bool,
     approval_delay: Duration,
 }
+
+#[test]
+fn stop_releases_target_input_before_overlay_cleanup_and_rejects_late_work() {
+    struct LifecycleInput(Arc<std::sync::Mutex<Vec<&'static str>>>);
+    impl Input for LifecycleInput {
+        fn post(&mut self, event: &Event) -> Result<(), String> {
+            self.0.lock().unwrap().push(match event {
+                Event::Key(_, false) => "target key up",
+                Event::Mouse { down: false, .. } => "target button up",
+                _ => "target down",
+            });
+            Ok(())
+        }
+        fn stop(&mut self) {
+            self.0.lock().unwrap().push("hide overlay");
+        }
+    }
+    let events = Arc::new(std::sync::Mutex::new(vec![]));
+    let control = Control::new(LifecycleInput(events.clone()));
+    control.start();
+    control
+        .post(Event::Key(55, true), &context(), || Ok(context()))
+        .unwrap();
+    control
+        .post(
+            Event::Mouse {
+                point: [10., 20.],
+                button: 0,
+                down: true,
+                clicks: 1,
+            },
+            &context(),
+            || Ok(context()),
+        )
+        .unwrap();
+    control.stop();
+    assert_eq!(
+        *events.lock().unwrap(),
+        [
+            "target down",
+            "target down",
+            "target key up",
+            "target button up",
+            "hide overlay"
+        ]
+    );
+    assert!(control.install_input(FakeInput::default()).is_err());
+    assert!(control
+        .guarded(
+            &context(),
+            || Ok(context()),
+            || -> Result<(), String> { panic!("late AX mutation") }
+        )
+        .is_err());
+}
 impl Environment for Fake {
+    fn prepare(
+        &self,
+        action: &Action,
+        _: &Control,
+        _: &Context,
+    ) -> Result<runner::Preparation, String> {
+        Ok(
+            if self.needs_foreground && matches!(action, Action::Click { .. }) {
+                runner::Preparation::NeedsForeground
+            } else {
+                runner::Preparation::Events
+            },
+        )
+    }
+    fn begin_foreground(&self, _: &Control, _: &Context) -> Result<(), String> {
+        self.takeovers.set(self.takeovers.get() + 1);
+        Ok(())
+    }
     fn capture(&mut self) -> BoxFuture<'_, Result<Frame, String>> {
         self.captures += 1;
         Box::pin(async {
@@ -283,6 +360,8 @@ impl Environment for Fake {
 }
 fn fake(actions: Vec<Value>) -> Fake {
     Fake {
+        needs_foreground: false,
+        takeovers: std::cell::Cell::new(0),
         predictions: actions.into_iter().map(prediction).collect(),
         steps: vec![],
         approval: true,
@@ -291,6 +370,48 @@ fn fake(actions: Vec<Value>) -> Fake {
         focus: context(),
         change_after_approval: false,
         approval_delay: Duration::ZERO,
+    }
+}
+#[tokio::test]
+async fn fallback_requires_setting_and_fresh_approval_before_any_input() {
+    for (enabled, approved, changed) in [
+        (false, true, false),
+        (true, false, false),
+        (true, true, true),
+        (true, true, false),
+    ] {
+        let mut env = fake(vec![
+            serde_json::json!({"kind":"click","x":10,"y":10,"button":"left","clicks":1,"hold_keys":[]}),
+            serde_json::json!({"kind":"done","summary":"done"}),
+        ]);
+        env.needs_foreground = true;
+        env.approval = approved;
+        env.change_after_approval = changed;
+        let s = Settings {
+            mode: "background".into(),
+            allow_foreground_fallback: enabled,
+            ..settings()
+        };
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let result = runner::run(
+            &mut env,
+            &control,
+            &s,
+            &s.allowed_apps,
+            "test",
+            Instant::now(),
+        )
+        .await;
+        let allowed = enabled && approved && !changed;
+        assert_eq!(result.is_ok(), allowed);
+        assert_eq!(env.takeovers.get(), usize::from(allowed));
+        assert_eq!(input.0.lock().unwrap().is_empty(), !allowed);
+        assert_eq!(env.approved, usize::from(enabled));
+        if allowed {
+            assert!(env.steps.iter().any(|s| s["foregroundApproval"] == true));
+        }
     }
 }
 #[tokio::test]
@@ -523,6 +644,7 @@ fn grounding_mode_defaults_and_pixel_space_maps_to_display_points() {
     p.action["grounding_width"] = json!(1920);
     p.action["grounding_height"] = json!(1200);
     let display = Display {
+        origin: [0., 0.],
         width: 1600.,
         height: 1000.,
         pixel_width: 3200,

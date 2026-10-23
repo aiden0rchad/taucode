@@ -11,6 +11,12 @@ pub struct Frame {
     pub thumbnail: String,
     pub display: Display,
 }
+#[derive(Debug, PartialEq)]
+pub enum Preparation {
+    Events,
+    Handled,
+    NeedsForeground,
+}
 pub trait Environment {
     fn capture(&mut self) -> BoxFuture<'_, Result<Frame, String>>;
     fn predict<'a>(
@@ -19,6 +25,16 @@ pub trait Environment {
         frame: &'a Frame,
     ) -> BoxFuture<'a, Result<Prediction, String>>;
     fn context(&self) -> Result<Context, String>;
+    fn prepare(&self, _: &Action, _: &Control, _: &Context) -> Result<Preparation, String> {
+        Ok(Preparation::Events)
+    }
+    fn begin_foreground(&self, _: &Control, _: &Context) -> Result<(), String> {
+        Err("Foreground fallback unavailable".into())
+    }
+    fn end_action(&self) {}
+    fn capture_description(&self) -> String {
+        "Current frontmost application".into()
+    }
     fn planner_error(&self, error: String) -> String {
         error
     }
@@ -225,17 +241,19 @@ async fn execute(
             }
             Action::Open { app_or_file } => {
                 control.checkpoint().await?;
-                if env.context()? != *c {
-                    return Err("Focus changed".into());
-                }
-                env.open(app_or_file, target.ok_or("Missing target app")?)?;
+                control.guarded(
+                    c,
+                    || env.context(),
+                    || env.open(app_or_file, target.ok_or("Missing target app")?),
+                )?;
             }
             Action::SwitchApp { app } => {
                 control.checkpoint().await?;
-                if env.context()? != *c {
-                    return Err("Focus changed".into());
-                }
-                env.open(app, target.ok_or("Missing target app")?)?;
+                control.guarded(
+                    c,
+                    || env.context(),
+                    || env.open(app, target.ok_or("Missing target app")?),
+                )?;
             }
             Action::Wait { seconds } => {
                 control
@@ -276,11 +294,13 @@ pub async fn run(
         for step in 0..settings.max_steps {
             control.checkpoint().await?;
             let context = env.context()?;
-            if context.app != "dev.taucode.desktop" && !app_allowed(&context.app, settings, apps) {
+            if (settings.mode == "background" || context.app != "dev.taucode.desktop")
+                && !app_allowed(&context.app, settings, apps)
+            {
                 return Err(format!("App blocked: {}", context.app));
             }
             let frame = control.until(env.capture()).await?;
-            let scoped = format!("{instruction}\n\nHost policy: allowed application bundle IDs: {}. Current frontmost application: {}. If taucode is frontmost, first use switch_applications with an allowed bundle ID. Never interact with taucode itself.", apps.join(", "), context.app);
+            let scoped = format!("{instruction}\n\nHost policy: allowed application bundle IDs: {}. {}: {}. {} Never interact with taucode itself.", apps.join(", "), env.capture_description(), context.app, if settings.mode == "background" { "This run is bound to this app. Coordinates refer only to its captured window. Do not switch to another app." } else { "If taucode is frontmost, first use switch_applications with an allowed bundle ID." });
             phase = "predictMs";
             phase_start = Instant::now();
             pending = Some(
@@ -370,15 +390,67 @@ pub async fn run(
                 "executeMs"
             };
             phase_start = Instant::now();
-            let outcome = execute(env, control, &after, &action, target.as_deref())
-                .await
-                .and_then(|()| {
-                    if let Action::Fail { reason } = &action {
-                        Err(env.planner_error(reason.clone()))
-                    } else {
+            let preparation = env.prepare(&action, control, &after)?;
+            if preparation == Preparation::NeedsForeground {
+                if !settings.allow_foreground_fallback {
+                    return Err(
+                        "Background input unavailable; foreground fallback is disabled".into(),
+                    );
+                }
+                let reason =
+                    "This app ignored background input; take over the mouse for this step?";
+                phase = "waitMs";
+                phase_start = Instant::now();
+                let entry = pending.as_mut().unwrap();
+                entry["kind"] = json!("approval_wait");
+                entry["reason"] = json!(reason);
+                env.progress(entry.clone())?;
+                control.until(env.approve(reason, &action, &after)).await?;
+                control.checkpoint().await?;
+                if env.context()? != after {
+                    return Err("Target changed after fallback approval".into());
+                }
+                if let Decision::Deny(reason) = decide(
+                    &policy_action,
+                    description,
+                    &after,
+                    settings,
+                    apps,
+                    step,
+                    start.elapsed(),
+                ) {
+                    return Err(reason);
+                }
+                env.begin_foreground(control, &after)?;
+                entry["waitMs"] = json!(
+                    entry["waitMs"].as_u64().unwrap_or(0)
+                        + phase_start.elapsed().as_millis() as u64
+                );
+                entry["foregroundApproval"] = json!(true);
+                entry.as_object_mut().unwrap().remove("kind");
+                phase = "executeMs";
+                phase_start = Instant::now();
+                // Activation is asynchronous; no input until the exact app regains focus.
+                control
+                    .until(async {
+                        tokio::time::sleep(Duration::from_millis(150)).await;
                         Ok(())
-                    }
-                });
+                    })
+                    .await?;
+            }
+            let outcome = if preparation == Preparation::Handled {
+                Ok(())
+            } else {
+                execute(env, control, &after, &action, target.as_deref()).await
+            };
+            env.end_action();
+            let outcome = outcome.and_then(|()| {
+                if let Action::Fail { reason } = &action {
+                    Err(env.planner_error(reason.clone()))
+                } else {
+                    Ok(())
+                }
+            });
             let mut entry = pending.take().unwrap();
             entry[phase] = json!(
                 entry[phase].as_u64().unwrap_or(0) + phase_start.elapsed().as_millis() as u64

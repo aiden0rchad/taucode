@@ -11,6 +11,19 @@ vi.mock("@services/tauri", () => ({ computerRequest: vi.fn(), computerRequestPer
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const step = { step: 1, thumbnail: "aGVsbG8=", action: { kind: "click" }, reflection: "Found button" };
 describe("computer use", () => {
+  it("defaults to background and persists explicit fallback and cursor settings", async () => {
+    vi.mocked(computerRequest).mockResolvedValue({ steps: [] });
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(<SettingsComputerSection appSettings={{ computer: defaultComputerSettings } as AppSettings} onUpdateAppSettings={save} />);
+    expect((screen.getByLabelText("Input mode") as HTMLSelectElement).value).toBe("background");
+    expect((screen.getByLabelText("Allow foreground fallback (approval required for each step)") as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByLabelText("Show virtual cursor") as HTMLInputElement).checked).toBe(true);
+    fireEvent.change(screen.getByLabelText("Input mode"), { target: { value: "foreground" } });
+    fireEvent.click(screen.getByLabelText("Allow foreground fallback (approval required for each step)"));
+    fireEvent.click(screen.getByLabelText("Show virtual cursor"));
+    fireEvent.click(screen.getByText("Save Computer Use"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ computer: expect.objectContaining({ mode: "foreground", allowForegroundFallback: true, virtualCursor: false }) })));
+  });
   it.each([
     { screen: false, accessibility: false },
     { screen: true, accessibility: false },

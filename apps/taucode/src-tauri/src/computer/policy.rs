@@ -5,6 +5,9 @@ use std::time::Duration;
 pub(crate) use crate::types::ComputerSettings as Settings;
 
 pub fn validate(s: &Settings) -> Result<(), String> {
+    if !matches!(s.mode.as_str(), "background" | "foreground") {
+        return Err("Invalid computer mode".into());
+    }
     if !matches!(s.grounding_mode.as_str(), "pixels" | "ui-tars") {
         return Err("Invalid grounding mode".into());
     }
@@ -87,6 +90,7 @@ pub struct Prediction {
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Display {
+    pub origin: [f64; 2],
     pub width: f64,
     pub height: f64,
     pub pixel_width: u32,
@@ -96,6 +100,7 @@ pub fn map_point(p: [f64; 2], space: [f64; 2], display: Display) -> Result<[f64;
     if space.iter().chain(p.iter()).any(|n| !n.is_finite())
         || space.iter().any(|n| *n <= 0.)
         || p.iter().zip(space).any(|(n, s)| *n < 0. || *n >= s)
+        || display.origin.iter().any(|n| !n.is_finite())
         || !display.width.is_finite()
         || !display.height.is_finite()
         || display.width <= 0.
@@ -104,8 +109,8 @@ pub fn map_point(p: [f64; 2], space: [f64; 2], display: Display) -> Result<[f64;
         return Err("Coordinates outside display".into());
     }
     Ok([
-        p[0] * display.width / space[0],
-        p[1] * display.height / space[1],
+        display.origin[0] + p[0] * display.width / space[0],
+        display.origin[1] + p[1] * display.height / space[1],
     ])
 }
 impl Prediction {
@@ -219,6 +224,7 @@ pub enum Decision {
 }
 pub fn app_allowed(app: &str, s: &Settings, apps: &[String]) -> bool {
     !app.is_empty()
+        && app != "dev.taucode.desktop"
         && !ALWAYS_DENIED.iter().any(|a| a.eq_ignore_ascii_case(app))
         && !s.denied_apps.iter().any(|a| a.eq_ignore_ascii_case(app))
         && s.allowed_apps.iter().any(|a| a == app)
@@ -236,7 +242,8 @@ pub fn decide(
     if steps >= s.max_steps || elapsed >= Duration::from_secs(s.max_seconds) {
         return Decision::Deny("Run limit reached".into());
     }
-    let bootstrap = c.app == "dev.taucode.desktop"
+    let bootstrap = s.mode == "foreground"
+        && c.app == "dev.taucode.desktop"
         && matches!(a, Action::Open { .. } | Action::SwitchApp { .. });
     if !bootstrap && !app_allowed(&c.app, s, apps) {
         return Decision::Deny(format!("App blocked: {}", c.app));
@@ -246,7 +253,9 @@ pub fn decide(
         Action::SwitchApp { app } => Some(app),
         _ => None,
     };
-    if target.is_some_and(|app| !app_allowed(app, s, apps)) {
+    if target
+        .is_some_and(|app| !app_allowed(app, s, apps) || (s.mode == "background" && app != &c.app))
+    {
         return Decision::Deny("Target app is not allowed; use an allowed bundle ID".into());
     }
     if matches!(a, Action::Type { .. }) && c.secure {

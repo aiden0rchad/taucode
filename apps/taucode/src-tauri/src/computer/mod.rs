@@ -1,3 +1,5 @@
+#[cfg(target_os = "macos")]
+mod background;
 mod control;
 #[cfg(target_os = "macos")]
 mod native;
@@ -151,7 +153,7 @@ impl Computer {
             Some("screenshot") => {
                 let settings = self.enabled()?;
                 #[cfg(target_os = "macos")]
-                {
+                if settings.computer.mode == "foreground" {
                     let current = native::context()?;
                     if current.app != "dev.taucode.desktop"
                         && !app_allowed(
@@ -175,9 +177,18 @@ impl Computer {
                         })
                         .cloned()
                         .collect();
-                    let frame = tokio::task::spawn_blocking(move || native::capture(&allowed))
-                        .await
-                        .map_err(|e| e.to_string())??;
+                    let background = settings.computer.mode == "background";
+                    let frame = tokio::task::spawn_blocking(move || {
+                        if background {
+                            background::screenshot(
+                                allowed.first().ok_or("Select an allowed target app")?,
+                            )
+                        } else {
+                            native::capture(&allowed)
+                        }
+                    })
+                    .await
+                    .map_err(|e| e.to_string())??;
                     Ok(json!({"screenshot":frame.png}))
                 }
                 #[cfg(not(target_os = "macos"))]
@@ -245,6 +256,7 @@ impl Computer {
             }
             self.private_dir()?;
             self.arm(&app, &limits)?;
+            self.control.replace_input(native::NativeInput::default());
             self.control.start();
             let _stop = StopOnDrop(self.clone());
             let id = uuid::Uuid::new_v4().to_string();
@@ -272,14 +284,48 @@ impl Computer {
                         })?
                     })
                     .await?;
+                let session = if limits.mode == "background" {
+                    let session = self
+                        .control
+                        .until(async {
+                            tokio::time::timeout(
+                                std::time::Duration::from_secs(limits.max_seconds)
+                                    .saturating_sub(start.elapsed()),
+                                background::Session::bind(
+                                    &apps[0],
+                                    app.clone(),
+                                    limits.virtual_cursor,
+                                ),
+                            )
+                            .await
+                            .map_err(|_| {
+                                "Maximum wall time reached while binding target".to_string()
+                            })?
+                        })
+                        .await?;
+                    self.control
+                        .install_input(native::NativeInput::background(session.clone()))?;
+                    Some(session)
+                } else {
+                    None
+                };
                 let mut env = Live {
+                    session,
                     computer: self.clone(),
                     sidecar,
                     apps: apps.clone(),
                     id: id.clone(),
                     app: app.clone(),
                 };
-                runner::run(&mut env, &self.control, &limits, &apps, instruction, start).await
+                let result =
+                    runner::run(&mut env, &self.control, &limits, &apps, instruction, start).await;
+                if let Some(s) = &env.session {
+                    self.state.send_modify(|state| {
+                        state["targetApp"] = json!({"bundleId":s.bundle,"pid":s.pid});
+                        state["focusRestorations"] = json!(*s.guard.restorations.lock().unwrap());
+                    });
+                }
+                result
             }
             .await;
             self.state.send_modify(|s| {
@@ -374,6 +420,7 @@ fn request_permissions() -> Result<Value, String> {
 }
 #[cfg(target_os = "macos")]
 struct Live {
+    session: Option<Arc<background::Session>>,
     computer: Arc<Computer>,
     sidecar: sidecar::Sidecar,
     apps: Vec<String>,
@@ -386,10 +433,17 @@ impl runner::Environment for Live {
         &mut self,
     ) -> crate::shared::providers::BoxFuture<'_, Result<runner::Frame, String>> {
         let apps = self.apps.clone();
+        let session = self.session.clone();
         Box::pin(async move {
-            let f = tokio::task::spawn_blocking(move || native::capture(&apps))
-                .await
-                .map_err(|e| e.to_string())??;
+            let f = tokio::task::spawn_blocking(move || match session {
+                Some(s) => {
+                    *s.path.lock().unwrap() = None;
+                    s.capture()
+                }
+                None => native::capture(&apps),
+            })
+            .await
+            .map_err(|e| e.to_string())??;
             Ok(runner::Frame {
                 thumbnail: f.thumbnail,
                 png: f.png,
@@ -412,15 +466,106 @@ impl runner::Environment for Live {
         self.sidecar.with_log(error)
     }
     fn context(&self) -> Result<Context, String> {
-        native::context()
+        match &self.session {
+            Some(s) => s.context(),
+            None => native::context(),
+        }
     }
+    fn capture_description(&self) -> String {
+        match &self.session {
+            Some(s) => format!(
+                "Background target (window {})",
+                s.window
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .map(|w| format!("{}: {}", w.id, w.title))
+                    .unwrap_or_default()
+            ),
+            None => "Current frontmost application".into(),
+        }
+    }
+    fn prepare(
+        &self,
+        action: &Action,
+        control: &Control,
+        context: &Context,
+    ) -> Result<runner::Preparation, String> {
+        let Some(s) = &self.session else {
+            return Ok(runner::Preparation::Events);
+        };
+        s.dragging.store(
+            matches!(action, Action::Drag { .. }),
+            std::sync::atomic::Ordering::SeqCst,
+        );
+        if matches!(
+            action,
+            Action::Wait { .. }
+                | Action::Done { .. }
+                | Action::Fail { .. }
+                | Action::SwitchApp { .. }
+                | Action::Open { .. }
+        ) {
+            return Ok(runner::Preparation::Events);
+        }
+        control.guarded(
+            context,
+            || s.context(),
+            || {
+                s.window()?;
+                Ok(
+                    match background::prepare_action(
+                        action,
+                        || s.try_ax(action),
+                        || s.prepare_events(action),
+                        true,
+                    )? {
+                        background::Path::Ax => runner::Preparation::Handled,
+                        background::Path::Events => {
+                            s.record_attempt(action);
+                            runner::Preparation::Events
+                        }
+                        _ => runner::Preparation::NeedsForeground,
+                    },
+                )
+            },
+        )
+    }
+    fn begin_foreground(&self, control: &Control, context: &Context) -> Result<(), String> {
+        let s = self.session.as_ref().ok_or("No background target")?;
+        control.guarded(context, || s.context(), || s.begin_foreground())
+    }
+    fn end_action(&self) {
+        if let Some(s) = &self.session {
+            s.end_foreground();
+        }
+    }
+
     fn target(&self, app: &str) -> Result<String, String> {
         native::target(app).map(|v| v.0)
     }
     fn event_context(&self, event: &control::Event) -> Result<Context, String> {
+        if let Some(s) = &self.session {
+            s.window()?;
+            if matches!(event, control::Event::Key(..) | control::Event::Text(_))
+                && !s.events_available(&Action::Hotkey { keys: vec![] })
+            {
+                return Err("Target window no longer has the app's keyboard focus".into());
+            }
+            if s.foreground.load(std::sync::atomic::Ordering::SeqCst) {
+                return native::event_context(event);
+            }
+            return s.context();
+        }
         native::event_context(event)
     }
     fn open(&self, app: &str, target: &str) -> Result<(), String> {
+        if let Some(s) = &self.session {
+            if target != s.bundle {
+                return Err("Background runs can only address their bound app".into());
+            }
+            return s.open(app);
+        }
         native::open_app(app, target)
     }
     fn approve<'a>(
@@ -466,7 +611,7 @@ impl runner::Environment for Live {
             if approved {
                 // Clicking the HUD may activate taucode. Restore only the exact app
                 // the user just approved, then let the loop recheck the secure field.
-                if native::context()?.app == "dev.taucode.desktop" {
+                if self.session.is_none() && native::context()?.app == "dev.taucode.desktop" {
                     native::open_app(&context.app, &context.app)?;
                     for _ in 0..50 {
                         if native::context()? == *context {
@@ -482,7 +627,14 @@ impl runner::Environment for Live {
             }
         })
     }
-    fn progress(&mut self, step: Value) -> Result<(), String> {
+    fn progress(&mut self, mut step: Value) -> Result<(), String> {
+        if let Some(s) = &self.session {
+            step["path"] = json!(*s.path.lock().unwrap());
+            step["window"] = json!(*s.window.lock().unwrap());
+            step["focusRestorations"] = json!(*s.guard.restorations.lock().unwrap());
+        } else {
+            step["path"] = json!("foreground");
+        }
         self.computer.state.send_modify(|s| {
             let steps = s["steps"].as_array_mut().unwrap();
             if let Some(previous) = steps
