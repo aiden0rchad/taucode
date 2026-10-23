@@ -1,8 +1,8 @@
 import type { ModelRef } from "@/types";
 export type ComputerSettings = { enabled: boolean; planner: ModelRef | null; grounding: ModelRef | null; groundingMode: "pixels" | "ui-tars"; groundingWidth: number; groundingHeight: number; allowedApps: string[]; deniedApps: string[]; maxSteps: number; maxSeconds: number; shortcut: string };
 export const defaultComputerSettings: ComputerSettings = { enabled: false, planner: null, grounding: null, groundingMode: "pixels", groundingWidth: 1920, groundingHeight: 1080, allowedApps: [], deniedApps: [], maxSteps: 30, maxSeconds: 300, shortcut: "Control+Alt+Super+Period" };
-export type ComputerStep = { step: number; thumbnail: string; action: Record<string, unknown>; reflection: string; planText?: string; error?: string | null };
-export type ComputerRun = { id?: string; stored?: boolean; running?: boolean; paused?: boolean; steps: ComputerStep[]; summary?: string; error?: string; instruction?: string; shortcut?: string; setup?: string; permissions?: { screen: boolean; accessibility: boolean; unsupported?: boolean }; approval?: { id: string; reason: string; action: Record<string, unknown>; app: string } | null };
+export type ComputerStep = { step: number; kind?: "approval_wait"; reason?: string; target?: string; predictMs?: number; executeMs?: number; waitMs?: number; thumbnail: string; action: Record<string, unknown>; reflection: string; planText?: string; error?: string | null };
+export type ComputerRun = { id?: string; stored?: boolean; running?: boolean; paused?: boolean; steps: ComputerStep[]; summary?: string; error?: string; instruction?: string; shortcut?: string; setup?: string; permissions?: { screen: boolean; accessibility: boolean; unsupported?: boolean }; approval?: { id: string; reason: string; target?: string; action: Record<string, unknown>; app: string } | null };
 export function parseComputerRun(output?: string): ComputerRun | null {
   if (!output?.includes('computerRun')) return null;
   try {

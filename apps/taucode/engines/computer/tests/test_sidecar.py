@@ -55,6 +55,17 @@ def test_out_of_bounds_grounding(aci):
     aci.generate_coords=lambda *a: [1920, 1]
     assert parse_action(aci,'agent.click("x")')['kind']=='fail'
 
+@pytest.mark.parametrize('code,target', [
+    ('agent.click("The = button in Calculator")', 'The = button in Calculator'),
+    ('agent.click("Delete account")', 'Delete account'),
+    ('agent.click(num_clicks=1, element_description="Send")', 'Send'),
+    ('agent.type(text="Send")', ''),
+    ('agent.drag_and_drop("Start", "End")', 'Start'),
+    ('agent.wait(1)', ''),
+])
+def test_target_comes_from_literal_call_argument(aci, code, target):
+    assert parse_action(aci, code)['target'] == target
+
 @pytest.mark.parametrize('kind,engine', KINDS.items())
 def test_registry_mapping(monkeypatch,kind,engine):
     monkeypatch.setenv('TAUCODE_CUA_PLANNER_KEY','secret')

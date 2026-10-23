@@ -35,7 +35,8 @@ fn permission_requests_map_each_status_without_short_circuiting() {
             };
             assert_eq!(
                 super::request_permissions_with(&api),
-                accessibility.map(|accessibility| json!({"screen": screen, "accessibility": accessibility}))
+                accessibility
+                    .map(|accessibility| json!({"screen": screen, "accessibility": accessibility}))
             );
             assert_eq!(*api.calls.borrow(), ["screen", "accessibility"]);
         }
@@ -71,6 +72,9 @@ fn context() -> Context {
 }
 fn prediction(action: Value) -> Prediction {
     let mut action = action;
+    if action.get("target").is_none() {
+        action["target"] = json!("Document");
+    }
     action["grounding_width"] = json!(1920);
     action["grounding_height"] = json!(1080);
     Prediction {
@@ -219,6 +223,7 @@ struct Fake {
     captures: usize,
     focus: Context,
     change_after_approval: bool,
+    approval_delay: Duration,
 }
 impl Environment for Fake {
     fn capture(&mut self) -> BoxFuture<'_, Result<Frame, String>> {
@@ -252,6 +257,7 @@ impl Environment for Fake {
             self.focus.app = "com.apple.Terminal".into();
         }
         Box::pin(async {
+            tokio::time::sleep(self.approval_delay).await;
             if self.approval {
                 Ok(())
             } else {
@@ -263,7 +269,15 @@ impl Environment for Fake {
         Ok(())
     }
     fn progress(&mut self, v: Value) -> Result<(), String> {
-        self.steps.push(v);
+        if let Some(previous) = self
+            .steps
+            .last_mut()
+            .filter(|s| s["step"] == v["step"] && s["kind"] == v["kind"])
+        {
+            *previous = v;
+        } else {
+            self.steps.push(v);
+        }
         Ok(())
     }
 }
@@ -276,6 +290,7 @@ fn fake(actions: Vec<Value>) -> Fake {
         captures: 0,
         focus: context(),
         change_after_approval: false,
+        approval_delay: Duration::ZERO,
     }
 }
 #[tokio::test]
@@ -288,9 +303,16 @@ async fn loop_fake_capture_planner_input_and_progress() {
     let control = Control::new(input.clone());
     control.start();
     let s = settings();
-    let result = runner::run(&mut env, &control, &s, &s.allowed_apps, "test")
-        .await
-        .unwrap();
+    let result = runner::run(
+        &mut env,
+        &control,
+        &s,
+        &s.allowed_apps,
+        "test",
+        Instant::now(),
+    )
+    .await
+    .unwrap();
     assert_eq!(result["summary"], "Complete");
     assert_eq!(env.steps.len(), 2);
     assert_eq!(env.captures, 3);
@@ -314,9 +336,16 @@ async fn declined_approval_and_changed_focus_never_type() {
         let control = Control::new(input.clone());
         control.start();
         let s = settings();
-        assert!(runner::run(&mut env, &control, &s, &s.allowed_apps, "test")
-            .await
-            .is_err());
+        assert!(runner::run(
+            &mut env,
+            &control,
+            &s,
+            &s.allowed_apps,
+            "test",
+            Instant::now()
+        )
+        .await
+        .is_err());
         assert_eq!(env.approved, 1);
         assert!(input.0.lock().unwrap().is_empty());
     }
@@ -367,9 +396,16 @@ async fn bootstrap_can_only_switch_to_allowed_app_and_step_limit_stops() {
         ..settings()
     };
     assert_eq!(
-        runner::run(&mut env, &control, &s, &s.allowed_apps, "test")
-            .await
-            .unwrap_err(),
+        runner::run(
+            &mut env,
+            &control,
+            &s,
+            &s.allowed_apps,
+            "test",
+            Instant::now()
+        )
+        .await
+        .unwrap_err(),
         "Maximum steps reached"
     );
     assert_eq!(env.steps.len(), 1);
@@ -442,18 +478,32 @@ async fn wall_limit_cancels_wait_and_denied_app_is_never_captured() {
     };
     let mut env = fake(vec![json!({"kind":"wait","seconds":10})]);
     assert_eq!(
-        runner::run(&mut env, &control, &s, &s.allowed_apps, "test")
-            .await
-            .unwrap_err(),
+        runner::run(
+            &mut env,
+            &control,
+            &s,
+            &s.allowed_apps,
+            "test",
+            Instant::now()
+        )
+        .await
+        .unwrap_err(),
         "Maximum wall time reached"
     );
     assert!(control.stopped());
     control.start();
     env.focus.app = "com.apple.Terminal".into();
     env.captures = 0;
-    assert!(runner::run(&mut env, &control, &s, &s.allowed_apps, "test")
-        .await
-        .is_err());
+    assert!(runner::run(
+        &mut env,
+        &control,
+        &s,
+        &s.allowed_apps,
+        "test",
+        Instant::now()
+    )
+    .await
+    .is_err());
     assert_eq!(env.captures, 0);
     assert!(input.0.lock().unwrap().is_empty());
 }
@@ -492,14 +542,169 @@ async fn prediction_error_is_logged_without_input() {
     let control = Control::new(input.clone());
     control.start();
     let s = settings();
-    let error = runner::run(&mut env, &control, &s, &s.allowed_apps, "test")
-        .await
-        .unwrap_err();
+    let error = runner::run(
+        &mut env,
+        &control,
+        &s,
+        &s.allowed_apps,
+        "test",
+        Instant::now(),
+    )
+    .await
+    .unwrap_err();
     assert_eq!(error, "No fake action");
     assert_eq!(env.steps.len(), 1);
     assert_eq!(env.steps[0]["error"], error);
     assert_eq!(env.steps[0]["action"]["reason"], error);
     assert_eq!(env.steps[0]["thumbnail"], "fake-thumb");
+    assert!(input.0.lock().unwrap().is_empty());
+    assert!(control.stopped());
+}
+
+#[tokio::test]
+async fn click_policy_uses_target_not_agent_s_plan_or_reflection() {
+    for (target, approvals) in [
+        ("The = button in Calculator", 0),
+        ("Border settings", 0),
+        ("Sender name", 0),
+        ("Delete account", 1),
+        ("Send", 1),
+    ] {
+        let mut env = fake(vec![
+            json!({"kind":"click","target":target,"x":100,"y":100,"button":"left","clicks":1,"hold_keys":[]}),
+            json!({"kind":"done","summary":"84"}),
+        ]);
+        let prediction = env.predictions.front_mut().unwrap();
+        prediction.plan_text = "(Previous action verification) The expression 12 × 7 is entered. (Next Action) In order to complete the calculation, click the = button to confirm the result.\n```python\nagent.click(\"The = button in Calculator\")\n```".into();
+        prediction.reflection =
+            "Confirm the result before proceeding; do not send or delete anything.".into();
+        let control = Control::new(FakeInput::default());
+        control.start();
+        let s = settings();
+        runner::run(
+            &mut env,
+            &control,
+            &s,
+            &s.allowed_apps,
+            "12 × 7",
+            Instant::now(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(env.approved, approvals, "{target}");
+        for step in env.steps {
+            for timing in ["predictMs", "executeMs", "waitMs"] {
+                assert!(step[timing].is_u64(), "{step}");
+            }
+        }
+    }
+}
+
+#[test]
+fn risky_clicks_match_whole_words_case_insensitively() {
+    let click = Action::Click {
+        x: 1.,
+        y: 1.,
+        button: "left".into(),
+        clicks: 1,
+        hold_keys: vec![],
+    };
+    let s = settings();
+    for word in [
+        "submit",
+        "send",
+        "buy",
+        "purchase",
+        "pay",
+        "checkout",
+        "confirm",
+        "order",
+        "delete",
+        "transfer",
+        "remove",
+        "erase",
+        "unsubscribe",
+        "publish",
+        "post",
+    ] {
+        for target in [word.to_uppercase(), format!("Button: ({word})!")] {
+            assert!(
+                matches!(
+                    decide(
+                        &click,
+                        &target,
+                        &context(),
+                        &s,
+                        &s.allowed_apps,
+                        0,
+                        Duration::ZERO
+                    ),
+                    Decision::Confirm(_)
+                ),
+                "{target}"
+            );
+        }
+        for target in [
+            format!("x{word}"),
+            format!("{word}x"),
+            format!("_{word}_"),
+            format!("1{word}2"),
+        ] {
+            assert_eq!(
+                decide(
+                    &click,
+                    &target,
+                    &context(),
+                    &s,
+                    &s.allowed_apps,
+                    0,
+                    Duration::ZERO
+                ),
+                Decision::Allow,
+                "{target}"
+            );
+        }
+    }
+    let mut p =
+        prediction(json!({"kind":"click","x":1,"y":1,"button":"left","clicks":1,"hold_keys":[]}));
+    for target in [Value::Null, json!(42), json!("bad\0target")] {
+        p.action["target"] = target;
+        assert!(p.validated(display()).is_err());
+    }
+    p.action.as_object_mut().unwrap().remove("target");
+    assert!(p.validated(display()).is_err());
+}
+
+#[tokio::test]
+async fn approval_timeout_logs_reason_target_and_wait_duration_without_input() {
+    let mut env = fake(vec![
+        json!({"kind":"click","target":"Delete account","x":1,"y":1,"button":"left","clicks":1,"hold_keys":[]}),
+    ]);
+    env.approval_delay = Duration::from_secs(10);
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let s = Settings {
+        max_seconds: 1,
+        ..settings()
+    };
+    let error = runner::run(
+        &mut env,
+        &control,
+        &s,
+        &s.allowed_apps,
+        "test",
+        Instant::now(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error, "Timed out waiting for approval: Potential submit, send, purchase or destructive click (Delete account)");
+    assert_eq!(env.steps.len(), 1);
+    assert_eq!(env.steps[0]["kind"], "approval_wait");
+    assert_eq!(env.steps[0]["target"], "Delete account");
+    assert_eq!(env.steps[0]["error"], error);
+    assert!(env.steps[0]["waitMs"].as_u64().unwrap() >= 900);
+    assert_eq!(env.steps[0]["executeMs"], 0);
     assert!(input.0.lock().unwrap().is_empty());
     assert!(control.stopped());
 }
