@@ -13,6 +13,9 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
+    "paths": {
+      "@protocol/*": ["../../packages/protocol/src/*"]
+    },
 
     /* Linting */
     "strict": true,
