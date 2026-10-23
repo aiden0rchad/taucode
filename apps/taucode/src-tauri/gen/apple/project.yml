@@ -10,7 +10,7 @@ configs:
 settingGroups:
   app:
     base:
-      PRODUCT_NAME: Codex Monitor
+      PRODUCT_NAME: taucode
       PRODUCT_BUNDLE_IDENTIFIER: com.dimillian.codexmonitor
 targetTemplates:
   app:

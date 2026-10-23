@@ -42,7 +42,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "iOS": {
       "frameworks": [
         "libz.tbd",
@@ -66,12 +66,5 @@
       "../engines/computer/uv.lock": "engines/computer/uv.lock"
     }
   },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY0QTgzQUU0QTc2MEVBNDMKUldSRDZtQ241RHFvOURJbm1KeC81aEZaOXlhZHlHd2NEZVpPVWs5NjdjOFNhUFEyZGJpTkV0S2YK",
-      "endpoints": [
-        "https://github.com/Dimillian/CodexMonitor/releases/latest/download/latest.json"
-      ]
-    }
-  }
+  "plugins": {}
 }

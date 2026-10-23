@@ -1,4 +1,6 @@
 use super::Computer;
+#[cfg(unix)]
+use crate::shared::local_socket;
 use serde_json::{json, Value};
 use std::{
     path::{Path, PathBuf},
@@ -8,22 +10,12 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
 #[cfg(unix)]
 fn socket(data: &Path) -> PathBuf {
-    use sha2::{Digest, Sha256};
-    // Keep UNIX paths short, private, and independent of TMPDIR differences between clients.
-    let hash = format!("{:x}", Sha256::digest(data.to_string_lossy().as_bytes()));
-    PathBuf::from(format!(
-        "/tmp/taucode-cua-{}-{}.sock",
-        unsafe { libc::geteuid() },
-        &hash[..16]
-    ))
+    local_socket::path(data, "computer")
 }
 pub async fn serve(computer: Arc<Computer>, app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(unix)]
     {
-        use std::os::{
-            fd::AsRawFd,
-            unix::fs::{FileTypeExt, MetadataExt, PermissionsExt},
-        };
+        use std::os::fd::AsRawFd;
         let lock = std::fs::OpenOptions::new()
             .create(true)
             .truncate(false)
@@ -39,21 +31,17 @@ pub async fn serve(computer: Arc<Computer>, app: tauri::AppHandle) -> Result<(),
             return Err(error.to_string());
         }
         let path = socket(&computer.data);
-        if let Ok(meta) = std::fs::symlink_metadata(&path) {
-            if !meta.file_type().is_socket() || meta.uid() != unsafe { libc::geteuid() } {
-                return Err("Computer socket has unexpected owner or type".into());
-            }
-            std::fs::remove_file(&path).map_err(|e| e.to_string())?;
-        }
-        let listener = tokio::net::UnixListener::bind(&path).map_err(|e| e.to_string())?;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
-            .map_err(|e| e.to_string())?;
+        let listener = local_socket::bind(&path).await.map_err(|e| e.to_string())?;
         computer
             .owned
             .store(true, std::sync::atomic::Ordering::SeqCst);
         tokio::spawn(async move {
             let _lock = lock;
             while let Ok((stream, _)) = listener.accept().await {
+                if let Err(error) = local_socket::validate_peer(&stream) {
+                    eprintln!("Rejected computer control peer: {error}");
+                    continue;
+                }
                 let computer = computer.clone();
                 let app = app.clone();
                 tokio::spawn(async move {
@@ -108,9 +96,9 @@ pub async fn serve(computer: Arc<Computer>, app: tauri::AppHandle) -> Result<(),
 async fn exchange(data: &Path, p: Value, mut progress: impl FnMut(Value)) -> Result<Value, String> {
     #[cfg(unix)]
     {
-        let mut socket = tokio::net::UnixStream::connect(socket(data))
+        let mut socket = local_socket::connect(&socket(data))
             .await
-            .map_err(|_| "Open taucode on the Mac to use Computer Use")?;
+            .map_err(|e| format!("Computer host unavailable: {e}"))?;
         socket
             .write_all(format!("{p}\n").as_bytes())
             .await

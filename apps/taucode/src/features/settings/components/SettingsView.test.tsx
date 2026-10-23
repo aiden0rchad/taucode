@@ -730,23 +730,12 @@ describe("SettingsView Display", () => {
 });
 
 describe("SettingsView About", () => {
-  it("toggles automatic app update checks", async () => {
-    const onToggleAutomaticAppUpdateChecks = vi.fn();
-    renderAboutSection({
-      onToggleAutomaticAppUpdateChecks,
-      appSettings: { automaticAppUpdateChecksEnabled: false },
-    });
-
-    const row = screen
-      .getByText("Automatically check for app updates")
-      .closest(".settings-toggle-row") as HTMLElement | null;
-    if (!row) {
-      throw new Error("Expected automatic app update checks row");
-    }
-    fireEvent.click(within(row).getByRole("button"));
-
+  it("hides app update controls even when automatic checks were enabled", async () => {
+    renderAboutSection({ appSettings: { automaticAppUpdateChecksEnabled: true } });
     await waitFor(() => {
-      expect(onToggleAutomaticAppUpdateChecks).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText("Automatically check for app updates")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Check for updates" })).toBeNull();
+      expect(screen.queryByText("App Updates")).toBeNull();
     });
   });
 });
