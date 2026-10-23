@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, Channel } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { Options as NotificationOptions } from "@tauri-apps/plugin-notification";
 import type {
@@ -835,6 +835,16 @@ export async function getAppSettings(): Promise<AppSettings> {
 
 export function connectorRequest<T>(params: { action: "list" | "test" | "secrets" | "setSecret" | "deleteSecret"; id?: string; workspaceId?: string; name?: string; value?: string }): Promise<T> {
   return invoke<T>("connector_request", { params });
+}
+
+export function browserRequest<T = void>(params: Record<string, unknown>): Promise<T> {
+  return invoke<T>("browser_request", { params });
+}
+export async function subscribeBrowser(onState: (state: import("@/features/browser/browser").BrowserState) => void): Promise<() => void> {
+  const channel = new Channel<import("@/features/browser/browser").BrowserState>();
+  channel.onmessage = onState;
+  const id = await invoke<string>("browser_subscribe", { channel });
+  return () => { channel.onmessage = () => {}; void invoke("browser_unsubscribe", { id }).catch(() => {}); };
 }
 
 export async function isMobileRuntime(): Promise<boolean> {

@@ -101,7 +101,7 @@ fn reserved_ids_and_overrides() {
         ..Default::default()
     };
     let entries = effective(&app, &workspace, None).unwrap();
-    assert_eq!(entries.len(), 3);
+    assert_eq!(entries.len(), 4);
     assert!(!entries[0].enabled);
     assert_eq!(entries[0].transport, s.transport);
     assert_eq!(entries[0].approval, Approval::Ask);
@@ -110,6 +110,39 @@ fn reserved_ids_and_overrides() {
     assert!(effective(&app, &workspace, None).is_err());
     let disabled = delivery(&entries, &Keys::default()).unwrap();
     assert!(disabled.pi["mcpServers"].get("local").is_none());
+}
+
+#[test]
+fn browser_delivery_and_per_tool_approval_for_both_engines() {
+    let mut app = AppSettings::default();
+    let workspace = WorkspaceSettings::default();
+    for approval in [Approval::Ask, Approval::Auto] {
+        app.browser.approval = approval.clone();
+        let mut entries = effective(&app, &workspace, None).unwrap();
+        configure_browser(&mut entries, Path::new("/app/data")).unwrap();
+        let browser = entries.iter().find(|s| s.id == "taucode-browser").unwrap();
+        assert_eq!(browser.approval, approval);
+        let out = delivery(&entries, &Keys::default()).unwrap();
+        assert_eq!(
+            out.pi["mcpServers"]["taucode-browser"]["args"],
+            json!(["--tau-browser-mcp", "/app/data"])
+        );
+        let config = out
+            .codex
+            .iter()
+            .find(|s| s.starts_with("mcp_servers.taucode-browser="))
+            .unwrap();
+        assert!(config.contains("--tau-browser-mcp"));
+        assert!(config.contains(if approval == Approval::Ask {
+            "default_tools_approval_mode = \"prompt\""
+        } else {
+            "default_tools_approval_mode = \"approve\""
+        }));
+        for tool in super::super::browser::READ_TOOLS {
+            assert!(config.contains(&format!("{tool} = {{ approval_mode = \"approve\" }}")));
+        }
+        assert!(!config.contains("browser_click =")); // Inherits the configured mutation policy.
+    }
 }
 #[test]
 fn credential_validation_and_names_do_not_alias() {
@@ -210,6 +243,7 @@ async fn credential_commands_only_use_key_store() {
         &workspaces,
         None,
         &keys,
+        Path::new("/data"),
     )
     .await
     .unwrap();
@@ -223,22 +257,31 @@ async fn credential_commands_only_use_key_store() {
             &app,
             &workspaces,
             None,
-            &keys
+            &keys,
+            Path::new("/data")
         )
         .await
         .unwrap(),
         json!({"bearer":true})
     );
-    let entries = request(json!({"action":"list"}), &app, &workspaces, None, &keys)
-        .await
-        .unwrap();
+    let entries = request(
+        json!({"action":"list"}),
+        &app,
+        &workspaces,
+        None,
+        &keys,
+        Path::new("/data"),
+    )
+    .await
+    .unwrap();
     assert!(!entries.to_string().contains("private"));
     assert!(request(
         json!({"action":"setSecret","id":"test","name":"other","value":"private"}),
         &app,
         &workspaces,
         None,
-        &keys
+        &keys,
+        Path::new("/data")
     )
     .await
     .is_err());
@@ -248,6 +291,7 @@ async fn credential_commands_only_use_key_store() {
         &workspaces,
         None,
         &keys,
+        Path::new("/data"),
     )
     .await
     .unwrap();

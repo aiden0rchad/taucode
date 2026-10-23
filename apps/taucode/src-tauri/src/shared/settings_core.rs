@@ -44,8 +44,11 @@ pub(crate) async fn update_app_settings_core(
 ) -> Result<AppSettings, String> {
     crate::shared::providers::validate(&settings.providers, &settings.agent_policy)?;
     super::connectors::validate(&settings.mcp_servers, false)?;
-    if !settings.mcp_servers.iter().any(|s| s.id == "codegraph") {
-        settings.mcp_servers.extend(super::connectors::defaults());
+    super::browser::validate(&settings.browser)?;
+    for entry in super::connectors::defaults() {
+        if !settings.mcp_servers.iter().any(|s| s.id == entry.id) {
+            settings.mcp_servers.push(entry);
+        }
     }
     let old_connectors = app_settings.lock().await.mcp_servers.clone();
     if !matches!(settings.backend_mode, crate::types::BackendMode::Remote) {

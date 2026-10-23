@@ -41,7 +41,7 @@ pub(crate) fn validate(entries: &[McpServerEntry], overrides: bool) -> Result<()
             .iter()
             .any(|id| id.replace('-', "_") == s.id.replace('-', "_"))
         {
-            if s.transport.is_some() || s.id != "codegraph" {
+            if s.transport.is_some() || !matches!(s.id.as_str(), "codegraph" | "taucode-browser") {
                 return Err("Reserved built-in connector ID".into());
             }
         } else if s.transport.is_none() && !overrides {
@@ -146,8 +146,10 @@ pub(crate) fn effective(
     validate(&app.mcp_servers, false)?;
     validate(&workspace.mcp_servers, true)?;
     let mut entries = app.mcp_servers.clone();
-    if !entries.iter().any(|s| s.id == "codegraph") {
-        entries.extend(defaults());
+    for entry in defaults() {
+        if !entries.iter().any(|s| s.id == entry.id) {
+            entries.push(entry);
+        }
     }
     for over in &workspace.mcp_servers {
         if let Some(entry) = entries.iter_mut().find(|s| s.id == over.id) {
@@ -197,6 +199,11 @@ pub(crate) fn effective(
             ]),
         });
     }
+    let browser = entries
+        .iter_mut()
+        .find(|s| s.id == "taucode-browser")
+        .unwrap();
+    browser.approval = app.browser.approval.clone();
     Ok(entries)
 }
 
@@ -207,14 +214,31 @@ pub(crate) fn load(
 ) -> Result<Vec<McpServerEntry>, String> {
     let app = crate::storage::read_settings(&data.join("settings.json"))?;
     let workspaces = crate::storage::read_workspaces(&data.join("workspaces.json"))?;
-    effective(
+    let mut entries = effective(
         &app,
         &workspaces
             .get(workspace)
             .map(|w| w.settings.clone())
             .unwrap_or_default(),
         graph,
-    )
+    )?;
+    configure_browser(&mut entries, data)?;
+    Ok(entries)
+}
+
+pub(crate) fn configure_browser(entries: &mut [McpServerEntry], data: &Path) -> Result<(), String> {
+    if let Some(browser) = entries.iter_mut().find(|s| s.id == "taucode-browser") {
+        browser.transport = Some(Transport::Stdio {
+            command: std::env::current_exe()
+                .map_err(|e| e.to_string())?
+                .to_string_lossy()
+                .into(),
+            args: vec!["--tau-browser-mcp".into(), data.to_string_lossy().into()],
+            cwd: None,
+            env: BTreeMap::new(),
+        });
+    }
+    Ok(())
 }
 
 pub(crate) struct Delivery {
@@ -258,6 +282,15 @@ pub(crate) fn delivery(
             })
             .into(),
         );
+        if s.id == "taucode-browser" {
+            let mut tools = toml_edit::InlineTable::new();
+            for name in super::browser::READ_TOOLS {
+                let mut rule = toml_edit::InlineTable::new();
+                rule.insert("approval_mode", "approve".into());
+                tools.insert(*name, rule.into());
+            }
+            codex.insert("tools", tools.into());
+        }
         for (key, list) in [
             ("enabled_tools", &s.tool_allowlist),
             ("disabled_tools", &s.tool_denylist),
@@ -419,6 +452,7 @@ pub(crate) async fn request(
     >,
     graph: Option<&CodegraphSetup>,
     keys: &dyn KeyStore,
+    data: &Path,
 ) -> Result<Value, String> {
     let workspace = match params["workspaceId"].as_str() {
         Some(id) => Some(
@@ -432,7 +466,7 @@ pub(crate) async fn request(
         None => None,
     };
     let app = settings.lock().await.clone();
-    let entries = effective(
+    let mut entries = effective(
         &app,
         &workspace
             .as_ref()
@@ -440,6 +474,7 @@ pub(crate) async fn request(
             .unwrap_or_default(),
         graph,
     )?;
+    configure_browser(&mut entries, data)?;
     let action = params["action"]
         .as_str()
         .ok_or("Missing connector action")?;

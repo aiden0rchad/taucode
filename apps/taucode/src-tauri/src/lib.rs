@@ -119,6 +119,8 @@ pub fn run() {
         })
         .setup(|app| {
             let state = state::AppState::load(&app.handle());
+            #[cfg(desktop)]
+            tauri::async_runtime::block_on(state.browser.serve()).map_err(std::io::Error::other)?;
             app.manage(state);
             #[cfg(target_os = "macos")]
             {
@@ -184,6 +186,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
+            browser_commands::browser_request,
+            browser_commands::browser_subscribe,
+            browser_commands::browser_unsubscribe,
             codegraph_commands::codegraph_status,
             codegraph_commands::codegraph_rebuild,
             providers::provider_set_api_key,
@@ -319,6 +324,10 @@ pub fn run() {
         .expect("error while running tauri application");
 
     app.run(|app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            let state = app_handle.state::<state::AppState>();
+            tauri::async_runtime::block_on(state.browser.shutdown());
+        }
         #[cfg(desktop)]
         if let RunEvent::ExitRequested { api, .. } = event {
             if !EXIT_CLEANUP_IN_PROGRESS.load(Ordering::SeqCst)
@@ -343,4 +352,9 @@ pub fn run() {
             }
         }
     });
+}
+
+mod browser_commands;
+pub fn browser_mcp_cli(args: Vec<std::ffi::OsString>) -> Result<(), String> {
+    shared::browser::mcp_cli(args)
 }

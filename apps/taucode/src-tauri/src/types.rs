@@ -383,6 +383,8 @@ pub(crate) struct RemoteBackendTarget {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct AppSettings {
+    #[serde(default)]
+    pub(crate) browser: BrowserSettings,
     #[serde(default = "default_mcp_servers", rename = "mcpServers")]
     pub(crate) mcp_servers: Vec<McpServerEntry>,
     #[serde(default)]
@@ -1132,6 +1134,7 @@ fn default_codegraph_enabled() -> bool {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            browser: Default::default(),
             mcp_servers: default_mcp_servers(),
             providers: Vec::new(),
             agent_policy: AgentPolicy::default(),
@@ -1630,13 +1633,45 @@ pub(crate) struct McpServerEntry {
 }
 
 pub(crate) fn default_mcp_servers() -> Vec<McpServerEntry> {
-    vec![McpServerEntry {
-        id: "codegraph".into(),
-        name: "CodeGraph".into(),
-        enabled: true,
-        transport: None,
-        tool_allowlist: None,
-        tool_denylist: None,
-        approval: McpApproval::Auto,
-    }]
+    vec![
+        McpServerEntry {
+            id: "codegraph".into(),
+            name: "CodeGraph".into(),
+            enabled: true,
+            transport: None,
+            tool_allowlist: None,
+            tool_denylist: None,
+            approval: McpApproval::Auto,
+        },
+        McpServerEntry {
+            id: "taucode-browser".into(),
+            name: "Browser".into(),
+            enabled: true,
+            transport: None,
+            tool_allowlist: None,
+            tool_denylist: None,
+            approval: McpApproval::Ask,
+        },
+    ]
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct BrowserSettings {
+    pub binary: Option<String>,
+    pub allowed_origins: Vec<String>,
+    pub blocked_origins: Vec<String>,
+    pub approval: crate::types::McpApproval,
+    pub search_url: String,
+}
+impl Default for BrowserSettings {
+    fn default() -> Self {
+        Self {
+            binary: None,
+            allowed_origins: vec![],
+            blocked_origins: vec![],
+            approval: crate::types::McpApproval::Ask,
+            search_url: "https://www.google.com/search?q={query}".into(),
+        }
+    }
 }

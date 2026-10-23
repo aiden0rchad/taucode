@@ -24,6 +24,12 @@ function show(item: Record<string, unknown>) {
 }
 
 describe("0.164 item renderers", () => {
+  it("renders browser MCP screenshots with the existing image lightbox", () => {
+    show({ type:"mcpToolCall", id:"browser", server:"taucode-browser", tool:"browser_take_screenshot", status:"completed", arguments:{}, result:{content:[{type:"text",text:"Screenshot"},{type:"image",mimeType:"image/png",data:"AAAA"}]} });
+    expect(screen.getByAltText("Generated image 1").getAttribute("src")).toBe("data:image/png;base64,AAAA");
+    fireEvent.click(screen.getByRole("button",{name:"Open image 1"}));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
   it.each(items)("renders $type as a compact expandable row", (item) => {
     const { container } = show(item);
     expect(container.querySelector(".tool-inline-row")).not.toBeNull();

@@ -266,6 +266,7 @@ export type OpenAppTarget = {
 };
 
 export type McpCredential = { value: string } | { secret: true };
+export type BrowserSettings = { binary: string | null; allowedOrigins: string[]; blockedOrigins: string[]; approval: "auto" | "ask"; searchUrl: string };
 export type McpServerEntry = {
   id: string; name?: string; enabled: boolean;
   transport?: { type: "stdio"; command: string; args: string[]; cwd?: string | null; env: Record<string, McpCredential> } | { type: "http"; url: string; headers: Record<string, McpCredential>; bearer?: { secret: true } | null } | null;
@@ -274,6 +275,7 @@ export type McpServerEntry = {
 export type McpConnectionResult = { ok: boolean; latencyMs: number; tools?: { name: string; description?: string }[]; error?: string };
 
 export type AppSettings = {
+  browser?: BrowserSettings;
   mcpServers?: McpServerEntry[];
   providers?: ProviderEntry[];
   agentPolicy?: AgentPolicy;

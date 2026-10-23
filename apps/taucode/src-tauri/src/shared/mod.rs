@@ -19,5 +19,7 @@ pub(crate) mod worktree_core;
 
 pub(crate) mod engines;
 
+#[path = "../browser/mod.rs"]
+pub(crate) mod browser;
 pub(crate) mod connectors;
 pub(crate) mod pi;

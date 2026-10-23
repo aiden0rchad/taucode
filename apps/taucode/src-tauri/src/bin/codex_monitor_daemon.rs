@@ -166,6 +166,7 @@ struct DaemonConfig {
 }
 
 struct DaemonState {
+    browser: Arc<shared::browser::Browser>,
     codegraph: Arc<shared::codegraph_core::Codegraph>,
     data_dir: PathBuf,
     workspaces: Mutex<HashMap<String, WorkspaceEntry>>,
@@ -194,6 +195,7 @@ impl DaemonState {
             .ok()
             .and_then(|path| path.to_str().map(str::to_string));
         Self {
+            browser: shared::browser::Browser::new(config.data_dir.clone()),
             codegraph: shared::codegraph_core::Codegraph::new(config.data_dir.clone()),
             data_dir: config.data_dir.clone(),
             workspaces: Mutex::new(workspaces),
@@ -1621,6 +1623,7 @@ mod tests {
     fn test_state(data_dir: &std::path::Path) -> DaemonState {
         let (tx, _rx) = broadcast::channel::<DaemonEvent>(32);
         DaemonState {
+            browser: shared::browser::Browser::new(data_dir.to_path_buf()),
             codegraph: shared::codegraph_core::Codegraph::new(data_dir.to_path_buf()),
             data_dir: data_dir.to_path_buf(),
             workspaces: Mutex::new(HashMap::new()),
@@ -1957,6 +1960,9 @@ fn main() {
             tx: events_tx.clone(),
         };
         let state = Arc::new(DaemonState::load(&config, event_sink));
+        if let Err(error) = state.browser.serve().await {
+            eprintln!("Browser host: {error}");
+        }
         let config = Arc::new(config);
 
         let listener = match TcpListener::bind(config.listen).await {

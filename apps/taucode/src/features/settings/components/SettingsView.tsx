@@ -19,6 +19,7 @@ import { SettingsNav } from "./SettingsNav";
 import type { CodexSection } from "./settingsTypes";
 import { SETTINGS_SECTION_LABELS } from "./settingsViewConstants";
 import { SettingsSectionContainers } from "./sections/SettingsSectionContainers";
+import { SettingsBrowserSection } from "./sections/SettingsBrowserSection";
 
 export type SettingsViewProps = {
   activeWorkspace?: WorkspaceInfo | null;
@@ -196,7 +197,8 @@ export function SettingsView({
               </div>
             )}
             <div className="settings-content">
-              {activeSection === "providers" ? <SettingsProvidersSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
+              {activeSection === "browser" ? <SettingsBrowserSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
+               activeSection === "providers" ? <SettingsProvidersSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
                activeSection === "connectors" ? <SettingsConnectorsSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} workspace={activeWorkspace} onUpdateWorkspaceSettings={onUpdateWorkspaceSettings} /> :
                activeSection === "agents" ? <SettingsAgentPolicySection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} workspace={activeWorkspace} /> :
                <SettingsSectionContainers
