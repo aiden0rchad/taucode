@@ -1,0 +1,8 @@
+{
+  "name": "taucode-engine-browser",
+  "private": true,
+  "description": "Pinned Playwright MCP used by taucode's built-in browser connector",
+  "dependencies": {
+    "@playwright/mcp": "0.0.83"
+  }
+}
