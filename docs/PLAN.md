@@ -7,6 +7,18 @@ subagents, integrated browser) and adds Agent-S computer use.
 Status: plan, nothing built. Checked against `openai/codex` main and `simular-ai/Agent-S`
 main on 2026-10-22.
 
+> **Status, 2026-10-23 (merged to `main`, all live-verified against real providers):**
+> - ✅ M0: engine spike, codegraph proxy (dedup + compaction reset)
+> - ✅ M1: CodexMonitor base ported to codex 0.164 as `apps/taucode`
+> - ✅ M1-C: provider registry (keychain, Test & fetch), subagent policy, engine router; all
+>   account/login code removed
+> - ✅ M1-D1/D2: pi as default engine (in-thread model switching), approval gate,
+>   policy-enforced subagents
+> - ✅ M1-E: MCP connectors (no OAuth), codegraph built in
+> - 🔄 M2: built-in browser (shared Chrome via CDP + playwright-mcp), in progress
+> - ⏳ M3: computer use (Agent-S3 planner vendored, Rust capture/input); live test needs macOS
+>   Screen Recording + Accessibility granted by the user
+
 > **Decisions, 2026-10-23 (these override older text below where they conflict):**
 > - **pi is the default engine; codex is optional.** taucode owns the provider registry
 >   (keychain keys, Test & fetch models per provider), the model catalog and the subagent
