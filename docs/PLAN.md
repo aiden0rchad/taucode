@@ -16,8 +16,12 @@ main on 2026-10-22.
 >   codex and pi run with isolated, taucode-managed homes.
 > - **The app base is CodexMonitor** (MIT), ported to codex 0.164 in `apps/taucode`; the M0
 >   spike is retired.
+> - **Capabilities come from API keys alone, never a login.** Terminal (built in), MCP
+>   connectors (a taucode registry with keychain secrets, no OAuth), browser use (M2) and
+>   computer use (M3, Agent-S with registry models) are all served to every engine as MCP
+>   tools.
 > - Specs: `docs/specs/m1-c-engine-neutral-core.md`, `m1-d1-pi-engine.md`,
->   `m1-d2-pi-gate-and-subagents.md`.
+>   `m1-d2-pi-gate-and-subagents.md`, `m1-e-mcp-connectors.md`.
 
 ---
 
