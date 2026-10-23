@@ -5,3 +5,4 @@ dist/
 .codegraph/
 .claude/settings.local.json
 .cargo-home/
+.codegraph-taucode/

@@ -5,6 +5,9 @@ use std::{
 
 use serde_json::Value;
 
+/// Index directory (inside the project) used by taucode's own codegraph daemon.
+pub const CODEGRAPH_DIR: &str = ".codegraph-taucode";
+
 #[derive(Clone, Debug)]
 pub struct CodegraphSetup {
     pub proxy_bin: PathBuf,
@@ -26,7 +29,10 @@ impl CodegraphSetup {
             ),
             format!("mcp_servers.codegraph.args=[{args}]"),
             format!(
-                "mcp_servers.codegraph.env={{ TAUCODE_STATE_DIR = {} }}",
+                // Cross-call dedup is safe only because the proxy resets sessions on compaction.
+                // A private CODEGRAPH_DIR gives taucode its own daemon, so other codegraph
+                // clients of the project (e.g. Claude Code) keep dedup off.
+                "mcp_servers.codegraph.env={{ TAUCODE_STATE_DIR = {}, CODEGRAPH_EXPLORE_DEDUP = \"1\", CODEGRAPH_DIR = \"{CODEGRAPH_DIR}\" }}",
                 quote(&self.state_dir.to_string_lossy())
             ),
         ]
@@ -37,10 +43,11 @@ impl CodegraphSetup {
 
     pub fn on_engine_message(&self, msg: &Value) {
         if msg.get("id").is_none()
-            && matches!(
+            && (matches!(
                 msg["method"].as_str(),
                 Some("thread/compacted" | "thread/reverted")
-            )
+            ) || (msg["method"] == "item/completed"
+                && msg["params"]["item"]["type"] == "contextCompaction"))
             && let Some(thread) = msg["params"]["threadId"].as_str()
         {
             self.bump_epoch(thread);
@@ -135,8 +142,54 @@ mod tests {
         );
         assert_eq!(
             args[5],
-            "mcp_servers.codegraph.env={ TAUCODE_STATE_DIR = \"/state\\u000A\\u0009\\u000C\" }"
+            "mcp_servers.codegraph.env={ TAUCODE_STATE_DIR = \"/state\\u000A\\u0009\\u000C\", CODEGRAPH_EXPLORE_DEDUP = \"1\", CODEGRAPH_DIR = \".codegraph-taucode\" }"
         );
+    }
+
+    #[test]
+    fn completed_compaction_items_bump_only_their_thread() {
+        let dir = std::env::temp_dir().join(format!(
+            "tau-compaction-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let setup = CodegraphSetup {
+            proxy_bin: PathBuf::new(),
+            upstream: vec![],
+            state_dir: dir.clone(),
+        };
+        for (index, turn) in ["manual-compaction", "automatic-compaction"]
+            .iter()
+            .enumerate()
+        {
+            let mut message = json!({
+                "method": "item/started",
+                "params": {"threadId": "A", "turnId": turn, "item": {"type": "contextCompaction"}}
+            });
+            setup.on_engine_message(&message);
+            assert_eq!(tau_mcp_proxy::epoch::read_epoch(&dir, "A"), index as u64);
+            message["method"] = json!("item/completed");
+            setup.on_engine_message(&message);
+            assert_eq!(
+                tau_mcp_proxy::epoch::read_epoch(&dir, "A"),
+                index as u64 + 1
+            );
+            assert_eq!(tau_mcp_proxy::epoch::read_epoch(&dir, "B"), 0);
+        }
+        for message in [
+            json!({"method":"item/completed","params":{"threadId":"A","item":{"type":"agentMessage"}}}),
+            json!({"method":"item/completed","params":{"item":{"type":"contextCompaction"}}}),
+            json!({"method":"item/completed","params":{"threadId":"A"}}),
+            json!({"id":1,"method":"item/completed","params":{"threadId":"A","item":{"type":"contextCompaction"}}}),
+            json!({"method":"turn/completed","params":{"threadId":"A","turn":{"id":"automatic-compaction","status":"completed"}}}),
+        ] {
+            setup.on_engine_message(&message);
+        }
+        assert_eq!(tau_mcp_proxy::epoch::read_epoch(&dir, "A"), 2);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

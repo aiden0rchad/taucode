@@ -71,16 +71,34 @@ async fn main() -> Result<()> {
                 .request("thread/compact/start", json!({"threadId":first_id}))
                 .await?;
             timeout(Duration::from_secs(600), async {
+                let mut compaction_turn = None;
                 loop {
                     match events.recv().await? {
                         EngineEvent::Notification(message) => {
                             if let Some(setup) = &codegraph {
                                 setup.on_engine_message(&message);
                             }
-                            if message["method"] == "thread/compacted"
+                            if message["method"] == "item/completed"
                                 && message["params"]["threadId"] == first_id
+                                && message["params"]["item"]["type"] == "contextCompaction"
                             {
-                                println!("thread/compacted {first_id}");
+                                compaction_turn = Some(
+                                    message["params"]["turnId"]
+                                        .as_str()
+                                        .context("contextCompaction item has no turn id")?
+                                        .to_owned(),
+                                );
+                                println!("contextCompaction completed {first_id}");
+                            }
+                            if let Some(turn_id) = compaction_turn.as_deref()
+                                && message["method"] == "turn/completed"
+                                && message["params"]["threadId"] == first_id
+                                && message["params"]["turn"]["id"] == turn_id
+                            {
+                                if message["params"]["turn"]["status"] != "completed" {
+                                    bail!("compaction turn {turn_id}: {}", summary(&message));
+                                }
+                                println!("compaction turn completed {turn_id}");
                                 return anyhow::Ok(());
                             }
                         }
