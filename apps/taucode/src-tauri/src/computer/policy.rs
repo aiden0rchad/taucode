@@ -5,6 +5,9 @@ use std::time::Duration;
 pub(crate) use crate::types::ComputerSettings as Settings;
 
 pub fn validate(s: &Settings) -> Result<(), String> {
+    if !matches!(s.grounding_mode.as_str(), "pixels" | "ui-tars") {
+        return Err("Invalid grounding mode".into());
+    }
     if !(1..=500).contains(&s.max_steps)
         || !(1..=3600).contains(&s.max_seconds)
         || !(1..=8192).contains(&s.grounding_width)

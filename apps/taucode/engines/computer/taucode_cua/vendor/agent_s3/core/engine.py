@@ -1,19 +1,15 @@
 import os
 
-import backoff
+from taucode_cua.requests import provider_request
 from anthropic import Anthropic
 from openai import (
     AzureOpenAI,
-    APIConnectionError,
-    APIError,
-    AzureOpenAI,
     OpenAI,
-    RateLimitError,
 )
 
 
 class LMMEngine:
-    pass
+    system_fallback = True
 
 
 class LMMEngineOpenAI(LMMEngine):
@@ -36,9 +32,7 @@ class LMMEngineOpenAI(LMMEngine):
         self.llm_client = None
         self.temperature = temperature  # Can force temperature to be the same (in the case of o3 requiring temperature to be 1)
 
-    @backoff.on_exception(
-        backoff.expo, (APIConnectionError, APIError, RateLimitError), max_time=60
-    )
+    @provider_request
     def generate(self, messages, temperature=0.0, max_new_tokens=None, **kwargs):
         api_key = self.api_key or os.getenv("OPENAI_API_KEY")
         if api_key is None:
@@ -48,10 +42,10 @@ class LMMEngineOpenAI(LMMEngine):
         organization = self.organization or os.getenv("OPENAI_ORG_ID")
         if not self.llm_client:
             if not self.base_url:
-                self.llm_client = OpenAI(api_key=api_key, organization=organization)
+                self.llm_client = OpenAI(api_key=api_key, organization=organization, max_retries=0)
             else:
                 self.llm_client = OpenAI(
-                    base_url=self.base_url, api_key=api_key, organization=organization
+                    base_url=self.base_url, api_key=api_key, organization=organization, max_retries=0
                 )
         return (
             self.llm_client.chat.completions.create(
@@ -69,6 +63,7 @@ class LMMEngineOpenAI(LMMEngine):
 
 
 class LMMEngineAnthropic(LMMEngine):
+    system_fallback = False
     def __init__(
         self,
         base_url=None,
@@ -81,20 +76,19 @@ class LMMEngineAnthropic(LMMEngine):
         assert model is not None, "model must be provided"
         self.model = model
         self.thinking = thinking
+        self.base_url = base_url
         self.api_key = api_key
         self.llm_client = None
         self.temperature = temperature
 
-    @backoff.on_exception(
-        backoff.expo, (APIConnectionError, APIError, RateLimitError), max_time=60
-    )
+    @provider_request
     def generate(self, messages, temperature=0.0, max_new_tokens=None, **kwargs):
         api_key = self.api_key or os.getenv("ANTHROPIC_API_KEY")
         if api_key is None:
             raise ValueError(
                 "An API Key needs to be provided in either the api_key parameter or as an environment variable named ANTHROPIC_API_KEY"
             )
-        self.llm_client = Anthropic(api_key=api_key)
+        self.llm_client = Anthropic(api_key=api_key, base_url=self.base_url, max_retries=0)
         # Use the instance temperature if not specified in the call
         temp = self.temperature if temperature is None else temperature
         if self.thinking:
@@ -121,9 +115,7 @@ class LMMEngineAnthropic(LMMEngine):
             .text
         )
 
-    @backoff.on_exception(
-        backoff.expo, (APIConnectionError, APIError, RateLimitError), max_time=60
-    )
+    @provider_request
     # Compatible with Claude-3.7 Sonnet thinking mode
     def generate_with_thinking(
         self, messages, temperature=0.0, max_new_tokens=None, **kwargs
@@ -134,7 +126,7 @@ class LMMEngineAnthropic(LMMEngine):
             raise ValueError(
                 "An API Key needs to be provided in either the api_key parameter or as an environment variable named ANTHROPIC_API_KEY"
             )
-        self.llm_client = Anthropic(api_key=api_key)
+        self.llm_client = Anthropic(api_key=api_key, base_url=self.base_url, max_retries=0)
         full_response = self.llm_client.messages.create(
             system=messages[0]["content"][0]["text"],
             model=self.model,
@@ -170,9 +162,7 @@ class LMMEngineGemini(LMMEngine):
         self.llm_client = None
         self.temperature = temperature
 
-    @backoff.on_exception(
-        backoff.expo, (APIConnectionError, APIError, RateLimitError), max_time=60
-    )
+    @provider_request
     def generate(self, messages, temperature=0.0, max_new_tokens=None, **kwargs):
         api_key = self.api_key or os.getenv("GEMINI_API_KEY")
         if api_key is None:
@@ -185,7 +175,7 @@ class LMMEngineGemini(LMMEngine):
                 "An endpoint URL needs to be provided in either the endpoint_url parameter or as an environment variable named GEMINI_ENDPOINT_URL"
             )
         if not self.llm_client:
-            self.llm_client = OpenAI(base_url=base_url, api_key=api_key)
+            self.llm_client = OpenAI(base_url=base_url, api_key=api_key, max_retries=0)
         # Use the temperature passed to generate, otherwise use the instance's temperature, otherwise default to 0.0
         temp = self.temperature if temperature is None else temperature
         return (
@@ -219,9 +209,7 @@ class LMMEngineOpenRouter(LMMEngine):
         self.llm_client = None
         self.temperature = temperature
 
-    @backoff.on_exception(
-        backoff.expo, (APIConnectionError, APIError, RateLimitError), max_time=60
-    )
+    @provider_request
     def generate(self, messages, temperature=0.0, max_new_tokens=None, **kwargs):
         api_key = self.api_key or os.getenv("OPENROUTER_API_KEY")
         if api_key is None:
@@ -234,7 +222,7 @@ class LMMEngineOpenRouter(LMMEngine):
                 "An endpoint URL needs to be provided in either the endpoint_url parameter or as an environment variable named OPEN_ROUTER_ENDPOINT_URL"
             )
         if not self.llm_client:
-            self.llm_client = OpenAI(base_url=base_url, api_key=api_key)
+            self.llm_client = OpenAI(base_url=base_url, api_key=api_key, max_retries=0)
         # Use self.temperature if set, otherwise use the temperature argument
         temp = self.temperature if self.temperature is not None else temperature
         return (
@@ -272,9 +260,7 @@ class LMMEngineAzureOpenAI(LMMEngine):
         self.cost = 0.0
         self.temperature = temperature
 
-    @backoff.on_exception(
-        backoff.expo, (APIConnectionError, APIError, RateLimitError), max_time=60
-    )
+    @provider_request
     def generate(self, messages, temperature=0.0, max_new_tokens=None, **kwargs):
         api_key = self.api_key or os.getenv("AZURE_OPENAI_API_KEY")
         if api_key is None:
@@ -296,6 +282,7 @@ class LMMEngineAzureOpenAI(LMMEngine):
                 azure_endpoint=azure_endpoint,
                 api_key=api_key,
                 api_version=api_version,
+                max_retries=0,
             )
         # Use self.temperature if set, otherwise use the temperature argument
         temp = self.temperature if self.temperature is not None else temperature
@@ -329,9 +316,7 @@ class LMMEnginevLLM(LMMEngine):
         self.llm_client = None
         self.temperature = temperature
 
-    @backoff.on_exception(
-        backoff.expo, (APIConnectionError, APIError, RateLimitError), max_time=60
-    )
+    @provider_request
     def generate(
         self,
         messages,
@@ -352,7 +337,7 @@ class LMMEnginevLLM(LMMEngine):
                 "An endpoint URL needs to be provided in either the endpoint_url parameter or as an environment variable named vLLM_ENDPOINT_URL"
             )
         if not self.llm_client:
-            self.llm_client = OpenAI(base_url=base_url, api_key=api_key)
+            self.llm_client = OpenAI(base_url=base_url, api_key=api_key, max_retries=0)
         # Use self.temperature if set, otherwise use the temperature argument
         temp = self.temperature if self.temperature is not None else temperature
         completion = self.llm_client.chat.completions.create(
@@ -362,6 +347,7 @@ class LMMEnginevLLM(LMMEngine):
             temperature=temp,
             top_p=top_p,
             extra_body={"repetition_penalty": repetition_penalty},
+            **kwargs,
         )
         return completion.choices[0].message.content
 
@@ -373,9 +359,7 @@ class LMMEngineHuggingFace(LMMEngine):
         self.request_interval = 0 if rate_limit == -1 else 60.0 / rate_limit
         self.llm_client = None
 
-    @backoff.on_exception(
-        backoff.expo, (APIConnectionError, APIError, RateLimitError), max_time=60
-    )
+    @provider_request
     def generate(self, messages, temperature=0.0, max_new_tokens=None, **kwargs):
         api_key = self.api_key or os.getenv("HF_TOKEN")
         if api_key is None:
@@ -388,7 +372,7 @@ class LMMEngineHuggingFace(LMMEngine):
                 "HuggingFace endpoint must be provided as base_url parameter or as an environment variable named HF_ENDPOINT_URL."
             )
         if not self.llm_client:
-            self.llm_client = OpenAI(base_url=base_url, api_key=api_key)
+            self.llm_client = OpenAI(base_url=base_url, api_key=api_key, max_retries=0)
         return (
             self.llm_client.chat.completions.create(
                 model="tgi",
@@ -413,9 +397,7 @@ class LMMEngineParasail(LMMEngine):
         self.request_interval = 0 if rate_limit == -1 else 60.0 / rate_limit
         self.llm_client = None
 
-    @backoff.on_exception(
-        backoff.expo, (APIConnectionError, APIError, RateLimitError), max_time=60
-    )
+    @provider_request
     def generate(self, messages, temperature=0.0, max_new_tokens=None, **kwargs):
         api_key = self.api_key or os.getenv("PARASAIL_API_KEY")
         if api_key is None:
@@ -431,6 +413,7 @@ class LMMEngineParasail(LMMEngine):
             self.llm_client = OpenAI(
                 base_url=base_url if base_url else "https://api.parasail.io/v1",
                 api_key=api_key,
+                max_retries=0,
             )
         return (
             self.llm_client.chat.completions.create(

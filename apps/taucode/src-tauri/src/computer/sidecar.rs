@@ -36,6 +36,7 @@ pub async fn configuration(
     }
     let mut config = json!({"kind":p.kind,"model":model.model_id,"base_url":base});
     if role == "grounding" {
+        config["mode"] = json!(settings.computer.grounding_mode);
         config["width"] = json!(settings.computer.grounding_width);
         config["height"] = json!(settings.computer.grounding_height);
     }
@@ -180,14 +181,9 @@ impl Sidecar {
         }
         let response: Value =
             serde_json::from_str(&line).map_err(|_| "Invalid planner response")?;
-        if response["id"] != self.id
-            || response["jsonrpc"] != "2.0"
-            || response.get("error").is_some()
-        {
-            return Err("Planner request failed; check provider configuration".into());
-        }
-        Ok(response["result"].clone())
+        response_result(response, self.id)
     }
+
     pub async fn predict(
         &mut self,
         instruction: &str,
@@ -207,5 +203,41 @@ impl Sidecar {
 impl Drop for Sidecar {
     fn drop(&mut self) {
         let _ = self.child.start_kill();
+    }
+}
+
+fn response_result(response: Value, id: u64) -> Result<Value, String> {
+    if response["id"] != id || response["jsonrpc"] != "2.0" {
+        return Err("Invalid planner response".into());
+    }
+    if let Some(error) = response.get("error") {
+        // The sidecar redacts credentials before crossing this boundary.
+        return Err(error["message"]
+            .as_str()
+            .unwrap_or("Planner request failed")
+            .chars()
+            .take(400)
+            .collect());
+    }
+    Ok(response["result"].clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn preserves_sidecar_error_and_checks_response_id() {
+        for message in [
+            "Configuration error: Invalid grounding mode",
+            "Input error: Expected PNG matching screen size",
+            "Provider error: Model unavailable",
+        ] {
+            let response = json!({"jsonrpc":"2.0","id":1,"error":{"message":message}});
+            assert_eq!(response_result(response.clone(), 1), Err(message.into()));
+            assert_eq!(
+                response_result(response, 2),
+                Err("Invalid planner response".into())
+            );
+        }
     }
 }

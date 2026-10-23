@@ -5,7 +5,7 @@ import { defaultComputerSettings, type ComputerRun, type ComputerSettings } from
 import { modelKey, modelRef } from "@settings/registry";
 import "@/features/computer/computer.css";
 export function SettingsComputerSection({ appSettings, onUpdateAppSettings }: { appSettings: AppSettings; onUpdateAppSettings: (s: AppSettings) => Promise<void> }) {
-  const [draft, setDraft] = useState(appSettings.computer ?? defaultComputerSettings);
+  const [draft, setDraft] = useState({ ...defaultComputerSettings, ...appSettings.computer });
   const [status, setStatus] = useState<ComputerRun>({ steps: [] });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -28,7 +28,8 @@ export function SettingsComputerSection({ appSettings, onUpdateAppSettings }: { 
     <fieldset disabled={busy}><legend>Planner and safety</legend>
       <label><span><input type="checkbox" checked={draft.enabled} onChange={e => update({ enabled: e.target.checked })} /> Enable Computer Use</span></label>
       {(["planner", "grounding"] as const).map(role => <label key={role}>{role === "planner" ? "Vision planner model" : "Grounding model"}<select value={modelKey(draft[role])} onChange={e => update({ [role]: modelRef(e.target.value) })}><option value="">Select a registry model</option>{options}</select></label>)}
-      <label>Grounding coordinates<select value={`${draft.groundingWidth}x${draft.groundingHeight}`} onChange={e => { const [groundingWidth, groundingHeight] = e.target.value.split("x").map(Number); update({ groundingWidth, groundingHeight }); }}><option value="1920x1080">UI-TARS-1.5-7B · 1920 × 1080</option><option value="1000x1000">UI-TARS-72B · 1000 × 1000</option></select></label>
+      <label>Grounding mode<select value={draft.groundingMode} onChange={e => update({ groundingMode: e.target.value as ComputerSettings["groundingMode"] })}><option value="pixels">Vision model — pixel coordinates (recommended)</option><option value="ui-tars">UI-TARS — preset coordinates</option></select></label>
+      {draft.groundingMode === "ui-tars" && <label>Grounding coordinates<select value={`${draft.groundingWidth}x${draft.groundingHeight}`} onChange={e => { const [groundingWidth, groundingHeight] = e.target.value.split("x").map(Number); update({ groundingWidth, groundingHeight }); }}><option value="1920x1080">UI-TARS-1.5-7B · 1920 × 1080</option><option value="1000x1000">UI-TARS-72B · 1000 × 1000</option></select></label>}
       <label>Allowed app bundle IDs (one per line)<textarea value={draft.allowedApps.join("\n")} onChange={e => update({ allowedApps: e.target.value.split("\n") })} /></label>
       <label>Additional denied app bundle IDs (one per line)<textarea value={draft.deniedApps.join("\n")} onChange={e => update({ deniedApps: e.target.value.split("\n") })} /></label>
       <p>Password managers, Keychain, System Settings, terminal apps and known banking apps are always blocked. The run allowlist can only narrow this list.</p>

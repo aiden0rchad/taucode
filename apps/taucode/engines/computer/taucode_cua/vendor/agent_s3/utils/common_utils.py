@@ -1,5 +1,4 @@
 import re
-import time
 from io import BytesIO
 from PIL import Image
 
@@ -22,25 +21,11 @@ def create_pyautogui_code(agent, code: str, obs: Dict):
 def call_llm_safe(
     agent, temperature: float = 0.0, use_thinking: bool = False, **kwargs
 ) -> str:
-    # Retry if fails
-    max_retries = 3  # Set the maximum number of retries
-    attempt = 0
-    response = ""
-    while attempt < max_retries:
-        try:
-            response = agent.get_response(
-                temperature=temperature, use_thinking=use_thinking, **kwargs
-            )
-            assert response is not None, "Response from agent should not be None"
-            print("Response success!")
-            break  # If successful, break out of the loop
-        except Exception as e:
-            attempt += 1
-            print(f"Attempt {attempt} failed: {e}")
-            if attempt == max_retries:
-                print("Max retries reached. Handling failure.")
-        time.sleep(1.0)
-    return response if response is not None else ""
+    response = agent.get_response(temperature=temperature, use_thinking=use_thinking, **kwargs)
+    if response is None:
+        from taucode_cua.requests import ProviderError
+        raise ProviderError('Provider returned an empty response')
+    return response
 
 
 def call_llm_formatted(generator, format_checkers, **kwargs):
@@ -110,7 +95,6 @@ def call_llm_formatted(generator, format_checkers, **kwargs):
             logger.error(
                 "Max retries reached when formatting response. Handling failure."
             )
-        time.sleep(1.0)
     return response
 
 

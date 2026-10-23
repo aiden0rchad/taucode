@@ -268,6 +268,15 @@ impl Computer {
                 s["running"] = json!(false);
                 s["approval"] = Value::Null;
                 s["error"] = json!(result.as_ref().err());
+                if let Err(error) = &result {
+                    let steps = s["steps"].as_array_mut().unwrap();
+                    if steps
+                        .last()
+                        .is_none_or(|step| step["error"].as_str() != Some(error))
+                    {
+                        steps.push(runner::failure_step(steps.len() as u32 + 1, "", error));
+                    }
+                }
                 s["summary"] = result
                     .as_ref()
                     .ok()

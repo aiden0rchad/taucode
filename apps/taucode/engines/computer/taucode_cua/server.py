@@ -8,6 +8,8 @@ import os
 import sys
 from PIL import Image
 from .actions import StructuredACI
+from .images import downscale
+from .requests import ProviderError, predict_budget, redact
 from .vendor.agent_s3.agents.agent_s import AgentS3
 
 KINDS = {'openai': 'openai', 'anthropic': 'anthropic', 'google': 'gemini',
@@ -16,7 +18,7 @@ KINDS = {'openai': 'openai', 'anthropic': 'anthropic', 'google': 'gemini',
 
 
 def engine_params(config, role):
-    if not isinstance(config, dict) or set(config) - {'kind', 'model', 'base_url', 'width', 'height'}:
+    if not isinstance(config, dict) or set(config) - {'kind', 'model', 'base_url', 'width', 'height', 'mode'}:
         raise ValueError('Invalid model configuration (credentials must use environment)')
     if config.get('kind') not in KINDS or not isinstance(config.get('model'), str) or not config['model']:
         raise ValueError('Select a registry provider and model')
@@ -25,6 +27,10 @@ def engine_params(config, role):
     if config.get('base_url'):
         params['base_url'] = config['base_url']
     if role == 'grounding':
+        mode = config.get('mode', 'pixels')
+        if mode not in ('pixels', 'ui-tars'):
+            raise ValueError('Invalid grounding mode')
+        params['grounding_mode'] = mode
         for key in ('width', 'height'):
             n = config.get(key, 1920 if key == 'width' else 1080)
             if type(n) is not int or not 1 <= n <= 8192:
@@ -36,6 +42,7 @@ def engine_params(config, role):
 class Server:
     def __init__(self):
         self.agent = None
+        self.mode = "pixels"
 
     def dispatch(self, method, params):
         if method == 'health':
@@ -48,6 +55,7 @@ class Server:
             aci = StructuredACI(None, 'darwin', planner, grounding)
             self.agent = AgentS3(planner, aci, platform='darwin')
             self.size = [grounding['grounding_width'], grounding['grounding_height']]
+            self.mode = grounding['grounding_mode']
             return {'ok': True}
         if self.agent is None:
             raise ValueError('Configure the planner first')
@@ -68,10 +76,22 @@ class Server:
             if img.format != 'PNG' or list(img.size) != size:
                 raise ValueError('Expected PNG matching screen size')
             img.verify()
-        info, actions = self.agent.predict(instruction, {'screenshot': png})
+        with predict_budget():
+            planner_png, size = downscale(png)
+            info, actions = self.agent.predict(instruction, {'screenshot': planner_png, 'grounding_screenshot': png})
         action = actions[0]
-        action['grounding_width'], action['grounding_height'] = self.size
+        action['grounding_width'], action['grounding_height'] = size if self.mode == 'pixels' else self.size
         return {'action': action, 'reflection': info.get('reflection') or '', 'plan_text': info.get('plan') or ''}
+
+
+def rpc_error(error, method):
+    if isinstance(error, ProviderError):
+        return {'code': -32000, 'message': redact(error)}
+    if method == 'configure':
+        return {'code': -32602, 'message': 'Configuration error: ' + redact(error)}
+    if isinstance(error, (ValueError, TypeError, KeyError, OSError)):
+        return {'code': -32602, 'message': 'Input error: ' + redact(error)}
+    return {'code': -32603, 'message': 'Planner error: ' + redact(error)}
 
 
 def main():
@@ -90,10 +110,9 @@ def main():
             with contextlib.redirect_stdout(sys.stderr):
                 result = server.dispatch(request['method'], request.get('params', {}))
             response = {'jsonrpc': '2.0', 'id': request.get('id'), 'result': result}
-        except Exception:
-            # Provider errors may contain credentials: do not echo them across the boundary.
+        except Exception as error:
             response = {'jsonrpc': '2.0', 'id': request.get('id') if isinstance(request, dict) else None,
-                        'error': {'code': -32602, 'message': 'Planner request failed; check configuration and input'}}
+                        'error': rpc_error(error, request.get('method') if isinstance(request, dict) else None)}
         output.write(json.dumps(response, allow_nan=False) + '\n')
         output.flush()
 

@@ -275,7 +275,13 @@ pub async fn run(
             }
             let frame = control.until(env.capture()).await?;
             let scoped = format!("{instruction}\n\nHost policy: allowed application bundle IDs: {}. Current frontmost application: {}. If taucode is frontmost, first use switch_applications with an allowed bundle ID. Never interact with taucode itself.", apps.join(", "), context.app);
-            let prediction = control.until(env.predict(&scoped, &frame)).await?;
+            let prediction = match control.until(env.predict(&scoped, &frame)).await {
+                Ok(prediction) => prediction,
+                Err(error) => {
+                    env.progress(failure_step(step + 1, &frame.thumbnail, &error))?;
+                    return Err(error);
+                }
+            };
             control.checkpoint().await?;
             let action = prediction.validated(frame.display)?;
             let target = match &action {
@@ -352,4 +358,8 @@ pub async fn run(
         .and_then(|r| r);
     control.stop();
     result
+}
+
+pub fn failure_step(step: u32, thumbnail: &str, error: &str) -> Value {
+    json!({"step":step,"thumbnail":thumbnail,"action":{"kind":"fail","reason":error},"reflection":"","error":error})
 }

@@ -4,6 +4,8 @@ import inspect
 import json
 import math
 
+from .requests import ProviderError
+
 from .vendor.agent_s3.agents.grounding import OSWorldACI, agent_action
 
 ALLOWED = frozenset(('click', 'type', 'scroll', 'drag_and_drop', 'hotkey',
@@ -38,6 +40,8 @@ def parse_action(agent, code):
         action = getattr(StructuredACI, method)(agent, *args, **kwargs)
         json.dumps(action, allow_nan=False)
         return action
+    except ProviderError:
+        raise
     except Exception as error:
         return {'kind': 'fail', 'reason': str(error)}
 

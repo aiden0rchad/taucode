@@ -425,3 +425,49 @@ async fn wall_limit_cancels_wait_and_denied_app_is_never_captured() {
     assert_eq!(env.captures, 0);
     assert!(input.0.lock().unwrap().is_empty());
 }
+
+#[test]
+fn grounding_mode_defaults_and_pixel_space_maps_to_display_points() {
+    let mut s: Settings = serde_json::from_value(json!({})).unwrap();
+    assert_eq!(s.grounding_mode, "pixels");
+    validate(&s).unwrap();
+    s.grounding_mode = "ui-tars".into();
+    validate(&s).unwrap();
+    s.grounding_mode = "unknown".into();
+    assert_eq!(validate(&s), Err("Invalid grounding mode".into()));
+    let mut p = prediction(
+        json!({"kind":"click","x":1600,"y":100,"button":"left","clicks":1,"hold_keys":[]}),
+    );
+    p.action["grounding_width"] = json!(1920);
+    p.action["grounding_height"] = json!(1200);
+    let display = Display {
+        width: 1600.,
+        height: 1000.,
+        pixel_width: 3200,
+        pixel_height: 2000,
+    };
+    let Action::Click { x, y, .. } = p.validated(display).unwrap() else {
+        panic!("Expected click")
+    };
+    assert!((x - 1333.3333333333333).abs() < 0.001);
+    assert!((y - 83.33333333333333).abs() < 0.001);
+}
+
+#[tokio::test]
+async fn prediction_error_is_logged_without_input() {
+    let mut env = fake(vec![]);
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let s = settings();
+    let error = runner::run(&mut env, &control, &s, &s.allowed_apps, "test")
+        .await
+        .unwrap_err();
+    assert_eq!(error, "No fake action");
+    assert_eq!(env.steps.len(), 1);
+    assert_eq!(env.steps[0]["error"], error);
+    assert_eq!(env.steps[0]["action"]["reason"], error);
+    assert_eq!(env.steps[0]["thumbnail"], "fake-thumb");
+    assert!(input.0.lock().unwrap().is_empty());
+    assert!(control.stopped());
+}

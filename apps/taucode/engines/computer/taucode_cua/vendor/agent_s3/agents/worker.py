@@ -1,3 +1,4 @@
+from taucode_cua.requests import ProviderError
 from functools import partial
 import logging
 import textwrap
@@ -222,6 +223,8 @@ class Worker(BaseModule):
         try:
             assert plan_code, "Plan code should not be empty"
             exec_code = create_pyautogui_code(self.grounding_agent, plan_code, obs)
+        except ProviderError:
+            raise
         except Exception as e:
             exec_code = {"kind": "fail", "reason": str(e)}
         if exec_code.get("kind") == "fail":

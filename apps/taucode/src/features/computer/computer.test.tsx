@@ -17,6 +17,14 @@ describe("computer use", () => {
     render(<ComputerRunItem run={run!} />);
     expect(screen.getByText("Step 1: click")).toBeTruthy(); expect(screen.getByAltText("Screen before step 1")).toBeTruthy(); expect(screen.getByText("Done")).toBeTruthy();
   });
+  it("shows provider failures from a stored run in the thread item", async () => {
+    const error = "Provider error: Model unavailable";
+    vi.mocked(computerRequest).mockResolvedValue({ id: "run-id", steps: [{ ...step, action: { kind: "fail", reason: error }, error }], error });
+    render(<ComputerRunItem run={{ id: "run-id", stored: true, steps: [] }} />);
+    await screen.findByText("Step 1: fail");
+    expect(screen.getAllByText(error).length).toBeGreaterThan(0);
+    expect(computerRequest).toHaveBeenCalledWith({ action: "runLog", id: "run-id" });
+  });
   it("wires pause and stop plus one-action approval through the existing UI", async () => {
     vi.mocked(computerRequest).mockResolvedValue({ running: true, steps: [step], approval: { id: "approval", reason: "Secure field", action: { kind: "type" }, app: "com.apple.TextEdit" } });
     render(<ComputerHud />);
@@ -33,9 +41,12 @@ describe("computer use", () => {
     render(<SettingsComputerSection appSettings={settings} onUpdateAppSettings={save} />);
     await screen.findByText("Screen Recording: Granted"); expect(screen.getByText("Accessibility: Not granted")).toBeTruthy();
     expect(screen.getAllByText("Local / vision")).toHaveLength(2);
+    expect((screen.getByLabelText("Grounding mode") as HTMLSelectElement).value).toBe("pixels");
+    expect(screen.queryByLabelText("Grounding coordinates")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Grounding mode"), { target: { value: "ui-tars" } });
     fireEvent.change(screen.getByLabelText("Grounding coordinates"), { target: { value: "1000x1000" } });
     fireEvent.click(screen.getByText("Save Computer Use"));
-    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ computer: expect.objectContaining({ groundingWidth: 1000, groundingHeight: 1000 }) })));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ computer: expect.objectContaining({ groundingMode: "ui-tars", groundingWidth: 1000, groundingHeight: 1000 }) })));
     fireEvent.click(screen.getByText("Open System Settings — Accessibility")); expect(computerRequest).toHaveBeenCalledWith({ action: "permissions", pane: "accessibility" });
   });
 });

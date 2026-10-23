@@ -85,7 +85,7 @@ def test_rpc_prediction_without_screen_or_network(aci):
     buffer=io.BytesIO();Image.new('RGB',(4,4)).save(buffer,format='PNG')
     params={'instruction':'test','screenshot_png_b64':base64.b64encode(buffer.getvalue()).decode(),'screen_size':[4,4]}
     result=server.dispatch('predict',params)
-    assert result['action']['grounding_width']==1920 and result['reflection']=='complete'
+    assert result['action']['grounding_width']==4 and result['reflection']=='complete'
     params['screen_size']=[8,8]
     with pytest.raises(ValueError):server.dispatch('predict',params)
 
