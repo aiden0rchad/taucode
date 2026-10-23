@@ -730,6 +730,10 @@ export const ToolRow = memo(function ToolRow({
   const isLongRunning = commandDurationMs !== null && commandDurationMs >= 1200;
   const [showLiveOutput, setShowLiveOutput] = useState(false);
   const [isExportingPlan, setIsExportingPlan] = useState(false);
+  const [imageIndex, setImageIndex] = useState<number | null>(null);
+  const images = (item.images ?? []).map((src, index) => ({
+    src: normalizeMessageImageSrc(src), label: `Generated image ${index + 1}`,
+  }));
 
   useEffect(() => {
     if (!isCommandRunning) {
@@ -822,6 +826,15 @@ export const ToolRow = memo(function ToolRow({
             <span className="tool-inline-status">{inlineStatus}</span>
           )}
         </button>
+        {images.length > 0 && <MessageImageGrid images={images} onOpen={setImageIndex} hasText={false} />}
+        {imageIndex !== null && images.length > 0 && (
+          <ImageLightbox images={images} activeIndex={imageIndex} onClose={() => setImageIndex(null)} />
+        )}
+        {item.toolType === "subAgentActivity" && item.collabReceiver && onOpenThreadLink && (
+          <button className="ghost" type="button" onClick={() => onOpenThreadLink(item.collabReceiver!.threadId)}>
+            Open sub-agent
+          </button>
+        )}
         {isExpanded && summary.detail && !isFileChange && (
           <div className="tool-inline-detail">{summary.detail}</div>
         )}

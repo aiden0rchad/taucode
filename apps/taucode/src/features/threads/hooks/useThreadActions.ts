@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject } from "react";
 import type {
   DebugEntry,
@@ -10,12 +10,14 @@ import {
   archiveThread as archiveThreadService,
   forkThread as forkThreadService,
   listThreads as listThreadsService,
+  listThreadHistory,
   listWorkspaces as listWorkspacesService,
   resumeThread as resumeThreadService,
   startThread as startThreadService,
 } from "@services/tauri";
 import {
   getThreadTimestamp,
+  buildItemsFromThread,
 } from "@utils/threadItems";
 import { extractThreadCodexMetadata } from "@threads/utils/threadCodexMetadata";
 import {
@@ -93,6 +95,32 @@ export function useThreadActions({
   onThreadCodexMetadataDetected,
 }: UseThreadActionsOptions) {
   const resumeInFlightByThreadRef = useRef<Record<string, number>>({});
+  const [historyCursorByThread, setHistoryCursorByThread] = useState<Record<string, string | null>>({});
+  const [historyLoadingByThread, setHistoryLoadingByThread] = useState<Record<string, boolean>>({});
+  const [historyErrorByThread, setHistoryErrorByThread] = useState<Record<string, string | null>>({});
+  const historyInFlight = useRef(new Set<string>());
+  const itemsRef = useRef(itemsByThread);
+  itemsRef.current = itemsByThread;
+
+  const loadOlderHistory = useCallback(async (workspaceId: string, threadId: string) => {
+    const cursor = historyCursorByThread[threadId];
+    if (!cursor || historyInFlight.current.has(threadId)) return;
+    historyInFlight.current.add(threadId);
+    setHistoryLoadingByThread((previous) => ({ ...previous, [threadId]: true }));
+    setHistoryErrorByThread((previous) => ({ ...previous, [threadId]: null }));
+    const snapshot = itemsRef.current[threadId] ?? [];
+    try {
+      const page = await listThreadHistory(workspaceId, threadId, cursor);
+      if (page.nextCursor === cursor) throw new Error("Repeated history cursor");
+      dispatch({ type: "prependThreadHistory", threadId, items: buildItemsFromThread({ turns: page.data }), snapshot });
+      setHistoryCursorByThread((previous) => ({ ...previous, [threadId]: page.nextCursor }));
+    } catch (error) {
+      setHistoryErrorByThread((previous) => ({ ...previous, [threadId]: String(error) }));
+    } finally {
+      historyInFlight.current.delete(threadId);
+      setHistoryLoadingByThread((previous) => ({ ...previous, [threadId]: false }));
+    }
+  }, [dispatch, historyCursorByThread]);
   const threadStatusByIdRef = useRef(threadStatusById);
   const activeTurnIdByThreadRef = useRef(activeTurnIdByThread);
   threadStatusByIdRef.current = threadStatusById;
@@ -224,6 +252,7 @@ export function useThreadActions({
       if (inFlightCount === 1) {
         dispatch({ type: "setThreadResumeLoading", threadId, isLoading: true });
       }
+      const snapshot = itemsRef.current[threadId] ?? [];
       try {
         const response =
           (await resumeThreadService(workspaceId, threadId)) as
@@ -238,14 +267,19 @@ export function useThreadActions({
         });
         const thread = extractThreadFromResponse(response);
         if (thread) {
+          const isPaginated = "historyCursor" in thread;
+          const shouldReplace = replaceLocal || replaceOnResumeRef.current[threadId] === true;
+          if (isPaginated) {
+            setHistoryCursorByThread((previous) => ({ ...previous, [threadId]: !shouldReplace && previous[threadId] !== undefined
+              ? previous[threadId] : typeof thread.historyCursor === "string" ? thread.historyCursor : null }));
+            dispatch({ type: "prependThreadHistory", threadId, items: buildItemsFromThread(thread), snapshot, recent: true, replace: shouldReplace });
+          }
           dispatch({ type: "ensureThread", workspaceId, threadId });
           applyThreadMetadata(workspaceId, threadId, thread, {
             notifySubagent: true,
           });
           applyCollabThreadLinksFromThread(workspaceId, threadId, thread);
-          const localItems = itemsByThread[threadId] ?? [];
-          const shouldReplace =
-            replaceLocal || replaceOnResumeRef.current[threadId] === true;
+          const localItems = itemsRef.current[threadId] ?? [];
           if (shouldReplace) {
             replaceOnResumeRef.current[threadId] = false;
           }
@@ -288,7 +322,7 @@ export function useThreadActions({
             threadId,
             isReviewing: hydrationPlan.reviewing,
           });
-          if (hydrationPlan.mergedItems.length > 0) {
+          if (!isPaginated && hydrationPlan.mergedItems.length > 0) {
             dispatch({
               type: "setThreadItems",
               threadId,
@@ -344,7 +378,6 @@ export function useThreadActions({
       dispatchPreviewMessage,
       dispatch,
       getCustomName,
-      itemsByThread,
       loadedThreadsRef,
       onDebug,
       replaceOnResumeRef,
@@ -861,6 +894,10 @@ export function useThreadActions({
   );
 
   return {
+    historyCursorByThread,
+    historyLoadingByThread,
+    historyErrorByThread,
+    loadOlderHistory,
     startThreadForWorkspace,
     forkThreadForWorkspace,
     resumeThreadForWorkspace,

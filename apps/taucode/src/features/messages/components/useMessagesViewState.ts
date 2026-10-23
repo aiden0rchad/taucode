@@ -29,6 +29,9 @@ function toMarkdownQuote(text: string): string {
 }
 
 type UseMessagesViewStateArgs = {
+  hasOlderHistory?: boolean;
+  isLoadingHistory?: boolean;
+  onLoadOlderHistory?: () => Promise<void>;
   items: ConversationItem[];
   threadId: string | null;
   isThinking: boolean;
@@ -40,6 +43,9 @@ type UseMessagesViewStateArgs = {
 };
 
 export function useMessagesViewState({
+  hasOlderHistory,
+  isLoadingHistory,
+  onLoadOlderHistory,
   items,
   threadId,
   isThinking,
@@ -52,6 +58,8 @@ export function useMessagesViewState({
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const autoScrollRef = useRef(true);
+  const prependAnchor = useRef<{ threadId: string | null; firstId?: string; height: number; top: number } | null>(null);
+  const loadingHistory = useRef(false);
   const copyTimeoutRef = useRef<number | null>(null);
   const manuallyToggledExpandedRef = useRef<Set<string>>(new Set());
 
@@ -71,12 +79,30 @@ export function useMessagesViewState({
     [],
   );
 
+  const loadOlderHistory = useCallback(async () => {
+    const container = containerRef.current;
+    if (!container || !hasOlderHistory || isLoadingHistory || loadingHistory.current || !onLoadOlderHistory) {
+      return;
+    }
+    prependAnchor.current = { threadId, firstId: items[0]?.id, height: container.scrollHeight, top: container.scrollTop };
+    autoScrollRef.current = false;
+    loadingHistory.current = true;
+    try {
+      await onLoadOlderHistory();
+    } finally {
+      loadingHistory.current = false;
+    }
+  }, [hasOlderHistory, isLoadingHistory, onLoadOlderHistory, threadId, items]);
+
   const updateAutoScroll = useCallback(() => {
     if (!containerRef.current) {
       return;
     }
     autoScrollRef.current = isNearBottom(containerRef.current);
-  }, [isNearBottom]);
+    if (containerRef.current.scrollTop <= 40) {
+      void loadOlderHistory();
+    }
+  }, [isNearBottom, loadOlderHistory]);
 
   const requestAutoScroll = useCallback(() => {
     const container = containerRef.current;
@@ -94,10 +120,20 @@ export function useMessagesViewState({
 
   useLayoutEffect(() => {
     autoScrollRef.current = true;
+    prependAnchor.current = null;
   }, [threadId]);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
+    const anchor = prependAnchor.current;
+    if (container && anchor?.threadId === threadId) {
+      if (isLoadingHistory) return;
+      if (items[0]?.id !== anchor.firstId) {
+        container.scrollTop = anchor.top + container.scrollHeight - anchor.height;
+      }
+      prependAnchor.current = null;
+      return;
+    }
     const shouldScroll =
       autoScrollRef.current || (container ? isNearBottom(container) : true);
     if (!shouldScroll) {
@@ -108,7 +144,7 @@ export function useMessagesViewState({
       return;
     }
     bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [scrollKey, isThinking, isNearBottom, threadId]);
+  }, [scrollKey, items, isThinking, isNearBottom, threadId, isLoadingHistory]);
 
   useEffect(() => {
     return () => {
@@ -290,6 +326,7 @@ export function useMessagesViewState({
     bottomRef,
     containerRef,
     updateAutoScroll,
+    loadOlderHistory,
     requestAutoScroll,
     expandedItems,
     toggleExpanded,

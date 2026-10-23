@@ -1,6 +1,7 @@
 import type { ConversationItem } from "../types";
 import { parseCollabToolCallItem } from "./threadItems.collab";
 import { asNumber, asString } from "./threadItems.shared";
+import type { ThreadItem } from "@protocol/v2/ThreadItem";
 
 function extractImageInputValue(input: Record<string, unknown>) {
   const value =
@@ -50,7 +51,12 @@ export function buildConversationItem(
     return null;
   }
   if (type === "agentMessage") {
-    return null;
+    const message = item as Partial<Extract<ThreadItem, { type: "agentMessage" }>>;
+    return {
+      id, kind: "message", role: "assistant", text: asString(message.text),
+      phase: message.phase, memoryCitation: message.memoryCitation,
+      delivery: message.delivery, questions: message.questions,
+    };
   }
   if (type === "userMessage") {
     const content = Array.isArray(item.content) ? item.content : [];
@@ -64,7 +70,8 @@ export function buildConversationItem(
     };
   }
   if (type === "reasoning") {
-    const summary = asString(item.summary ?? "");
+    const summary = Array.isArray(item.summary)
+      ? item.summary.map(asString).join("\n") : asString(item.summary ?? "");
     const content = Array.isArray(item.content)
       ? item.content.map((entry) => asString(entry)).join("\n")
       : asString(item.content ?? "");
@@ -160,6 +167,51 @@ export function buildConversationItem(
   if (type === "collabToolCall" || type === "collabAgentToolCall") {
     return parseCollabToolCallItem(item);
   }
+  if (type === "subAgentActivity") {
+    const activity = item as Partial<Extract<ThreadItem, { type: "subAgentActivity" }>>;
+    return {
+      id, kind: "tool", toolType: type, title: `Sub-agent ${asString(activity.kind)}`,
+      detail: asString(activity.agentPath), status: asString(activity.kind),
+      collabReceiver: { threadId: asString(activity.agentThreadId) },
+      output: [activity.model, activity.reasoningEffort].filter(Boolean).join(" · "),
+    };
+  }
+  if (type === "dynamicToolCall") {
+    const tool = item as Partial<Extract<ThreadItem, { type: "dynamicToolCall" }>>;
+    return {
+      id, kind: "tool", toolType: type,
+      title: `Tool: ${[tool.namespace, tool.tool].filter(Boolean).join(" / ")}`,
+      detail: JSON.stringify(tool.arguments ?? null, null, 2),
+      status: tool.status, durationMs: tool.durationMs,
+      output: JSON.stringify(tool.contentItems ?? [], null, 2),
+    };
+  }
+  if (type === "imageGeneration") {
+    const generation = item as Partial<Extract<ThreadItem, { type: "imageGeneration" }>>;
+    const result = "result" in generation ? generation.result : undefined;
+    const src = generation.savedPath || (result
+      ? (/^(data:|https?:)/.test(result) ? result : `data:image/png;base64,${result}`)
+      : undefined);
+    return {
+      id, kind: "tool", toolType: type, title: "Image generation",
+      detail: generation.revisedPrompt ?? "", status: generation.status,
+      images: src ? [src] : undefined,
+      output: generation.failure ? JSON.stringify(generation.failure)
+        : !src && "fileId" in generation ? "Image preview unavailable." : "",
+    };
+  }
+  if (type === "hookPrompt" || type === "functionCallOutput" || type === "sleep") {
+    const titles = { hookPrompt: "Hook prompt", functionCallOutput: "Function output", sleep: "Sleep" };
+    return {
+      id, kind: "tool", toolType: type, title: titles[type], status: "completed",
+      detail: type === "sleep" ? `${asNumber(item.durationMs) ?? 0} ms` : asString(item.name ?? ""),
+      output: type === "hookPrompt" && Array.isArray(item.fragments)
+        ? item.fragments.map((fragment) => asString(fragment?.text)).join("\n")
+        : type === "functionCallOutput"
+          ? typeof item.output === "string" ? item.output : JSON.stringify(item.output ?? null, null, 2)
+          : "",
+    };
+  }
   if (type === "webSearch") {
     const status = asString(item.status ?? "").trim();
     return {
@@ -203,7 +255,10 @@ export function buildConversationItem(
       text: asString(item.review ?? ""),
     };
   }
-  return null;
+  return {
+    id, kind: "tool", toolType: type, title: type, detail: "",
+    output: JSON.stringify(item, null, 2),
+  };
 }
 
 export function buildConversationItemFromThreadItem(
@@ -226,12 +281,7 @@ export function buildConversationItemFromThreadItem(
     };
   }
   if (type === "agentMessage") {
-    return {
-      id,
-      kind: "message",
-      role: "assistant",
-      text: asString(item.text),
-    };
+    return buildConversationItem(item);
   }
   if (type === "reasoning") {
     const summary = Array.isArray(item.summary)

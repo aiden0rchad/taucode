@@ -41,7 +41,7 @@ export function handleConvertedItemEffects({
     return;
   }
 
-  if (converted.kind === "tool" && converted.toolType === "collabToolCall") {
+  if (converted.kind === "tool" && (converted.toolType === "collabToolCall" || converted.toolType === "subAgentActivity")) {
     const receivers = converted.collabReceivers?.length
       ? converted.collabReceivers
       : converted.collabReceiver

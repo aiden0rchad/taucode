@@ -270,10 +270,12 @@ pub(crate) async fn resume_thread_core(
     thread_id: String,
 ) -> Result<Value, String> {
     let session = get_session_clone(sessions, &workspace_id).await?;
-    let params = json!({ "threadId": thread_id });
-    session
+    let params = json!({ "threadId": thread_id, "excludeTurns": true });
+    let mut response = session
         .send_request_for_workspace(&workspace_id, "thread/resume", params)
-        .await
+        .await?;
+    hydrate_recent_history(&session, &workspace_id, &thread_id, &mut response).await?;
+    Ok(response)
 }
 
 pub(crate) async fn read_thread_core(
@@ -283,9 +285,94 @@ pub(crate) async fn read_thread_core(
 ) -> Result<Value, String> {
     let session = get_session_clone(sessions, &workspace_id).await?;
     let params = json!({ "threadId": thread_id });
-    session
+    let mut response = session
         .send_request_for_workspace(&workspace_id, "thread/read", params)
-        .await
+        .await?;
+    hydrate_recent_history(&session, &workspace_id, &thread_id, &mut response).await?;
+    Ok(response)
+}
+
+async fn hydrate_recent_history(
+    session: &WorkspaceSession,
+    workspace_id: &str,
+    thread_id: &str,
+    response: &mut Value,
+) -> Result<(), String> {
+    // Preserve RPC errors; never turn a failed resume into an empty conversation.
+    if let Some(thread) = response.pointer_mut("/result/thread") {
+        let page = load_thread_history_page(session, workspace_id, thread_id, None).await?;
+        thread["turns"] = page["data"].clone();
+        thread["historyCursor"] = page["nextCursor"].clone();
+    }
+    Ok(())
+}
+
+pub(crate) async fn list_thread_history_core(
+    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    workspace_id: String,
+    thread_id: String,
+    cursor: Option<String>,
+) -> Result<Value, String> {
+    let session = get_session_clone(sessions, &workspace_id).await?;
+    load_thread_history_page(&session, &workspace_id, &thread_id, cursor).await
+}
+
+async fn load_thread_history_page(
+    session: &WorkspaceSession,
+    workspace_id: &str,
+    thread_id: &str,
+    cursor: Option<String>,
+) -> Result<Value, String> {
+    if thread_id.trim().is_empty() {
+        return Err("threadId is required".into());
+    }
+    let response = session.send_request_for_workspace(workspace_id, "thread/turns/list", json!({
+        "threadId": thread_id, "cursor": cursor, "limit": 20,
+        "sortDirection": "desc", "itemsView": "notLoaded"
+    })).await?;
+    let mut page = history_result(response)?;
+    let turns = page.get_mut("data").and_then(Value::as_array_mut)
+        .ok_or("Invalid thread/turns/list data")?;
+    // The wire page is newest first; the conversation renders oldest first.
+    turns.reverse();
+    for turn in turns {
+        let turn_id = turn.get("id").and_then(Value::as_str).ok_or("Missing turn id")?.to_string();
+        let mut items = Vec::new();
+        let mut seen_ids = HashSet::new();
+        let mut seen_cursors = HashSet::new();
+        let mut item_cursor: Option<String> = None;
+        loop {
+            let response = session.send_request_for_workspace(workspace_id, "thread/items/list", json!({
+                "threadId": thread_id, "turnId": turn_id, "cursor": item_cursor,
+                "limit": 100, "sortDirection": "asc"
+            })).await?;
+            let item_page = history_result(response)?;
+            let entries = item_page.get("data").and_then(Value::as_array)
+                .ok_or("Invalid thread/items/list data")?;
+            for entry in entries {
+                let item = entry.get("item").ok_or("Missing thread item")?;
+                let id = item.get("id").and_then(Value::as_str).ok_or("Missing item id")?;
+                if seen_ids.insert(id.to_string()) { items.push(item.clone()); }
+            }
+            item_cursor = item_page.get("nextCursor").and_then(Value::as_str).map(str::to_string);
+            match &item_cursor {
+                None => break,
+                Some(cursor) if !seen_cursors.insert(cursor.clone()) => return Err("Repeated history cursor".into()),
+                _ => {}
+            }
+        }
+        turn["items"] = json!(items);
+        turn["itemsView"] = json!("full");
+    }
+    Ok(page)
+}
+
+fn history_result(response: Value) -> Result<Value, String> {
+    if let Some(error) = response.get("error") {
+        return Err(error.to_string());
+    }
+    response.get("result").filter(|value| value.is_object()).cloned()
+        .ok_or_else(|| "Missing history response result".into())
 }
 
 pub(crate) async fn thread_live_subscribe_core(
@@ -318,7 +405,7 @@ pub(crate) async fn fork_thread_core(
     thread_id: String,
 ) -> Result<Value, String> {
     let session = get_session_clone(sessions, &workspace_id).await?;
-    let params = json!({ "threadId": thread_id });
+    let params = json!({ "threadId": thread_id, "excludeTurns": true });
     session
         .send_request_for_workspace(&workspace_id, "thread/fork", params)
         .await
@@ -635,7 +722,7 @@ pub(crate) async fn account_read_core(
     };
     let response = if let Some(session) = session {
         session
-            .send_request_for_workspace(&workspace_id, "account/read", Value::Null)
+            .send_request_for_workspace(&workspace_id, "account/read", json!({}))
             .await
             .ok()
     } else {
@@ -801,9 +888,7 @@ pub(crate) async fn skills_list_core(
     let session = get_session_clone(sessions, &workspace_id).await?;
     let workspace_path = resolve_workspace_path_core(workspaces, &workspace_id).await?;
 
-    // Codex can discover project-scoped skills from `<workspace>/.agents/skills`.
-    // Some environments don't surface those reliably in CodexMonitor unless we
-    // pass the default project skills path explicitly.
+    // Retain local source diagnostics; discovery uses the 0.164 cwds parameter.
     let mut source_paths: Vec<String> = vec![];
     let project_skills_dir = Path::new(&workspace_path).join(".agents").join("skills");
     if project_skills_dir.is_dir() {
@@ -812,11 +897,7 @@ pub(crate) async fn skills_list_core(
         }
     }
 
-    let params = if source_paths.is_empty() {
-        json!({ "cwd": workspace_path })
-    } else {
-        json!({ "cwd": workspace_path, "skillsPaths": source_paths })
-    };
+    let params = json!({ "cwds": [workspace_path] });
 
     let mut response = session
         .send_request_for_workspace(&workspace_id, "skills/list", params)
@@ -887,6 +968,10 @@ pub(crate) async fn get_config_model_core(
     let model = codex_config::read_config_model(Some(codex_home))?;
     Ok(json!({ "model": model }))
 }
+
+#[cfg(test)]
+#[path = "codex_history_tests.rs"]
+mod history_tests;
 
 #[cfg(test)]
 mod tests {

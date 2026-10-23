@@ -1,6 +1,19 @@
 import type { AppServerEvent } from "../types";
+import type { ServerNotification } from "@protocol/ServerNotification";
+
+// These features have no UI in taucode. Keep their traffic out of error handling.
+export const IGNORED_APP_SERVER_METHODS = [
+  "turn/moderationMetadata", "thread/goal/updated", "thread/goal/cleared",
+  "remoteControl/status/changed", "mcpServer/startupStatus/updated",
+] as const satisfies readonly ServerNotification["method"][];
+
+export const THREAD_METADATA_METHODS = [
+  "serverRequest/resolved", "thread/readState/changed", "deprecationNotice",
+] as const satisfies readonly ServerNotification["method"][];
 
 export const SUPPORTED_APP_SERVER_METHODS = [
+  ...IGNORED_APP_SERVER_METHODS,
+  ...THREAD_METADATA_METHODS,
   "app/list/updated",
   "account/login/completed",
   "account/rateLimits/updated",
@@ -38,6 +51,8 @@ export const SUPPORTED_APP_SERVER_METHODS = [
 export type SupportedAppServerMethod = (typeof SUPPORTED_APP_SERVER_METHODS)[number];
 
 export const METHODS_HANDLED_OUTSIDE_USE_APP_SERVER_EVENTS = [
+  ...IGNORED_APP_SERVER_METHODS,
+  ...THREAD_METADATA_METHODS,
   "app/list/updated",
   "codex/event/skills_update_available",
 ] as const satisfies readonly SupportedAppServerMethod[];

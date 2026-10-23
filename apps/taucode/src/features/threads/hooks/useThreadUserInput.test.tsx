@@ -9,6 +9,21 @@ vi.mock("@services/tauri", () => ({
 }));
 
 describe("useThreadUserInput", () => {
+  it("sends secret answers but redacts them from conversation history", async () => {
+    const dispatch = vi.fn();
+    const { result } = renderHook(() => useThreadUserInput({ dispatch }));
+    const answers = { secret: { answers: ["private value"] } };
+    await act(async () => {
+      await result.current.handleUserInputSubmit({ workspace_id: "ws", request_id: "secret-request", params: {
+        thread_id: "thread", turn_id: "turn", item_id: "item", questions: [
+          { id: "secret", header: "Secret", question: "Enter value", isSecret: true, isOther: false, options: null },
+        ],
+      } }, { answers });
+    });
+    expect(respondToUserInputRequest).toHaveBeenCalledWith("ws", "secret-request", answers);
+    expect(dispatch.mock.calls[0][0].item.questions[0].answers).toEqual(["[secret provided]"]);
+  });
+
   it("submits request-user-input answers and appends an answered item", async () => {
     const dispatch = vi.fn();
     const { result } = renderHook(() => useThreadUserInput({ dispatch }));

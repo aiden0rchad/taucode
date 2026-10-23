@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import type { Dispatch, MutableRefObject } from "react";
 import type {
   AppServerEvent,
@@ -8,7 +8,11 @@ import type {
   RateLimitSnapshot,
   TurnPlan,
 } from "@/types";
-import { getAppServerRawMethod } from "@utils/appServerEvents";
+import { getAppServerRawMethod, getAppServerParams, IGNORED_APP_SERVER_METHODS } from "@utils/appServerEvents";
+import type { ServerRequestResolvedNotification } from "@protocol/v2/ServerRequestResolvedNotification";
+import type { ThreadReadStateChangedNotification } from "@protocol/v2/ThreadReadStateChangedNotification";
+import type { ThreadStatus } from "@protocol/v2/ThreadStatus";
+import type { Turn } from "@protocol/v2/Turn";
 import { useThreadApprovalEvents } from "./useThreadApprovalEvents";
 import { useThreadHookEvents } from "./useThreadHookEvents";
 import { useThreadItemEvents } from "./useThreadItemEvents";
@@ -195,9 +199,38 @@ export function useThreadEventHandlers({
     [dispatch],
   );
 
+  const loggedDeprecation = useRef(false);
   const onAppServerEvent = useCallback(
     (event: AppServerEvent) => {
       const method = getAppServerRawMethod(event) ?? "";
+      const params = getAppServerParams(event);
+      if ((IGNORED_APP_SERVER_METHODS as readonly string[]).includes(method)) return;
+      if (method === "deprecationNotice") {
+        if (loggedDeprecation.current) return;
+        loggedDeprecation.current = true;
+      }
+      if (method === "serverRequest/resolved") {
+        const { requestId } = params as Partial<ServerRequestResolvedNotification>;
+        if (typeof requestId === "string" || typeof requestId === "number") {
+          dispatch({ type: "removeApproval", workspaceId: event.workspace_id, requestId });
+          dispatch({ type: "removeUserInputRequest", workspaceId: event.workspace_id, requestId });
+        }
+      }
+      if (method === "thread/readState/changed") {
+        const { threadId, readState } = params as Partial<ThreadReadStateChangedNotification>;
+        if (threadId && readState && "firstUnread" in readState) {
+          dispatch({ type: "markUnread", threadId, hasUnread: readState.firstUnread !== null });
+        }
+      }
+      if (method === "thread/status/changed" && typeof params.threadId === "string") {
+        const status = params.status as ThreadStatus | undefined;
+        dispatch({ type: "setThreadProtocolState", threadId: params.threadId, patch: {
+          activeFlags: status?.type === "active" ? status.activeFlags ?? [] : [],
+        } });
+      }
+      if (method === "turn/completed" && typeof params.threadId === "string" && params.turn) {
+        dispatch({ type: "setThreadProtocolState", threadId: params.threadId, patch: { lastTurn: params.turn as Turn } });
+      }
       const inferredSource = method === "codex/stderr" ? "stderr" : "event";
       onDebug?.({
         id: `${Date.now()}-server-event`,
@@ -207,7 +240,7 @@ export function useThreadEventHandlers({
         payload: event,
       });
     },
-    [onDebug],
+    [dispatch, onDebug],
   );
 
   const handlers = useMemo(
