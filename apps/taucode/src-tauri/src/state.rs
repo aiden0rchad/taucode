@@ -31,6 +31,7 @@ impl Default for TcpDaemonRuntime {
 
 pub(crate) struct AppState {
     pub(crate) browser: Arc<crate::shared::browser::Browser>,
+    pub(crate) computer: Arc<crate::shared::computer::Computer>,
     pub(crate) browser_streams: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
     pub(crate) codegraph: Arc<crate::shared::codegraph_core::Codegraph>,
     pub(crate) workspaces: Mutex<HashMap<String, WorkspaceEntry>>,
@@ -57,6 +58,7 @@ impl AppState {
         let app_settings = read_settings(&settings_path).unwrap_or_default();
         Self {
             browser: crate::shared::browser::Browser::new(data_dir.clone()),
+            computer: crate::shared::computer::Computer::new(data_dir.clone()),
             browser_streams: Mutex::new(HashMap::new()),
             codegraph: crate::shared::codegraph_core::Codegraph::new(data_dir),
             workspaces: Mutex::new(workspaces),

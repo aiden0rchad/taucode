@@ -64,7 +64,7 @@ objc2-foundation = { version = "0.3", features = ["NSString"] }
 objc2-av-foundation = { version = "0.3", features = ["AVCaptureDevice", "AVMediaFormat"] }
 block2 = "0.6"
 screencapturekit = "11.0.0"
-core-graphics = "0.25.0"
+core-graphics = { version = "0.25.0", features = ["highsierra"] }
 
 [target."cfg(target_os = \"ios\")".dependencies]
 objc2 = "0.6"

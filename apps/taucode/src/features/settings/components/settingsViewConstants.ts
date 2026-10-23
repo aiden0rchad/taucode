@@ -88,6 +88,7 @@ export const SETTINGS_SECTION_LABELS: Record<CodexSection, string> = {
   providers: "Providers",
   connectors: "Connectors",
   browser: "Browser",
+  computer: "Computer Use",
   codex: "Codex",
   features: "Features",
 };

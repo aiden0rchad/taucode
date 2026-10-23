@@ -1,0 +1,5 @@
+Agent-S3 (gui-agents 0.3.2)
+Copyright Simular and Agent-S contributors. Apache-2.0.
+Source: https://github.com/simular-ai/Agent-S
+Upstream commit: 0fff0e634869dab72027435b4586e62300185d41
+Modified by taucode: structured actions, AST-only parsing, removed OCR, input and code-agent paths.

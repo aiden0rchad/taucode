@@ -1,0 +1,420 @@
+mod control;
+#[cfg(target_os = "macos")]
+mod native;
+pub mod policy;
+mod runner;
+mod sidecar;
+#[cfg(test)]
+mod tests;
+mod transport;
+
+use control::Control;
+use policy::*;
+use serde_json::{json, Value};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
+use tauri::{AppHandle, Manager};
+use tokio::sync::{oneshot, watch};
+
+pub struct Computer {
+    owned: std::sync::atomic::AtomicBool,
+    pub data: PathBuf,
+    pub control: Control,
+    pub state: watch::Sender<Value>,
+    busy: tokio::sync::Mutex<()>,
+    pending: Mutex<Option<(String, oneshot::Sender<bool>)>>,
+    shortcut: Mutex<Option<String>>,
+}
+#[cfg(not(target_os = "macos"))]
+struct Unsupported;
+#[cfg(not(target_os = "macos"))]
+impl control::Input for Unsupported {
+    fn post(&mut self, _: &control::Event) -> Result<(), String> {
+        Err("Computer Use requires macOS".into())
+    }
+}
+impl Computer {
+    pub fn new(data: PathBuf) -> Arc<Self> {
+        #[cfg(target_os = "macos")]
+        let input = native::NativeInput::default();
+        #[cfg(not(target_os = "macos"))]
+        let input = Unsupported;
+        let (state, _) = watch::channel(json!({"running":false,"steps":[]}));
+        Arc::new(Self {
+            owned: std::sync::atomic::AtomicBool::new(false),
+            data,
+            control: Control::new(input),
+            state,
+            busy: tokio::sync::Mutex::new(()),
+            pending: Mutex::new(None),
+            shortcut: Mutex::new(None),
+        })
+    }
+    pub fn stop(&self) {
+        self.control.stop();
+        self.pending.lock().unwrap().take();
+        self.state.send_modify(|s| {
+            s["approval"] = Value::Null;
+            s["paused"] = json!(false);
+        });
+    }
+    pub fn pause(&self, paused: bool) {
+        self.control.pause(paused);
+        self.state.send_modify(|s| s["paused"] = json!(paused));
+    }
+    pub fn answer(&self, id: &str, accept: bool) -> Result<(), String> {
+        let mut pending = self.pending.lock().map_err(|_| "Approval unavailable")?;
+        if pending.as_ref().is_none_or(|(key, _)| key != id) {
+            return Err("Approval expired".into());
+        }
+        let (_, sender) = pending.take().unwrap();
+        let _ = sender.send(accept);
+        Ok(())
+    }
+    fn arm(&self, app: &AppHandle, s: &Settings) -> Result<(), String> {
+        use tauri_plugin_global_shortcut::GlobalShortcutExt;
+        let mut old = self.shortcut.lock().map_err(|_| "Shortcut unavailable")?;
+        if old.as_deref() != Some(s.shortcut.as_str()) {
+            app.global_shortcut()
+                .register(s.shortcut.as_str())
+                .map_err(|e| format!("Cannot register kill switch: {e}"))?;
+            if let Some(old) = old.take() {
+                let _ = app.global_shortcut().unregister(old.as_str());
+            }
+            *old = Some(s.shortcut.clone());
+        }
+        if let Some(hud) = app.get_webview_window("computer-hud") {
+            hud.show().map_err(|e| e.to_string())?;
+        } else {
+            tauri::WebviewWindowBuilder::new(
+                app,
+                "computer-hud",
+                tauri::WebviewUrl::App("index.html".into()),
+            )
+            .title("Computer Use")
+            .inner_size(440., 420.)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .focusable(false)
+            .build()
+            .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+    pub async fn request(self: &Arc<Self>, app: AppHandle, p: Value) -> Result<Value, String> {
+        if !self.owned.load(std::sync::atomic::Ordering::SeqCst) {
+            return transport::ipc(&self.data, p).await;
+        }
+        match p["action"].as_str() {
+            Some("runLog") => {
+                let id = p["id"].as_str().ok_or("Missing run ID")?;
+                uuid::Uuid::parse_str(id).map_err(|_| "Invalid run ID")?;
+                let bytes =
+                    std::fs::read(self.data.join("computer/runs").join(format!("{id}.json")))
+                        .map_err(|_| "Computer run log unavailable")?;
+                serde_json::from_slice(&bytes).map_err(|_| "Invalid computer run log".into())
+            }
+            Some("status") => {
+                let mut state = self.state.borrow().clone();
+                state["permissions"] = permissions();
+                Ok(state)
+            }
+            Some("stop") => {
+                self.stop();
+                Ok(Value::Null)
+            }
+            Some("pause") => {
+                self.pause(p["paused"] == true);
+                Ok(Value::Null)
+            }
+            Some("prepare") => {
+                let _lock = self.busy.try_lock().map_err(|_| "Computer Use is busy")?;
+                self.state
+                    .send_modify(|s| s["setup"] = json!("Preparing Python 3.12 environment…"));
+                let resource = app.path().resource_dir().ok();
+                let result = sidecar::prepare(&self.data, resource.as_deref()).await;
+                self.state.send_modify(|s| {
+                    s["setup"] = json!(if result.is_ok() {
+                        "Ready"
+                    } else {
+                        "Setup failed"
+                    })
+                });
+                result.map(|_| json!({"ok":true}))
+            }
+            Some("screenshot") => {
+                let settings = self.enabled()?;
+                #[cfg(target_os = "macos")]
+                {
+                    let current = native::context()?;
+                    if current.app != "dev.taucode.desktop"
+                        && !app_allowed(
+                            &current.app,
+                            &settings.computer,
+                            &settings.computer.allowed_apps,
+                        )
+                    {
+                        return Err("Screenshot blocked by app policy".into());
+                    }
+                }
+
+                #[cfg(target_os = "macos")]
+                {
+                    let allowed: Vec<_> = settings
+                        .computer
+                        .allowed_apps
+                        .iter()
+                        .filter(|a| {
+                            app_allowed(a, &settings.computer, &settings.computer.allowed_apps)
+                        })
+                        .cloned()
+                        .collect();
+                    let frame = tokio::task::spawn_blocking(move || native::capture(&allowed))
+                        .await
+                        .map_err(|e| e.to_string())??;
+                    Ok(json!({"screenshot":frame.png}))
+                }
+                #[cfg(not(target_os = "macos"))]
+                Err("Computer Use requires macOS".into())
+            }
+            Some("run") => self.run(app, p).await,
+            _ => Err("Unknown computer action".into()),
+        }
+    }
+    fn enabled(&self) -> Result<crate::types::AppSettings, String> {
+        let s = crate::storage::read_settings(&self.data.join("settings.json"))?;
+        validate(&s.computer)?;
+        if !s.computer.enabled {
+            return Err("Enable Computer Use in Settings".into());
+        }
+        Ok(s)
+    }
+    fn private_dir(&self) -> Result<PathBuf, String> {
+        let dir = self.data.join("computer");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(dir)
+    }
+    async fn run(self: &Arc<Self>, app: AppHandle, p: Value) -> Result<Value, String> {
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (app, p);
+            Err("Computer Use requires macOS".into())
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _lock = self
+                .busy
+                .try_lock()
+                .map_err(|_| "A computer run is already active")?;
+            let settings = self.enabled()?;
+            if permissions()["screen"] != true || permissions()["accessibility"] != true {
+                return Err("Grant Screen Recording and Accessibility in System Settings".into());
+            }
+            let instruction = p["instruction"]
+                .as_str()
+                .filter(|s| !s.trim().is_empty() && s.len() <= 32768)
+                .ok_or("Provide a bounded instruction")?;
+            let mut limits = settings.computer.clone();
+            if let Some(v) = p.get("max_steps") {
+                let n = v
+                    .as_u64()
+                    .filter(|n| *n > 0 && *n <= limits.max_steps as u64)
+                    .ok_or("max_steps must be within configured limit")?;
+                limits.max_steps = n as u32;
+            }
+            let apps: Vec<String> = match p.get("apps") {
+                None => limits.allowed_apps.clone(),
+                Some(v) => {
+                    serde_json::from_value(v.clone()).map_err(|_| "Expected app bundle IDs")?
+                }
+            };
+            if apps.is_empty() || apps.iter().any(|a| !app_allowed(a, &limits, &apps)) {
+                return Err("Select allowed apps in Computer Use settings".into());
+            }
+            self.private_dir()?;
+            self.arm(&app, &limits)?;
+            self.control.start();
+            let _stop = StopOnDrop(self.clone());
+            let id = uuid::Uuid::new_v4().to_string();
+            self.state.send_replace(json!({"id":id,"running":true,"paused":false,"steps":[],"instruction":instruction,"shortcut":limits.shortcut}));
+            let resource = app.path().resource_dir().ok();
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(limits.max_seconds),
+                self.control.until(async {
+                    let prepared = sidecar::prepare(&self.data, resource.as_deref()).await?;
+                    let sidecar = sidecar::Sidecar::launch(&prepared, &settings).await?;
+                    let mut env = Live {
+                        computer: self.clone(),
+                        sidecar,
+                        apps: apps.clone(),
+                        id: id.clone(),
+                    };
+                    runner::run(&mut env, &self.control, &limits, &apps, instruction).await
+                }),
+            )
+            .await
+            .map_err(|_| "Maximum wall time reached".to_string())
+            .and_then(|r| r);
+            self.state.send_modify(|s| {
+                s["running"] = json!(false);
+                s["approval"] = Value::Null;
+                s["error"] = json!(result.as_ref().err());
+                s["summary"] = result
+                    .as_ref()
+                    .ok()
+                    .map(|v| v["summary"].clone())
+                    .unwrap_or(Value::Null);
+            });
+            self.persist(&id)?;
+            let mut result = result.unwrap_or_else(|error| json!({"summary":error,"error":error}));
+            result["computerRun"] = json!({"id":id,"stored":true,"steps":[],"summary":result["summary"],"error":result.get("error"),"instruction":instruction});
+            Ok(result)
+        }
+    }
+    fn persist(&self, id: &str) -> Result<(), String> {
+        let dir = self.private_dir()?.join("runs");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(format!("{id}.json"));
+        let temp = path.with_extension("tmp");
+        std::fs::write(
+            &temp,
+            serde_json::to_vec(&*self.state.borrow()).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        std::fs::rename(temp, path).map_err(|e| e.to_string())
+    }
+    pub async fn serve(self: &Arc<Self>, app: AppHandle) -> Result<(), String> {
+        self.private_dir()?;
+        transport::serve(self.clone(), app).await
+    }
+}
+struct StopOnDrop(Arc<Computer>);
+impl Drop for StopOnDrop {
+    fn drop(&mut self) {
+        self.0.stop();
+        self.0.state.send_modify(|s| {
+            if s["running"] == true {
+                s["error"] = json!("Stopped");
+            }
+            s["running"] = json!(false);
+        });
+        let id = self.0.state.borrow()["id"].as_str().map(str::to_owned);
+        if let Some(id) = id {
+            let _ = self.0.persist(&id);
+        }
+    }
+}
+pub fn permissions() -> Value {
+    #[cfg(target_os = "macos")]
+    {
+        native::permissions()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        json!({"screen":false,"accessibility":false,"unsupported":true})
+    }
+}
+#[cfg(target_os = "macos")]
+struct Live {
+    computer: Arc<Computer>,
+    sidecar: sidecar::Sidecar,
+    apps: Vec<String>,
+    id: String,
+}
+#[cfg(target_os = "macos")]
+impl runner::Environment for Live {
+    fn capture(
+        &mut self,
+    ) -> crate::shared::providers::BoxFuture<'_, Result<runner::Frame, String>> {
+        let apps = self.apps.clone();
+        Box::pin(async move {
+            let f = tokio::task::spawn_blocking(move || native::capture(&apps))
+                .await
+                .map_err(|e| e.to_string())??;
+            Ok(runner::Frame {
+                thumbnail: f.thumbnail,
+                png: f.png,
+                display: f.display,
+            })
+        })
+    }
+    fn predict<'a>(
+        &'a mut self,
+        instruction: &'a str,
+        frame: &'a runner::Frame,
+    ) -> crate::shared::providers::BoxFuture<'a, Result<Prediction, String>> {
+        Box::pin(self.sidecar.predict(
+            instruction,
+            &frame.png,
+            [frame.display.pixel_width, frame.display.pixel_height],
+        ))
+    }
+    fn context(&self) -> Result<Context, String> {
+        native::context()
+    }
+    fn target(&self, app: &str) -> Result<String, String> {
+        native::target(app).map(|v| v.0)
+    }
+    fn event_context(&self, event: &control::Event) -> Result<Context, String> {
+        native::event_context(event)
+    }
+    fn open(&self, app: &str, target: &str) -> Result<(), String> {
+        native::open_app(app, target)
+    }
+    fn approve<'a>(
+        &'a mut self,
+        reason: &'a str,
+        action: &'a Action,
+        context: &'a Context,
+    ) -> crate::shared::providers::BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            let id = uuid::Uuid::new_v4().to_string();
+            let (tx, rx) = oneshot::channel();
+            *self
+                .computer
+                .pending
+                .lock()
+                .map_err(|_| "Approval unavailable")? = Some((id.clone(), tx));
+            self.computer.state.send_modify(|s| {
+                s["approval"] = json!({"id":id,"reason":reason,"action":action,"app":context.app})
+            });
+            let approved = rx.await.unwrap_or(false);
+            self.computer
+                .state
+                .send_modify(|s| s["approval"] = Value::Null);
+            if approved {
+                // Clicking the HUD may activate taucode. Restore only the exact app
+                // the user just approved, then let the loop recheck the secure field.
+                if native::context()?.app == "dev.taucode.desktop" {
+                    native::open_app(&context.app, &context.app)?;
+                    for _ in 0..50 {
+                        if native::context()? == *context {
+                            return Ok(());
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                    }
+                    return Err("Approved application did not regain its focus".into());
+                }
+                Ok(())
+            } else {
+                Err("Approval declined or cancelled".into())
+            }
+        })
+    }
+    fn progress(&mut self, step: Value) -> Result<(), String> {
+        self.computer.state.send_modify(|s| {
+            s["steps"].as_array_mut().unwrap().push(step);
+        });
+        self.computer.persist(&self.id)
+    }
+}
+pub use transport::{ipc, mcp_cli};

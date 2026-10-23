@@ -7,6 +7,8 @@ export function connectorDecision(servers: Connector[], tool: string, mode: stri
   const normalize = (s: string) => s.replace(/[^a-zA-Z0-9_]/g, "_");
   if (server.toolDenylist?.some(t => normalize(t) === name || name.startsWith(`${normalize(t)}_`)) || (server.toolAllowlist && !server.toolAllowlist.some(t => normalize(t) === name))) return "block";
   if (server.id === "taucode-browser" && ["browser_snapshot", "browser_take_screenshot", "browser_console_messages", "browser_network_requests", "browser_tabs", "browser_navigate", "browser_navigate_back", "browser_wait_for"].includes(name)) return "allow";
+  if (server.id === "taucode-computer" && name === "computer_screenshot") return "allow";
   if (mode === "read-only") return "block";
+  if (server.id === "taucode-computer") return "allow";
   return server.approval === "ask" ? (interactive ? "ask" : "block") : "allow";
 }

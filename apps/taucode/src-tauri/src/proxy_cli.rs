@@ -8,6 +8,16 @@ pub fn proxy_args(
 
 pub fn dispatch() {
     let args: Vec<_> = std::env::args_os().collect();
+    if args.get(1).is_some_and(|s| s == "--tau-computer-mcp") {
+        let status = match codex_monitor_lib::computer_mcp_cli(args[2..].to_vec()) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("{e}");
+                1
+            }
+        };
+        std::process::exit(status);
+    }
     if args.get(1).is_some_and(|s| s == "--tau-browser-mcp") {
         let status = match codex_monitor_lib::browser_mcp_cli(args[2..].to_vec()) {
             Ok(()) => 0,

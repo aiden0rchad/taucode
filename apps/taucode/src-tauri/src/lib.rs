@@ -107,7 +107,19 @@ pub fn run() {
     let builder = tauri::Builder::default();
 
     let builder = builder
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _, event| computer_commands::shortcut(app, event))
+                .build(),
+        )
         .on_window_event(|window, event| {
+            if window.label() == "computer-hud"
+                && matches!(event, WindowEvent::CloseRequested { .. })
+            {
+                if let Some(state) = window.app_handle().try_state::<state::AppState>() {
+                    state.computer.stop();
+                }
+            }
             if window.label() != "main" {
                 return;
             }
@@ -136,6 +148,8 @@ pub fn run() {
                 });
             }
             app.manage(state);
+            #[cfg(desktop)]
+            computer_commands::install(app.handle()).map_err(std::io::Error::other)?;
             #[cfg(target_os = "macos")]
             {
                 let tray_state = app.state::<tray::TrayState>();
@@ -200,6 +214,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
+            computer_commands::computer_request,
             browser_commands::browser_request,
             browser_commands::browser_subscribe,
             browser_commands::browser_unsubscribe,
@@ -340,6 +355,7 @@ pub fn run() {
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
             let state = app_handle.state::<state::AppState>();
+            state.computer.stop();
             tauri::async_runtime::block_on(state.browser.shutdown());
         }
         #[cfg(desktop)]
@@ -369,6 +385,10 @@ pub fn run() {
 }
 
 mod browser_commands;
+mod computer_commands;
+pub fn computer_mcp_cli(args: Vec<std::ffi::OsString>) -> Result<(), String> {
+    shared::computer::mcp_cli(args)
+}
 pub fn browser_mcp_cli(args: Vec<std::ffi::OsString>) -> Result<(), String> {
     shared::browser::mcp_cli(args)
 }

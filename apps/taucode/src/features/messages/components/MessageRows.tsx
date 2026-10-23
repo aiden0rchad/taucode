@@ -1,3 +1,5 @@
+import { ComputerRunItem } from "@/features/computer/ComputerRunItem";
+import { parseComputerRun } from "@/features/computer/computer";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { createPortal } from "react-dom";
@@ -694,6 +696,7 @@ export const ToolRow = memo(function ToolRow({
   onOpenThreadLink,
   onRequestAutoScroll,
 }: ToolRowProps) {
+  const computerRun = parseComputerRun(item.output);
   const isFileChange = item.toolType === "fileChange";
   const isCommand = item.toolType === "commandExecution";
   const isPlan = item.toolType === "plan";
@@ -881,7 +884,8 @@ export const ToolRow = memo(function ToolRow({
           />
         )}
         {showCommandOutput && <CommandOutput output={summary.output ?? ""} />}
-        {showToolOutput && summary.output && !isCommand && (
+        {isExpanded && computerRun && <ComputerRunItem run={computerRun} />}
+        {showToolOutput && summary.output && !isCommand && !computerRun && (
           <Markdown
             value={summary.output}
             className="tool-inline-output markdown"
