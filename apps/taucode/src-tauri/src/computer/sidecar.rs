@@ -47,56 +47,8 @@ pub async fn configuration(
         (format!("TAUCODE_CUA_{}_KEY", role.to_uppercase()), key),
     ))
 }
-pub fn source(resource: Option<&Path>) -> Result<PathBuf, String> {
-    let dev = Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/computer");
-    [resource.map(|p| p.join("engines/computer")), Some(dev)]
-        .into_iter()
-        .flatten()
-        .find(|p| p.join("taucode_cua/server.py").is_file())
-        .ok_or("Computer planner resources missing".into())
-}
-fn copy_tree(source: &Path, target: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(target).map_err(|e| e.to_string())?;
-    for entry in std::fs::read_dir(source).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        if entry.file_name() == "__pycache__" {
-            continue;
-        }
-        let path = target.join(entry.file_name());
-        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
-            copy_tree(&entry.path(), &path)?;
-        } else {
-            std::fs::copy(entry.path(), path).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
-}
 pub async fn prepare(data: &Path, resource: Option<&Path>) -> Result<PathBuf, String> {
-    let dir = data.join("engines/computer");
-    let src = source(resource)?;
-    copy_tree(&src.join("taucode_cua"), &dir.join("taucode_cua"))?;
-    for name in ["pyproject.toml", "uv.lock"] {
-        std::fs::copy(src.join(name), dir.join(name)).map_err(|e| e.to_string())?;
-    }
-    let python = dir.join(".venv/bin/python");
-    if !python.is_file() {
-        let result = Command::new("uv")
-            .args(["sync", "--frozen", "--no-dev", "--python", "3.12"])
-            .current_dir(&dir)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .status()
-            .await
-            .map_err(|_| "Install uv to prepare Computer Use")?;
-        if !result.success() {
-            return Err(
-                "Computer environment installation failed; check uv and network access".into(),
-            );
-        }
-    }
-    Ok(dir)
+    crate::shared::engine_runtime::prepare(data, "computer", resource).await
 }
 pub struct Sidecar {
     child: Child,

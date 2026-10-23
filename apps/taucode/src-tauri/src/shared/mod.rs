@@ -18,6 +18,7 @@ pub(crate) mod workspaces_core;
 pub(crate) mod worktree_core;
 
 pub(crate) mod engines;
+pub(crate) mod engine_runtime;
 
 #[path = "../browser/mod.rs"]
 pub(crate) mod browser;

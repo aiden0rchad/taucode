@@ -75,12 +75,11 @@ async fn proxy(
 ) -> Result<(), String> {
     let settings = browser.settings()?;
     super::validate(&settings)?;
-    let cli = std::env::var_os("TAUCODE_BROWSER_CLI")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../engines/browser/node_modules/@playwright/mcp/cli.js")
-        });
+    let cli = match std::env::var_os("TAUCODE_BROWSER_CLI") {
+        Some(cli) => PathBuf::from(cli),
+        None => crate::shared::engine_runtime::prepare(&browser.data, "browser", None).await?
+            .join("node_modules/@playwright/mcp/cli.js"),
+    };
     if !cli.is_file() {
         return Err(
             "Playwright MCP runtime missing. Install engines/browser (@playwright/mcp@0.0.83)."

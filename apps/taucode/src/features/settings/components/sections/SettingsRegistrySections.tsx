@@ -59,6 +59,7 @@ export function SettingsProvidersSection({ appSettings, onUpdateAppSettings }: P
       </>}
       {draft.auth.type === "env" && <label>Environment variable<input required value={draft.auth.var} onChange={e => setDraft({ ...draft, auth: { type: "env", var: e.target.value } })} /></label>}
       {draft.auth.type === "command" && <>
+        <label>Auth timeout (ms)<input type="number" min="1" step="1" value={draft.auth.timeoutMs ?? 15000} onChange={e => setDraft({ ...draft, auth: { ...draft.auth as Extract<ProviderAuth, { type: "command" }>, timeoutMs: Number(e.target.value) } })} /></label>
         <label>Token command<input required value={draft.auth.command} onChange={e => setDraft({ ...draft, auth: { ...draft.auth as Extract<ProviderAuth, { type: "command" }>, command: e.target.value } })} /></label>
         <label>Arguments (one per line)<textarea value={draft.auth.args.join("\n")} onChange={e => setDraft({ ...draft, auth: { ...draft.auth as Extract<ProviderAuth, { type: "command" }>, args: e.target.value.split("\n").filter(Boolean) } })} /></label>
       </>}

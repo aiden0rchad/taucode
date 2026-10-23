@@ -19,8 +19,8 @@ fn history_pages_use_cursors_order_items_and_avoid_deprecated_hydration() {
             ("thread/resume", json!({"excludeTurns":true}), json!({"thread":{"id":"thread","turns":[]}})),
             ("thread/turns/list", json!({"cursor":null,"sortDirection":"desc","itemsView":"notLoaded"}), json!({"data":[{"id":"new","rootTurnId":"root","status":"completed"},{"id":"old","status":"completed"}],"nextCursor":"older","backwardsCursor":"back"})),
             ("thread/items/list", json!({"turnId":"old","cursor":null,"sortDirection":"asc"}), json!({"data":[{"item":{"id":"a","type":"sleep","durationMs":1}}],"nextCursor":"items-2"})),
-            ("thread/items/list", json!({"turnId":"old","cursor":"items-2"}), json!({"data":[{"item":{"id":"a","type":"sleep","durationMs":1}},{"item":{"id":"b","type":"contextCompaction"}}],"nextCursor":null})),
             ("thread/items/list", json!({"turnId":"new","cursor":null}), json!({"data":[{"item":{"id":"c","type":"agentMessage","text":"done"}}],"nextCursor":null})),
+            ("thread/items/list", json!({"turnId":"old","cursor":"items-2"}), json!({"data":[{"item":{"id":"a","type":"sleep","durationMs":1}},{"item":{"id":"b","type":"contextCompaction"}}],"nextCursor":null})),
             ("thread/turns/list", json!({"cursor":"older","sortDirection":"desc"}), json!({"data":[],"nextCursor":null,"backwardsCursor":null})),
             ("thread/read", json!({}), json!({"thread":{"id":"thread","turns":[]}})),
             ("thread/turns/list", json!({"cursor":null}), json!({"data":[],"nextCursor":null})),
@@ -66,4 +66,40 @@ fn history_rpc_errors_are_not_empty_successful_pages() {
             .contains("invalid")
     );
     assert!(history_result(json!({})).is_err());
+}
+
+#[tokio::test]
+async fn history_fetches_four_turns_concurrently_and_preserves_order() {
+    let session = make_session();
+    let stdout = session.child.lock().await.stdout.take().unwrap();
+    let mock = session.clone();
+    let server = tokio::spawn(async move {
+        let mut lines = BufReader::new(stdout).lines();
+        let request: Value = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        route_app_server_message(&mock, "fixture", &RecordingSink::default(), json!({"id":request["id"],"result":{"data":(0..9).rev().map(|i|json!({"id":i.to_string()})).collect::<Vec<_>>(),"nextCursor":null}})).await;
+        let mut max_concurrency = 0;
+        for size in [4, 4, 1] {
+            let mut pending = Vec::new();
+            for _ in 0..size {
+                let line = timeout(Duration::from_secs(2), lines.next_line()).await.unwrap().unwrap().unwrap();
+                let request: Value = serde_json::from_str(&line).unwrap();
+                assert_eq!(request["method"], "thread/items/list");
+                pending.push(request);
+            }
+            max_concurrency = max_concurrency.max(pending.len());
+            assert!(timeout(Duration::from_millis(30), lines.next_line()).await.is_err(), "more than four requests in flight");
+            for request in pending.into_iter().rev() {
+                route_app_server_message(&mock, "fixture", &RecordingSink::default(), json!({"id":request["id"],"result":{"data":[{"item":{"id":request["params"]["turnId"],"type":"contextCompaction"}}],"nextCursor":null}})).await;
+            }
+        }
+        max_concurrency
+    });
+    let sessions = Mutex::new(HashMap::from([("fixture".into(), session.clone())]));
+    let page = timeout(Duration::from_secs(5), list_thread_history_core(&sessions, "fixture".into(), "thread".into(), None)).await.unwrap().unwrap();
+    assert_eq!(server.await.unwrap(), 4);
+    for (i, turn) in page["data"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(turn["id"], i.to_string());
+        assert_eq!(turn["items"][0]["id"], i.to_string());
+    }
+    session.child.lock().await.kill().await.unwrap();
 }

@@ -106,9 +106,12 @@ pub(crate) fn validate(providers: &[ProviderEntry], policy: &AgentPolicy) -> Res
                 return Err("Enter a valid environment variable name".into());
             }
         }
-        if let ProviderAuth::Command { command, .. } = &p.auth {
+        if let ProviderAuth::Command { command, timeout_ms, .. } = &p.auth {
             if command.trim().is_empty() {
                 return Err("Enter a token command".into());
+            }
+            if *timeout_ms == Some(0) {
+                return Err("Auth command timeout must be greater than zero".into());
             }
         }
         let mut models = HashSet::new();
@@ -271,12 +274,14 @@ pub(crate) async fn token(
         ProviderAuth::Env { var } => std::env::var(var)
             .map(Some)
             .map_err(|_| format!("Set environment variable {var}")),
-        ProviderAuth::Command { command, args } => {
+        ProviderAuth::Command { command, args, timeout_ms } => {
+            let duration = Duration::from_millis(timeout_ms.unwrap_or(15_000));
+            if duration.is_zero() { return Err("Auth command timeout must be greater than zero".into()); }
             let mut child = tokio::process::Command::new(command);
-            child.args(args).kill_on_drop(true);
-            let output = tokio::time::timeout(Duration::from_secs(5), child.output())
+            child.args(args).stdin(std::process::Stdio::null()).kill_on_drop(true);
+            let output = tokio::time::timeout(duration, child.output())
                 .await
-                .map_err(|_| "Token command timed out")?
+                .map_err(|_| format!("The auth command took longer than {} s. If the script lives in an iCloud-synced folder (Desktop/Documents), move it or read the key file directly.", duration.as_secs_f64()))?
                 .map_err(|_| "Cannot run token command")?;
             if !output.status.success() {
                 return Err("Token command failed".into());
@@ -454,7 +459,11 @@ pub(crate) async fn test_and_fetch(
         .cloned()
         .ok_or("Provider not found")?;
     let start = Instant::now();
-    match tokio::time::timeout(Duration::from_secs(15), fetch(&provider, &Keychain, &Http))
+    let auth_budget = match &provider.auth {
+        ProviderAuth::Command { timeout_ms, .. } => timeout_ms.unwrap_or(15_000),
+        _ => 0,
+    };
+    match tokio::time::timeout(Duration::from_millis(auth_budget.saturating_add(15_000)), fetch(&provider, &Keychain, &Http))
         .await
         .unwrap_or_else(|_| Err("Model listing timed out".into()))
     {
@@ -531,6 +540,19 @@ mod tests {
     }
     fn provider(kind: ProviderKind) -> ProviderEntry {
         serde_json::from_value(json!({"id":"test","name":"Test","kind":kind,"auth":{"type":"apiKey"},"models":[{"id":"model","enabled":true}],"enabled":true,"baseUrl": if kind == ProviderKind::OpenaiCompatible { Some("http://localhost:1234/v1") } else { None }})).unwrap()
+    }
+    #[tokio::test]
+    async fn command_auth_timeout_is_configurable_and_actionable() {
+        let mut p = provider(ProviderKind::Openai);
+        p.auth = serde_json::from_value(json!({"type":"command","command":"/bin/sh","args":["-c","printf token"]})).unwrap();
+        assert!(matches!(p.auth, ProviderAuth::Command { timeout_ms: None, .. }));
+        assert_eq!(token(&p, &Keys::default()).await.unwrap().as_deref(), Some("token"));
+        p.auth = serde_json::from_value(json!({"type":"command","command":"/bin/sleep","args":["1"],"timeoutMs":20})).unwrap();
+        assert_eq!(token(&p, &Keys::default()).await.unwrap_err(), "The auth command took longer than 0.02 s. If the script lives in an iCloud-synced folder (Desktop/Documents), move it or read the key file directly.");
+        let (config, _) = crate::shared::engines::codex_config(&[p.clone()], &AgentPolicy::default(), Path::new("/managed")).unwrap();
+        assert!(config.contains("TAUCODE_PROVIDER_TEST_KEY"));
+        assert!(!config.contains("/bin/sleep"));
+        assert_eq!(crate::shared::pi::config::models(&[p])["providers"]["openai"]["apiKey"], "$TAUCODE_PROVIDER_TEST_KEY");
     }
     #[tokio::test]
     async fn kind_table_urls_and_headers_and_google_paging() {
@@ -769,6 +791,7 @@ mod tests {
             ProviderAuth::Command {
                 command: "token-helper".into(),
                 args: vec!["a \"quoted\" argument".into()],
+                timeout_ms: None,
             },
         ] {
             let mut p = provider(ProviderKind::Openai);

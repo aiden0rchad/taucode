@@ -1483,6 +1483,8 @@ pub(crate) enum ProviderAuth {
         command: String,
         #[serde(default)]
         args: Vec<String>,
+        #[serde(default, rename = "timeoutMs")]
+        timeout_ms: Option<u64>,
     },
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]

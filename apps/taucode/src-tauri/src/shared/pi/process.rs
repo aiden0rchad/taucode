@@ -296,12 +296,3 @@ fn redact(mut text: String, secrets: &[String]) -> String {
     }
     text
 }
-
-pub(super) async fn check_node(node: &str) -> Result<(), String> {
-    static VERSION: tokio::sync::OnceCell<Result<(), String>> = tokio::sync::OnceCell::const_new();
-    VERSION.get_or_init(||async {
-        let output=Command::new(node).arg("--version").output().await.map_err(|e|format!("Pi requires Node >=22.19. Install Node or set TAUCODE_NODE: {e}"))?;
-        let version=String::from_utf8_lossy(&output.stdout);let parts:Vec<_>=version.trim().trim_start_matches('v').split('.').filter_map(|s|s.parse::<u64>().ok()).collect();
-        if !output.status.success() || parts.len()<2 || (parts[0],parts[1])<(22,19){Err(format!("Pi requires Node >=22.19; found {}. Install a supported Node or set TAUCODE_NODE.",version.trim()))}else{Ok(())}
-    }).await.clone()
-}

@@ -30,4 +30,29 @@ fs.writeFileSync = function (path, data, options) {
     throw new Error("Taucode disables accounts and credential files. Configure an API key provider in Settings.");
   }
 };
+const empty = options => typeof options === "string" || options?.encoding ? "{}" : Buffer.from("{}");
+const denied = data => String(data).trim() !== "{}"
+  ? new Error("Taucode disables accounts and credential files. Configure an API key provider in Settings.") : null;
+const readPromise = fs.promises.readFile;
+const writePromise = fs.promises.writeFile;
+fs.promises.readFile = async function (path, options) {
+  return isAuth(path) ? empty(options) : readPromise.call(this, path, options);
+};
+fs.promises.writeFile = async function (path, data, options) {
+  if (!isAuth(path)) return writePromise.call(this, path, data, options);
+  const error = denied(data);
+  if (error) throw error;
+};
+const readCallback = fs.readFile;
+const writeCallback = fs.writeFile;
+fs.readFile = function (path, options, callback) {
+  if (!isAuth(path)) return readCallback.apply(this, arguments);
+  if (typeof options === "function") { callback = options; options = undefined; }
+  queueMicrotask(() => callback(null, empty(options)));
+};
+fs.writeFile = function (path, data, options, callback) {
+  if (!isAuth(path)) return writeCallback.apply(this, arguments);
+  if (typeof options === "function") callback = options;
+  queueMicrotask(() => callback(denied(data)));
+};
 syncBuiltinESMExports();

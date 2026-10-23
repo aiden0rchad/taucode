@@ -11,9 +11,13 @@ use tokio::{process::Command, sync::Notify, time::timeout};
 
 struct Client {
     changes: Arc<Notify>,
+    progress: tokio::sync::Mutex<Vec<ProgressNotificationParam>>,
     processes: tempfile::TempDir,
 }
 impl ClientHandler for Client {
+    async fn on_progress(&self, params: ProgressNotificationParam, _: NotificationContext<RoleClient>) {
+        self.progress.lock().await.push(params);
+    }
     async fn on_tool_list_changed(&self, _: NotificationContext<RoleClient>) {
         self.changes.notify_one();
     }
@@ -44,6 +48,7 @@ async fn start_with_key(
         Duration::from_secs(10),
         Client {
             changes: Arc::new(Notify::new()),
+            progress: Default::default(),
             processes,
         }
         .serve(TokioChildProcess::new(cmd).unwrap()),
@@ -145,7 +150,7 @@ async fn sessions_epochs_metadata_and_recovery() {
             ClientRequest::CallToolRequest(CallToolRequest::new(request(
                 "whoami",
                 Some(meta.clone()),
-            ))),
+            ).with_arguments(json!({"progress":true}).as_object().unwrap().clone()))),
             Default::default(),
         )
         .await
@@ -157,6 +162,13 @@ async fn sessions_epochs_metadata_and_recovery() {
         panic!("expected tool result");
     };
     assert_eq!(result.structured_content.unwrap()["meta"], meta);
+    let progress = client.service().progress.lock().await;
+    assert_eq!(progress.len(), 1);
+    assert_eq!(serde_json::to_value(&progress[0].progress_token).unwrap(), meta["progressToken"]);
+    assert_eq!(progress[0].progress, 1.0);
+    assert_eq!(progress[0].total, Some(2.0));
+    assert_eq!(progress[0].message.as_deref(), Some("Working"));
+    drop(progress);
 
     assert!(
         timeout(

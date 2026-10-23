@@ -560,11 +560,13 @@ impl Translator {
                 let id=format!("{}:compaction",self.turn_id());self.item(json!({"type":"contextCompaction","id":id}),false,&mut out);
             },
             "compaction_end"=>{
-                let failed=m["errorMessage"].is_string() || m["aborted"]==true || m["result"].is_null();
+                let too_small=matches!(m["errorMessage"].as_str(), Some("Nothing to compact (session too small)" | "Compaction failed: Nothing to compact (session too small)"));
+                let failed=!too_small && (m["errorMessage"].is_string() || m["aborted"]==true || m["result"].is_null());
                 let id=format!("{}:compaction",self.turn_id());
                 // The canonical compaction variant has no status field; retain failure as
                 // an extension field and emit the canonical error as well.
                 let mut item=json!({"type":"contextCompaction","id":id});
+                if too_small {item["notice"]=json!("Nothing to compact yet");}
                 if failed {item["status"]=json!("failed");let msg=m["errorMessage"].as_str().unwrap_or("Pi compaction cancelled");out.push(self.event("error",json!({"turnId":self.turn_id(),"error":error(msg),"willRetry":false})));if self.compaction_only{self.failure=Some(msg.into());}}
                 self.item(item,true,&mut out);
                 if m["willRetry"]==true && !failed{self.failure=None;}

@@ -287,10 +287,23 @@ impl PiEngine {
             .join("pi/agent")
             .join(&s.workspace);
         let mut env = config::prepare(&home, registry, self.graph.as_ref(), self.keys.as_ref())?;
+        for p in registry.iter().filter(|p| p.enabled) {
+            if matches!(p.auth, crate::types::ProviderAuth::Command { .. }) {
+                if let Some(key) = providers::token(p, self.keys.as_ref()).await? {
+                    env.insert(super::engines::key_env(&p.id), key);
+                }
+            }
+        }
         let delivery = super::connectors::delivery(&connectors, self.keys.as_ref())?;
         config::write_json(&home.join("mcp.json"), &delivery.pi)?;
         config::write_json(&home.join("taucode/connectors.json"), &json!(connectors))?;
         env.extend(delivery.env);
+        let mut secrets = delivery.secrets;
+        for p in registry.iter().filter(|p| p.enabled) {
+            if let Some(value) = env.get(&super::engines::key_env(&p.id)) {
+                secrets.push(value.clone());
+            }
+        }
         let id = s.thread["id"].as_str().ok_or("Pi session missing ID")?;
         config::write_policy(&home, registry, policy)?;
         config::write_access(&home, id, None)?;
@@ -304,17 +317,16 @@ impl PiEngine {
         let node = if self.fake { "python3".into() } else { node };
         #[cfg(test)]
         if !self.fake {
-            process::check_node(&node).await?;
+            super::engine_runtime::check_node(std::ffi::OsStr::new(&node)).await?;
         }
-        #[cfg(not(test))]
-        process::check_node(&node).await?;
-        let cli = std::env::var_os("TAUCODE_PI_CLI")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                Path::new(env!("CARGO_MANIFEST_DIR")).join(
-                    "../engines/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js",
-                )
-            });
+        let runtime = {
+            #[cfg(test)]
+            if self.fake { None } else { Some(super::engine_runtime::source("pi", None)?) }
+            #[cfg(not(test))]
+            Some(super::engine_runtime::prepare(self.data.as_ref().unwrap(), "pi", None).await?)
+        };
+        let cli = std::env::var_os("TAUCODE_PI_CLI").map(PathBuf::from)
+            .unwrap_or_else(|| runtime.as_ref().map(|dir| dir.join("node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js")).unwrap_or_default());
         #[cfg(test)]
         let cli = if self.fake {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake_pi.py")
@@ -328,7 +340,7 @@ impl PiEngine {
             );
         }
         let mut command = Command::new(node);
-        let guard = Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/pi/no-accounts.mjs");
+        let guard = runtime.as_ref().map(|dir| dir.join("no-accounts.mjs")).unwrap_or_default();
         #[cfg(test)]
         if !self.fake {
             command.arg("--import").arg(&guard).env("PI_OFFLINE", "1");
@@ -391,7 +403,7 @@ impl PiEngine {
             emit,
             self.graph.clone(),
             self.idle,
-            delivery.secrets,
+            secrets,
         )
         .await?;
         let state = match p.request(json!({"type":"get_state"})).await {
@@ -757,7 +769,10 @@ impl PiEngine {
                 json!({})
             }
             "thread/compact/start" => {
-                p.request(json!({"type":"compact"})).await?;
+                match p.request(json!({"type":"compact"})).await {
+                    Err(error) if error == "Nothing to compact (session too small)" => (),
+                    result => { result?; }
+                }
                 json!({})
             }
             "thread/name/set" => {

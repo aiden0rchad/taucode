@@ -399,6 +399,11 @@ export async function compactThread(workspaceId: string, threadId: string) {
   return invoke<any>("compact_thread", { workspaceId, threadId });
 }
 
+export type EngineRuntimeStatus = { engine: string; state: string; message: string };
+export function engineRuntime(action: "status" | "prepare", engine?: string) {
+  return invoke<EngineRuntimeStatus[]>("engine_runtime", { action, engine: engine ?? null });
+}
+
 function isInlineImageUrl(image: string) {
   return (
     image.startsWith("data:") ||

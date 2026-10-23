@@ -17,6 +17,16 @@ function Providers({ initial = [] }: { initial?: ProviderEntry[] }) {
 describe("provider registry settings", () => {
   afterEach(cleanup);
   beforeEach(() => { vi.resetAllMocks(); vi.mocked(providerHasApiKey).mockResolvedValue(false); });
+  it("defaults auth commands to 15 seconds and saves a provider override", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const commandProvider: ProviderEntry = { ...provider, auth: { type: "command", command: "/bin/key", args: [] } };
+    render(<SettingsProvidersSection appSettings={{ providers: [commandProvider] } as AppSettings} onUpdateAppSettings={save} />);
+    fireEvent.click(screen.getByText("Edit Local"));
+    expect((screen.getByLabelText("Auth timeout (ms)") as HTMLInputElement).value).toBe("15000");
+    fireEvent.change(screen.getByLabelText("Auth timeout (ms)"), { target: { value: "30000" } });
+    fireEvent.click(screen.getByText("Save provider"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ providers: [expect.objectContaining({ auth: { type: "command", command: "/bin/key", args: [], timeoutMs: 30000 } })] })));
+  });
   it("uses presets, writes a masked key, and adds manual models", async () => {
     render(<Providers />);
     fireEvent.click(screen.getByText("Add provider"));

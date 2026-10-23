@@ -245,8 +245,8 @@ export function buildConversationItem(
       id,
       kind: "tool",
       toolType: type,
-      title: "Context compaction",
-      detail: "Compacting conversation context to fit token limits.",
+      title: asString(item.notice ?? "Context compaction"),
+      detail: item.notice ? "" : "Compacting conversation context to fit token limits.",
       status: status || "completed",
       output: "",
     };
