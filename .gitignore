@@ -8,3 +8,4 @@ dist/
 .cargo-home/
 .codegraph-taucode/
 .cargo-home/
+.playwright-mcp/
