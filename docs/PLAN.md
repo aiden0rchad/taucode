@@ -531,3 +531,10 @@ the M0 engine module is kept only where it beats CodexMonitor's backend.
   download method in 0.164).
 - **pi compaction on tiny sessions** returns "Nothing to compact"; the UI should say "nothing
   to compact yet" rather than show an error toast.
+- **Computer-use grounding without UI-TARS (measured 2026-10-23):** on a synthetic 1920×1080 UI
+  with known element boxes, general vision models answering "pixel (x, y) of the center of
+  <element>" scored: GPT 6 Astra 5/5, Claude Haiku 5.5 5/5, Gemini 3.8 Flash 3/5, Qwen 3.8
+  Flash Next 3/5, GLM 5.3 0/5. M3 settings must allow any registry vision model as the
+  grounding model ("pixel coordinates of the sent image", screenshot downscaled to a known
+  size), with UI-TARS as an optional preset. The probe script lives in session notes; port it
+  into `engines/computer` as an eval.
