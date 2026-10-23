@@ -156,7 +156,21 @@ async fn run_turn(
     timeout(Duration::from_secs(600), async {
         let mut inline_delta = false;
         loop {
-            match events.recv().await? {
+            let event = match events.recv().await {
+                Ok(event) => event,
+                Err(broadcast::error::RecvError::Lagged(count)) => {
+                    if inline_delta {
+                        println!();
+                        inline_delta = false;
+                    }
+                    println!("warning event stream lagged by {count} messages");
+                    continue;
+                }
+                Err(broadcast::error::RecvError::Closed) => {
+                    bail!("engine event stream closed")
+                }
+            };
+            match event {
                 EngineEvent::Notification(message) => {
                     let method = message["method"].as_str().unwrap_or("unknown");
                     if method == "item/agentMessage/delta" {
@@ -180,7 +194,10 @@ async fn run_turn(
                         if status == "completed" {
                             return Ok(());
                         }
-                        bail!("turn {turn_id} ended with status {status}");
+                        let error = message["params"]["turn"]["error"]["message"]
+                            .as_str()
+                            .unwrap_or("unknown error");
+                        bail!("turn {turn_id} ended with status {status}: {error}");
                     }
                 }
                 EngineEvent::ServerRequest(message) => {
@@ -250,6 +267,19 @@ fn print_thread(response: &Value) -> Result<()> {
 
 fn summary(message: &Value) -> String {
     match message["method"].as_str() {
+        Some("error") => format!(
+            "{} (willRetry={})",
+            message["params"]["error"]["message"]
+                .as_str()
+                .unwrap_or("unknown error"),
+            message["params"]["willRetry"]
+                .as_bool()
+                .map_or_else(|| "unknown".to_owned(), |retry| retry.to_string())
+        ),
+        Some("warning") => message["params"]["message"]
+            .as_str()
+            .unwrap_or("unknown warning")
+            .to_owned(),
         Some("item/started" | "item/completed") => message["params"]["item"]["type"]
             .as_str()
             .unwrap_or("item")
@@ -260,10 +290,19 @@ fn summary(message: &Value) -> String {
                 .as_str()
                 .map_or(0, str::len)
         ),
-        Some("turn/started" | "turn/completed") => message["params"]["turn"]["status"]
+        Some("turn/started") => message["params"]["turn"]["status"]
             .as_str()
             .unwrap_or("turn")
             .to_owned(),
+        Some("turn/completed") => {
+            let status = message["params"]["turn"]["status"]
+                .as_str()
+                .unwrap_or("turn");
+            match message["params"]["turn"]["error"]["message"].as_str() {
+                Some(error) => format!("{status}: {error}"),
+                None => status.to_owned(),
+            }
+        }
         _ => String::new(),
     }
 }

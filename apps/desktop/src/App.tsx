@@ -122,6 +122,8 @@ function App() {
                     text: notification.params.delta,
                     phase: null,
                     memoryCitation: null,
+                    delivery: null,
+                    questions: null,
                   },
                 ];
           });
