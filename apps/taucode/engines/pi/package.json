@@ -1,0 +1,12 @@
+{
+  "name": "taucode-engine-pi",
+  "private": true,
+  "description": "Pinned pi coding agent runtime used by taucode's pi engine",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.4.0"
+  }
+}
