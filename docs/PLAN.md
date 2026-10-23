@@ -15,8 +15,9 @@ main on 2026-10-22.
 > - ✅ M1-D1/D2: pi as default engine (in-thread model switching), approval gate,
 >   policy-enforced subagents
 > - ✅ M1-E: MCP connectors (no OAuth), codegraph built in
-> - 🔄 M2: built-in browser (shared Chrome via CDP + playwright-mcp), in progress
-> - ⏳ M3: computer use (Agent-S3 planner vendored, Rust capture/input); live test needs macOS
+> - ✅ M2: built-in browser (shared Chrome via CDP + playwright-mcp, pane, approvals,
+>   process cleanup); the pane UI is unit-tested only, so check it by hand
+> - 🔄 M3: computer use (in progress) (Agent-S3 planner vendored, Rust capture/input); live test needs macOS
 >   Screen Recording + Accessibility granted by the user
 
 > **Decisions, 2026-10-23 (these override older text below where they conflict):**
