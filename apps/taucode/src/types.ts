@@ -113,6 +113,9 @@ export type CollabAgentRef = {
 
 export type CollabAgentStatus = CollabAgentRef & {
   status: string;
+  message?: string;
+  model?: string;
+  usage?: { input: number; output: number; cost: number };
 };
 
 export type AgentMessageMetadata = Partial<Pick<

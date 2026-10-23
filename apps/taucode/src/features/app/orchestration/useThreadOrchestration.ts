@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { pushErrorToast } from "@/services/toasts";
+import { setThreadAccessMode } from "@services/tauri";
 import type {
   AccessMode,
 
@@ -35,6 +36,7 @@ type PersistThreadCodexParams = (
 ) => void;
 
 type UseThreadSelectionHandlersOrchestrationParams = {
+  activeWorkspaceId?: string | null;
   appSettingsLoading: boolean;
   setAppSettings: SetState<AppSettings>;
   queueSaveSettings: (next: AppSettings) => Promise<AppSettings | void>;
@@ -273,6 +275,7 @@ export function useThreadCodexSyncOrchestration({
 }
 
 export function useThreadSelectionHandlersOrchestration({
+  activeWorkspaceId,
   appSettingsLoading,
   setAppSettings,
   queueSaveSettings,
@@ -358,8 +361,11 @@ export function useThreadSelectionHandlersOrchestration({
     (mode: AccessMode) => {
       setAccessMode(mode);
       persistThreadCodexParams({ accessMode: mode });
+      if (activeWorkspaceId && activeThreadIdRef.current) {
+        void setThreadAccessMode(activeWorkspaceId, activeThreadIdRef.current, mode).catch(error => pushErrorToast({ title: "Could not update thread access", message: String(error) }));
+      }
     },
-    [persistThreadCodexParams, setAccessMode],
+    [activeWorkspaceId, activeThreadIdRef, persistThreadCodexParams, setAccessMode],
   );
 
   const handleSelectCodexArgsOverride = useCallback(

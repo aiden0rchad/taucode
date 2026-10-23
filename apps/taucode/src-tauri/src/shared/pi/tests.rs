@@ -164,6 +164,134 @@ fn extension_ui_round_trip_and_login_rejection() {
         &json!({"title":"Please /login to continue"})
     ));
 }
+
+#[tokio::test]
+async fn gate_approvals_use_canonical_items_decisions_and_resolve() {
+    let dir = temp();
+    let (p, events) = fake(Duration::from_secs(600), &dir.join("eof")).await;
+    p.receive(json!({"type":"agent_start"})).await;
+    for (tool, kind) in [
+        ("bash", "commandExecution"),
+        ("write", "fileChange"),
+        ("edit", "fileChange"),
+    ] {
+        let request = json!({"type":"extension_ui_request","id":tool,"method":"select","title":format!("taucode:approval:{}",json!({"toolCallId":format!("call-{tool}"),"tool":tool,"command":"echo oauth","path":".env","cwd":"/workspace"})),"options":["Allow","Allow for session","Block"]});
+        let mapped = translate::ui_request(&request, "fake-thread", "turn");
+        assert_eq!(mapped["method"], format!("item/{kind}/requestApproval"));
+        assert_eq!(mapped["params"]["itemId"], format!("call-{tool}"));
+        for (decision, expected) in [
+            ("accept", "Allow"),
+            ("acceptForSession", "Allow for session"),
+            ("decline", "Block"),
+            ("cancel", "Block"),
+            ("unknown", "Block"),
+        ] {
+            assert_eq!(
+                translate::ui_response(&request, &json!({"decision":decision}))["value"],
+                expected
+            );
+        }
+        p.receive(request).await;
+        let id = format!("pi:fake-thread:{tool}");
+        p.answer(&id, json!({"decision":"acceptForSession"}))
+            .await
+            .unwrap();
+        let events = events.lock().unwrap();
+        assert!(events.iter().any(|e| e["method"] == "item/started"
+            && e["params"]["item"]["id"] == format!("call-{tool}")
+            && e["params"]["item"]["type"] == kind));
+        assert!(events
+            .iter()
+            .any(|e| e["method"] == "serverRequest/resolved" && e["params"]["requestId"] == id));
+    }
+    p.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn recorded_subagents_stream_states_outputs_and_usage_without_double_counting() {
+    let (mut t, events) = replay("rpc_subagents.jsonl");
+    let item = t
+        .turns
+        .iter()
+        .flat_map(|t| t["items"].as_array().unwrap())
+        .find(|i| i["type"] == "collabAgentToolCall")
+        .unwrap()
+        .clone();
+    assert_eq!(item["status"], "completed");
+    let states = item["agentsStates"].as_object().unwrap();
+    assert_eq!(states.len(), 2);
+    assert!(states.values().all(|s| s["status"] == "completed"
+        && s["model"] == "GLM 5.3"
+        && s["message"].as_str().is_some_and(|s| !s.is_empty())));
+    assert_eq!(
+        states
+            .values()
+            .map(|s| s["usage"]["input"].as_u64().unwrap())
+            .sum::<u64>(),
+        3481
+    );
+    assert!(events.iter().any(|e| e["method"] == "item/started"
+        && e["params"]["item"]["agentsStates"]
+            .as_object()
+            .is_some_and(|s| s.values().any(
+                |s| s["status"] == "running" && s["usage"]["turns"].as_u64().unwrap_or(0) > 0
+            ))));
+    let last: Value = fixture("rpc_subagents.jsonl")
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .find(|r| r["msg"]["type"] == "tool_execution_end" && r["msg"]["toolName"] == "subagent")
+        .unwrap()["msg"]
+        .clone();
+    let total = t.total.clone();
+    t.apply(&last);
+    assert_eq!(t.total, total);
+    let mut paid = last;
+    paid["result"]["details"]["results"][0]["usage"]["cost"] = json!(0.125);
+    let before = t.cost;
+    let updated = t.apply(&paid);
+    assert_eq!(t.cost, before + 0.125);
+    assert!(updated
+        .iter()
+        .any(|e| e["method"] == "thread/tokenUsage/updated"
+            && e["params"]["tokenUsage"]["total"]["cost"] == t.cost));
+}
+
+#[test]
+fn managed_policy_and_access_files_update_and_preserve_session_rules() {
+    let dir = temp();
+    let home = dir.join("pi/agent/workspace");
+    let mut policy = AgentPolicy::default();
+    config::write_policy(&home, &[], &policy).unwrap();
+    let read =
+        |path: &Path| serde_json::from_slice::<Value>(&std::fs::read(path).unwrap()).unwrap();
+    assert_eq!(read(&home.join("taucode/policy.json"))["maxConcurrent"], 4);
+    policy.subagents.max_concurrent = 2;
+    config::write_policy(&home, &[], &policy).unwrap();
+    assert_eq!(read(&home.join("taucode/policy.json"))["maxConcurrent"], 2);
+    config::write_access(&home, "thread", Some("current")).unwrap();
+    let file = home.join("taucode/threads/thread.json");
+    assert_eq!(read(&file)["accessMode"], "ask");
+    config::write_json(
+        &file,
+        &json!({"accessMode":"ask","sessionAllow":[{"tool":"write","path":"/workspace/file"}]}),
+    )
+    .unwrap();
+    config::write_access(&home, "thread", Some("read-only")).unwrap();
+    assert_eq!(read(&file)["sessionAllow"].as_array().unwrap().len(), 1);
+    assert_eq!(read(&file)["accessMode"], "read-only");
+    assert!(config::write_access(&home, "../escape", None).is_err());
+    assert!(config::write_access(&home, "thread", Some("invalid")).is_err());
+    let workspace: crate::types::WorkspaceEntry = serde_json::from_value(json!({"id":"workspace","name":"Project","path":dir,"settings":{"agentPolicy":{"subagents":{"maxConcurrent":7}}}})).unwrap();
+    crate::storage::write_workspaces(&dir.join("workspaces.json"), &[workspace]).unwrap();
+    let mut settings = crate::types::AppSettings::default();
+    settings.agent_policy.subagents.max_per_turn = 12;
+    config::sync_policies(&dir, &settings).unwrap();
+    let merged = read(&home.join("taucode/policy.json"));
+    assert_eq!(merged["maxConcurrent"], 7);
+    assert_eq!(merged["maxPerTurn"], 12);
+    std::fs::remove_dir_all(dir).unwrap();
+}
 struct Keys;
 impl KeyStore for Keys {
     fn get(&self, _: &str) -> Result<Option<String>, String> {
@@ -449,13 +577,16 @@ async fn engine_switches_in_place_clones_and_respawns_after_idle() {
     engine.keys = Arc::new(Keys);
     engine.idle = Duration::from_millis(60);
     let providers:Vec<ProviderEntry>=["first","second"].iter().map(|id|serde_json::from_value(json!({"id":id,"name":id,"kind":"ollama","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"fake","enabled":true}]})).unwrap()).collect();
-    engine.configure(providers, AgentPolicy::default()).await;
+    engine
+        .configure("workspace", providers, AgentPolicy::default())
+        .await;
     let started = engine
         .request("workspace", "thread/start", json!({"model":"first/fake"}))
         .await
         .unwrap();
     let id = started["result"]["thread"]["id"].as_str().unwrap();
     let original = engine.sessions.lock().await[id].process.clone().unwrap();
+    assert_eq!(started["result"]["sandbox"]["type"], "workspaceWrite");
     engine
         .request(
             "workspace",
@@ -464,6 +595,24 @@ async fn engine_switches_in_place_clones_and_respawns_after_idle() {
         )
         .await
         .unwrap();
+    engine
+        .request(
+            "workspace",
+            "thread/accessMode/set",
+            json!({"threadId":id,"accessMode":"read-only"}),
+        )
+        .await
+        .unwrap();
+    let access: Value = serde_json::from_slice(
+        &std::fs::read(
+            dir.join("pi/agent/workspace/taucode/threads")
+                .join(format!("{id}.json")),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(access["accessMode"], "read-only");
+    assert_eq!(original.translator.lock().await.access_mode, "read-only");
     engine
         .request("workspace", "turn/interrupt", json!({"threadId":id}))
         .await
@@ -556,7 +705,7 @@ async fn real_pi_offline_startup_preserves_isolation_and_session_identity() {
     );
     let provider:ProviderEntry=serde_json::from_value(json!({"id":"local","name":"Offline","kind":"ollama","enabled":true,"auth":{"type":"none"},"models":[{"id":"taucode-offline-test","enabled":true}]})).unwrap();
     engine
-        .configure(vec![provider], AgentPolicy::default())
+        .configure("workspace", vec![provider], AgentPolicy::default())
         .await;
     // get_state only; no prompt, provider connection or credential lookup. The
     // test build explicitly sets PI_OFFLINE=1 on the child.

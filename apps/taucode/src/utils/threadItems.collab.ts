@@ -123,7 +123,7 @@ function parseCollabAgentStatusesFromMap(value: unknown) {
       if (!status || !threadId) {
         return null;
       }
-      return buildCollabAgentStatus(
+      const entry = buildCollabAgentStatus(
         threadId,
         status,
         stateRecord?.agentNickname ??
@@ -133,8 +133,15 @@ function parseCollabAgentStatusesFromMap(value: unknown) {
           stateRecord?.agent_role ??
           stateRecord?.agentType ??
           stateRecord?.agent_type ??
-          stateRecord?.role,
+          stateRecord?.role ?? stateRecord?.agent,
       );
+      if (entry && stateRecord) {
+        if (typeof stateRecord.message === "string") entry.message = stateRecord.message;
+        if (typeof stateRecord.model === "string") entry.model = stateRecord.model;
+        const usage = stateRecord.usage as Record<string, unknown> | undefined;
+        if (usage && [usage.input, usage.output, usage.cost].every(n => typeof n === "number" && Number.isFinite(n))) entry.usage = { input: usage.input as number, output: usage.output as number, cost: usage.cost as number };
+      }
+      return entry;
     })
     .filter((entry): entry is CollabAgentStatus => Boolean(entry));
 }
@@ -200,7 +207,7 @@ function formatCollabAgentStatuses(value: CollabAgentStatus[]) {
     return "";
   }
   return value
-    .map((entry) => `${formatCollabAgentLabel(entry)}: ${entry.status}`)
+    .map((entry) => `${formatCollabAgentLabel(entry)}: ${entry.status}${entry.model ? ` · ${entry.model}` : ""}${entry.usage ? ` · ${entry.usage.input} in / ${entry.usage.output} out · $${entry.usage.cost.toFixed(4)}` : ""}${entry.message ? `\n${entry.message}` : ""}`)
     .join("\n");
 }
 

@@ -520,7 +520,7 @@ export async function startReview(
 export async function respondToServerRequest(
   workspaceId: string,
   requestId: number | string,
-  decision: "accept" | "decline",
+  decision: "accept" | "acceptForSession" | "decline",
 ) {
   return invoke("respond_to_server_request", {
     workspaceId,
@@ -839,6 +839,10 @@ export async function isMobileRuntime(): Promise<boolean> {
 
 export async function updateAppSettings(settings: AppSettings): Promise<AppSettings> {
   return invoke<AppSettings>("update_app_settings", { settings });
+}
+
+export async function setThreadAccessMode(workspaceId: string, threadId: string, accessMode: import("@/types").AccessMode): Promise<void> {
+  await invoke("set_thread_access_mode", { workspaceId, threadId, accessMode });
 }
 
 export async function tailscaleStatus(): Promise<TailscaleStatus> {

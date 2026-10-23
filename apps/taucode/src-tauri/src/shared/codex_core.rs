@@ -505,6 +505,28 @@ pub(crate) async fn compact_thread_core(
         .await
 }
 
+pub(crate) async fn set_thread_access_mode_core(
+    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    workspace_id: String,
+    thread_id: String,
+    access_mode: String,
+) -> Result<Value, String> {
+    if !matches!(
+        access_mode.as_str(),
+        "current" | "ask" | "read-only" | "full-access"
+    ) {
+        return Err("Invalid access mode".into());
+    }
+    get_session_clone(sessions, &workspace_id)
+        .await?
+        .send_request_for_workspace(
+            &workspace_id,
+            "thread/accessMode/set",
+            json!({"threadId":thread_id,"accessMode":access_mode}),
+        )
+        .await
+}
+
 pub(crate) async fn set_thread_name_core(
     sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
     workspace_id: String,

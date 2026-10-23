@@ -328,6 +328,7 @@ export default function MainApp() {
     handleSelectAccessMode,
     handleSelectCodexArgsOverride,
   } = useThreadSelectionHandlersOrchestration({
+    activeWorkspaceId,
     appSettingsLoading,
     setAppSettings,
     queueSaveSettings,

@@ -213,13 +213,16 @@ impl WorkspaceSession {
         }
     }
     fn current_configuration(&self) -> (Vec<ProviderEntry>, AgentPolicy) {
+        self.configuration_for(&self.owner_workspace_id)
+    }
+    fn configuration_for(&self, workspace: &str) -> (Vec<ProviderEntry>, AgentPolicy) {
         if let Some(home) = crate::codex::home::resolve_default_codex_home() {
             if let Some(data) = home.parent().and_then(Path::parent) {
                 if let Ok(settings) = crate::storage::read_settings(&data.join("settings.json")) {
                     let workspaces = crate::storage::read_workspaces(&data.join("workspaces.json"))
                         .unwrap_or_default();
                     let over = workspaces
-                        .get(&self.owner_workspace_id)
+                        .get(workspace)
                         .and_then(|w| w.settings.agent_policy.as_ref());
                     return (
                         settings.providers,
@@ -298,8 +301,10 @@ impl WorkspaceSession {
         method: &str,
         mut params: Value,
     ) -> Result<Value, String> {
-        let (providers, policy) = self.current_configuration();
-        self.pi.configure(providers.clone(), policy.clone()).await;
+        let (providers, policy) = self.configuration_for(workspace);
+        self.pi
+            .configure(workspace, providers.clone(), policy.clone())
+            .await;
         if method == "model/list" {
             return Ok(providers::catalog(&providers));
         }
@@ -344,6 +349,10 @@ impl WorkspaceSession {
                 self.owners.lock().await.insert(id.into(), EngineKind::Pi);
             }
             return Ok(response);
+        }
+        // Codex access is sent with the next turn, as before. Pi re-reads it live.
+        if method == "thread/accessMode/set" {
+            return Ok(json!({"result":{}}));
         }
         if method == "turn/start" && params.get("model").and_then(Value::as_str).is_none() {
             let id = thread_id.as_deref().ok_or("Missing thread ID")?;

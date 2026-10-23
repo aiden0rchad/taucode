@@ -238,6 +238,7 @@ pub fn run() {
             codex::archive_thread,
             codex::compact_thread,
             codex::set_thread_name,
+            codex::set_thread_access_mode,
             codex::collaboration_mode_list,
             workspaces::connect_workspace,
             git::get_git_status,

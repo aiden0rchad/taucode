@@ -87,13 +87,105 @@ pub(super) fn mcp(setup: Option<&CodegraphSetup>) -> Value {
 }
 
 pub(crate) fn write_json(path: &Path, value: &Value) -> Result<(), String> {
+    write_file(path, &serde_json::to_vec(value).map_err(|e| e.to_string())?)
+}
+
+fn write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let temp = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
-    let result = std::fs::write(&temp, serde_json::to_vec(value).map_err(|e| e.to_string())?)
-        .and_then(|_| std::fs::rename(&temp, path));
+    let result = std::fs::write(&temp, bytes).and_then(|_| std::fs::rename(&temp, path));
     if result.is_err() {
         let _ = std::fs::remove_file(temp);
     }
     result.map_err(|e| e.to_string())
+}
+
+pub(crate) fn write_policy(
+    home: &Path,
+    registry: &[ProviderEntry],
+    policy: &AgentPolicy,
+) -> Result<(), String> {
+    std::fs::create_dir_all(home.join("taucode/threads")).map_err(|e| e.to_string())?;
+    let key = |m: &ModelRef| format!("{}/{}", m.provider_id, m.model_id);
+    let mut value = serde_json::to_value(&policy.subagents).map_err(|e| e.to_string())?;
+    value["allowedModels"] = json!(policy
+        .subagents
+        .allowed_models
+        .iter()
+        .map(&key)
+        .collect::<Vec<_>>());
+    value["defaultModel"] = json!(policy.subagents.default_model.as_ref().map(&key));
+    for (v, role) in value["roles"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .zip(&policy.subagents.roles)
+    {
+        v["model"] = json!(role.model.as_ref().map(&key));
+    }
+    let mut models = serde_json::Map::new();
+    for p in registry.iter().filter(|p| p.enabled) {
+        for m in p.models.iter().filter(|m| m.enabled) {
+            models.insert(
+                format!("{}/{}", p.id, m.id),
+                json!(format!("{}/{}", provider_id(p, registry), m.id)),
+            );
+        }
+    }
+    value["models"] = Value::Object(models);
+    write_json(&home.join("taucode/policy.json"), &value)
+}
+
+pub(crate) fn sync_policies(data: &Path, settings: &AppSettings) -> Result<(), String> {
+    let workspaces = crate::storage::read_workspaces(&data.join("workspaces.json"))?;
+    for (id, workspace) in workspaces {
+        if !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            || id.is_empty()
+        {
+            continue;
+        }
+        let home = data.join("pi/agent").join(id);
+        if home.exists() {
+            write_policy(
+                &home,
+                &settings.providers,
+                &providers::effective_policy(
+                    &settings.agent_policy,
+                    workspace.settings.agent_policy.as_ref(),
+                ),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn write_access(home: &Path, id: &str, mode: Option<&str>) -> Result<(), String> {
+    if id.is_empty()
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err("Invalid pi session ID".into());
+    }
+    std::fs::create_dir_all(home.join("taucode/threads")).map_err(|e| e.to_string())?;
+    let file = home.join("taucode/threads").join(format!("{id}.json"));
+    if mode.is_none() && file.exists() {
+        return Ok(());
+    }
+    let mode = match mode.unwrap_or("ask") {
+        "current" | "ask" => "ask",
+        "read-only" => "read-only",
+        "full-access" => "full-access",
+        _ => return Err("Invalid access mode".into()),
+    };
+    let mut value = match std::fs::read(&file) {
+        Ok(bytes) => serde_json::from_slice::<Value>(&bytes).map_err(|e| e.to_string())?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => json!({"sessionAllow":[]}),
+        Err(e) => return Err(e.to_string()),
+    };
+    value["accessMode"] = json!(mode);
+    write_json(&file, &value)
 }
 
 pub(super) fn prepare(
@@ -103,6 +195,27 @@ pub(super) fn prepare(
     keys: &dyn KeyStore,
 ) -> Result<HashMap<String, String>, String> {
     std::fs::create_dir_all(home.join("extensions")).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(home.join("extensions/lib")).map_err(|e| e.to_string())?;
+    for (name, source) in [
+        (
+            "taucode-gate.ts",
+            include_str!("../../../../engines/pi/extensions/taucode-gate.ts"),
+        ),
+        (
+            "taucode-subagents.ts",
+            include_str!("../../../../engines/pi/extensions/taucode-subagents.ts"),
+        ),
+        (
+            "lib/policy.ts",
+            include_str!("../../../../engines/pi/extensions/lib/policy.ts"),
+        ),
+        (
+            "LICENSE",
+            include_str!("../../../../engines/pi/extensions/LICENSE"),
+        ),
+    ] {
+        write_file(&home.join("extensions").join(name), source.as_bytes())?;
+    }
     if home.join("auth.json").exists() {
         return Err("Remove auth.json from taucode's isolated pi home; accounts and logins are not supported".into());
     }

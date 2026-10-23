@@ -35,6 +35,7 @@ pub(super) struct Translator {
     pub active: bool,
     pub model: Value,
     pub provider: String,
+    pub access_mode: String,
     pub total: Value,
     pub cost: f64,
     pub queue: Value,
@@ -57,6 +58,7 @@ impl Translator {
             active: false,
             model: Value::Null,
             provider: String::new(),
+            access_mode: "ask".into(),
             total: json!({"totalTokens":0,"inputTokens":0,"cachedInputTokens":0,"cacheWriteInputTokens":0,"outputTokens":0,"reasoningOutputTokens":0}),
             cost: 0.0,
             queue: json!({}),
@@ -194,7 +196,11 @@ impl Translator {
             last[canonical] = json!(n);
             self.total[canonical] = json!(self.total[canonical].as_u64().unwrap_or(0) + n);
         }
-        self.cost += u["cost"]["total"].as_f64().unwrap_or(0.0);
+        self.cost += u["cost"]["total"]
+            .as_f64()
+            .or(u["cost"].as_f64())
+            .unwrap_or(0.0);
+        self.total["cost"] = json!(self.cost);
         out.push(self.event("thread/tokenUsage/updated",json!({"turnId":self.turn_id(),"tokenUsage":{"last":last,"total":self.total,"modelContextWindow":self.model["contextWindow"]}})));
     }
     fn message_end(&mut self, m: &Value, out: &mut Vec<Value>) {
@@ -246,6 +252,15 @@ impl Translator {
         self.tools
             .insert(id.into(), json!({"name":name,"arguments":a}));
         let item = match name {
+            "subagent" => {
+                let tasks = a["tasks"]
+                    .as_array()
+                    .or(a["chain"].as_array())
+                    .cloned()
+                    .unwrap_or_else(|| vec![a.clone()]);
+                let states: serde_json::Map<String, Value> = tasks.iter().enumerate().map(|(i, task)| (format!("{id}:agent:{i}"), json!({"status":"running","message":task["task"],"task":task["task"],"agent":task["agent"],"model":task["model"],"usage":null}))).collect();
+                json!({"type":"collabAgentToolCall","id":id,"tool":"spawnAgent","status":"inProgress","senderThreadId":self.thread,"receiverThreadIds":states.keys().collect::<Vec<_>>(),"prompt":tasks.iter().filter_map(|t|t["task"].as_str()).collect::<Vec<_>>().join("\n\n"),"model":a["model"],"reasoningEffort":null,"agentsStates":states})
+            }
             "bash" => {
                 json!({"type":"commandExecution","id":id,"pluginId":null,"scriptPath":null,"command":a["command"].as_str().unwrap_or(""),"cwd":self.cwd,"processId":null,"source":"agent","status":"inProgress","commandActions":[],"aggregatedOutput":"","exitCode":null,"durationMs":null})
             }
@@ -299,6 +314,22 @@ impl Translator {
         };
         self.item(item, false, out);
     }
+    pub fn approval_item(&mut self, a: &Value) -> Vec<Value> {
+        let mut out = vec![];
+        let id = a["toolCallId"].as_str().unwrap_or("");
+        if self.find(id).is_none() {
+            let args = self
+                .tools
+                .get(id)
+                .map(|t| t["arguments"].clone())
+                .unwrap_or_else(|| json!({"command":a["command"],"path":a["path"]}));
+            self.tool_start(
+                &json!({"toolCallId":id,"toolName":a["tool"],"args":args}),
+                &mut out,
+            );
+        }
+        out
+    }
     fn tool_end(&mut self, m: &Value, done: bool, out: &mut Vec<Value>) {
         let id = m["toolCallId"].as_str().unwrap_or("");
         let Some(mut item) = self.find(id) else {
@@ -310,6 +341,69 @@ impl Translator {
             item["status"] = json!(if failed { "failed" } else { "completed" });
         }
         match item["type"].as_str().unwrap_or("") {
+            "collabAgentToolCall" => {
+                for (i, r) in result["details"]["results"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                {
+                    let agent_id = format!("{id}:agent:{i}");
+                    let bad = r["exitCode"].as_i64().is_some_and(|n| n > 0)
+                        || matches!(r["stopReason"].as_str(), Some("error" | "aborted"))
+                        || r["status"] == "failed";
+                    let terminal = done
+                        || r["status"] == "completed"
+                        || (r["status"].is_null() && r["stopReason"] == "stop");
+                    let status = if bad {
+                        "errored"
+                    } else if terminal {
+                        "completed"
+                    } else {
+                        "running"
+                    };
+                    let message = r["messages"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .rev()
+                        .find(|m| m["role"] == "assistant")
+                        .map(|m| text(&m["content"]))
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| r["stderr"].as_str().unwrap_or("").into());
+                    // Snapshots contain cumulative usage. Only add the increment, including
+                    // updates followed by final tool results and duplicate completion frames.
+                    let old = &item["agentsStates"][&agent_id]["usage"];
+                    let mut delta = json!({});
+                    for key in ["input", "output", "cacheRead", "cacheWrite"] {
+                        delta[key] = json!(r["usage"][key]
+                            .as_u64()
+                            .unwrap_or(0)
+                            .saturating_sub(old[key].as_u64().unwrap_or(0)));
+                    }
+                    delta["totalTokens"] = json!(["input", "output", "cacheRead", "cacheWrite"]
+                        .iter()
+                        .map(|k| delta[k].as_u64().unwrap_or(0))
+                        .sum::<u64>());
+                    delta["cost"] = json!((r["usage"]["cost"].as_f64().unwrap_or(0.0)
+                        - old["cost"].as_f64().unwrap_or(0.0))
+                    .max(0.0));
+                    if delta["totalTokens"] != 0 || delta["cost"].as_f64().unwrap_or(0.0) > 0.0 {
+                        self.usage(&delta, out);
+                    }
+                    item["agentsStates"][&agent_id] = json!({"status":status,"message":message,"agent":r["agent"],"task":r["task"],"model":r["model"],"usage":r["usage"]});
+                }
+                if done
+                    && item["agentsStates"]
+                        .as_object()
+                        .is_some_and(|s| s.values().any(|v| v["status"] == "errored"))
+                {
+                    item["status"] = json!("failed");
+                }
+                if !done {
+                    out.push(self.item_event("item/started", &item));
+                }
+            }
             "commandExecution" => {
                 // Pi persists content, but omits structuredContent from toolResult.
                 let output = text(&result["content"]);
@@ -417,6 +511,7 @@ impl Translator {
                             &self.provider
                         },
                         self.model["id"].as_str().unwrap_or(""),
+                        &self.access_mode,
                     ));
                 }
                 _ => (),
@@ -533,6 +628,10 @@ pub(super) fn login_requested(m: &Value) -> bool {
         .any(|s| text.contains(s))
 }
 pub(super) fn ui_request(m: &Value, thread: &str, turn: &str) -> Value {
+    if let Some(approval) = approval(m) {
+        let bash = approval["tool"] == "bash";
+        return json!({"id":format!("pi:{thread}:{}",m["id"].as_str().unwrap_or("")),"method":if bash {"item/commandExecution/requestApproval"} else {"item/fileChange/requestApproval"},"params":{"threadId":thread,"turnId":turn,"itemId":approval["toolCallId"],"approvalId":m["id"],"command":approval["command"],"cwd":approval["cwd"],"reason":if bash {json!("Pi requests permission to run this command")}else{json!(format!("Pi requests permission to change {}",approval["path"].as_str().unwrap_or("")))},"availableDecisions":["accept","acceptForSession","decline","cancel"],"grantRoot":null,"diffPreview":approval["diffPreview"]}});
+    }
     let options = if m["method"] == "confirm" {
         json!(["Yes", "No"])
     } else {
@@ -542,6 +641,14 @@ pub(super) fn ui_request(m: &Value, thread: &str, turn: &str) -> Value {
 }
 pub(super) fn ui_response(request: &Value, answer: &Value) -> Value {
     let mut response = json!({"type":"extension_ui_response","id":request["id"]});
+    if approval(request).is_some() {
+        response["value"] = json!(match answer["decision"].as_str() {
+            Some("accept") => "Allow",
+            Some("acceptForSession") => "Allow for session",
+            _ => "Block",
+        });
+        return response;
+    }
     if let Some(value) = answer
         .pointer("/answers/answer/answers/0")
         .and_then(Value::as_str)
@@ -557,6 +664,28 @@ pub(super) fn ui_response(request: &Value, answer: &Value) -> Value {
     response
 }
 
-fn settings_event(id: &str, cwd: &str, provider: &str, model: &str) -> Value {
-    json!({"method":"thread/settings/updated","params":{"threadId":id,"threadSettings":{"disabledPluginIds":[],"cwd":cwd,"approvalPolicy":"never","approvalsReviewer":"user","sandboxPolicy":{"type":"dangerFullAccess"},"activePermissionProfile":null,"model":model,"modelProvider":provider,"serviceTier":null,"effort":null,"summary":null,"collaborationMode":{"mode":"default","settings":{"model":model,"reasoning_effort":null,"developer_instructions":null}},"multiAgentMode":"explicitRequestOnly","personality":null}}})
+pub(super) fn approval(m: &Value) -> Option<Value> {
+    if m["method"] != "select" {
+        return None;
+    }
+    let value: Value =
+        serde_json::from_str(m["title"].as_str()?.strip_prefix("taucode:approval:")?).ok()?;
+    if !matches!(value["tool"].as_str(), Some("bash" | "write" | "edit"))
+        || value["toolCallId"].as_str()?.is_empty()
+        || !value["cwd"].is_string()
+    {
+        return None;
+    }
+    Some(value)
+}
+
+pub(super) fn sandbox(mode: &str, cwd: &str) -> Value {
+    match mode {
+        "full-access" => json!({"type":"dangerFullAccess"}),
+        "read-only" => json!({"type":"readOnly"}),
+        _ => json!({"type":"workspaceWrite","writableRoots":[cwd],"networkAccess":false}),
+    }
+}
+fn settings_event(id: &str, cwd: &str, provider: &str, model: &str, mode: &str) -> Value {
+    json!({"method":"thread/settings/updated","params":{"threadId":id,"threadSettings":{"disabledPluginIds":[],"cwd":cwd,"approvalPolicy":if mode == "full-access" {"never"}else{"on-request"},"approvalsReviewer":"user","sandboxPolicy":sandbox(mode,cwd),"activePermissionProfile":null,"model":model,"modelProvider":provider,"serviceTier":null,"effort":null,"summary":null,"collaborationMode":{"mode":"default","settings":{"model":model,"reasoning_effort":null,"developer_instructions":null}},"multiAgentMode":"explicitRequestOnly","personality":null}}})
 }

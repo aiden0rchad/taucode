@@ -22,6 +22,7 @@ pub(super) struct Process {
     pub operation: Mutex<()>,
     pub alive: AtomicBool,
     pub running: AtomicBool,
+    pub extensions: Mutex<std::collections::HashSet<String>>,
     child: Mutex<Child>,
     stdin: Mutex<Option<ChildStdin>>,
     pending: Mutex<HashMap<String, oneshot::Sender<Result<Value, String>>>>,
@@ -55,6 +56,7 @@ impl Process {
             operation: Mutex::new(()),
             alive: AtomicBool::new(true),
             running: AtomicBool::new(false),
+            extensions: Mutex::new(Default::default()),
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),
             pending: Mutex::new(HashMap::new()),
@@ -152,7 +154,14 @@ impl Process {
         }
         if m["type"] == "extension_ui_request" {
             let method = m["method"].as_str().unwrap_or("");
-            if translate::login_requested(&m) {
+            if method == "setStatus" && m["statusText"] == "ready" {
+                if let Some(key @ ("taucode-gate" | "taucode-subagents")) = m["statusKey"].as_str()
+                {
+                    self.extensions.lock().await.insert(key.into());
+                    return;
+                }
+            }
+            if translate::approval(&m).is_none() && translate::login_requested(&m) {
                 for event in self.translator.lock().await.fail(
                     "Accounts and logins are disabled. Configure an API key provider in Settings.",
                 ) {
@@ -170,7 +179,13 @@ impl Process {
                 );
                 return;
             }
-            let t = self.translator.lock().await;
+            let mut t = self.translator.lock().await;
+            // tool_call approval can precede tool_execution_start in pi.
+            if let Some(a) = translate::approval(&m) {
+                for event in t.approval_item(&a) {
+                    (self.emit)(event);
+                }
+            }
             let request = translate::ui_request(&m, &t.thread, &t.turn_id());
             drop(t);
             let id = request["id"].as_str().unwrap().to_owned();

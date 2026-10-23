@@ -61,4 +61,14 @@ describe("provider registry settings", () => {
     expect(screen.getByRole("alert").textContent).toContain("must be in allowed models");
     expect((screen.getByText("Save policy") as HTMLButtonElement).disabled).toBe(true);
   });
+  it("shows engine enforcement and the merged workspace policy", () => {
+    const workspace = { id: "ws", name: "Project", path: "/project", connected: true, settings: { sidebarCollapsed: false, agentPolicy: { subagents: { maxConcurrent: 2 } } } };
+    render(<SettingsAgentPolicySection workspace={workspace} appSettings={{ agentPolicy: defaultAgentPolicy } as AppSettings} onUpdateAppSettings={vi.fn()} />);
+    expect(screen.getAllByText("Max per turn: pi").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Allowed models: pi").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Max concurrent: pi, codex").length).toBeGreaterThan(0);
+    expect(screen.getByText("Effective policy for Project (app + workspace)")).toBeTruthy();
+    expect((screen.getAllByLabelText("Max concurrent")[1] as HTMLInputElement).value).toBe("2");
+    expect((screen.getAllByLabelText("Max per turn")[1] as HTMLInputElement).value).toBe("8");
+  });
 });

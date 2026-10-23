@@ -382,6 +382,27 @@ pub(crate) async fn set_thread_name(
 }
 
 #[tauri::command]
+pub(crate) async fn set_thread_access_mode(
+    workspace_id: String,
+    thread_id: String,
+    access_mode: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Value, String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        return remote_backend::call_remote(
+            &*state,
+            app,
+            "set_thread_access_mode",
+            json!({"workspaceId":workspace_id,"threadId":thread_id,"accessMode":access_mode}),
+        )
+        .await;
+    }
+    codex_core::set_thread_access_mode_core(&state.sessions, workspace_id, thread_id, access_mode)
+        .await
+}
+
+#[tauri::command]
 pub(crate) async fn send_user_message(
     workspace_id: String,
     thread_id: String,

@@ -20,6 +20,7 @@ import { SETTINGS_SECTION_LABELS } from "./settingsViewConstants";
 import { SettingsSectionContainers } from "./sections/SettingsSectionContainers";
 
 export type SettingsViewProps = {
+  activeWorkspace?: WorkspaceInfo | null;
   workspaceGroups: WorkspaceGroup[];
   groupedWorkspaces: Array<{
     id: string | null;
@@ -69,6 +70,7 @@ export type SettingsViewProps = {
 };
 
 export function SettingsView({
+  activeWorkspace,
   workspaceGroups,
   groupedWorkspaces,
   ungroupedLabel,
@@ -194,7 +196,7 @@ export function SettingsView({
             )}
             <div className="settings-content">
               {activeSection === "providers" ? <SettingsProvidersSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
-               activeSection === "agents" ? <SettingsAgentPolicySection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
+               activeSection === "agents" ? <SettingsAgentPolicySection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} workspace={activeWorkspace} /> :
                <SettingsSectionContainers
                 activeSection={activeSection}
                 orchestration={orchestration}

@@ -30,6 +30,17 @@ const approvals: ApprovalRequest[] = [
 ];
 
 describe("ApprovalToasts", () => {
+  it.each(["commandExecution", "fileChange"])("uses the shared approval controls for pi %s including session approval", (kind) => {
+    const onDecision = vi.fn();
+    const request: ApprovalRequest = { workspace_id: "workspace-1", request_id: "pi:thread:approval", method: `item/${kind}/requestApproval`, params: { command: "npm test", availableDecisions: ["accept", "acceptForSession", "decline", "cancel"] } };
+    const { unmount } = render(<ApprovalToasts approvals={[request]} workspaces={workspaces} onDecision={onDecision} onRemember={vi.fn()} />);
+    fireEvent.click(screen.getByText("Allow for session"));
+    expect(onDecision).toHaveBeenCalledWith(request, "acceptForSession");
+    expect(screen.queryByText("Always allow")).toBeNull();
+    fireEvent.click(screen.getByText("Decline"));
+    expect(onDecision).toHaveBeenCalledWith(request, "decline");
+    unmount();
+  });
   it("renders live-region semantics and handles Enter on primary request", () => {
     const onDecision = vi.fn();
     render(

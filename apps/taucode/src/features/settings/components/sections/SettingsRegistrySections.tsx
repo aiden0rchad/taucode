@@ -83,13 +83,17 @@ export function AgentPolicyEditor({ policy, providers, onChange }: { policy: Age
   const sub = policy.subagents;
   const modelSelect = (label: string, value: string, change: (value: string) => void) => <label>{label}<select value={value} onChange={e => change(e.target.value)}><option value="">Inherit</option>{models.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</select></label>;
   return <div className="registry-policy">
+    <p>Engine enforcement: pi enforces every field. Codex enforces max concurrent, max depth, default subagent model, and roles.</p>
     <label>Default engine<select value={policy.defaultEngine} onChange={e => onChange({ ...policy, defaultEngine: e.target.value as AgentPolicy["defaultEngine"] })}><option value="pi">pi</option><option value="codex">codex</option></select></label>
     {modelSelect("Default model", modelKey(policy.defaultModel), v => onChange({ ...policy, defaultModel: modelRef(v) }))}
+    <small>Enable subagents: pi</small>
     <label><input type="checkbox" checked={sub.enabled} onChange={e => onChange({ ...policy, subagents: { ...sub, enabled: e.target.checked } })} />Enable subagents</label>
-    {([["maxConcurrent", "Max concurrent", 16], ["maxPerTurn", "Max per turn", 32], ["maxDepth", "Max depth", 3]] as const).map(([field, label, max]) => <label key={field}>{label}<input type="number" min={1} max={max} value={sub[field]} onChange={e => onChange({ ...policy, subagents: { ...sub, [field]: Number(e.target.value) } })} /></label>)}
+    {([["maxConcurrent", "Max concurrent", 16], ["maxPerTurn", "Max per turn", 32], ["maxDepth", "Max depth", 3]] as const).map(([field, label, max]) => <div key={field}><small>{label}: {field === "maxPerTurn" ? "pi" : "pi, codex"}</small><label>{label}<input type="number" min={1} max={max} value={sub[field]} onChange={e => onChange({ ...policy, subagents: { ...sub, [field]: Number(e.target.value) } })} /></label></div>)}
+    <small>Allowed models: pi</small>
     <label>Allowed models (empty means any enabled model)<select multiple value={sub.allowedModels.map(modelKey)} onChange={e => onChange({ ...policy, subagents: { ...sub, allowedModels: Array.from(e.target.selectedOptions).flatMap(o => { const m = modelRef(o.value); return m ? [m] : []; }) } })}>{models.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</select></label>
+    <small>Default subagent model: pi, codex</small>
     {modelSelect("Default subagent model", modelKey(sub.defaultModel), v => onChange({ ...policy, subagents: { ...sub, defaultModel: modelRef(v) } }))}
-    <h3>Roles</h3>
+    <h3>Roles</h3><small>Name, description, model, tool access, instructions: pi, codex</small>
     {sub.roles.map((role, index) => {
       const change = (patch: Partial<typeof role>) => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.map((r, i) => i === index ? { ...r, ...patch } : r) } });
       return <fieldset key={index}><legend>Role {index + 1}</legend>
@@ -104,20 +108,21 @@ export function AgentPolicyEditor({ policy, providers, onChange }: { policy: Age
     <button type="button" onClick={() => onChange({ ...policy, subagents: { ...sub, roles: [...sub.roles, { name: "role-" + (sub.roles.length + 1), description: "", model: null, toolAccess: "read-only", instructions: "" }] } })}>Add role</button>
   </div>;
 }
-export function SettingsAgentPolicySection({ appSettings, onUpdateAppSettings }: Props) {
+export function SettingsAgentPolicySection({ appSettings, onUpdateAppSettings, workspace }: Props & { workspace?: WorkspaceInfo | null }) {
   const [policy, setPolicy] = useState(appSettings.agentPolicy ?? defaultAgentPolicy);
   const [error, setError] = useState("");
   const validation = policyError(policy, appSettings.providers ?? []);
   return <section className="settings-section registry-settings"><h2>Agents</h2>
     <AgentPolicyEditor policy={policy} providers={appSettings.providers ?? []} onChange={setPolicy} />
     {(validation || error) && <p role="alert">{validation || error}</p>}
+    {workspace && <details open><summary>Effective policy for {workspace.name} (app + workspace)</summary><fieldset disabled><AgentPolicyEditor policy={mergePolicy(appSettings.agentPolicy ?? defaultAgentPolicy, workspace.settings.agentPolicy)} providers={appSettings.providers ?? []} onChange={() => {}} /></fieldset></details>}
     <button type="button" disabled={!!validation} onClick={() => void onUpdateAppSettings({ ...appSettings, agentPolicy: policy }).then(() => setError("")).catch(e => setError(String(e)))}>Save policy</button>
   </section>;
 }
 export function ProjectAgentPolicy({ workspace, appSettings, onUpdate }: { workspace: WorkspaceInfo; appSettings: AppSettings; onUpdate: (id: string, settings: Partial<WorkspaceSettings>) => Promise<void> }) {
   const base = appSettings.agentPolicy ?? defaultAgentPolicy;
   const override = workspace.settings.agentPolicy;
-  const effective = { ...base, ...override, subagents: { ...base.subagents, ...override?.subagents } };
+  const effective = mergePolicy(base, override);
   const [policy, setPolicy] = useState(effective);
   const [error, setError] = useState("");
   const validation = policyError(policy, appSettings.providers ?? []);
@@ -127,4 +132,8 @@ export function ProjectAgentPolicy({ workspace, appSettings, onUpdate }: { works
     <button type="button" disabled={!!validation} onClick={() => void onUpdate(workspace.id, { agentPolicy: policy }).catch(e => setError(String(e)))}>Save project override</button>
     <button type="button" onClick={() => void onUpdate(workspace.id, { agentPolicy: null }).then(() => setPolicy(base)).catch(e => setError(String(e)))}>Use app policy</button>
   </details>;
+}
+
+function mergePolicy(base: AgentPolicy, override: WorkspaceSettings["agentPolicy"]): AgentPolicy {
+  return { ...base, ...override, defaultModel: override?.defaultModel ?? base.defaultModel, subagents: { ...base.subagents, ...override?.subagents, defaultModel: override?.subagents?.defaultModel ?? base.subagents.defaultModel } };
 }

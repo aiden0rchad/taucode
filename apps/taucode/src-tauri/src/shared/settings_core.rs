@@ -69,6 +69,10 @@ pub(crate) async fn update_app_settings_core(
             &home.join("models.json"),
             &super::pi::config::models(&settings.providers),
         )?;
+        super::pi::config::sync_policies(
+            settings_path.parent().ok_or("Missing settings directory")?,
+            &settings,
+        )?;
     }
     let mut current = app_settings.lock().await;
     *current = settings.clone();

@@ -610,6 +610,15 @@ where
         workspaces.values().cloned().collect()
     };
     write_workspaces(storage_path, &list)?;
+    let app = _app_settings.lock().await;
+    if !matches!(app.backend_mode, crate::types::BackendMode::Remote) {
+        crate::shared::pi::config::sync_policies(
+            storage_path
+                .parent()
+                .ok_or("Missing workspace storage directory")?,
+            &app,
+        )?;
+    }
     Ok(WorkspaceInfo {
         id: entry_snapshot.id,
         name: entry_snapshot.name,

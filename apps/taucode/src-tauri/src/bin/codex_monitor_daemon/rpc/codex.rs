@@ -175,6 +175,29 @@ pub(super) async fn try_handle(
             };
             Some(state.compact_thread(workspace_id, thread_id).await)
         }
+        "set_thread_access_mode" => {
+            let workspace = match parse_string(params, "workspaceId") {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
+            let thread = match parse_string(params, "threadId") {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
+            let mode = match parse_string(params, "accessMode") {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
+            Some(
+                crate::shared::codex_core::set_thread_access_mode_core(
+                    &state.sessions,
+                    workspace,
+                    thread,
+                    mode,
+                )
+                .await,
+            )
+        }
         "set_thread_name" => {
             let workspace_id = match parse_string(params, "workspaceId") {
                 Ok(value) => value,

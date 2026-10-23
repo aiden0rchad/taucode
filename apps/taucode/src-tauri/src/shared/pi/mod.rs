@@ -38,7 +38,7 @@ pub(crate) struct PiEngine {
     data: Option<PathBuf>,
     pub paths: Mutex<HashMap<String, String>>,
     sessions: Mutex<HashMap<String, Session>>,
-    registry: Mutex<(Vec<ProviderEntry>, AgentPolicy)>,
+    registry: Mutex<HashMap<String, (Vec<ProviderEntry>, AgentPolicy)>>,
     events: broadcast::Sender<Value>,
     sink: Sink,
     graph: Option<CodegraphSetup>,
@@ -53,7 +53,7 @@ impl Default for PiEngine {
             data: None,
             paths: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
-            registry: Mutex::new((vec![], AgentPolicy::default())),
+            registry: Mutex::new(HashMap::new()),
             events: broadcast::channel(1024).0,
             sink: Arc::new(|_, _| {}),
             graph: None,
@@ -80,8 +80,16 @@ impl PiEngine {
             ..Self::default()
         }
     }
-    pub async fn configure(&self, registry: Vec<ProviderEntry>, policy: AgentPolicy) {
-        *self.registry.lock().await = (registry, policy);
+    pub async fn configure(
+        &self,
+        workspace: &str,
+        registry: Vec<ProviderEntry>,
+        policy: AgentPolicy,
+    ) {
+        self.registry
+            .lock()
+            .await
+            .insert(workspace.into(), (registry, policy));
     }
     pub async fn credentials_changed(&self) {
         for session in self.sessions.lock().await.values_mut() {
@@ -133,7 +141,14 @@ impl PiEngine {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
             Err(e) => return Err(e.to_string()),
         };
-        let registry = self.registry.lock().await.0.clone();
+        let registry = self
+            .registry
+            .lock()
+            .await
+            .get(workspace)
+            .cloned()
+            .unwrap_or_default()
+            .0;
         let mut sessions = self.sessions.lock().await;
         let mut threads = vec![];
         for entry in entries {
@@ -246,7 +261,7 @@ impl PiEngine {
         registry: &[ProviderEntry],
         policy: &AgentPolicy,
     ) -> Result<Arc<Process>, String> {
-        let fingerprint = serde_json::to_string(&(registry, policy)).map_err(|e| e.to_string())?;
+        let fingerprint = serde_json::to_string(registry).map_err(|e| e.to_string())?;
         if let Some(p) = &s.process {
             if p.alive.load(Ordering::SeqCst) && s.configuration == fingerprint {
                 return Ok(p.clone());
@@ -263,10 +278,17 @@ impl PiEngine {
             .data
             .as_ref()
             .ok_or("Pi runtime is not configured")?
-            .join("pi/agent");
+            .join("pi/agent")
+            .join(&s.workspace);
         let mut env = config::prepare(&home, registry, self.graph.as_ref(), self.keys.as_ref())?;
         let id = s.thread["id"].as_str().ok_or("Pi session missing ID")?;
+        config::write_policy(&home, registry, policy)?;
+        config::write_access(&home, id, None)?;
         env.insert("TAUCODE_SESSION_KEY".into(), id.into());
+        env.insert(
+            "TAUCODE_WORKSPACE".into(),
+            s.thread["cwd"].as_str().ok_or("Missing cwd")?.into(),
+        );
         let node = std::env::var("TAUCODE_NODE").unwrap_or_else(|_| "node".into());
         #[cfg(test)]
         let node = if self.fake { "python3".into() } else { node };
@@ -304,7 +326,14 @@ impl PiEngine {
         #[cfg(not(test))]
         command.arg("--import").arg(&guard);
         command
+            .env("TAUCODE_PI_CLI", &cli)
+            .env_remove("TAUCODE_SUBAGENT_DEPTH")
+            .env_remove("TAUCODE_TOOL_ACCESS")
             .arg(cli)
+            .arg("-e")
+            .arg(home.join("extensions/taucode-gate.ts"))
+            .arg("-e")
+            .arg(home.join("extensions/taucode-subagents.ts"))
             .args([
                 "--no-approve",
                 "--no-extensions",
@@ -325,6 +354,14 @@ impl PiEngine {
             .envs(env);
         let (_, history) = read_session(&s.file, registry)?;
         let mut translator = history;
+        translator.access_mode = serde_json::from_slice::<Value>(
+            &std::fs::read(home.join("taucode/threads").join(format!("{id}.json")))
+                .map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?["accessMode"]
+            .as_str()
+            .unwrap_or("ask")
+            .into();
         translator.provider = provider.id.clone();
         translator.model = json!({"id":model,"provider":config::provider_id(provider,registry),"contextWindow":provider.models.iter().find(|m|m.id==model).and_then(|m|m.context_window)});
         let events = self.events.clone();
@@ -345,6 +382,20 @@ impl PiEngine {
         if state["sessionId"] != id {
             let _ = p.shutdown().await;
             return Err("Pi resumed an unexpected session ID".into());
+        }
+        let require_extensions = {
+            #[cfg(test)]
+            {
+                !self.fake
+            }
+            #[cfg(not(test))]
+            {
+                true
+            }
+        };
+        if require_extensions && p.extensions.lock().await.len() != 2 {
+            let _ = p.shutdown().await;
+            return Err("Pi policy extensions did not load; refusing to run without the approval gate and subagent policy".into());
         }
         if state["model"]["id"] != model
             || state["model"]["provider"] != config::provider_id(provider, registry)
@@ -370,7 +421,19 @@ impl PiEngine {
                 json!({"result":{"data":data,"nextCursor":next,"backwardsCursor":null,"readStates":null}}),
             );
         }
-        let (registry, policy) = self.registry.lock().await.clone();
+        let (registry, policy) = self
+            .registry
+            .lock()
+            .await
+            .get(workspace)
+            .cloned()
+            .unwrap_or_default();
+        if let Some(data) = &self.data {
+            let home = data.join("pi/agent").join(workspace);
+            if home.exists() {
+                config::write_policy(&home, &registry, &policy)?;
+            }
+        }
         if method == "model/list" {
             return Ok(providers::catalog(&registry));
         }
@@ -408,7 +471,7 @@ impl PiEngine {
                 workspace,
                 json!({"method":"thread/started","params":{"thread":thread}}),
             );
-            return Ok(json!({"result":thread_response(thread, false)}));
+            return Ok(json!({"result":thread_response(thread, false, "ask")}));
         }
         let id = params["threadId"].as_str().ok_or("Missing thread ID")?;
         if !self.sessions.lock().await.contains_key(id) {
@@ -419,6 +482,33 @@ impl PiEngine {
             .get_mut(id)
             .filter(|s| s.workspace == workspace)
             .ok_or("Unknown pi thread")?;
+        if method == "thread/accessMode/set" || method == "turn/start" {
+            let mode = params["accessMode"].as_str().or_else(|| {
+                match params["sandboxPolicy"]["type"].as_str() {
+                    Some("dangerFullAccess") => Some("full-access"),
+                    Some("readOnly") => Some("read-only"),
+                    Some("workspaceWrite") => Some("ask"),
+                    _ => None,
+                }
+            });
+            if method == "thread/accessMode/set" && mode.is_none() {
+                return Err("Missing access mode".into());
+            }
+            let home = self
+                .data
+                .as_ref()
+                .ok_or("Pi runtime is not configured")?
+                .join("pi/agent")
+                .join(workspace);
+            config::write_access(&home, id, mode)?;
+            if let (Some(p), Some(mode)) = (&s.process, mode) {
+                p.translator.lock().await.access_mode =
+                    if mode == "current" { "ask" } else { mode }.into();
+            }
+            if method == "thread/accessMode/set" {
+                return Ok(json!({"result":{}}));
+            }
+        }
         if matches!(
             method,
             "thread/read" | "thread/turns/list" | "thread/items/list"
@@ -563,7 +653,7 @@ impl PiEngine {
                 workspace,
                 json!({"method":"thread/started","params":{"thread":notification}}),
             );
-            return Ok(json!({"result":thread_response(cloned, false)}));
+            return Ok(json!({"result":thread_response(cloned, false, "ask")}));
         }
         if method == "turn/start" {
             if p.running.load(Ordering::SeqCst) || p.translator.lock().await.active {
@@ -614,7 +704,7 @@ impl PiEngine {
             "thread/resume" => {
                 let mut thread = thread;
                 thread["turns"] = json!(p.translator.lock().await.turns);
-                thread_response(thread, true)
+                thread_response(thread, true, &p.translator.lock().await.access_mode)
             }
             "turn/steer" => {
                 let (message, images) = prompt_input(&params["input"])?;
@@ -731,8 +821,8 @@ fn thread_value(id: &str, cwd: &str, file: &Path) -> Value {
     let now = chrono::Utc::now().timestamp();
     json!({"id":id,"engine":"pi","sessionId":id,"environments":null,"extra":null,"forkedFromId":null,"parentThreadId":null,"preview":"","ephemeral":false,"section":null,"sectionEnteredAt":null,"projectId":null,"historyMode":"paginated","modelProvider":"","model":null,"reasoningEffort":null,"createdAt":now,"updatedAt":now,"recencyAt":now,"status":{"type":"idle"},"path":file,"cwd":cwd,"cliVersion":"1.4.0","originator":"taucode","source":{"custom":"taucode-pi"},"canAcceptDirectInput":true,"threadSource":null,"agentNickname":null,"agentRole":null,"gitInfo":null,"name":null,"daybreakEnabled":null,"turns":[]})
 }
-fn thread_response(thread: Value, resume: bool) -> Value {
-    let mut response = json!({"model":thread["model"],"modelProvider":thread["modelProvider"],"cwd":thread["cwd"],"runtimeWorkspaceRoots":[thread["cwd"]],"instructionSources":[],"disabledPluginIds":[],"serviceTier":null,"approvalPolicy":"never","approvalsReviewer":"user","sandbox":{"type":"dangerFullAccess"},"activePermissionProfile":null,"reasoningEffort":null,"multiAgentMode":"explicitRequestOnly","thread":thread});
+fn thread_response(thread: Value, resume: bool, mode: &str) -> Value {
+    let mut response = json!({"model":thread["model"],"modelProvider":thread["modelProvider"],"cwd":thread["cwd"],"runtimeWorkspaceRoots":[thread["cwd"]],"instructionSources":[],"disabledPluginIds":[],"serviceTier":null,"approvalPolicy":if mode == "full-access" {"never"}else{"on-request"},"approvalsReviewer":"user","sandbox":translate::sandbox(mode,thread["cwd"].as_str().unwrap_or("")),"activePermissionProfile":null,"reasoningEffort":null,"multiAgentMode":"explicitRequestOnly","thread":thread});
     if resume {
         for key in [
             "collaborationMode",

@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { pushErrorToast } from "@/services/toasts";
+import { setThreadAccessMode } from "@services/tauri";
 import type { AccessMode, AppSettings } from "@/types";
 import type { PendingNewThreadSeed } from "@threads/utils/threadCodexParamsSeed";
 import {
@@ -14,6 +15,16 @@ import {
 vi.mock("@/services/toasts", () => ({
   pushErrorToast: vi.fn(),
 }));
+vi.mock("@services/tauri", () => ({ setThreadAccessMode: vi.fn().mockResolvedValue(undefined) }));
+
+it("writes access changes to an active thread immediately", async () => {
+  const params = makeSelectionParams();
+  params.activeWorkspaceId = "ws";
+  params.activeThreadIdRef.current = "pi-thread";
+  const { result } = renderHook(() => useThreadSelectionHandlersOrchestration(params));
+  act(() => result.current.handleSelectAccessMode("read-only"));
+  await waitFor(() => expect(setThreadAccessMode).toHaveBeenCalledWith("ws", "pi-thread", "read-only"));
+});
 
 type SelectionParams = Parameters<typeof useThreadSelectionHandlersOrchestration>[0];
 type SyncParams = Parameters<typeof useThreadCodexSyncOrchestration>[0];

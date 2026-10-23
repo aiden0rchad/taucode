@@ -61,6 +61,18 @@ const fixtures = import.meta.glob<string>("/src-tauri/tests/fixtures/codex-0.164
   query: "?raw", import: "default", eager: true,
 });
 
+it("updates pi subagent progress in place and retains each model, output and usage", () => {
+  const { result } = renderHook(() => useReplay(vi.fn()));
+  const send = (method: string, item: Record<string, unknown>) => act(() => receive({ workspace_id: "pi-workspace", message: { method, params: { threadId: "pi-session", turnId: "pi-turn", item } } }));
+  const base = { type: "collabAgentToolCall", id: "subagent", tool: "spawnAgent", status: "inProgress", senderThreadId: "pi-session", receiverThreadIds: ["subagent:agent:0"], prompt: "Find add", model: null, reasoningEffort: null };
+  send("item/started", { ...base, agentsStates: { "subagent:agent:0": { status: "running", agent: "scout", message: "Searching", model: "local/small", usage: { input: 4, output: 1, cost: 0.01 } } } });
+  send("item/started", { ...base, agentsStates: { "subagent:agent:0": { status: "running", agent: "scout", message: "Found source", model: "local/small", usage: { input: 8, output: 2, cost: 0.02 } } } });
+  expect(result.current.itemsByThread["pi-session"]).toHaveLength(1);
+  expect(result.current.itemsByThread["pi-session"][0]).toMatchObject({ output: expect.stringContaining("Found source") });
+  send("item/completed", { ...base, status: "completed", agentsStates: { "subagent:agent:0": { status: "completed", agent: "scout", message: "src/add.ts:3", model: "local/small", usage: { input: 8, output: 3, cost: 0.03 } } } });
+  expect(result.current.itemsByThread["pi-session"][0]).toMatchObject({ output: expect.stringContaining("src/add.ts:3"), collabStatuses: [{ status: "completed", model: "local/small", message: "src/add.ts:3", usage: { input: 8, output: 3, cost: 0.03 } }] });
+});
+
 describe("0.164 recorded frontend traffic", () => {
   it.each(Object.entries(fixtures))("replays %s", (path, contents) => {
     const name = path.split("/").pop();
