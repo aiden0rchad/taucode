@@ -5,8 +5,10 @@ use crate::{
 };
 use serde_json::{json, Value};
 use std::{
+    io::Write,
     path::{Path, PathBuf},
     process::Stdio,
+    sync::{Arc, Mutex},
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -101,9 +103,137 @@ pub struct Sidecar {
     input: ChildStdin,
     output: BufReader<tokio::io::Take<ChildStdout>>,
     id: u64,
+    log: Arc<Mutex<SidecarLog>>,
+    logger: tokio::task::JoinHandle<()>,
+    flush: tokio::sync::mpsc::Sender<tokio::sync::oneshot::Sender<()>>,
 }
+
+const LOG_LIMIT: u64 = 2 * 1024 * 1024;
+pub fn setup_error(data: &Path, error: String) -> String {
+    match SidecarLog::open(data, vec![]) {
+        Ok(log) => log.with_error(error),
+        Err(_) => error,
+    }
+}
+struct SidecarLog {
+    path: PathBuf,
+    file: std::fs::File,
+    size: u64,
+    secrets: Vec<String>,
+    error: Option<String>,
+    pending: Vec<u8>,
+}
+impl SidecarLog {
+    fn open(data: &Path, secrets: Vec<String>) -> Result<Self, String> {
+        let dir = data.join("computer/logs");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| e.to_string())?;
+        }
+        let path = dir.join("sidecar.log");
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|e| e.to_string())?;
+        let size = file.metadata().map_err(|e| e.to_string())?.len();
+        Ok(Self {
+            path,
+            file,
+            size,
+            secrets,
+            error: None,
+            pending: Vec::new(),
+        })
+    }
+    fn write(&mut self, bytes: &[u8], eof: bool) -> std::io::Result<()> {
+        self.pending.extend_from_slice(bytes);
+        let mut redacted = Vec::new();
+        let mut consumed = 0;
+        while consumed < self.pending.len() {
+            let remaining = &self.pending[consumed..];
+            if !eof
+                && self
+                    .secrets
+                    .iter()
+                    .any(|s| s.len() > remaining.len() && s.as_bytes().starts_with(remaining))
+            {
+                break; // Retain a credential split across stderr reads.
+            }
+            if let Some(secret) = self
+                .secrets
+                .iter()
+                .find(|s| !s.is_empty() && remaining.starts_with(s.as_bytes()))
+            {
+                redacted.extend_from_slice(b"[REDACTED]");
+                consumed += secret.len();
+            } else {
+                redacted.push(remaining[0]);
+                consumed += 1;
+            }
+        }
+        self.pending.drain(..consumed);
+        let mut bytes = redacted.as_slice();
+        while !bytes.is_empty() {
+            if self.size >= LOG_LIMIT {
+                // Keep two backups in addition to the active log.
+                let first = self.path.with_extension("log.1");
+                if first.exists() {
+                    std::fs::rename(&first, self.path.with_extension("log.2"))?;
+                }
+                std::fs::rename(&self.path, first)?;
+                self.file = std::fs::File::create(&self.path)?;
+                self.size = 0;
+            }
+            let n = bytes.len().min((LOG_LIMIT - self.size) as usize);
+            self.file.write_all(&bytes[..n])?;
+            self.size += n as u64;
+            bytes = &bytes[n..];
+        }
+        Ok(())
+    }
+    fn with_error(&self, error: String) -> String {
+        let mut bytes = Vec::new();
+        for path in [
+            self.path.with_extension("log.2"),
+            self.path.with_extension("log.1"),
+            self.path.clone(),
+        ] {
+            if let Ok(mut file) = std::fs::File::open(path) {
+                use std::io::{Read, Seek, SeekFrom};
+                let _ = file
+                    .seek(SeekFrom::End(-65536))
+                    .or_else(|_| file.seek(SeekFrom::Start(0)));
+                let _ = file.take(65536).read_to_end(&mut bytes);
+            }
+        }
+        let text = String::from_utf8_lossy(&bytes);
+        let mut lines: Vec<_> = text.lines().rev().take(20).collect();
+        lines.reverse();
+        let mut result = error;
+        if !lines.is_empty() {
+            result.push_str(&format!(
+                "\nSidecar stderr (last 20 lines):\n{}",
+                lines.join("\n")
+            ));
+        }
+        if let Some(error) = &self.error {
+            result.push_str(&format!("\nSidecar logging failed: {error}"));
+        }
+        for secret in &self.secrets {
+            if !secret.is_empty() {
+                result = result.replace(secret, "[REDACTED]");
+            }
+        }
+        result
+    }
+}
+
 impl Sidecar {
-    pub async fn launch(dir: &Path, settings: &AppSettings) -> Result<Self, String> {
+    pub async fn launch(dir: &Path, data: &Path, settings: &AppSettings) -> Result<Self, String> {
         let (planner, pk) = configuration(
             settings,
             settings.computer.planner.as_ref().ok_or("Select planner")?,
@@ -120,9 +250,13 @@ impl Sidecar {
             "grounding",
         )
         .await?;
+        let log = Arc::new(Mutex::new(SidecarLog::open(
+            data,
+            vec![pk.1.clone(), gk.1.clone()],
+        )?));
         let mut command = Command::new(dir.join(".venv/bin/python"));
         command
-            .args(["-m", "taucode_cua.server"])
+            .args(["-u", "-m", "taucode_cua.server"])
             .current_dir(dir)
             .env_remove("PYTHONPATH")
             .env_remove("PYTHONSTARTUP")
@@ -131,12 +265,50 @@ impl Sidecar {
             .env(gk.0, gk.1)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .kill_on_drop(true);
-        let mut child = command
-            .spawn()
-            .map_err(|_| "Cannot start computer planner")?;
+        let mut child = command.spawn().map_err(|_| {
+            log.lock()
+                .unwrap()
+                .with_error("Cannot start computer planner".into())
+        })?;
         let input = child.stdin.take().ok_or("Planner stdin unavailable")?;
+        let mut stderr = child.stderr.take().ok_or("Planner stderr unavailable")?;
+        let writer = log.clone();
+        let (flush, mut requests) =
+            tokio::sync::mpsc::channel::<tokio::sync::oneshot::Sender<()>>(1);
+        let logger = tokio::spawn(async move {
+            let mut buffer = [0; 8192];
+            loop {
+                let read = tokio::select! {
+                    biased;
+                    read = stderr.read(&mut buffer) => read,
+                    request = requests.recv() => {
+                        match request { Some(ack) => { let _ = ack.send(()); }, None => break }
+                        continue;
+                    }
+                };
+                match read {
+                    Ok(0) => {
+                        let mut log = writer.lock().unwrap();
+                        if let Err(error) = log.write(&[], true) {
+                            log.error = Some(error.to_string());
+                        }
+                        break;
+                    }
+                    Ok(n) => {
+                        let mut log = writer.lock().unwrap();
+                        if let Err(error) = log.write(&buffer[..n], false) {
+                            log.error = Some(error.to_string());
+                        }
+                    }
+                    Err(error) => {
+                        writer.lock().unwrap().error = Some(error.to_string());
+                        break;
+                    }
+                }
+            }
+        });
         let output = BufReader::new(
             child
                 .stdout
@@ -149,6 +321,9 @@ impl Sidecar {
             input,
             output,
             id: 0,
+            log,
+            logger,
+            flush,
         };
         s.call(
             "configure",
@@ -159,6 +334,20 @@ impl Sidecar {
         Ok(s)
     }
     pub async fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        let result = self.exchange(method, params).await;
+        if result.is_err() {
+            // The reader acknowledges only after draining currently readable stderr.
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            if self.flush.send(tx).await.is_ok() {
+                let _ = rx.await;
+            }
+        }
+        result.map_err(|error| self.with_log(error))
+    }
+    pub fn with_log(&self, error: String) -> String {
+        self.log.lock().unwrap().with_error(error)
+    }
+    async fn exchange(&mut self, method: &str, params: Value) -> Result<Value, String> {
         self.id += 1;
         self.input
             .write_all(
@@ -197,12 +386,13 @@ impl Sidecar {
             )
             .await?,
         )
-        .map_err(|_| "Invalid structured prediction".into())
+        .map_err(|_| self.with_log("Invalid structured prediction".into()))
     }
 }
 impl Drop for Sidecar {
     fn drop(&mut self) {
         let _ = self.child.start_kill();
+        self.logger.abort();
     }
 }
 
@@ -225,6 +415,41 @@ fn response_result(response: Value, id: u64) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn logs_rotate_keep_two_backups_and_redact_split_credentials() {
+        let data = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let mut log = SidecarLog::open(&data, vec!["secret-key".into()]).unwrap();
+        for byte in b'a'..=b'd' {
+            log.write(&vec![byte; LOG_LIMIT as usize], false).unwrap();
+        }
+        log.write(b"\nsec", false).unwrap();
+        log.write(b"ret-key\n", false).unwrap();
+        assert!(log.pending.is_empty());
+        let path = data.join("computer/logs/sidecar.log");
+        for (suffix, byte) in [("log.1", b'd'), ("log.2", b'c')] {
+            let bytes = std::fs::read(path.with_extension(suffix)).unwrap();
+            assert_eq!(bytes.len(), LOG_LIMIT as usize);
+            assert!(bytes.iter().all(|b| *b == byte));
+        }
+        assert!(!path.with_extension("log.3").exists());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "\n[REDACTED]\n");
+        for n in 0..25 {
+            log.write(format!("diagnostic {n}\n").as_bytes(), false)
+                .unwrap();
+        }
+        let error = log.with_error("Provider error: secret-key".into());
+        assert!(error.starts_with("Provider error: [REDACTED]"));
+        let tail = error
+            .split("Sidecar stderr (last 20 lines):\n")
+            .nth(1)
+            .unwrap();
+        assert_eq!(tail.lines().count(), 20);
+        assert!(tail.starts_with("diagnostic 5\n"));
+        assert!(tail.ends_with("diagnostic 24"));
+        drop(log);
+        std::fs::remove_dir_all(data).unwrap();
+    }
+
     #[test]
     fn preserves_sidecar_error_and_checks_response_id() {
         for message in [

@@ -62,6 +62,7 @@ pub async fn serve(computer: Arc<Computer>, app: tauri::AppHandle) -> Result<(),
                             "run"
                                 | "screenshot"
                                 | "status"
+                                | "requestPermissions"
                                 | "runLog"
                                 | "prepare"
                                 | "stop"

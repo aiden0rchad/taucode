@@ -109,6 +109,9 @@ impl Computer {
             return transport::ipc(&self.data, p).await;
         }
         match p["action"].as_str() {
+            Some("requestPermissions") => tokio::task::spawn_blocking(request_permissions)
+                .await
+                .map_err(|e| e.to_string())?,
             Some("runLog") => {
                 let id = p["id"].as_str().ok_or("Missing run ID")?;
                 uuid::Uuid::parse_str(id).map_err(|_| "Invalid run ID")?;
@@ -247,23 +250,38 @@ impl Computer {
             let id = uuid::Uuid::new_v4().to_string();
             self.state.send_replace(json!({"id":id,"running":true,"paused":false,"steps":[],"instruction":instruction,"shortcut":limits.shortcut}));
             let resource = app.path().resource_dir().ok();
-            let result = tokio::time::timeout(
-                std::time::Duration::from_secs(limits.max_seconds),
-                self.control.until(async {
-                    let prepared = sidecar::prepare(&self.data, resource.as_deref()).await?;
-                    let sidecar = sidecar::Sidecar::launch(&prepared, &settings).await?;
-                    let mut env = Live {
-                        computer: self.clone(),
-                        sidecar,
-                        apps: apps.clone(),
-                        id: id.clone(),
-                    };
-                    runner::run(&mut env, &self.control, &limits, &apps, instruction).await
-                }),
-            )
-            .await
-            .map_err(|_| "Maximum wall time reached".to_string())
-            .and_then(|r| r);
+            let start = std::time::Instant::now();
+            let result = async {
+                let sidecar = self
+                    .control
+                    .until(async {
+                        tokio::time::timeout(
+                            std::time::Duration::from_secs(limits.max_seconds),
+                            async {
+                                let prepared =
+                                    sidecar::prepare(&self.data, resource.as_deref()).await?;
+                                sidecar::Sidecar::launch(&prepared, &self.data, &settings).await
+                            },
+                        )
+                        .await
+                        .map_err(|_| {
+                            sidecar::setup_error(
+                                &self.data,
+                                "Maximum wall time reached during planner setup".into(),
+                            )
+                        })?
+                    })
+                    .await?;
+                let mut env = Live {
+                    computer: self.clone(),
+                    sidecar,
+                    apps: apps.clone(),
+                    id: id.clone(),
+                    app: app.clone(),
+                };
+                runner::run(&mut env, &self.control, &limits, &apps, instruction, start).await
+            }
+            .await;
             self.state.send_modify(|s| {
                 s["running"] = json!(false);
                 s["approval"] = Value::Null;
@@ -274,7 +292,8 @@ impl Computer {
                         .last()
                         .is_none_or(|step| step["error"].as_str() != Some(error))
                     {
-                        steps.push(runner::failure_step(steps.len() as u32 + 1, "", error));
+                        let next = steps.last().and_then(|s| s["step"].as_u64()).unwrap_or(0) + 1;
+                        steps.push(runner::failure_step(next as u32, "", error));
                     }
                 }
                 s["summary"] = result
@@ -332,12 +351,34 @@ pub fn permissions() -> Value {
         json!({"screen":false,"accessibility":false,"unsupported":true})
     }
 }
+#[cfg(any(target_os = "macos", test))]
+trait PermissionRequests {
+    fn request_screen(&self) -> bool;
+    fn request_accessibility(&self) -> Result<bool, String>;
+}
+#[cfg(any(target_os = "macos", test))]
+fn request_permissions_with(api: &impl PermissionRequests) -> Result<Value, String> {
+    let screen = api.request_screen();
+    let accessibility = api.request_accessibility()?;
+    Ok(json!({"screen": screen, "accessibility": accessibility}))
+}
+fn request_permissions() -> Result<Value, String> {
+    #[cfg(target_os = "macos")]
+    {
+        request_permissions_with(&native::NativePermissions)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(permissions())
+    }
+}
 #[cfg(target_os = "macos")]
 struct Live {
     computer: Arc<Computer>,
     sidecar: sidecar::Sidecar,
     apps: Vec<String>,
     id: String,
+    app: AppHandle,
 }
 #[cfg(target_os = "macos")]
 impl runner::Environment for Live {
@@ -367,6 +408,9 @@ impl runner::Environment for Live {
             [frame.display.pixel_width, frame.display.pixel_height],
         ))
     }
+    fn planner_error(&self, error: String) -> String {
+        self.sidecar.with_log(error)
+    }
     fn context(&self) -> Result<Context, String> {
         native::context()
     }
@@ -393,9 +437,28 @@ impl runner::Environment for Live {
                 .pending
                 .lock()
                 .map_err(|_| "Approval unavailable")? = Some((id.clone(), tx));
+            let target = self.computer.state.borrow()["steps"]
+                .as_array()
+                .and_then(|steps| steps.last())
+                .and_then(|s| s["target"].as_str())
+                .unwrap_or("")
+                .to_owned();
             self.computer.state.send_modify(|s| {
-                s["approval"] = json!({"id":id,"reason":reason,"action":action,"app":context.app})
+                s["approval"] = json!({"id":id,"reason":reason,"target":target,"action":action,"app":context.app})
             });
+            use tauri_plugin_notification::NotificationExt;
+            if let Err(error) = self
+                .app
+                .notification()
+                .builder()
+                .title("taucode needs your approval")
+                .body(format!("{reason} ({target})"))
+                .show()
+            {
+                self.computer
+                    .state
+                    .send_modify(|s| s["notificationError"] = json!(error.to_string()));
+            }
             let approved = rx.await.unwrap_or(false);
             self.computer
                 .state
@@ -421,7 +484,15 @@ impl runner::Environment for Live {
     }
     fn progress(&mut self, step: Value) -> Result<(), String> {
         self.computer.state.send_modify(|s| {
-            s["steps"].as_array_mut().unwrap().push(step);
+            let steps = s["steps"].as_array_mut().unwrap();
+            if let Some(previous) = steps
+                .last_mut()
+                .filter(|s| s["step"] == step["step"] && s["kind"] == step["kind"])
+            {
+                *previous = step;
+            } else {
+                steps.push(step);
+            }
         });
         self.computer.persist(&self.id)
     }

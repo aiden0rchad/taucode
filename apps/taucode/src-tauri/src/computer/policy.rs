@@ -112,6 +112,16 @@ impl Prediction {
     pub fn validated(&self, display: Display) -> Result<Action, String> {
         let mut value = self.action.clone();
         let obj = value.as_object_mut().ok_or("Expected action object")?;
+        if let Some(target) = obj.remove("target") {
+            if target
+                .as_str()
+                .is_none_or(|s| s.len() > 32768 || s.contains('\0'))
+            {
+                return Err("Invalid action target".into());
+            }
+        } else if obj.get("kind").and_then(Value::as_str) == Some("click") {
+            return Err("Missing click target".into());
+        }
         let mut space = [0.; 2];
         for (i, key) in ["grounding_width", "grounding_height"].iter().enumerate() {
             space[i] = obj
@@ -242,15 +252,7 @@ pub fn decide(
     if matches!(a, Action::Type { .. }) && c.secure {
         return Decision::Confirm("Typing into a secure text field");
     }
-    let lower = description.to_lowercase();
-    if matches!(a, Action::Click { .. })
-        && [
-            "submit", "send", "buy", "purchase", "pay", "checkout", "confirm", "order", "delete",
-            "transfer",
-        ]
-        .iter()
-        .any(|w| lower.contains(w))
-    {
+    if matches!(a, Action::Click { .. }) && risky_target(description) {
         return Decision::Confirm("Potential submit, send, purchase or destructive click");
     }
     // A target field can change focus, and keyboard shortcuts can submit without a click.
@@ -261,6 +263,30 @@ pub fn decide(
         return Decision::Confirm("Confirm typing or keyboard action");
     }
     Decision::Allow
+}
+
+#[cfg(unix)]
+fn risky_target(target: &str) -> bool {
+    // POSIX word boundaries, using the already-linked native regex API.
+    let Ok(target) = std::ffi::CString::new(target) else {
+        return true;
+    };
+    unsafe {
+        let mut regex = std::mem::MaybeUninit::<libc::regex_t>::uninit();
+        if libc::regcomp(regex.as_mut_ptr(), c"(^|[^[:alnum:]_])(submit|send|buy|purchase|pay|checkout|confirm|order|delete|transfer|remove|erase|unsubscribe|publish|post)([^[:alnum:]_]|$)".as_ptr(), libc::REG_EXTENDED | libc::REG_ICASE | libc::REG_NOSUB) != 0 {
+            return true;
+        }
+        let mut regex = regex.assume_init();
+        let matched =
+            libc::regexec(&regex, target.as_ptr(), 0, std::ptr::null_mut(), 0) != libc::REG_NOMATCH;
+        libc::regfree(&mut regex);
+        matched
+    }
+}
+
+#[cfg(not(unix))]
+fn risky_target(_: &str) -> bool {
+    true // Computer Use is unsupported here; never allow an unchecked click.
 }
 pub fn keycode(key: &str) -> Option<u16> {
     Some(match key.to_ascii_lowercase().as_str() {

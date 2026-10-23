@@ -19,6 +19,9 @@ pub trait Environment {
         frame: &'a Frame,
     ) -> BoxFuture<'a, Result<Prediction, String>>;
     fn context(&self) -> Result<Context, String>;
+    fn planner_error(&self, error: String) -> String {
+        error
+    }
     fn approve<'a>(
         &'a mut self,
         reason: &'a str,
@@ -264,8 +267,11 @@ pub async fn run(
     settings: &Settings,
     apps: &[String],
     instruction: &str,
+    start: Instant,
 ) -> Result<Value, String> {
-    let start = Instant::now();
+    let mut pending: Option<Value> = None;
+    let mut phase = "predictMs";
+    let mut phase_start = Instant::now();
     let work = async {
         for step in 0..settings.max_steps {
             control.checkpoint().await?;
@@ -275,15 +281,33 @@ pub async fn run(
             }
             let frame = control.until(env.capture()).await?;
             let scoped = format!("{instruction}\n\nHost policy: allowed application bundle IDs: {}. Current frontmost application: {}. If taucode is frontmost, first use switch_applications with an allowed bundle ID. Never interact with taucode itself.", apps.join(", "), context.app);
+            phase = "predictMs";
+            phase_start = Instant::now();
+            pending = Some(
+                json!({"step":step+1,"thumbnail":frame.thumbnail,"action":{"kind":"predict"},"reflection":"","predictMs":0,"executeMs":0,"waitMs":0}),
+            );
             let prediction = match control.until(env.predict(&scoped, &frame)).await {
                 Ok(prediction) => prediction,
                 Err(error) => {
-                    env.progress(failure_step(step + 1, &frame.thumbnail, &error))?;
+                    let mut entry = pending.take().unwrap();
+                    entry["predictMs"] = json!(phase_start.elapsed().as_millis() as u64);
+                    entry["action"] = json!({"kind":"fail","reason":error});
+                    entry["error"] = json!(error);
+                    env.progress(entry)?;
                     return Err(error);
                 }
             };
+            let predict_ms = phase_start.elapsed().as_millis() as u64;
+            let action = prediction
+                .validated(frame.display)
+                .map_err(|e| env.planner_error(e))?;
+            let description = prediction.action["target"].as_str().unwrap_or("");
+            pending = Some(
+                json!({"step":step+1,"thumbnail":frame.thumbnail,"action":action,"target":description,"reflection":prediction.reflection,"planText":prediction.plan_text,"predictMs":predict_ms,"executeMs":0,"waitMs":0}),
+            );
+            phase = "waitMs";
+            phase_start = Instant::now();
             control.checkpoint().await?;
-            let action = prediction.validated(frame.display)?;
             let target = match &action {
                 Action::Open { app_or_file } => Some(env.target(app_or_file)?),
                 Action::SwitchApp { app } => Some(env.target(app)?),
@@ -299,7 +323,7 @@ pub async fn run(
             }
             match decide(
                 &policy_action,
-                &prediction.plan_text,
+                description,
                 &current,
                 settings,
                 apps,
@@ -308,9 +332,18 @@ pub async fn run(
             ) {
                 Decision::Deny(reason) => return Err(reason),
                 Decision::Confirm(reason) => {
-                    control
-                        .until(env.approve(reason, &action, &current))
-                        .await?
+                    let entry = pending.as_mut().unwrap();
+                    entry["kind"] = json!("approval_wait");
+                    entry["reason"] = json!(reason);
+                    env.progress(entry.clone())?;
+                    let approved = control.until(env.approve(reason, &action, &current)).await;
+                    let entry = pending.as_mut().unwrap();
+                    entry["waitMs"] = json!(phase_start.elapsed().as_millis() as u64);
+                    entry["error"] = json!(approved.as_ref().err());
+                    env.progress(entry.clone())?;
+                    approved?;
+                    entry.as_object_mut().unwrap().remove("kind");
+                    entry.as_object_mut().unwrap().remove("reason");
                 }
                 Decision::Allow => (),
             }
@@ -321,7 +354,7 @@ pub async fn run(
             }
             if let Decision::Deny(reason) = decide(
                 &policy_action,
-                &prediction.plan_text,
+                description,
                 &after,
                 settings,
                 apps,
@@ -330,8 +363,28 @@ pub async fn run(
             ) {
                 return Err(reason);
             }
-            let outcome = execute(env, control, &after, &action, target.as_deref()).await;
-            env.progress(json!({"step":step+1,"thumbnail":frame.thumbnail,"action":action,"reflection":prediction.reflection,"planText":prediction.plan_text,"error":outcome.as_ref().err()}))?;
+            pending.as_mut().unwrap()["waitMs"] = json!(phase_start.elapsed().as_millis() as u64);
+            phase = if matches!(action, Action::Wait { .. }) {
+                "waitMs"
+            } else {
+                "executeMs"
+            };
+            phase_start = Instant::now();
+            let outcome = execute(env, control, &after, &action, target.as_deref())
+                .await
+                .and_then(|()| {
+                    if let Action::Fail { reason } = &action {
+                        Err(env.planner_error(reason.clone()))
+                    } else {
+                        Ok(())
+                    }
+                });
+            let mut entry = pending.take().unwrap();
+            entry[phase] = json!(
+                entry[phase].as_u64().unwrap_or(0) + phase_start.elapsed().as_millis() as u64
+            );
+            entry["error"] = json!(outcome.as_ref().err());
+            env.progress(entry)?;
             if outcome
                 .as_ref()
                 .err()
@@ -352,14 +405,34 @@ pub async fn run(
         }
         Err("Maximum steps reached".into())
     };
-    let result = tokio::time::timeout(Duration::from_secs(settings.max_seconds), work)
-        .await
-        .map_err(|_| "Maximum wall time reached".to_string())
-        .and_then(|r| r);
+    let result = tokio::time::timeout(
+        Duration::from_secs(settings.max_seconds).saturating_sub(start.elapsed()),
+        work,
+    )
+    .await
+    .map_err(|_| {
+        if let Some(entry) = pending.as_ref().filter(|s| s["kind"] == "approval_wait") {
+            format!(
+                "Timed out waiting for approval: {} ({})",
+                entry["reason"].as_str().unwrap_or(""),
+                entry["target"].as_str().unwrap_or("")
+            )
+        } else if phase == "predictMs" && pending.is_some() {
+            env.planner_error("Maximum wall time reached".into())
+        } else {
+            "Maximum wall time reached".into()
+        }
+    })
+    .and_then(|r| r);
     control.stop();
+    if let (Err(error), Some(mut entry)) = (&result, pending) {
+        entry[phase] = json!(phase_start.elapsed().as_millis() as u64);
+        entry["error"] = json!(error);
+        env.progress(entry)?;
+    }
     result
 }
 
 pub fn failure_step(step: u32, thumbnail: &str, error: &str) -> Value {
-    json!({"step":step,"thumbnail":thumbnail,"action":{"kind":"fail","reason":error},"reflection":"","error":error})
+    json!({"step":step,"thumbnail":thumbnail,"action":{"kind":"fail","reason":error},"reflection":"","error":error,"predictMs":0,"executeMs":0,"waitMs":0})
 }

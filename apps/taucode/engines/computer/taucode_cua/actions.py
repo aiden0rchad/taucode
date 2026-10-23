@@ -38,6 +38,10 @@ def parse_action(agent, code):
     try:
         method, args, kwargs = parse_call(code)
         action = getattr(StructuredACI, method)(agent, *args, **kwargs)
+        bound = inspect.signature(getattr(StructuredACI, method)).bind(agent, *args, **kwargs)
+        bound.apply_defaults()
+        first = list(bound.arguments.values())[1]
+        action['target'] = check_text(first) if isinstance(first, str) else ''
         json.dumps(action, allow_nan=False)
         return action
     except ProviderError:

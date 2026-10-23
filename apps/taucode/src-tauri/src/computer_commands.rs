@@ -2,12 +2,27 @@ use crate::state::AppState;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 #[tauri::command]
+pub(crate) async fn computer_request_permissions(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Value, String> {
+    state
+        .computer
+        .request(app, json!({"action":"requestPermissions"}))
+        .await
+}
+#[tauri::command]
 pub(crate) async fn computer_request(
     params: Value,
     state: State<'_, AppState>,
     app: AppHandle,
     window: WebviewWindow,
 ) -> Result<Value, String> {
+    if params["action"] == "restart" {
+        state.computer.stop();
+        app.request_restart();
+        return Ok(Value::Null);
+    }
     if params["action"] == "runLog" && crate::remote_backend::is_remote_mode(&state).await {
         return crate::remote_backend::call_remote(
             &state,

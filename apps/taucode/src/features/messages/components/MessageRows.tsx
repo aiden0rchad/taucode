@@ -1,4 +1,4 @@
-import { ComputerRunItem } from "@/features/computer/ComputerRunItem";
+import { ComputerApprovalStatus, ComputerRunItem } from "@/features/computer/ComputerRunItem";
 import { parseComputerRun } from "@/features/computer/computer";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
@@ -884,6 +884,7 @@ export const ToolRow = memo(function ToolRow({
           />
         )}
         {showCommandOutput && <CommandOutput output={summary.output ?? ""} />}
+        {item.toolType === "mcpToolCall" && item.title === "Tool: taucode-computer / computer_run_task" && tone === "processing" && <ComputerApprovalStatus detail={item.detail ?? ""} />}
         {isExpanded && computerRun && <ComputerRunItem run={computerRun} />}
         {showToolOutput && summary.output && !isCommand && !computerRun && (
           <Markdown

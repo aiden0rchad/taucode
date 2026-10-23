@@ -24,7 +24,10 @@ use std::ffi::c_void;
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn CGPreflightScreenCaptureAccess() -> bool;
+    fn CGRequestScreenCaptureAccess() -> bool;
     fn AXIsProcessTrusted() -> bool;
+    fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
+    static kAXTrustedCheckOptionPrompt: *const c_void;
     fn AXUIElementCreateApplication(pid: i32) -> *const c_void;
     fn AXUIElementCopyAttributeValue(
         element: *const c_void,
@@ -40,7 +43,44 @@ extern "C" {
         result: *mut *const c_void,
     ) -> i32;
     fn AXUIElementGetPid(element: *const c_void, pid: *mut i32) -> i32;
+}
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    static kCFBooleanTrue: *const c_void;
+    fn CFDictionaryCreate(
+        allocator: *const c_void,
+        keys: *const *const c_void,
+        values: *const *const c_void,
+        count: isize,
+        key_callbacks: *const c_void,
+        value_callbacks: *const c_void,
+    ) -> *const c_void;
     fn CFRelease(value: *const c_void);
+}
+pub(super) struct NativePermissions;
+impl super::PermissionRequests for NativePermissions {
+    fn request_screen(&self) -> bool {
+        unsafe { CGRequestScreenCaptureAccess() }
+    }
+    fn request_accessibility(&self) -> Result<bool, String> {
+        unsafe {
+            // Both entries are system constants and outlive the dictionary.
+            let options = CFDictionaryCreate(
+                std::ptr::null(),
+                &kAXTrustedCheckOptionPrompt,
+                &kCFBooleanTrue,
+                1,
+                std::ptr::null(),
+                std::ptr::null(),
+            );
+            if options.is_null() {
+                return Err("Cannot create Accessibility permission options".into());
+            }
+            let trusted = AXIsProcessTrustedWithOptions(options);
+            CFRelease(options);
+            Ok(trusted)
+        }
+    }
 }
 pub fn permissions() -> serde_json::Value {
     unsafe {

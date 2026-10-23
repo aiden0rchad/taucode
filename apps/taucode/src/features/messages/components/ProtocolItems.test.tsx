@@ -4,6 +4,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ThreadItem } from "@protocol/v2/ThreadItem";
 import { buildConversationItemFromThreadItem } from "@utils/threadItems";
 import { Messages } from "./Messages";
+import { computerRequest } from "@services/tauri";
+
+vi.mock("@services/tauri", () => ({ computerRequest: vi.fn() }));
 
 vi.mock("../hooks/useFileLinkOpener", () => ({ useFileLinkOpener: () => ({ openFileLink: vi.fn(), showFileLinkMenu: vi.fn() }) }));
 beforeAll(() => { HTMLElement.prototype.scrollIntoView = vi.fn(); });
@@ -24,6 +27,12 @@ function show(item: Record<string, unknown>) {
 }
 
 describe("0.164 item renderers", () => {
+  it("shows pending computer approval on the collapsed running tool", async () => {
+    vi.mocked(computerRequest).mockResolvedValue({ id: "run", running: true, instruction: "test", steps: [], approval: { reason: "Destructive click", target: "Delete account" } });
+    show({ type: "mcpToolCall", id: "computer", server: "taucode-computer", tool: "computer_run_task", status: "inProgress", arguments: { instruction: "test" } });
+    expect(await screen.findByText("Waiting for approval: Destructive click (Delete account). Review in the Computer Use HUD.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Toggle tool details" }).getAttribute("aria-expanded")).toBe("false");
+  });
   it("renders browser MCP screenshots with the existing image lightbox", () => {
     show({ type:"mcpToolCall", id:"browser", server:"taucode-browser", tool:"browser_take_screenshot", status:"completed", arguments:{}, result:{content:[{type:"text",text:"Screenshot"},{type:"image",mimeType:"image/png",data:"AAAA"}]} });
     expect(screen.getByAltText("Generated image 1").getAttribute("src")).toBe("data:image/png;base64,AAAA");
