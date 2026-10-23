@@ -544,7 +544,7 @@ export function SettingsCodexSection({
         onSave={onSaveGlobalAgents}
         helpText={
           <>
-            Stored at <code>~/.codex/AGENTS.md</code>.
+            Stored in taucode’s managed Codex home.
           </>
         }
         classNames={{
@@ -575,7 +575,7 @@ export function SettingsCodexSection({
         onSave={onSaveGlobalConfig}
         helpText={
           <>
-            Stored at <code>~/.codex/config.toml</code>.
+            Taucode regenerates this file from Providers and Agents settings when Codex starts.
           </>
         }
         classNames={{

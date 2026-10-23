@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import type {
-  AppMention,
+
   ComposerSendIntent,
   GitLogEntry,
   GitHubPullRequest,
@@ -12,7 +12,7 @@ import type { GitDiffSource, GitPanelMode } from "../types";
 import { buildPullRequestDraft } from "../../../utils/pullRequestPrompt";
 import { parsePullRequestReviewCommand } from "../utils/pullRequestReviewCommands";
 
-const KNOWN_SLASH_COMMAND_REGEX = /^\/(?:apps|fast|fork|mcp|new|resume|status)\b/i;
+const KNOWN_SLASH_COMMAND_REGEX = /^\/(?:fast|fork|mcp|new|resume|status)\b/i;
 
 type ComposerContextAction = {
   id: string;
@@ -50,7 +50,6 @@ type UsePullRequestComposerOptions = {
   handleSend: (
     text: string,
     images: string[],
-    appMentions?: AppMention[],
     submitIntent?: ComposerSendIntent,
   ) => Promise<void>;
 };
@@ -132,7 +131,6 @@ export function usePullRequestComposer({
     async (
       text: string,
       images: string[] = [],
-      appMentions: AppMention[] = [],
       submitIntent?: ComposerSendIntent,
     ) => {
       if (pullRequestReviewLaunching) {
@@ -153,11 +151,7 @@ export function usePullRequestComposer({
         return;
       }
       if (KNOWN_SLASH_COMMAND_REGEX.test(trimmed)) {
-        if (appMentions.length > 0) {
-          await handleSend(trimmed, images, appMentions, submitIntent);
-        } else {
-          await handleSend(trimmed, images, undefined, submitIntent);
-        }
+          await handleSend(trimmed, images, submitIntent);
         return;
       }
       if (!activeWorkspace || !selectedPullRequest) {

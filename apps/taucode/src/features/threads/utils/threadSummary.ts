@@ -64,6 +64,8 @@ export function buildThreadSummaryFromThread({
   return {
     id,
     name,
+    ...(thread.engine === "pi" || thread.engine === "codex" ? { engine: thread.engine } : {}),
+    ...(typeof thread.modelProvider === "string" ? { modelProvider: thread.modelProvider } : {}),
     updatedAt: getThreadTimestamp(thread),
     createdAt: getThreadCreatedTimestamp(thread),
     ...(metadata.modelId ? { modelId: metadata.modelId } : {}),

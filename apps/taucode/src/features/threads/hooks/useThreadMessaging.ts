@@ -2,9 +2,8 @@ import { useCallback } from "react";
 import type { Dispatch, MutableRefObject } from "react";
 import * as Sentry from "@sentry/react";
 import type {
-  AppMention,
+
   ComposerSendIntent,
-  RateLimitSnapshot,
   CustomPromptOption,
   DebugEntry,
   ReviewTarget,
@@ -18,7 +17,7 @@ import {
   steerTurn as steerTurnService,
   startReview as startReviewService,
   interruptTurn as interruptTurnService,
-  getAppsList as getAppsListService,
+
   listMcpServerStatus as listMcpServerStatusService,
 } from "@services/tauri";
 import { expandCustomPromptText } from "@utils/customPrompts";
@@ -31,7 +30,6 @@ import {
 import type { ThreadAction, ThreadState } from "./useThreadsReducer";
 import { useReviewPrompt } from "./useReviewPrompt";
 import {
-  buildAppsLines,
   buildMcpStatusLines,
   buildReviewThreadTitle,
   buildStatusLines,
@@ -43,6 +41,8 @@ import {
 } from "./threadMessagingHelpers";
 
 type UseThreadMessagingOptions = {
+  threadsByWorkspace?: ThreadState["threadsByWorkspace"];
+  tokenUsageByThread?: ThreadState["tokenUsageByThread"];
   activeWorkspace: WorkspaceInfo | null;
   activeThreadId: string | null;
   accessMode?: "read-only" | "current" | "full-access";
@@ -64,7 +64,6 @@ type UseThreadMessagingOptions = {
   ) => boolean;
   threadStatusById: ThreadState["threadStatusById"];
   activeTurnIdByThread: ThreadState["activeTurnIdByThread"];
-  rateLimitsByWorkspace: Record<string, RateLimitSnapshot | null>;
   pendingInterruptsRef: MutableRefObject<Set<string>>;
   dispatch: Dispatch<ThreadAction>;
   getCustomName: (workspaceId: string, threadId: string) => string | undefined;
@@ -85,7 +84,7 @@ type UseThreadMessagingOptions = {
   forkThreadForWorkspace: (
     workspaceId: string,
     threadId: string,
-    options?: { activate?: boolean },
+    options?: { activate?: boolean; model?: string },
   ) => Promise<string | null>;
   updateThreadParent: (parentId: string, childIds: string[]) => void;
   registerDetachedReviewChild?: (
@@ -97,6 +96,7 @@ type UseThreadMessagingOptions = {
 };
 
 export function useThreadMessaging({
+  threadsByWorkspace, tokenUsageByThread,
   activeWorkspace,
   activeThreadId,
   accessMode,
@@ -112,7 +112,6 @@ export function useThreadMessaging({
   shouldPreflightRuntimeCodexArgsForSend,
   threadStatusById,
   activeTurnIdByThread,
-  rateLimitsByWorkspace,
   pendingInterruptsRef,
   dispatch,
   getCustomName,
@@ -161,7 +160,7 @@ export function useThreadMessaging({
         resolvedServiceTier,
         sanitizedCollaborationMode,
         resolvedAccessMode,
-        appMentions,
+
         sendIntent,
         shouldSteer,
         requestMode,
@@ -178,6 +177,17 @@ export function useThreadMessaging({
           activeTurnId,
         },
       });
+      const summary = threadsByWorkspace?.[workspace.id]?.find(t => t.id === threadId);
+      const provider = resolvedModel?.split("/")[0];
+      if (summary?.engine !== "pi" && provider && summary?.modelProvider && provider !== summary.modelProvider) {
+        if (isProcessing) { pushThreadErrorMessage(threadId, "Finish or interrupt the running turn before switching providers."); return { status: "blocked" }; }
+        const usage = tokenUsageByThread?.[threadId];
+        const tokens = usage?.last.totalTokens ?? usage?.total.totalTokens ?? 0;
+        if (!window.confirm("Switch provider by forking this codex thread? ~" + tokens.toLocaleString() + " tokens re-sent.")) return { status: "blocked" };
+        const forked = await forkThreadForWorkspace(workspace.id, threadId, { activate: true, model: resolvedModel ?? undefined });
+        if (!forked) return { status: "blocked" };
+        threadId = forked;
+      }
       Sentry.metrics.count("prompt_sent", 1, {
         attributes: {
           workspace_id: workspace.id,
@@ -232,22 +242,13 @@ export function useThreadMessaging({
           await ensureWorkspaceRuntimeCodexArgs(workspace.id, threadId);
         }
         const response: Record<string, unknown> = shouldSteer
-          ? (await (appMentions.length > 0
-            ? steerTurnService(
+          ? (await steerTurnService(
               workspace.id,
               threadId,
               activeTurnId ?? "",
               finalText,
               images,
-              appMentions,
-            )
-            : steerTurnService(
-              workspace.id,
-              threadId,
-              activeTurnId ?? "",
-              finalText,
-              images,
-            ))) as Record<string, unknown>
+            )) as Record<string, unknown>
           : (await sendUserMessageService(
             workspace.id,
             threadId,
@@ -259,7 +260,7 @@ export function useThreadMessaging({
               collaborationMode: sanitizedCollaborationMode,
               accessMode: resolvedAccessMode,
               images,
-              appMentions,
+
             }),
           )) as Record<string, unknown>;
 
@@ -358,7 +359,7 @@ export function useThreadMessaging({
       safeMessageActivity,
       setActiveTurnId,
       steerEnabled,
-      threadStatusById,
+      threadStatusById, threadsByWorkspace, tokenUsageByThread, forkThreadForWorkspace,
     ],
   );
 
@@ -366,7 +367,6 @@ export function useThreadMessaging({
     async (
       text: string,
       images: string[] = [],
-      appMentions: AppMention[] = [],
       options?: { sendIntent?: ComposerSendIntent },
     ): Promise<SendMessageResult> => {
       if (!activeWorkspace) {
@@ -399,7 +399,7 @@ export function useThreadMessaging({
       }
       return sendMessageToThread(activeWorkspace, threadId, finalText, images, {
         skipPromptExpansion: true,
-        appMentions,
+
         sendIntent: options?.sendIntent,
       });
     },
@@ -668,7 +668,6 @@ export function useThreadMessaging({
         effort,
         accessMode,
         collaborationMode,
-        rateLimits: rateLimitsByWorkspace[activeWorkspace.id] ?? null,
       });
       const timestamp = Date.now();
       recordThreadActivity(activeWorkspace.id, threadId, timestamp);
@@ -688,7 +687,6 @@ export function useThreadMessaging({
       ensureThreadForActiveWorkspace,
       model,
       serviceTier,
-      rateLimitsByWorkspace,
       recordThreadActivity,
       safeMessageActivity,
     ],
@@ -798,58 +796,6 @@ export function useThreadMessaging({
     ],
   );
 
-  const startApps = useCallback(
-    async (_text: string) => {
-      if (!activeWorkspace) {
-        return;
-      }
-      const threadId = await ensureThreadForActiveWorkspace();
-      if (!threadId) {
-        return;
-      }
-
-      try {
-        const response = (await getAppsListService(
-          activeWorkspace.id,
-          null,
-          100,
-          threadId,
-        )) as Record<string, unknown> | null;
-        const result = (response?.result ?? response) as
-          | Record<string, unknown>
-          | null;
-        const data = Array.isArray(result?.data)
-          ? (result?.data as Array<Record<string, unknown>>)
-          : [];
-        const lines = buildAppsLines(data);
-
-        const timestamp = Date.now();
-        recordThreadActivity(activeWorkspace.id, threadId, timestamp);
-        dispatch({
-          type: "addAssistantMessage",
-          threadId,
-          text: lines.join("\n"),
-        });
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to load apps.";
-        dispatch({
-          type: "addAssistantMessage",
-          threadId,
-          text: `Apps:\n- ${message}`,
-        });
-      } finally {
-        safeMessageActivity();
-      }
-    },
-    [
-      activeWorkspace,
-      dispatch,
-      ensureThreadForActiveWorkspace,
-      recordThreadActivity,
-      safeMessageActivity,
-    ],
-  );
 
   const startFork = useCallback(
     async (text: string) => {
@@ -941,7 +887,6 @@ export function useThreadMessaging({
     startUncommittedReview,
     startResume,
     startCompact,
-    startApps,
     startMcp,
     startFast,
     startStatus,

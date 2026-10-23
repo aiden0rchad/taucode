@@ -9,7 +9,6 @@ use uuid::Uuid;
 use crate::backend::app_server::WorkspaceSession;
 use crate::codex::args::resolve_workspace_codex_args;
 use crate::codex::home::resolve_workspace_codex_home;
-use crate::shared::process_core::kill_child_process_tree;
 use crate::shared::{git_core, worktree_core};
 use crate::storage::write_workspaces;
 use crate::types::{AppSettings, WorkspaceEntry, WorkspaceInfo, WorkspaceKind, WorkspaceSettings};
@@ -83,8 +82,7 @@ where
             workspaces.remove(&entry.id);
         }
         if spawned_new_session {
-            let mut child = session.child.lock().await;
-            kill_child_process_tree(&mut child).await;
+            session.shutdown().await;
         }
         return Err(error);
     }
@@ -237,8 +235,7 @@ where
             workspaces.remove(&entry.id);
         }
         if spawned_new_session {
-            let mut child = session.child.lock().await;
-            kill_child_process_tree(&mut child).await;
+            session.shutdown().await;
         }
         let _ = tokio::fs::remove_dir_all(&destination_path).await;
         return Err(error);
@@ -402,8 +399,7 @@ where
             workspaces.remove(&entry.id);
         }
         if spawned_new_session {
-            let mut child = session.child.lock().await;
-            kill_child_process_tree(&mut child).await;
+            session.shutdown().await;
         }
         let _ = tokio::fs::remove_dir_all(&clone_path).await;
         return Err(error);
@@ -557,6 +553,14 @@ where
     FSpawn: Fn(WorkspaceEntry, Option<String>, Option<String>, Option<PathBuf>) -> FutSpawn,
     FutSpawn: Future<Output = Result<Arc<WorkspaceSession>, String>>,
 {
+    {
+        let app = _app_settings.lock().await;
+        let policy = crate::shared::providers::effective_policy(
+            &app.agent_policy,
+            settings.agent_policy.as_ref(),
+        );
+        crate::shared::providers::validate(&app.providers, &policy)?;
+    }
     settings.worktree_setup_script = normalize_setup_script(settings.worktree_setup_script);
     settings.worktrees_folder = settings
         .worktrees_folder

@@ -14,6 +14,11 @@ impl EventSink for RecordingSink {
 }
 
 pub(crate) fn make_session() -> Arc<WorkspaceSession> {
+    make_session_with_setup(None)
+}
+fn make_session_with_setup(
+    codegraph: Option<crate::codegraph::CodegraphSetup>,
+) -> Arc<WorkspaceSession> {
     let mut command = if cfg!(windows) {
         let mut command = Command::new("cmd");
         command.args(["/C", "more"]);
@@ -28,21 +33,30 @@ pub(crate) fn make_session() -> Arc<WorkspaceSession> {
         .spawn()
         .unwrap();
     let stdin = child.stdin.take().unwrap();
-    Arc::new(WorkspaceSession {
-        codegraph: None,
-        codex_args: None,
-        child: Mutex::new(child),
-        stdin: Mutex::new(stdin),
-        pending: Mutex::new(HashMap::new()),
-        request_context: Mutex::new(HashMap::new()),
-        thread_workspace: Mutex::new(HashMap::new()),
-        hidden_thread_ids: Mutex::new(HashSet::new()),
-        next_id: AtomicU64::new(1),
-        background_thread_callbacks: Mutex::new(HashMap::new()),
-        owner_workspace_id: "fixture".into(),
-        workspace_ids: Mutex::new(HashSet::from(["fixture".into()])),
-        workspace_roots: Mutex::new(HashMap::new()),
-    })
+    Arc::new(WorkspaceSession::new(
+        Arc::new(crate::backend::app_server::CodexEngine {
+            events: tokio::sync::broadcast::channel(256).0,
+            active_threads: Mutex::new(HashSet::new()),
+            codegraph,
+            codex_args: None,
+            child: Mutex::new(child),
+            stdin: Mutex::new(stdin),
+            pending: Mutex::new(HashMap::new()),
+            request_context: Mutex::new(HashMap::new()),
+            thread_workspace: Mutex::new(HashMap::new()),
+            hidden_thread_ids: Mutex::new(HashSet::new()),
+            next_id: AtomicU64::new(1),
+            background_thread_callbacks: Mutex::new(HashMap::new()),
+            owner_workspace_id: "fixture".into(),
+            workspace_ids: Mutex::new(HashSet::from(["fixture".into()])),
+            workspace_roots: Mutex::new(HashMap::new()),
+        }),
+        vec![],
+        crate::types::AgentPolicy {
+            default_engine: crate::types::EngineKind::Codex,
+            ..Default::default()
+        },
+    ))
 }
 
 #[test]
@@ -111,6 +125,14 @@ fn replays_every_0164_server_message_through_production_router() {
                     assert_eq!(sink.0.lock().unwrap().len(), before);
                 } else {
                     let events = sink.0.lock().unwrap();
+                    if msg
+                        .get("method")
+                        .and_then(Value::as_str)
+                        .is_some_and(|m| m.starts_with("account/") || m.starts_with("app/"))
+                    {
+                        assert_eq!(events.len(), before);
+                        continue;
+                    }
                     assert_eq!(events.len(), before + 1, "{}: {msg}", path.display());
                     assert_eq!(events.last().unwrap().message, msg);
                     assert_eq!(events.last().unwrap().workspace_id, "fixture");
@@ -146,17 +168,26 @@ fn routes_string_request_ids_and_resolutions_to_thread_workspace() {
 fn lifecycle_compaction_bumps_exactly_its_thread_epoch() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         let dir = std::env::temp_dir().join(format!("codegraph-replay-{}", uuid::Uuid::new_v4()));
-        let mut session = make_session();
-        Arc::get_mut(&mut session).unwrap().codegraph = Some(crate::codegraph::CodegraphSetup {
-            proxy_exe: PathBuf::new(), upstream: vec![], state_dir: dir.clone(),
-        });
+        let session = make_session_with_setup(Some(crate::codegraph::CodegraphSetup {
+            proxy_exe: PathBuf::new(),
+            upstream: vec![],
+            state_dir: dir.clone(),
+        }));
+
         let sink = RecordingSink::default();
         let rows: Vec<Value> = include_str!("../../tests/fixtures/codex-0.164/lifecycle.jsonl")
-            .lines().map(|line| serde_json::from_str(line).unwrap()).collect();
-        let compacted: Vec<&str> = rows.iter().filter(|row| row["dir"] == "s2c"
-            && row["msg"]["method"] == "item/completed"
-            && row["msg"]["params"]["item"]["type"] == "contextCompaction")
-            .map(|row| row["msg"]["params"]["threadId"].as_str().unwrap()).collect();
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let compacted: Vec<&str> = rows
+            .iter()
+            .filter(|row| {
+                row["dir"] == "s2c"
+                    && row["msg"]["method"] == "item/completed"
+                    && row["msg"]["params"]["item"]["type"] == "contextCompaction"
+            })
+            .map(|row| row["msg"]["params"]["threadId"].as_str().unwrap())
+            .collect();
         assert_eq!(compacted.len(), 1);
         let thread = compacted[0];
         assert_eq!(tau_mcp_proxy::epoch::read_epoch(&dir, thread), 0);
@@ -167,7 +198,12 @@ fn lifecycle_compaction_bumps_exactly_its_thread_epoch() {
         }
         assert_eq!(tau_mcp_proxy::epoch::read_epoch(&dir, thread), 1);
         assert_eq!(tau_mcp_proxy::epoch::read_epoch(&dir, "unrelated"), 0);
-        assert_eq!(std::fs::read_dir(dir.join("codegraph-epochs")).unwrap().count(), 1);
+        assert_eq!(
+            std::fs::read_dir(dir.join("codegraph-epochs"))
+                .unwrap()
+                .count(),
+            1
+        );
         std::fs::remove_dir_all(dir).unwrap();
     });
 }

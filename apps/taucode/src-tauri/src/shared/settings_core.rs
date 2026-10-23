@@ -27,9 +27,6 @@ pub(crate) async fn get_app_settings_core(app_settings: &Mutex<AppSettings>) -> 
     if let Ok(Some(unified_exec_enabled)) = codex_config::read_unified_exec_enabled() {
         settings.unified_exec_enabled = unified_exec_enabled;
     }
-    if let Ok(Some(apps_enabled)) = codex_config::read_apps_enabled() {
-        settings.experimental_apps_enabled = apps_enabled;
-    }
     if let Ok(personality) = codex_config::read_personality() {
         settings.personality = personality
             .as_deref()
@@ -45,13 +42,21 @@ pub(crate) async fn update_app_settings_core(
     app_settings: &Mutex<AppSettings>,
     settings_path: &PathBuf,
 ) -> Result<AppSettings, String> {
+    crate::shared::providers::validate(&settings.providers, &settings.agent_policy)?;
+    if !matches!(settings.backend_mode, crate::types::BackendMode::Remote) {
+        crate::shared::providers::delete_removed_keys(
+            &app_settings.lock().await.providers,
+            &settings.providers,
+            &crate::shared::providers::Keychain,
+        )?;
+    }
     settings.global_worktrees_folder = settings
         .global_worktrees_folder
         .map(|path| normalize_windows_namespace_path(&path));
     let _ = codex_config::write_collaboration_modes_enabled(settings.collaboration_modes_enabled);
     let _ = codex_config::write_steer_enabled(settings.steer_enabled);
     let _ = codex_config::write_unified_exec_enabled(settings.unified_exec_enabled);
-    let _ = codex_config::write_apps_enabled(settings.experimental_apps_enabled);
+
     let _ = codex_config::write_personality(settings.personality.as_str());
     write_settings(settings_path, &settings)?;
     let mut current = app_settings.lock().await;

@@ -1,0 +1,39 @@
+.registry-settings form, .registry-policy {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+  margin-top: 20px;
+}
+.registry-settings label, .registry-policy label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-strong);
+}
+.registry-settings input, .registry-settings select, .registry-settings textarea,
+.registry-policy input, .registry-policy select, .registry-policy textarea {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+  background: var(--surface-messages);
+  color: var(--text-strong);
+}
+.registry-settings input[type="checkbox"], .registry-policy input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+.registry-settings button, .registry-policy button {
+  padding: 8px 12px;
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+  background: var(--surface-topbar);
+  color: var(--text-strong);
+  cursor: pointer;
+}
+.registry-settings button:disabled, .registry-policy button:disabled { opacity: .5; cursor: default; }
+.registry-spinner { display: inline-block; width: 12px; height: 12px; margin-right: 8px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: registry-spin 1s linear infinite; }
+@keyframes registry-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .registry-spinner { animation: none; } }
+.registry-policy fieldset { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border-muted); border-radius: 8px; }
+.registry-settings [role="alert"], .registry-policy [role="alert"] { color: var(--text-error, #d96b6b); }
+@media (max-width: 640px) { .registry-settings .settings-row { flex-wrap: wrap; gap: 8px; } }

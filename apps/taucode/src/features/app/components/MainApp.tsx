@@ -1,3 +1,4 @@
+import { modelKey } from "@/features/settings/registry";
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import successSoundUrl from "@/assets/success-notification.mp3";
 import errorSoundUrl from "@/assets/error-notification.mp3";
@@ -10,7 +11,6 @@ import { useModels } from "@/features/models/hooks/useModels";
 import { useCollaborationModes } from "@/features/collaboration/hooks/useCollaborationModes";
 import { useCollaborationModeSelection } from "@/features/collaboration/hooks/useCollaborationModeSelection";
 import { useSkills } from "@/features/skills/hooks/useSkills";
-import { useApps } from "@/features/apps/hooks/useApps";
 import { useCustomPrompts } from "@/features/prompts/hooks/useCustomPrompts";
 import { useBranchSwitcherShortcut } from "@/features/git/hooks/useBranchSwitcherShortcut";
 import { useRenameWorktreePrompt } from "@/features/workspaces/hooks/useRenameWorktreePrompt";
@@ -50,21 +50,18 @@ import { useMainAppWorktreeState } from "@app/hooks/useMainAppWorktreeState";
 import { useMainAppWorkspaceActions } from "@app/hooks/useMainAppWorkspaceActions";
 import { useMainAppWorkspaceLifecycle } from "@app/hooks/useMainAppWorkspaceLifecycle";
 import { useMainAppMobileThreadRefresh } from "@app/hooks/useMainAppMobileThreadRefresh";
-import { useHomeAccount } from "@app/hooks/useHomeAccount";
 import type {
   ComposerEditorSettings,
   ServiceTier,
   WorkspaceInfo,
 } from "@/types";
 import { useOpenAppIcons } from "@app/hooks/useOpenAppIcons";
-import { useAccountSwitching } from "@app/hooks/useAccountSwitching";
 import { useNewAgentDraft } from "@app/hooks/useNewAgentDraft";
 import { useSystemNotificationThreadLinks } from "@app/hooks/useSystemNotificationThreadLinks";
 import { useThreadListSortKey } from "@app/hooks/useThreadListSortKey";
 import { useThreadListActions } from "@app/hooks/useThreadListActions";
 import { useRemoteThreadLiveConnection } from "@app/hooks/useRemoteThreadLiveConnection";
 import { useTrayRecentThreads } from "@app/hooks/useTrayRecentThreads";
-import { useTraySessionUsage } from "@app/hooks/useTraySessionUsage";
 import { useTauriEvent } from "@app/hooks/useTauriEvent";
 import { useAppBootstrapOrchestration } from "@app/bootstrap/useAppBootstrapOrchestration";
 import {
@@ -88,6 +85,7 @@ const SettingsView = lazy(() =>
 );
 
 export default function MainApp() {
+  const [selectedEngine, setSelectedEngine] = useState<import("@/types").EngineKind | undefined>();
   const {
     appSettings,
     setAppSettings,
@@ -285,14 +283,16 @@ export default function MainApp() {
     reasoningSupported,
     reasoningOptions,
     selectedEffort,
-    setSelectedEffort
+    setSelectedEffort, refreshModels,
   } = useModels({
     activeWorkspace,
     onDebug: addDebugEntry,
-    preferredModelId,
+    preferredModelId: preferredModelId ?? (modelKey(activeWorkspace?.settings.agentPolicy?.defaultModel ?? appSettings.agentPolicy?.defaultModel) || null),
     preferredEffort,
     selectionKey: threadCodexSelectionKey,
   });
+
+  useEffect(() => { void refreshModels(); }, [appSettings.providers, refreshModels]);
 
   const {
     collaborationModes,
@@ -442,8 +442,6 @@ export default function MainApp() {
     threadListCursorByWorkspace,
     activeTurnIdByThread,
     tokenUsageByThread,
-    rateLimitsByWorkspace,
-    accountByWorkspace,
     planByThread,
     lastAgentMessageByThread,
     pinnedThreadsVersion,
@@ -467,7 +465,6 @@ export default function MainApp() {
     startUncommittedReview,
     startResume,
     startCompact,
-    startApps,
     startMcp,
     startFast,
     startStatus,
@@ -493,9 +490,8 @@ export default function MainApp() {
     handleApprovalDecision,
     handleApprovalRemember,
     handleUserInputSubmit,
-    refreshAccountInfo,
-    refreshAccountRateLimits,
   } = useThreads({
+    engine: selectedEngine,
     activeWorkspace,
     onWorkspaceConnected: markWorkspaceConnected,
     onDebug: addDebugEntry,
@@ -657,12 +653,6 @@ export default function MainApp() {
     ],
   );
 
-  const { apps } = useApps({
-    activeWorkspace,
-    activeThreadId,
-    enabled: appSettings.experimentalAppsEnabled,
-    onDebug: addDebugEntry,
-  });
 
   useThreadCodexSyncOrchestration({
     activeWorkspaceId,
@@ -713,18 +703,6 @@ export default function MainApp() {
     onDebug: addDebugEntry,
   });
 
-  const {
-    activeAccount,
-    accountSwitching,
-    handleSwitchAccount,
-    handleCancelSwitchAccount,
-  } = useAccountSwitching({
-    activeWorkspaceId,
-    accountByWorkspace,
-    refreshAccountInfo,
-    refreshAccountRateLimits,
-    alertError,
-  });
   const {
     newAgentDraftWorkspaceId,
     startingDraftThreadWorkspaceId,
@@ -1064,30 +1042,9 @@ export default function MainApp() {
     getWorkspaceGroupName,
   });
 
-  const activeRateLimits = activeWorkspaceId
-    ? rateLimitsByWorkspace[activeWorkspaceId] ?? null
-    : null;
-  const {
-    homeAccount,
-    homeRateLimits,
-  } = useHomeAccount({
-    showHome,
-    usageWorkspaceId,
-    workspaces,
-    threadsByWorkspace,
-    threadListLoadingByWorkspace,
-    rateLimitsByWorkspace,
-    accountByWorkspace,
-    refreshAccountInfo,
-    refreshAccountRateLimits,
-  });
   const activeTokenUsage = activeThreadId
     ? tokenUsageByThread[activeThreadId] ?? null
     : null;
-  useTraySessionUsage({
-    accountRateLimits: activeRateLimits,
-    showRemaining: appSettings.usageShowRemaining,
-  });
   const activePlan = activeThreadId
     ? planByThread[activeThreadId] ?? null
     : null;
@@ -1121,7 +1078,7 @@ export default function MainApp() {
     settings: {
       steerEnabled: appSettings.steerEnabled,
       followUpMessageBehavior: appSettings.followUpMessageBehavior,
-      experimentalAppsEnabled: appSettings.experimentalAppsEnabled,
+
       pauseQueuedMessagesWhenResponseRequired:
         appSettings.pauseQueuedMessagesWhenResponseRequired,
     },
@@ -1146,7 +1103,6 @@ export default function MainApp() {
       startReview,
       startResume,
       startCompact,
-      startApps,
       startMcp,
       startFast,
       startStatus,
@@ -1539,8 +1495,8 @@ export default function MainApp() {
           threadStatusById,
           onSelectInstance: handleSelectWorkspaceInstance,
           skills,
-          appsEnabled: appSettings.experimentalAppsEnabled,
-          apps,
+
+
           prompts,
           files,
           onFileAutocompleteActiveChange: setFileAutocompleteActive,
@@ -1577,13 +1533,12 @@ export default function MainApp() {
   const { workspaceHomeNode } = displayNodes;
   const layoutSurfaces = useMainAppLayoutSurfaces({
     appSettings: {
-      usageShowRemaining: appSettings.usageShowRemaining,
       composerCodeBlockCopyUseModifier:
         appSettings.composerCodeBlockCopyUseModifier,
       showMessageFilePath: appSettings.showMessageFilePath,
       openAppTargets: appSettings.openAppTargets,
       selectedOpenAppId: appSettings.selectedOpenAppId,
-      experimentalAppsEnabled: appSettings.experimentalAppsEnabled,
+
       followUpMessageBehavior: appSettings.followUpMessageBehavior,
       composerFollowUpHintEnabled: appSettings.composerFollowUpHintEnabled,
       dictationEnabled: appSettings.dictationEnabled,
@@ -1616,13 +1571,6 @@ export default function MainApp() {
     activeItems,
     userInputRequests,
     approvals,
-    activeRateLimits,
-    activeAccount,
-    homeRateLimits,
-    homeAccount,
-    accountSwitching,
-    onSwitchAccount: handleSwitchAccount,
-    onCancelSwitchAccount: handleCancelSwitchAccount,
     onDecision: handleApprovalDecision,
     onRemember: handleApprovalRemember,
     onUserInputSubmit: handleUserInputSubmit,
@@ -1698,6 +1646,8 @@ export default function MainApp() {
     handleToggleTerminalWithFocus,
     launchScriptState,
     launchScriptsState,
+    engine: (activeThreadId ? threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.engine : undefined) ?? selectedEngine ?? activeWorkspace?.settings.agentPolicy?.defaultEngine ?? appSettings.agentPolicy?.defaultEngine ?? "pi",
+    onSelectEngine: activeThreadId ? undefined : setSelectedEngine,
     models,
     selectedModelId,
     onSelectModel: handleSelectModel,
@@ -1714,7 +1664,7 @@ export default function MainApp() {
     accessMode,
     onSelectAccessMode: handleSelectAccessMode,
     skills,
-    apps,
+
     prompts,
     composerInputRef,
     composerEditorSettings,

@@ -28,7 +28,7 @@ function ComposerHarness({ initialText = "", editorSettings }: HarnessProps) {
       onStop={() => {}}
       canStop={false}
       isProcessing={false}
-      appsEnabled={true}
+
       steerAvailable={false}
       followUpMessageBehavior="queue"
       composerFollowUpHintEnabled={true}
@@ -46,7 +46,7 @@ function ComposerHarness({ initialText = "", editorSettings }: HarnessProps) {
       accessMode="current"
       onSelectAccessMode={() => {}}
       skills={[]}
-      apps={[]}
+
       prompts={[]}
       files={[]}
       draftText={draftText}

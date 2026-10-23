@@ -1,3 +1,4 @@
+import { SettingsProvidersSection, SettingsAgentPolicySection, ProjectAgentPolicy } from "./sections/SettingsRegistrySections";
 import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left";
 import X from "lucide-react/dist/esm/icons/x";
 import type {
@@ -192,10 +193,13 @@ export function SettingsView({
               </div>
             )}
             <div className="settings-content">
-              <SettingsSectionContainers
+              {activeSection === "providers" ? <SettingsProvidersSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
+               activeSection === "agents" ? <SettingsAgentPolicySection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
+               <SettingsSectionContainers
                 activeSection={activeSection}
                 orchestration={orchestration}
-              />
+              />}
+              {activeSection === "projects" && groupedWorkspaces.flatMap(g => g.workspaces).map(w => <ProjectAgentPolicy key={w.id} workspace={w} appSettings={appSettings} onUpdate={onUpdateWorkspaceSettings} />)}
             </div>
           </div>
         )}

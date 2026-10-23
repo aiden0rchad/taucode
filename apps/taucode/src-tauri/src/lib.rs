@@ -1,5 +1,6 @@
 mod codegraph;
 mod codegraph_commands;
+mod providers;
 #[cfg(desktop)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
@@ -184,6 +185,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             codegraph_commands::codegraph_status,
             codegraph_commands::codegraph_rebuild,
+            providers::provider_set_api_key,
+            providers::provider_has_api_key,
+            providers::provider_delete_api_key,
+            providers::provider_test_and_fetch,
             settings::get_app_settings,
             settings::update_app_settings,
             settings::get_codex_config_path,
@@ -266,6 +271,7 @@ pub fn run() {
             git::checkout_git_branch,
             git::create_git_branch,
             codex::model_list,
+            codex::list_models,
             codex::experimental_feature_list,
             codex::set_codex_feature_flag,
             codex::get_agents_settings,
@@ -275,12 +281,7 @@ pub fn run() {
             codex::delete_agent,
             codex::read_agent_config_toml,
             codex::write_agent_config_toml,
-            codex::account_rate_limits,
-            codex::account_read,
-            codex::codex_login,
-            codex::codex_login_cancel,
             codex::skills_list,
-            codex::apps_list,
             prompts::prompts_list,
             prompts::prompts_create,
             prompts::prompts_update,

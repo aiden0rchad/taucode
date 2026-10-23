@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { isMobilePlatform } from "../../../utils/platformPaths";
 import { Composer } from "./Composer";
 import type {
-  AppOption,
-  AppMention,
+
+
   ComposerSendIntent,
   FollowUpMessageBehavior,
 } from "../../../types";
@@ -33,10 +33,9 @@ type HarnessProps = {
   onSend: (
     text: string,
     images: string[],
-    appMentions?: AppMention[],
     submitIntent?: ComposerSendIntent,
   ) => void;
-  apps?: AppOption[];
+
   isProcessing?: boolean;
   followUpMessageBehavior?: FollowUpMessageBehavior;
   steerAvailable?: boolean;
@@ -45,7 +44,7 @@ type HarnessProps = {
 
 function ComposerHarness({
   onSend,
-  apps = [],
+
   isProcessing = false,
   followUpMessageBehavior = "queue",
   steerAvailable = false,
@@ -60,7 +59,7 @@ function ComposerHarness({
       onStop={() => {}}
       canStop={false}
       isProcessing={isProcessing}
-      appsEnabled={true}
+
       steerAvailable={steerAvailable}
       followUpMessageBehavior={followUpMessageBehavior}
       composerFollowUpHintEnabled={true}
@@ -78,7 +77,7 @@ function ComposerHarness({
       accessMode="current"
       onSelectAccessMode={() => {}}
       skills={[]}
-      apps={apps}
+
       prompts={[]}
       files={[]}
       draftText={draftText}
@@ -105,7 +104,7 @@ describe("Composer send triggers", () => {
     fireEvent.keyDown(textarea, { key: "Enter" });
 
     expect(onSend).toHaveBeenCalledTimes(1);
-    expect(onSend).toHaveBeenCalledWith("hello world", [], undefined, "default");
+    expect(onSend).toHaveBeenCalledWith("hello world", [], "default");
   });
 
   it("sends once on send-button click", () => {
@@ -117,7 +116,7 @@ describe("Composer send triggers", () => {
     fireEvent.click(screen.getByLabelText("Send"));
 
     expect(onSend).toHaveBeenCalledTimes(1);
-    expect(onSend).toHaveBeenCalledWith("from button", [], undefined, "default");
+    expect(onSend).toHaveBeenCalledWith("from button", [], "default");
   });
 
   it("shows the fast-mode indicator when enabled", () => {
@@ -141,41 +140,12 @@ describe("Composer send triggers", () => {
     expect(onSend).toHaveBeenCalledWith(
       "dismiss keyboard",
       [],
-      undefined,
       "default",
     );
     expect(blurSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("sends explicit app mentions when an app autocomplete item is selected", () => {
-    const onSend = vi.fn();
-    render(
-      <ComposerHarness
-        onSend={onSend}
-        apps={[
-          {
-            id: "connector_calendar",
-            name: "Calendar App",
-            description: "Calendar integration",
-            isAccessible: true,
-          },
-        ]}
-      />,
-    );
 
-    const textarea = screen.getByRole("textbox");
-    fireEvent.change(textarea, { target: { value: "$cal" } });
-    fireEvent.keyDown(textarea, { key: "Tab" });
-    fireEvent.keyDown(textarea, { key: "Enter" });
-
-    expect(onSend).toHaveBeenCalledTimes(1);
-    expect(onSend).toHaveBeenCalledWith(
-      "$calendar-app",
-      [],
-      [{ name: "Calendar App", path: "app://connector_calendar" }],
-      "default",
-    );
-  });
 
   it("uses queue by default while processing when follow-up behavior is queue", () => {
     const onSend = vi.fn();
@@ -193,7 +163,7 @@ describe("Composer send triggers", () => {
     fireEvent.keyDown(textarea, { key: "Enter" });
 
     expect(onSend).toHaveBeenCalledTimes(1);
-    expect(onSend).toHaveBeenCalledWith("queue this", [], undefined, "queue");
+    expect(onSend).toHaveBeenCalledWith("queue this", [], "queue");
   });
 
   it("uses opposite follow-up behavior on Shift+Ctrl+Enter while processing", () => {
@@ -212,7 +182,7 @@ describe("Composer send triggers", () => {
     fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true, ctrlKey: true });
 
     expect(onSend).toHaveBeenCalledTimes(1);
-    expect(onSend).toHaveBeenCalledWith("steer this", [], undefined, "steer");
+    expect(onSend).toHaveBeenCalledWith("steer this", [], "steer");
   });
 
   it("falls back to queue when steer is selected but unavailable", () => {
@@ -236,7 +206,7 @@ describe("Composer send triggers", () => {
       ),
     ).toBeTruthy();
     expect(onSend).toHaveBeenCalledTimes(1);
-    expect(onSend).toHaveBeenCalledWith("queue fallback", [], undefined, "queue");
+    expect(onSend).toHaveBeenCalledWith("queue fallback", [], "queue");
   });
 
   it("treats Shift+Ctrl+Enter like normal send when not processing", () => {
@@ -258,7 +228,6 @@ describe("Composer send triggers", () => {
     expect(onSend).toHaveBeenCalledWith(
       "normal shortcut send",
       [],
-      undefined,
       "default",
     );
   });

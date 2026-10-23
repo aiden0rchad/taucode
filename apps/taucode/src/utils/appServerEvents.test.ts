@@ -8,7 +8,6 @@ import {
   getAppServerRawMethod,
   getAppServerRequestId,
   isApprovalRequestMethod,
-  isAppListUpdatedEvent,
   isSkillsUpdateAvailableEvent,
   isSupportedAppServerMethod,
 } from "./appServerEvents";
@@ -56,19 +55,6 @@ describe("appServerEvents", () => {
     expect(isSkillsUpdateAvailableEvent(nonCanonicalMethod)).toBe(false);
   });
 
-  it("matches canonical app list update event method only", () => {
-    const canonicalEvent = makeEvent({
-      method: "app/list/updated",
-      params: { data: [] },
-    });
-    const nonCanonicalMethod = makeEvent({
-      method: "app/listUpdated",
-      params: { data: [] },
-    });
-
-    expect(isAppListUpdatedEvent(canonicalEvent)).toBe(true);
-    expect(isAppListUpdatedEvent(nonCanonicalMethod)).toBe(false);
-  });
 
   it("gracefully handles malformed event payloads", () => {
     const missingMessage = { workspace_id: "ws-1" } as unknown as AppServerEvent;

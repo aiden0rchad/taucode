@@ -3,7 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { pushErrorToast } from "@/services/toasts";
 import type {
   AccessMode,
-  AppMention,
+
   AppSettings,
   ComposerSendIntent,
   ServiceTier,
@@ -84,7 +84,6 @@ type MainTab = "home" | "projects" | "codex" | "git" | "log";
 type SendOrQueueHandler = (
   text: string,
   images: string[],
-  appMentions?: AppMention[],
   submitIntent?: ComposerSendIntent,
 ) => Promise<void>;
 
@@ -432,14 +431,11 @@ export function useThreadUiOrchestration({
     (
       text: string,
       images: string[],
-      appMentions?: AppMention[],
       submitIntent?: ComposerSendIntent,
     ) => {
       rememberPendingNewThreadSeed();
       return runWithDraftStart(() =>
-        appMentions && appMentions.length > 0
-          ? handleComposerSend(text, images, appMentions, submitIntent)
-          : handleComposerSend(text, images, undefined, submitIntent),
+        handleComposerSend(text, images, submitIntent),
       );
     },
     [handleComposerSend, rememberPendingNewThreadSeed, runWithDraftStart],

@@ -14,7 +14,6 @@ type UseModelsOptions = {
   selectionKey?: string | null;
 };
 
-const CONFIG_MODEL_DESCRIPTION = "Configured in CODEX_HOME/config.toml";
 
 const findModelByIdOrModel = (
   models: ModelOption[],
@@ -203,27 +202,7 @@ export function useModels({
       });
       setConfigModel(configModelFromConfig);
       const dataFromServer: ModelOption[] = parseModelListResponse(response);
-      const data = (() => {
-        if (!configModelFromConfig) {
-          return dataFromServer;
-        }
-        const hasConfigModel = dataFromServer.some(
-          (model) => model.model === configModelFromConfig,
-        );
-        if (hasConfigModel) {
-          return dataFromServer;
-        }
-        const configOption: ModelOption = {
-          id: configModelFromConfig,
-          model: configModelFromConfig,
-          displayName: `${configModelFromConfig} (config)`,
-          description: CONFIG_MODEL_DESCRIPTION,
-          supportedReasoningEfforts: [],
-          defaultReasoningEffort: null,
-          isDefault: false,
-        };
-        return [configOption, ...dataFromServer];
-      })();
+      const data = dataFromServer;
       setModels(data);
       lastFetchedWorkspaceId.current = workspaceId;
       const defaultModel = pickDefaultModel(data, configModelFromConfig);

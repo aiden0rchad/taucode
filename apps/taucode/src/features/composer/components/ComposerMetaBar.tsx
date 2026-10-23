@@ -8,7 +8,9 @@ type ComposerMetaBarProps = {
   collaborationModes: { id: string; label: string }[];
   selectedCollaborationModeId: string | null;
   onSelectCollaborationMode: (id: string | null) => void;
-  models: { id: string; displayName: string; model: string }[];
+  engine?: import("@/types").EngineKind;
+  onSelectEngine?: (engine: import("@/types").EngineKind) => void;
+  models: (Pick<import("@/types").ModelOption, "id" | "displayName" | "model" | "providerId" | "providerName" | "engines">)[];
   selectedModelId: string | null;
   onSelectModel: (id: string) => void;
   reasoningOptions: string[];
@@ -29,6 +31,7 @@ export function ComposerMetaBar({
   collaborationModes,
   selectedCollaborationModeId,
   onSelectCollaborationMode,
+  engine = "codex", onSelectEngine,
   models,
   selectedModelId,
   onSelectModel,
@@ -172,6 +175,7 @@ export function ComposerMetaBar({
               />
             </svg>
           </span>
+          {onSelectEngine ? <select aria-label="Engine" value={engine} onChange={e => onSelectEngine(e.target.value as "pi" | "codex")}><option value="pi">pi</option><option value="codex">codex</option></select> : <span className="engine-badge" aria-label="Thread engine">{engine}</span>}
           <select
             className="composer-select composer-select--model"
             aria-label="Model"
@@ -181,11 +185,12 @@ export function ComposerMetaBar({
             style={modelSelectStyle}
           >
             {models.length === 0 && <option value="">No models</option>}
-            {models.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.displayName || model.model}
-              </option>
-            ))}
+            {[...new Set(models.map(m => m.providerName ?? m.providerId ?? "Models"))].map(provider => <optgroup key={provider} label={provider}>
+              {models.filter(m => (m.providerName ?? m.providerId ?? "Models") === provider).map(model => {
+                const unavailable = model.engines && !model.engines.includes(engine);
+                return <option key={model.id} value={model.id} disabled={unavailable} title={unavailable ? "Unavailable for " + engine + ". Continue in a new pi thread (coming later)." : undefined}>{model.displayName || model.model}</option>;
+              })}
+            </optgroup>)}
           </select>
           {selectedServiceTier === "fast" && (
             <span

@@ -1,8 +1,6 @@
 import type {
-  AccountSnapshot,
   ApprovalRequest,
   ConversationItem,
-  RateLimitSnapshot,
   RequestUserInputRequest,
   ThreadListSortKey,
   ThreadSummary,
@@ -45,8 +43,6 @@ export type ThreadState = {
   approvals: ApprovalRequest[];
   userInputRequests: RequestUserInputRequest[];
   tokenUsageByThread: Record<string, ThreadTokenUsage>;
-  rateLimitsByWorkspace: Record<string, RateLimitSnapshot | null>;
-  accountByWorkspace: Record<string, AccountSnapshot | null>;
   planByThread: Record<string, TurnPlan | null>;
   lastAgentMessageByThread: Record<string, { text: string; timestamp: number }>;
 };
@@ -76,7 +72,7 @@ export type ThreadAction =
       patch: Partial<
         Pick<
           ThreadSummary,
-          "isSubagent" | "subagentNickname" | "subagentRole" | "createdAt"
+          "isSubagent" | "subagentNickname" | "subagentRole" | "createdAt" | "engine" | "modelProvider"
         >
       >;
     }
@@ -161,16 +157,8 @@ export type ThreadAction =
       workspaceId: string;
     }
   | { type: "setThreadTokenUsage"; threadId: string; tokenUsage: ThreadTokenUsage }
-  | {
-      type: "setRateLimits";
-      workspaceId: string;
-      rateLimits: RateLimitSnapshot | null;
-    }
-  | {
-      type: "setAccountInfo";
-      workspaceId: string;
-      account: AccountSnapshot | null;
-    }
+
+
   | { type: "setActiveTurnId"; threadId: string; turnId: string | null }
   | { type: "setThreadTurnDiff"; threadId: string; diff: string }
   | { type: "setThreadPlan"; threadId: string; plan: TurnPlan | null }
@@ -202,8 +190,6 @@ export const initialState: ThreadState = {
   approvals: [],
   userInputRequests: [],
   tokenUsageByThread: {},
-  rateLimitsByWorkspace: {},
-  accountByWorkspace: {},
   planByThread: {},
   lastAgentMessageByThread: {},
 };

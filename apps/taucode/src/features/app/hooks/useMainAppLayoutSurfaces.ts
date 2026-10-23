@@ -19,12 +19,10 @@ type GitDiffPanelProps = LayoutNodesOptions["git"]["gitDiffPanelProps"];
 type UseMainAppLayoutSurfacesArgs = {
   appSettings: Pick<
     AppSettings,
-    | "usageShowRemaining"
     | "composerCodeBlockCopyUseModifier"
     | "showMessageFilePath"
     | "openAppTargets"
     | "selectedOpenAppId"
-    | "experimentalAppsEnabled"
     | "followUpMessageBehavior"
     | "composerFollowUpHintEnabled"
     | "dictationEnabled"
@@ -56,13 +54,6 @@ type UseMainAppLayoutSurfacesArgs = {
   activeItems: LayoutNodesOptions["primary"]["messagesProps"]["items"];
   userInputRequests: SidebarProps["userInputRequests"];
   approvals: LayoutNodesOptions["primary"]["approvalToastsProps"]["approvals"];
-  activeRateLimits: SidebarProps["accountRateLimits"];
-  activeAccount: SidebarProps["accountInfo"];
-  homeRateLimits: LayoutNodesOptions["primary"]["homeProps"]["accountRateLimits"];
-  homeAccount: LayoutNodesOptions["primary"]["homeProps"]["accountInfo"];
-  accountSwitching: SidebarProps["accountSwitching"];
-  onSwitchAccount: SidebarProps["onSwitchAccount"];
-  onCancelSwitchAccount: SidebarProps["onCancelSwitchAccount"];
   onDecision: LayoutNodesOptions["primary"]["approvalToastsProps"]["onDecision"];
   onRemember: LayoutNodesOptions["primary"]["approvalToastsProps"]["onRemember"];
   onUserInputSubmit: LayoutNodesOptions["primary"]["messagesProps"]["onUserInputSubmit"];
@@ -143,6 +134,8 @@ type UseMainAppLayoutSurfacesArgs = {
     onSaveLaunchScript: () => void;
   };
   launchScriptsState: WorkspaceLaunchScriptsState | undefined;
+  engine?: import("@/types").EngineKind;
+  onSelectEngine?: (engine: import("@/types").EngineKind) => void;
   models: ComposerProps["models"];
   selectedModelId: ComposerProps["selectedModelId"];
   onSelectModel: ComposerProps["onSelectModel"];
@@ -160,7 +153,7 @@ type UseMainAppLayoutSurfacesArgs = {
   accessMode: ComposerProps["accessMode"];
   onSelectAccessMode: ComposerProps["onSelectAccessMode"];
   skills: ComposerProps["skills"];
-  apps: ComposerProps["apps"];
+
   prompts: ComposerProps["prompts"];
   composerInputRef: RefObject<HTMLTextAreaElement | null>;
   composerEditorSettings: ComposerEditorSettings;
@@ -227,10 +220,7 @@ type UseMainAppLayoutSurfacesArgs = {
   handleDebugClick: () => void;
 };
 
-type MainAppLayoutSurfacesContext = UseMainAppLayoutSurfacesArgs & {
-  sidebarRateLimits: SidebarProps["accountRateLimits"];
-  sidebarAccount: SidebarProps["accountInfo"];
-};
+type MainAppLayoutSurfacesContext = UseMainAppLayoutSurfacesArgs;
 
 function buildPrimarySurface({
   appSettings,
@@ -259,13 +249,8 @@ function buildPrimarySurface({
   activeItems,
   userInputRequests,
   approvals,
-  sidebarRateLimits,
-  sidebarAccount,
-  homeRateLimits,
-  homeAccount,
-  accountSwitching,
-  onSwitchAccount,
-  onCancelSwitchAccount,
+
+
   onDecision,
   onRemember,
   onUserInputSubmit,
@@ -305,6 +290,7 @@ function buildPrimarySurface({
   handleToggleTerminalWithFocus,
   launchScriptState,
   launchScriptsState,
+  engine, onSelectEngine,
   models,
   selectedModelId,
   onSelectModel,
@@ -322,7 +308,7 @@ function buildPrimarySurface({
   accessMode,
   onSelectAccessMode,
   skills,
-  apps,
+
   prompts,
   composerInputRef,
   composerEditorSettings,
@@ -398,12 +384,6 @@ function buildPrimarySurface({
       activeWorkspaceId,
       activeThreadId,
       userInputRequests,
-      accountRateLimits: sidebarRateLimits,
-      usageShowRemaining: appSettings.usageShowRemaining,
-      accountInfo: sidebarAccount,
-      onSwitchAccount,
-      onCancelSwitchAccount,
-      accountSwitching,
       onOpenSettings: sidebarHandlers.onOpenSettings,
       onOpenDebug: handleDebugClick,
       showDebugButton,
@@ -504,7 +484,8 @@ function buildPrimarySurface({
           collaborationModes,
           selectedCollaborationModeId,
           onSelectCollaborationMode,
-          models,
+          engine, onSelectEngine,
+  models,
           selectedModelId,
           onSelectModel,
           reasoningOptions,
@@ -518,8 +499,8 @@ function buildPrimarySurface({
           accessMode,
           onSelectAccessMode,
           skills,
-          appsEnabled: appSettings.experimentalAppsEnabled,
-          apps,
+
+
           prompts,
           files: composerWorkspaceState.files,
           textareaRef: composerInputRef,
@@ -594,9 +575,6 @@ function buildPrimarySurface({
       usageWorkspaceId,
       usageWorkspaceOptions,
       onUsageWorkspaceChange,
-      accountRateLimits: homeRateLimits,
-      usageShowRemaining: appSettings.usageShowRemaining,
-      accountInfo: homeAccount,
       onSelectThread: (workspaceId, threadId) => {
         threadNavigation.exitDiffView();
         threadNavigation.clearDraftState();
@@ -609,6 +587,7 @@ function buildPrimarySurface({
     },
     mainHeaderProps: activeWorkspace
       ? {
+          engine,
           workspace: activeWorkspace,
           parentName: worktreeState.activeParentWorkspace?.name ?? null,
           worktreeLabel: worktreeState.worktreeLabel,
@@ -966,13 +945,6 @@ export function useMainAppLayoutSurfaces({
   activeItems,
   userInputRequests,
   approvals,
-  activeRateLimits,
-  activeAccount,
-  homeRateLimits,
-  homeAccount,
-  accountSwitching,
-  onSwitchAccount,
-  onCancelSwitchAccount,
   onDecision,
   onRemember,
   onUserInputSubmit,
@@ -1016,6 +988,7 @@ export function useMainAppLayoutSurfaces({
   handleToggleTerminalWithFocus,
   launchScriptState,
   launchScriptsState,
+  engine, onSelectEngine,
   models,
   selectedModelId,
   onSelectModel,
@@ -1033,7 +1006,7 @@ export function useMainAppLayoutSurfaces({
   accessMode,
   onSelectAccessMode,
   skills,
-  apps,
+
   prompts,
   composerInputRef,
   composerEditorSettings,
@@ -1099,8 +1072,6 @@ export function useMainAppLayoutSurfaces({
   showDebugButton,
   handleDebugClick,
 }: UseMainAppLayoutSurfacesArgs): LayoutNodesOptions {
-  const sidebarRateLimits = activeWorkspace ? activeRateLimits : homeRateLimits;
-  const sidebarAccount = activeWorkspace ? activeAccount : homeAccount;
   const context: MainAppLayoutSurfacesContext = {
     appSettings,
     workspaces,
@@ -1128,13 +1099,6 @@ export function useMainAppLayoutSurfaces({
     activeItems,
     userInputRequests,
     approvals,
-    activeRateLimits,
-    activeAccount,
-    homeRateLimits,
-    homeAccount,
-    accountSwitching,
-    onSwitchAccount,
-    onCancelSwitchAccount,
     onDecision,
     onRemember,
     onUserInputSubmit,
@@ -1178,7 +1142,8 @@ export function useMainAppLayoutSurfaces({
     handleToggleTerminalWithFocus,
     launchScriptState,
     launchScriptsState,
-    models,
+    engine, onSelectEngine,
+  models,
     selectedModelId,
     onSelectModel,
     collaborationModes,
@@ -1195,7 +1160,7 @@ export function useMainAppLayoutSurfaces({
     accessMode,
     onSelectAccessMode,
     skills,
-    apps,
+
     prompts,
     composerInputRef,
     composerEditorSettings,
@@ -1260,8 +1225,8 @@ export function useMainAppLayoutSurfaces({
     dismissErrorToast,
     showDebugButton,
     handleDebugClick,
-    sidebarRateLimits,
-    sidebarAccount,
+
+
   };
 
   return {

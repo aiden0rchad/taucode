@@ -1,15 +1,14 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::PathBuf;
-use std::sync::OnceLock;
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 use tokio::sync::Mutex;
 
 use crate::backend::app_server::WorkspaceSession;
 use crate::codex::args::resolve_workspace_codex_args;
 use crate::codex::home::resolve_workspace_codex_home;
-use crate::shared::process_core::kill_child_process_tree;
 use crate::types::{AppSettings, WorkspaceEntry};
 
 use super::helpers::resolve_entry_and_parent;
@@ -21,8 +20,7 @@ pub(super) fn workspace_session_spawn_lock() -> &'static Mutex<()> {
 }
 
 async fn session_process_is_alive(session: &Arc<WorkspaceSession>) -> bool {
-    let mut child = session.child.lock().await;
-    matches!(child.try_wait(), Ok(None))
+    session.is_alive().await
 }
 
 async fn remove_session_references(
@@ -38,11 +36,16 @@ pub(super) async fn take_live_shared_session(
     entry: &WorkspaceEntry,
     app_settings: &Mutex<AppSettings>,
 ) -> Option<Arc<WorkspaceSession>> {
-    if crate::shared::codegraph_core::enabled(app_settings.lock().await.codegraph_enabled, entry.settings.codegraph_enabled) { return None; }
+    if crate::shared::codegraph_core::enabled(
+        app_settings.lock().await.codegraph_enabled,
+        entry.settings.codegraph_enabled,
+    ) {
+        return None;
+    }
     loop {
         let existing_session = {
             let sessions = sessions.lock().await;
-            sessions.values().find(|session| session.codegraph.is_none()).cloned()
+            sessions.get(&entry.id).cloned()
         };
         let Some(existing_session) = existing_session else {
             return None;
@@ -121,8 +124,7 @@ pub(super) async fn kill_session_by_id(
         if still_referenced {
             return;
         }
-        let mut child = session.child.lock().await;
-        kill_child_process_tree(&mut child).await;
+        session.shutdown().await;
     }
 }
 
@@ -170,21 +172,30 @@ mod tests {
         let mut child = cmd.spawn().expect("spawn dummy child");
         let stdin = child.stdin.take().expect("dummy child stdin");
 
-        Arc::new(WorkspaceSession {
-            codegraph: None,
-            codex_args: None,
-            child: Mutex::new(child),
-            stdin: Mutex::new(stdin),
-            pending: Mutex::new(HashMap::new()),
-            request_context: Mutex::new(HashMap::new()),
-            thread_workspace: Mutex::new(HashMap::new()),
-            hidden_thread_ids: Mutex::new(HashSet::new()),
-            next_id: AtomicU64::new(0),
-            background_thread_callbacks: Mutex::new(HashMap::new()),
-            owner_workspace_id: "test-owner".to_string(),
-            workspace_ids: Mutex::new(HashSet::from(["test-owner".to_string()])),
-            workspace_roots: Mutex::new(HashMap::new()),
-        })
+        Arc::new(WorkspaceSession::new(
+            Arc::new(crate::backend::app_server::CodexEngine {
+                events: tokio::sync::broadcast::channel(256).0,
+                active_threads: Mutex::new(HashSet::new()),
+                codegraph: None,
+                codex_args: None,
+                child: Mutex::new(child),
+                stdin: Mutex::new(stdin),
+                pending: Mutex::new(HashMap::new()),
+                request_context: Mutex::new(HashMap::new()),
+                thread_workspace: Mutex::new(HashMap::new()),
+                hidden_thread_ids: Mutex::new(HashSet::new()),
+                next_id: AtomicU64::new(0),
+                background_thread_callbacks: Mutex::new(HashMap::new()),
+                owner_workspace_id: "test-owner".to_string(),
+                workspace_ids: Mutex::new(HashSet::from(["test-owner".to_string()])),
+                workspace_roots: Mutex::new(HashMap::new()),
+            }),
+            vec![],
+            crate::types::AgentPolicy {
+                default_engine: crate::types::EngineKind::Codex,
+                ..Default::default()
+            },
+        ))
     }
 
     #[test]

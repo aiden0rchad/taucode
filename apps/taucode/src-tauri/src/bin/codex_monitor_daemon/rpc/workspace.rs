@@ -229,6 +229,20 @@ pub(super) async fn try_handle(
                 .await,
             )
         }
+        "registry_update" => {
+            let providers = match serde_json::from_value(params["providers"].clone()) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e.to_string())),
+            };
+            let policy = match serde_json::from_value(params["agentPolicy"].clone()) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e.to_string())),
+            };
+            let mut settings = state.app_settings.lock().await.clone();
+            settings.providers = providers;
+            settings.agent_policy = policy;
+            Some(serialize_result(state.update_app_settings(settings)).await)
+        }
         "get_app_settings" => Some(serialize_value(state.get_app_settings().await)),
         "update_app_settings" => {
             let settings_value = match params {

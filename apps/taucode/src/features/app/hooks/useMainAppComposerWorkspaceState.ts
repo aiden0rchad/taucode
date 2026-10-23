@@ -52,7 +52,6 @@ type UseMainAppComposerWorkspaceStateArgs = {
     AppSettings,
     | "steerEnabled"
     | "followUpMessageBehavior"
-    | "experimentalAppsEnabled"
     | "pauseQueuedMessagesWhenResponseRequired"
   >;
   models: {
@@ -82,7 +81,6 @@ type UseMainAppComposerWorkspaceStateArgs = {
     startReview: Parameters<typeof useComposerController>[0]["startReview"];
     startResume: Parameters<typeof useComposerController>[0]["startResume"];
     startCompact: Parameters<typeof useComposerController>[0]["startCompact"];
-    startApps: Parameters<typeof useComposerController>[0]["startApps"];
     startMcp: Parameters<typeof useComposerController>[0]["startMcp"];
     startFast: Parameters<typeof useComposerController>[0]["startFast"];
     startStatus: Parameters<typeof useComposerController>[0]["startStatus"];
@@ -142,7 +140,6 @@ export function useMainAppComposerWorkspaceState({
     startReview,
     startResume,
     startCompact,
-    startApps,
     startMcp,
     startFast,
     startStatus,
@@ -232,7 +229,7 @@ export function useMainAppComposerWorkspaceState({
     queueFlushPaused,
     steerEnabled: settings.steerEnabled,
     followUpMessageBehavior: settings.followUpMessageBehavior,
-    appsEnabled: settings.experimentalAppsEnabled,
+
     connectWorkspace,
     startThreadForWorkspace,
     sendUserMessage,
@@ -241,7 +238,6 @@ export function useMainAppComposerWorkspaceState({
     startReview,
     startResume,
     startCompact,
-    startApps,
     startMcp,
     startFast,
     startStatus,

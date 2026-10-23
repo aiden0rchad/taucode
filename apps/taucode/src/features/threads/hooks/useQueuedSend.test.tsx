@@ -21,7 +21,7 @@ const makeOptions = (
   isReviewing: false,
   steerEnabled: false,
   followUpMessageBehavior: "queue" as const,
-  appsEnabled: true,
+
   activeWorkspace: workspace,
   connectWorkspace: vi.fn().mockResolvedValue(undefined),
   startThreadForWorkspace: vi.fn().mockResolvedValue("thread-1"),
@@ -31,7 +31,7 @@ const makeOptions = (
   startReview: vi.fn().mockResolvedValue(undefined),
   startResume: vi.fn().mockResolvedValue(undefined),
   startCompact: vi.fn().mockResolvedValue(undefined),
-  startApps: vi.fn().mockResolvedValue(undefined),
+
   startMcp: vi.fn().mockResolvedValue(undefined),
   startFast: vi.fn().mockResolvedValue(undefined),
   startStatus: vi.fn().mockResolvedValue(undefined),
@@ -128,7 +128,6 @@ describe("useQueuedSend", () => {
     expect(options.sendUserMessage).toHaveBeenCalledWith(
       "Steer",
       [],
-      undefined,
       { sendIntent: "steer" },
     );
     expect(result.current.activeQueue).toHaveLength(0);
@@ -176,7 +175,6 @@ describe("useQueuedSend", () => {
     expect(options.sendUserMessage).toHaveBeenCalledWith(
       "Fallback to queue",
       [],
-      undefined,
       { sendIntent: "steer" },
     );
     expect(result.current.activeQueue).toHaveLength(1);
@@ -279,7 +277,6 @@ describe("useQueuedSend", () => {
     expect(options.sendUserMessage).toHaveBeenCalledWith(
       "Connect",
       [],
-      undefined,
       { sendIntent: "default" },
     );
   });
@@ -411,41 +408,9 @@ describe("useQueuedSend", () => {
     expect(options.startReview).not.toHaveBeenCalled();
   });
 
-  it("routes /apps to the apps handler", async () => {
-    const startApps = vi.fn().mockResolvedValue(undefined);
-    const options = makeOptions({ startApps });
-    const { result } = renderHook((props) => useQueuedSend(props), {
-      initialProps: options,
-    });
 
-    await act(async () => {
-      await result.current.handleSend("/apps now", ["img-1"]);
-    });
 
-    expect(startApps).toHaveBeenCalledWith("/apps now");
-    expect(options.sendUserMessage).not.toHaveBeenCalled();
-    expect(options.startReview).not.toHaveBeenCalled();
-  });
 
-  it("treats /apps as plain text when apps feature is disabled", async () => {
-    const startApps = vi.fn().mockResolvedValue(undefined);
-    const options = makeOptions({ startApps, appsEnabled: false });
-    const { result } = renderHook((props) => useQueuedSend(props), {
-      initialProps: options,
-    });
-
-    await act(async () => {
-      await result.current.handleSend("/apps now", ["img-1"]);
-    });
-
-    expect(startApps).not.toHaveBeenCalled();
-    expect(options.sendUserMessage).toHaveBeenCalledWith(
-      "/apps now",
-      ["img-1"],
-      undefined,
-      { sendIntent: "default" },
-    );
-  });
 
   it("routes /resume to the resume handler", async () => {
     const startResume = vi.fn().mockResolvedValue(undefined);

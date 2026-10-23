@@ -35,7 +35,21 @@ pub(super) async fn try_handle(
                 Ok(value) => value,
                 Err(err) => return Some(Err(err)),
             };
-            Some(state.start_thread(workspace_id).await)
+            let engine = match params
+                .get("engine")
+                .filter(|v| !v.is_null())
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+            {
+                Ok(v) => v,
+                Err(_) => return Some(Err("Unknown engine".into())),
+            };
+            Some(
+                state
+                    .start_thread(workspace_id, engine, parse_optional_string(params, "model"))
+                    .await,
+            )
         }
         "resume_thread" => {
             let workspace_id = match parse_string(params, "workspaceId") {
@@ -58,8 +72,15 @@ pub(super) async fn try_handle(
                 Err(err) => return Some(Err(err)),
             };
             if method == "list_thread_history" {
-                Some(codex_core::list_thread_history_core(&state.sessions, workspace_id, thread_id,
-                    parse_optional_string(params, "cursor")).await)
+                Some(
+                    codex_core::list_thread_history_core(
+                        &state.sessions,
+                        workspace_id,
+                        thread_id,
+                        parse_optional_string(params, "cursor"),
+                    )
+                    .await,
+                )
             } else {
                 Some(state.read_thread(workspace_id, thread_id).await)
             }
@@ -95,7 +116,15 @@ pub(super) async fn try_handle(
                 Ok(value) => value,
                 Err(err) => return Some(Err(err)),
             };
-            Some(state.fork_thread(workspace_id, thread_id).await)
+            Some(
+                state
+                    .fork_thread(
+                        workspace_id,
+                        thread_id,
+                        parse_optional_string(params, "model"),
+                    )
+                    .await,
+            )
         }
         "list_threads" => {
             let workspace_id = match parse_string(params, "workspaceId") {
@@ -179,8 +208,6 @@ pub(super) async fn try_handle(
             let service_tier = parse_optional_nullable_string(params, "serviceTier");
             let access_mode = parse_optional_string(params, "accessMode");
             let images = parse_optional_string_array(params, "images");
-            let app_mentions = parse_optional_value(params, "appMentions")
-                .and_then(|value| value.as_array().cloned());
             let collaboration_mode = parse_optional_value(params, "collaborationMode");
             Some(
                 state
@@ -193,7 +220,6 @@ pub(super) async fn try_handle(
                         service_tier,
                         access_mode,
                         images,
-                        app_mentions,
                         collaboration_mode,
                     )
                     .await,
@@ -232,11 +258,9 @@ pub(super) async fn try_handle(
                 Err(err) => return Some(Err(err)),
             };
             let images = parse_optional_string_array(params, "images");
-            let app_mentions = parse_optional_value(params, "appMentions")
-                .and_then(|value| value.as_array().cloned());
             Some(
                 state
-                    .turn_steer(workspace_id, thread_id, turn_id, text, images, app_mentions)
+                    .turn_steer(workspace_id, thread_id, turn_id, text, images)
                     .await,
             )
         }
@@ -265,7 +289,7 @@ pub(super) async fn try_handle(
                     .await,
             )
         }
-        "model_list" => {
+        "model_list" | "list_models" => {
             let workspace_id = match parse_string(params, "workspaceId") {
                 Ok(value) => value,
                 Err(err) => return Some(Err(err)),
@@ -390,33 +414,53 @@ pub(super) async fn try_handle(
                     .map(|_| json!({ "ok": true })),
             )
         }
-        "account_rate_limits" => {
-            let workspace_id = match parse_string(params, "workspaceId") {
-                Ok(value) => value,
-                Err(err) => return Some(Err(err)),
+        "provider_test_and_fetch" => {
+            let id = match parse_string(params, "id") {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
             };
-            Some(state.account_rate_limits(workspace_id).await)
+            Some(
+                crate::shared::providers::test_and_fetch(
+                    id,
+                    &state.app_settings,
+                    &state.settings_path,
+                )
+                .await,
+            )
         }
-        "account_read" => {
-            let workspace_id = match parse_string(params, "workspaceId") {
-                Ok(value) => value,
-                Err(err) => return Some(Err(err)),
+        "provider_set_api_key" | "provider_has_api_key" | "provider_delete_api_key" => {
+            use crate::shared::providers::{KeyStore, Keychain};
+            let id = match parse_string(params, "id") {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
             };
-            Some(state.account_read(workspace_id).await)
-        }
-        "codex_login" => {
-            let workspace_id = match parse_string(params, "workspaceId") {
-                Ok(value) => value,
-                Err(err) => return Some(Err(err)),
+            if !state
+                .app_settings
+                .lock()
+                .await
+                .providers
+                .iter()
+                .any(|p| p.id == id)
+            {
+                return Some(Err("Provider not found".into()));
+            }
+            let result = match method {
+                "provider_has_api_key" => Keychain.get(&id).map(|v| json!(v.is_some())),
+                "provider_delete_api_key" => Keychain.delete(&id).map(|_| Value::Null),
+                _ => {
+                    let key = match parse_string(params, "key") {
+                        Ok(v) => v,
+                        Err(e) => return Some(Err(e)),
+                    };
+                    Keychain.set(&id, &key).map(|_| Value::Null)
+                }
             };
-            Some(state.codex_login(workspace_id).await)
-        }
-        "codex_login_cancel" => {
-            let workspace_id = match parse_string(params, "workspaceId") {
-                Ok(value) => value,
-                Err(err) => return Some(Err(err)),
-            };
-            Some(state.codex_login_cancel(workspace_id).await)
+            if result.is_ok() && method != "provider_has_api_key" {
+                for session in state.sessions.lock().await.values() {
+                    session.credentials_changed().await;
+                }
+            }
+            Some(result)
         }
         "skills_list" => {
             let workspace_id = match parse_string(params, "workspaceId") {
@@ -424,20 +468,6 @@ pub(super) async fn try_handle(
                 Err(err) => return Some(Err(err)),
             };
             Some(state.skills_list(workspace_id).await)
-        }
-        "apps_list" => {
-            let workspace_id = match parse_string(params, "workspaceId") {
-                Ok(value) => value,
-                Err(err) => return Some(Err(err)),
-            };
-            let cursor = parse_optional_string(params, "cursor");
-            let limit = parse_optional_u32(params, "limit");
-            let thread_id = parse_optional_string(params, "threadId");
-            Some(
-                state
-                    .apps_list(workspace_id, cursor, limit, thread_id)
-                    .await,
-            )
         }
         "respond_to_server_request" => {
             let workspace_id = match parse_string(params, "workspaceId") {

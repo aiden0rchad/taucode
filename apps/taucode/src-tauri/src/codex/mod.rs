@@ -40,12 +40,20 @@ pub(crate) async fn spawn_workspace_session(
 ) -> Result<Arc<WorkspaceSession>, String> {
     use tauri::Manager;
     let state = app_handle.state::<AppState>();
-    let global = state.app_settings.lock().await.codegraph_enabled;
+    let settings = state.app_settings.lock().await.clone();
+    let global = settings.codegraph_enabled;
     let manager = state.codegraph.clone();
-    let setup = if crate::shared::codegraph_core::enabled(global, entry.settings.codegraph_enabled) { manager.setup.clone() } else { None };
+    let setup = if crate::shared::codegraph_core::enabled(global, entry.settings.codegraph_enabled)
+    {
+        manager.setup.clone()
+    } else {
+        None
+    };
     let client_version = app_handle.package_info().version.to_string();
     let event_sink = TauriEventSink::new(app_handle);
-    manager.start(entry.clone(), global, false, event_sink.clone()).await;
+    manager
+        .start(entry.clone(), global, false, event_sink.clone())
+        .await;
     spawn_workspace_session_inner(
         entry,
         default_codex_bin,
@@ -54,6 +62,7 @@ pub(crate) async fn spawn_workspace_session(
         client_version,
         event_sink,
         setup,
+        settings,
     )
     .await
 }
@@ -81,6 +90,8 @@ pub(crate) async fn codex_update(
 #[tauri::command]
 pub(crate) async fn start_thread(
     workspace_id: String,
+    engine: Option<crate::types::EngineKind>,
+    model: Option<String>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Value, String> {
@@ -89,12 +100,19 @@ pub(crate) async fn start_thread(
             &*state,
             app,
             "start_thread",
-            json!({ "workspaceId": workspace_id }),
+            json!({ "workspaceId": workspace_id, "engine":engine, "model":model }),
         )
         .await;
     }
 
-    codex_core::start_thread_core(&state.sessions, &state.workspaces, workspace_id).await
+    codex_core::start_thread_core(
+        &state.sessions,
+        &state.workspaces,
+        workspace_id,
+        engine,
+        model,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -146,8 +164,13 @@ pub(crate) async fn list_thread_history(
     app: AppHandle,
 ) -> Result<Value, String> {
     if remote_backend::is_remote_mode(&*state).await {
-        return remote_backend::call_remote(&*state, app, "list_thread_history",
-            json!({ "workspaceId": workspace_id, "threadId": thread_id, "cursor": cursor })).await;
+        return remote_backend::call_remote(
+            &*state,
+            app,
+            "list_thread_history",
+            json!({ "workspaceId": workspace_id, "threadId": thread_id, "cursor": cursor }),
+        )
+        .await;
     }
     codex_core::list_thread_history_core(&state.sessions, workspace_id, thread_id, cursor).await
 }
@@ -232,6 +255,7 @@ pub(crate) async fn thread_live_unsubscribe(
 pub(crate) async fn fork_thread(
     workspace_id: String,
     thread_id: String,
+    model: Option<String>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Value, String> {
@@ -240,12 +264,12 @@ pub(crate) async fn fork_thread(
             &*state,
             app,
             "fork_thread",
-            json!({ "workspaceId": workspace_id, "threadId": thread_id }),
+            json!({ "workspaceId": workspace_id, "threadId": thread_id, "model":model }),
         )
         .await;
     }
 
-    codex_core::fork_thread_core(&state.sessions, workspace_id, thread_id).await
+    codex_core::fork_thread_core(&state.sessions, workspace_id, thread_id, model).await
 }
 
 #[tauri::command]
@@ -367,7 +391,6 @@ pub(crate) async fn send_user_message(
     service_tier: Option<Option<String>>,
     access_mode: Option<String>,
     images: Option<Vec<String>>,
-    app_mentions: Option<Vec<Value>>,
     collaboration_mode: Option<Value>,
     state: State<'_, AppState>,
     app: AppHandle,
@@ -388,7 +411,6 @@ pub(crate) async fn send_user_message(
         insert_optional_nullable_string(&mut payload, "serviceTier", service_tier);
         payload.insert("accessMode".to_string(), json!(access_mode));
         payload.insert("images".to_string(), json!(images));
-        payload.insert("appMentions".to_string(), json!(app_mentions));
         if let Some(mode) = collaboration_mode {
             if !mode.is_null() {
                 payload.insert("collaborationMode".to_string(), mode);
@@ -414,7 +436,6 @@ pub(crate) async fn send_user_message(
         service_tier,
         access_mode,
         images,
-        app_mentions,
         collaboration_mode,
     )
     .await
@@ -427,7 +448,6 @@ pub(crate) async fn turn_steer(
     turn_id: String,
     text: String,
     images: Option<Vec<String>>,
-    app_mentions: Option<Vec<Value>>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Value, String> {
@@ -448,7 +468,6 @@ pub(crate) async fn turn_steer(
                 "turnId": turn_id,
                 "text": text,
                 "images": images,
-                "appMentions": app_mentions,
             }),
         )
         .await;
@@ -461,7 +480,6 @@ pub(crate) async fn turn_steer(
         turn_id,
         text,
         images,
-        app_mentions,
     )
     .await
 }
@@ -530,14 +548,16 @@ pub(crate) async fn start_review(
         .await;
     }
 
-    codex_core::start_review_core(
-        &state.sessions,
-        workspace_id,
-        thread_id,
-        target,
-        delivery,
-    )
-    .await
+    codex_core::start_review_core(&state.sessions, workspace_id, thread_id, target, delivery).await
+}
+
+#[tauri::command]
+pub(crate) async fn list_models(
+    workspace_id: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Value, String> {
+    model_list(workspace_id, state, app).await
 }
 
 #[tauri::command]
@@ -556,7 +576,9 @@ pub(crate) async fn model_list(
         .await;
     }
 
-    codex_core::model_list_core(&state.sessions, workspace_id).await
+    Ok(crate::shared::providers::catalog(
+        &state.app_settings.lock().await.providers,
+    ))
 }
 
 #[tauri::command]
@@ -735,83 +757,6 @@ pub(crate) async fn write_agent_config_toml(
 }
 
 #[tauri::command]
-pub(crate) async fn account_rate_limits(
-    workspace_id: String,
-    state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<Value, String> {
-    if remote_backend::is_remote_mode(&*state).await {
-        return remote_backend::call_remote(
-            &*state,
-            app,
-            "account_rate_limits",
-            json!({ "workspaceId": workspace_id }),
-        )
-        .await;
-    }
-
-    codex_core::account_rate_limits_core(&state.sessions, workspace_id).await
-}
-
-#[tauri::command]
-pub(crate) async fn account_read(
-    workspace_id: String,
-    state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<Value, String> {
-    if remote_backend::is_remote_mode(&*state).await {
-        return remote_backend::call_remote(
-            &*state,
-            app,
-            "account_read",
-            json!({ "workspaceId": workspace_id }),
-        )
-        .await;
-    }
-
-    codex_core::account_read_core(&state.sessions, &state.workspaces, workspace_id).await
-}
-
-#[tauri::command]
-pub(crate) async fn codex_login(
-    workspace_id: String,
-    state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<Value, String> {
-    if remote_backend::is_remote_mode(&*state).await {
-        return remote_backend::call_remote(
-            &*state,
-            app,
-            "codex_login",
-            json!({ "workspaceId": workspace_id }),
-        )
-        .await;
-    }
-
-    codex_core::codex_login_core(&state.sessions, &state.codex_login_cancels, workspace_id).await
-}
-
-#[tauri::command]
-pub(crate) async fn codex_login_cancel(
-    workspace_id: String,
-    state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<Value, String> {
-    if remote_backend::is_remote_mode(&*state).await {
-        return remote_backend::call_remote(
-            &*state,
-            app,
-            "codex_login_cancel",
-            json!({ "workspaceId": workspace_id }),
-        )
-        .await;
-    }
-
-    codex_core::codex_login_cancel_core(&state.sessions, &state.codex_login_cancels, workspace_id)
-        .await
-}
-
-#[tauri::command]
 pub(crate) async fn skills_list(
     workspace_id: String,
     state: State<'_, AppState>,
@@ -828,33 +773,6 @@ pub(crate) async fn skills_list(
     }
 
     codex_core::skills_list_core(&state.sessions, &state.workspaces, workspace_id).await
-}
-
-#[tauri::command]
-pub(crate) async fn apps_list(
-    workspace_id: String,
-    cursor: Option<String>,
-    limit: Option<u32>,
-    thread_id: Option<String>,
-    state: State<'_, AppState>,
-    app: AppHandle,
-) -> Result<Value, String> {
-    if remote_backend::is_remote_mode(&*state).await {
-        return remote_backend::call_remote(
-            &*state,
-            app,
-            "apps_list",
-            json!({
-                "workspaceId": workspace_id,
-                "cursor": cursor,
-                "limit": limit,
-                "threadId": thread_id
-            }),
-        )
-        .await;
-    }
-
-    codex_core::apps_list_core(&state.sessions, workspace_id, cursor, limit, thread_id).await
 }
 
 #[tauri::command]

@@ -3,7 +3,9 @@ use crate::backend::app_server::{
     protocol_tests::{make_session, RecordingSink},
     route_app_server_message,
 };
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::time::timeout;
 
 #[test]
 fn history_pages_use_cursors_order_items_and_avoid_deprecated_hydration() {
@@ -49,7 +51,7 @@ fn history_pages_use_cursors_order_items_and_avoid_deprecated_hydration() {
         let older = list_thread_history_core(&sessions, "fixture".into(), "thread".into(), Some("older".into())).await.unwrap();
         assert!(older["nextCursor"].is_null());
         read_thread_core(&sessions, "fixture".into(), "thread".into()).await.unwrap();
-        fork_thread_core(&sessions, "fixture".into(), "thread".into()).await.unwrap();
+        fork_thread_core(&sessions, "fixture".into(), "thread".into(), None).await.unwrap();
         server.await.unwrap();
     }).await.unwrap();
     session.child.lock().await.kill().await.unwrap();

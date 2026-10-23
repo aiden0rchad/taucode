@@ -1,4 +1,4 @@
-import type { AccountSnapshot, LocalUsageDay } from "../../types";
+import type {  LocalUsageDay } from "../../types";
 
 export function formatCompactNumber(value: number | null | undefined) {
   if (value === null || value === undefined) {
@@ -92,67 +92,10 @@ export function isUsageDayActive(day: LocalUsageDay) {
   return day.totalTokens > 0 || day.agentTimeMs > 0 || day.agentRuns > 0;
 }
 
-export function formatPlanType(value: string | null | undefined) {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return null;
-  }
-  return trimmed
-    .split(/[_\s-]+/g)
-    .filter(Boolean)
-    .map((part) => part[0]?.toUpperCase() + part.slice(1))
-    .join(" ");
-}
 
-export function formatAccountTypeLabel(
-  value: AccountSnapshot["type"] | null | undefined,
-) {
-  if (value === "chatgpt") {
-    return "ChatGPT account";
-  }
-  if (value === "apikey") {
-    return "API key";
-  }
-  return "Connected account";
-}
 
-export function formatWindowDuration(valueMins: number | null | undefined) {
-  if (typeof valueMins !== "number" || !Number.isFinite(valueMins) || valueMins <= 0) {
-    return null;
-  }
-  if (valueMins >= 60 * 24) {
-    const days = Math.round(valueMins / (60 * 24));
-    return `${days} day${days === 1 ? "" : "s"} window`;
-  }
-  if (valueMins >= 60) {
-    const hours = Math.round(valueMins / 60);
-    return `${hours}h window`;
-  }
-  return `${Math.round(valueMins)}m window`;
-}
 
-export function buildWindowCaption(
-  resetLabel: string | null,
-  windowDurationMins: number | null | undefined,
-  fallback: string,
-) {
-  const parts = [resetLabel, formatWindowDuration(windowDurationMins)].filter(Boolean);
-  return parts.length > 0 ? parts.join(" · ") : fallback;
-}
 
-export function formatCreditsBalance(value: string | null | undefined) {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const numeric = Number.parseFloat(trimmed);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    return trimmed;
-  }
-  return new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: 0,
-  }).format(numeric);
-}
 
 export function formatDayCount(value: number | null | undefined) {
   if (value === null || value === undefined) {

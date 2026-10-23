@@ -1,3 +1,4 @@
+import { defaultAgentPolicy } from "../registry";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppSettings } from "@/types";
 import { getAppSettings, runCodexDoctor, updateAppSettings } from "@services/tauri";
@@ -134,6 +135,8 @@ function buildDefaultSettings(): AppSettings {
     lastConnectedAtMs: null,
   };
   return {
+    providers: [],
+    agentPolicy: defaultAgentPolicy,
     codegraphEnabled: true,
     codexBin: null,
     codexArgs: null,
@@ -168,7 +171,6 @@ function buildDefaultSettings(): AppSettings {
     lastComposerReasoningEffort: null,
     uiScale: UI_SCALE_DEFAULT,
     theme: "system",
-    usageShowRemaining: false,
     showMessageFilePath: true,
     chatHistoryScrollbackItems: CHAT_SCROLLBACK_DEFAULT,
     threadTitleAutogenerationEnabled: false,
@@ -190,7 +192,7 @@ function buildDefaultSettings(): AppSettings {
     composerFollowUpHintEnabled: true,
     pauseQueuedMessagesWhenResponseRequired: true,
     unifiedExecEnabled: true,
-    experimentalAppsEnabled: false,
+
     personality: "friendly",
     dictationEnabled: false,
     dictationModelId: "base",

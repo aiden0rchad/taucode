@@ -170,7 +170,7 @@ export function ThreadRow({
       <span className={`thread-status ${statusClass}`} aria-hidden />
       <div className="thread-content">
         <div className="thread-headline">
-          <span className="thread-name">{thread.name}</span>
+          <span className="thread-name">{thread.name}</span><span className="engine-badge">{thread.engine ?? "codex"}</span>
         </div>
         {hasDetails && (
           <div className="thread-details">

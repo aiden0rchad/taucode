@@ -157,13 +157,12 @@ describe("usePullRequestComposer", () => {
     const { result } = renderHook(() => usePullRequestComposer(options));
 
     await act(async () => {
-      await result.current.handleComposerSend("/apps", []);
+      await result.current.handleComposerSend("/status", []);
     });
 
     expect(options.handleSend).toHaveBeenCalledWith(
-      "/apps",
+      "/status",
       [],
-      undefined,
       undefined,
     );
     expect(options.runPullRequestReview).not.toHaveBeenCalled();

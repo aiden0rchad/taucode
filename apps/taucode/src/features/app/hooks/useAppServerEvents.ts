@@ -96,21 +96,9 @@ type AppServerEventHandlers = {
     threadId: string,
     tokenUsage: Record<string, unknown> | null,
   ) => void;
-  onAccountRateLimitsUpdated?: (
-    workspaceId: string,
-    rateLimits: Record<string, unknown>,
-  ) => void;
-  onAccountUpdated?: (workspaceId: string, authMode: string | null) => void;
-  onAccountLoginCompleted?: (
-    workspaceId: string,
-    payload: { loginId: string | null; success: boolean; error: string | null },
-  ) => void;
 };
 
 export const METHODS_ROUTED_IN_USE_APP_SERVER_EVENTS = [
-  "account/login/completed",
-  "account/rateLimits/updated",
-  "account/updated",
   "codex/backgroundThread",
   "codex/connected",
   "error",
@@ -168,7 +156,7 @@ function parseHookEvent(
 export function useAppServerEvents(handlers: AppServerEventHandlers) {
   // Use ref to keep handlers current without triggering re-subscription
   const handlersRef = useRef(handlers);
-  
+
   // Update ref on every render to always have latest handlers
   useEffect(() => {
     handlersRef.current = handlers;
@@ -177,6 +165,7 @@ export function useAppServerEvents(handlers: AppServerEventHandlers) {
   useEffect(() => {
     const unlisten = subscribeAppServerEvents((payload) => {
       const currentHandlers = handlersRef.current;
+      if (getAppServerRawMethod(payload)?.startsWith("account/") || getAppServerRawMethod(payload)?.startsWith("app/")) return;
       currentHandlers.onAppServerEvent?.(payload);
 
       const { workspace_id } = payload;
@@ -427,43 +416,6 @@ export function useAppServerEvents(handlers: AppServerEventHandlers) {
         return;
       }
 
-      if (method === "account/rateLimits/updated") {
-        const rateLimits =
-          (params.rateLimits as Record<string, unknown> | undefined) ??
-          (params.rate_limits as Record<string, unknown> | undefined);
-        if (rateLimits) {
-          currentHandlers.onAccountRateLimitsUpdated?.(workspace_id, rateLimits);
-        }
-        return;
-      }
-
-      if (method === "account/updated") {
-        const authModeRaw = params.authMode ?? params.auth_mode ?? null;
-        const authMode =
-          typeof authModeRaw === "string" && authModeRaw.trim().length > 0
-            ? authModeRaw
-            : null;
-        currentHandlers.onAccountUpdated?.(workspace_id, authMode);
-        return;
-      }
-
-      if (method === "account/login/completed") {
-        const loginIdRaw = params.loginId ?? params.login_id ?? null;
-        const loginId =
-          typeof loginIdRaw === "string" && loginIdRaw.trim().length > 0
-            ? loginIdRaw
-            : null;
-        const success = Boolean(params.success);
-        const errorRaw = params.error ?? null;
-        const error =
-          typeof errorRaw === "string" && errorRaw.trim().length > 0 ? errorRaw : null;
-        currentHandlers.onAccountLoginCompleted?.(workspace_id, {
-          loginId,
-          success,
-          error,
-        });
-        return;
-      }
 
       if (method === "item/completed") {
         const threadId = String(params.threadId ?? params.thread_id ?? "");

@@ -1,10 +1,8 @@
-#[path = "../proxy_cli.rs"]
-mod proxy_cli;
-#[path = "../codegraph.rs"]
-mod codegraph;
 #[allow(dead_code)]
 #[path = "../backend/mod.rs"]
 mod backend;
+#[path = "../codegraph.rs"]
+mod codegraph;
 #[path = "../codex/args.rs"]
 mod codex_args;
 #[path = "../codex/config.rs"]
@@ -19,6 +17,8 @@ mod file_ops;
 mod file_policy;
 #[path = "../git_utils.rs"]
 mod git_utils;
+#[path = "../proxy_cli.rs"]
+mod proxy_cli;
 #[path = "codex_monitor_daemon/rpc.rs"]
 mod rpc;
 #[path = "../rules.rs"]
@@ -81,8 +81,6 @@ use tokio::sync::{broadcast, mpsc, Mutex, Semaphore};
 
 use backend::app_server::{spawn_workspace_session, WorkspaceSession};
 use backend::events::{AppServerEvent, EventSink, TerminalExit, TerminalOutput};
-use shared::codex_core::CodexLoginCancelState;
-use shared::process_core::kill_child_process_tree;
 use shared::prompts_core::{self, CustomPromptEntry};
 use shared::{
     agents_config_core, codex_aux_core, codex_core, files_core, git_core, git_ui_core,
@@ -109,9 +107,17 @@ async fn spawn_with_client(
     codex_args: Option<String>,
     codex_home: Option<PathBuf>,
 ) -> Result<Arc<WorkspaceSession>, String> {
-    let global = state.app_settings.lock().await.codegraph_enabled;
-    let setup = if shared::codegraph_core::enabled(global, entry.settings.codegraph_enabled) { state.codegraph.setup.clone() } else { None };
-    state.codegraph.start(entry.clone(), global, false, event_sink.clone()).await;
+    let settings = state.app_settings.lock().await.clone();
+    let global = settings.codegraph_enabled;
+    let setup = if shared::codegraph_core::enabled(global, entry.settings.codegraph_enabled) {
+        state.codegraph.setup.clone()
+    } else {
+        None
+    };
+    state
+        .codegraph
+        .start(entry.clone(), global, false, event_sink.clone())
+        .await;
     spawn_workspace_session(
         entry,
         default_bin,
@@ -120,7 +126,9 @@ async fn spawn_with_client(
         client_version,
         event_sink,
         setup,
-    ).await
+        settings,
+    )
+    .await
 }
 
 #[derive(Clone)]
@@ -166,7 +174,6 @@ struct DaemonState {
     settings_path: PathBuf,
     app_settings: Mutex<AppSettings>,
     event_sink: DaemonEventSink,
-    codex_login_cancels: Mutex<HashMap<String, CodexLoginCancelState>>,
     daemon_binary_path: Option<String>,
 }
 
@@ -178,6 +185,7 @@ struct WorkspaceFileResponse {
 
 impl DaemonState {
     fn load(config: &DaemonConfig, event_sink: DaemonEventSink) -> Self {
+        codex_home::set_app_data_dir(&config.data_dir);
         let storage_path = config.data_dir.join("workspaces.json");
         let settings_path = config.data_dir.join("settings.json");
         let workspaces = read_workspaces(&storage_path).unwrap_or_default();
@@ -194,7 +202,6 @@ impl DaemonState {
             settings_path,
             app_settings: Mutex::new(app_settings),
             event_sink,
-            codex_login_cancels: Mutex::new(HashMap::new()),
             daemon_binary_path,
         }
     }
@@ -243,8 +250,7 @@ impl DaemonState {
         };
 
         for (workspace_id, session) in stale_sessions {
-            let mut child = session.child.lock().await;
-            kill_child_process_tree(&mut child).await;
+            session.shutdown().await;
             eprintln!("daemon: pruned stale session for removed workspace {workspace_id}");
         }
     }
@@ -698,8 +704,20 @@ impl DaemonState {
         files_core::file_write_core(&self.workspaces, scope, kind, workspace_id, content).await
     }
 
-    async fn start_thread(&self, workspace_id: String) -> Result<Value, String> {
-        codex_core::start_thread_core(&self.sessions, &self.workspaces, workspace_id).await
+    async fn start_thread(
+        &self,
+        workspace_id: String,
+        engine: Option<types::EngineKind>,
+        model: Option<String>,
+    ) -> Result<Value, String> {
+        codex_core::start_thread_core(
+            &self.sessions,
+            &self.workspaces,
+            workspace_id,
+            engine,
+            model,
+        )
+        .await
     }
 
     async fn resume_thread(
@@ -710,11 +728,7 @@ impl DaemonState {
         codex_core::resume_thread_core(&self.sessions, workspace_id, thread_id).await
     }
 
-    async fn read_thread(
-        &self,
-        workspace_id: String,
-        thread_id: String,
-    ) -> Result<Value, String> {
+    async fn read_thread(&self, workspace_id: String, thread_id: String) -> Result<Value, String> {
         codex_core::read_thread_core(&self.sessions, workspace_id, thread_id).await
     }
 
@@ -772,8 +786,13 @@ impl DaemonState {
         Ok(json!({ "ok": true }))
     }
 
-    async fn fork_thread(&self, workspace_id: String, thread_id: String) -> Result<Value, String> {
-        codex_core::fork_thread_core(&self.sessions, workspace_id, thread_id).await
+    async fn fork_thread(
+        &self,
+        workspace_id: String,
+        thread_id: String,
+        model: Option<String>,
+    ) -> Result<Value, String> {
+        codex_core::fork_thread_core(&self.sessions, workspace_id, thread_id, model).await
     }
 
     async fn list_threads(
@@ -783,8 +802,7 @@ impl DaemonState {
         limit: Option<u32>,
         sort_key: Option<String>,
     ) -> Result<Value, String> {
-        codex_core::list_threads_core(&self.sessions, workspace_id, cursor, limit, sort_key)
-            .await
+        codex_core::list_threads_core(&self.sessions, workspace_id, cursor, limit, sort_key).await
     }
 
     async fn list_mcp_server_status(
@@ -831,7 +849,6 @@ impl DaemonState {
         service_tier: Option<Option<String>>,
         access_mode: Option<String>,
         images: Option<Vec<String>>,
-        app_mentions: Option<Vec<Value>>,
         collaboration_mode: Option<Value>,
     ) -> Result<Value, String> {
         codex_core::send_user_message_core(
@@ -845,7 +862,6 @@ impl DaemonState {
             service_tier,
             access_mode,
             images,
-            app_mentions,
             collaboration_mode,
         )
         .await
@@ -858,7 +874,6 @@ impl DaemonState {
         turn_id: String,
         text: String,
         images: Option<Vec<String>>,
-        app_mentions: Option<Vec<Value>>,
     ) -> Result<Value, String> {
         codex_core::turn_steer_core(
             &self.sessions,
@@ -867,7 +882,6 @@ impl DaemonState {
             turn_id,
             text,
             images,
-            app_mentions,
         )
         .await
     }
@@ -893,7 +907,10 @@ impl DaemonState {
     }
 
     async fn model_list(&self, workspace_id: String) -> Result<Value, String> {
-        codex_core::model_list_core(&self.sessions, workspace_id).await
+        let _ = workspace_id;
+        Ok(shared::providers::catalog(
+            &self.app_settings.lock().await.providers,
+        ))
     }
 
     async fn experimental_feature_list(
@@ -910,35 +927,8 @@ impl DaemonState {
         codex_core::collaboration_mode_list_core(&self.sessions, workspace_id).await
     }
 
-    async fn account_rate_limits(&self, workspace_id: String) -> Result<Value, String> {
-        codex_core::account_rate_limits_core(&self.sessions, workspace_id).await
-    }
-
-    async fn account_read(&self, workspace_id: String) -> Result<Value, String> {
-        codex_core::account_read_core(&self.sessions, &self.workspaces, workspace_id).await
-    }
-
-    async fn codex_login(&self, workspace_id: String) -> Result<Value, String> {
-        codex_core::codex_login_core(&self.sessions, &self.codex_login_cancels, workspace_id).await
-    }
-
-    async fn codex_login_cancel(&self, workspace_id: String) -> Result<Value, String> {
-        codex_core::codex_login_cancel_core(&self.sessions, &self.codex_login_cancels, workspace_id)
-            .await
-    }
-
     async fn skills_list(&self, workspace_id: String) -> Result<Value, String> {
         codex_core::skills_list_core(&self.sessions, &self.workspaces, workspace_id).await
-    }
-
-    async fn apps_list(
-        &self,
-        workspace_id: String,
-        cursor: Option<String>,
-        limit: Option<u32>,
-        thread_id: Option<String>,
-    ) -> Result<Value, String> {
-        codex_core::apps_list_core(&self.sessions, workspace_id, cursor, limit, thread_id).await
     }
 
     async fn respond_to_server_request(
@@ -1586,7 +1576,6 @@ fn parse_args() -> Result<DaemonConfig, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shared::process_core::kill_child_process_tree;
     use crate::storage::write_workspaces;
     use crate::types::WorkspaceKind;
     use serde_json::json;
@@ -1633,7 +1622,6 @@ mod tests {
             settings_path: data_dir.join("settings.json"),
             app_settings: Mutex::new(AppSettings::default()),
             event_sink: DaemonEventSink { tx },
-            codex_login_cancels: Mutex::new(HashMap::new()),
             daemon_binary_path: Some("/tmp/codex-monitor-daemon".to_string()),
         }
     }
@@ -1688,21 +1676,30 @@ mod tests {
         let mut child = cmd.spawn().expect("spawn dummy child");
         let stdin = child.stdin.take().expect("dummy child stdin");
 
-        Arc::new(WorkspaceSession {
-            codegraph: None,
-            codex_args: None,
-            child: Mutex::new(child),
-            stdin: Mutex::new(stdin),
-            pending: Mutex::new(HashMap::new()),
-            request_context: Mutex::new(HashMap::new()),
-            thread_workspace: Mutex::new(HashMap::new()),
-            hidden_thread_ids: Mutex::new(HashSet::new()),
-            next_id: AtomicU64::new(0),
-            background_thread_callbacks: Mutex::new(HashMap::new()),
-            workspace_ids: Mutex::new(HashSet::from([owner_workspace_id.clone()])),
-            workspace_roots: Mutex::new(HashMap::new()),
-            owner_workspace_id,
-        })
+        Arc::new(WorkspaceSession::new(
+            Arc::new(crate::backend::app_server::CodexEngine {
+                events: tokio::sync::broadcast::channel(256).0,
+                active_threads: Mutex::new(HashSet::new()),
+                codegraph: None,
+                codex_args: None,
+                child: Mutex::new(child),
+                stdin: Mutex::new(stdin),
+                pending: Mutex::new(HashMap::new()),
+                request_context: Mutex::new(HashMap::new()),
+                thread_workspace: Mutex::new(HashMap::new()),
+                hidden_thread_ids: Mutex::new(HashSet::new()),
+                next_id: AtomicU64::new(0),
+                background_thread_callbacks: Mutex::new(HashMap::new()),
+                workspace_ids: Mutex::new(HashSet::from([owner_workspace_id.clone()])),
+                workspace_roots: Mutex::new(HashMap::new()),
+                owner_workspace_id,
+            }),
+            vec![],
+            crate::types::AgentPolicy {
+                default_engine: crate::types::EngineKind::Codex,
+                ..Default::default()
+            },
+        ))
     }
 
     #[test]
@@ -1910,8 +1907,7 @@ mod tests {
             );
 
             if let Some(keep_session) = state.sessions.lock().await.remove("ws-keep") {
-                let mut child = keep_session.child.lock().await;
-                kill_child_process_tree(&mut child).await;
+                keep_session.shutdown().await;
             }
 
             if stale_session
@@ -1922,8 +1918,7 @@ mod tests {
                 .expect("query stale session child")
                 .is_none()
             {
-                let mut child = stale_session.child.lock().await;
-                kill_child_process_tree(&mut child).await;
+                stale_session.shutdown().await;
             }
 
             let _ = std::fs::remove_dir_all(&tmp);
@@ -1933,7 +1928,9 @@ mod tests {
 
 fn main() {
     proxy_cli::dispatch();
-    if let Err(err) = fix_path_env::fix() { eprintln!("Failed to sync PATH from shell: {err}"); }
+    if let Err(err) = fix_path_env::fix() {
+        eprintln!("Failed to sync PATH from shell: {err}");
+    }
     let config = match parse_args() {
         Ok(config) => config,
         Err(err) => {

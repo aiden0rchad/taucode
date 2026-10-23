@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import type {
-  AppMention,
+
   ComposerSendIntent,
   FollowUpMessageBehavior,
   QueuedMessage,
@@ -20,7 +20,7 @@ export function useComposerController({
   queueFlushPaused = false,
   steerEnabled,
   followUpMessageBehavior,
-  appsEnabled,
+
   connectWorkspace,
   startThreadForWorkspace,
   sendUserMessage,
@@ -29,7 +29,6 @@ export function useComposerController({
   startReview,
   startResume,
   startCompact,
-  startApps,
   startMcp,
   startFast,
   startStatus,
@@ -43,7 +42,7 @@ export function useComposerController({
   queueFlushPaused?: boolean;
   steerEnabled: boolean;
   followUpMessageBehavior: FollowUpMessageBehavior;
-  appsEnabled: boolean;
+
   connectWorkspace: (workspace: WorkspaceInfo) => Promise<void>;
   startThreadForWorkspace: (
     workspaceId: string,
@@ -52,7 +51,6 @@ export function useComposerController({
   sendUserMessage: (
     text: string,
     images?: string[],
-    appMentions?: AppMention[],
     options?: { sendIntent?: ComposerSendIntent },
   ) => Promise<{ status: "sent" | "blocked" | "steer_failed" }>;
   sendUserMessageToThread: (
@@ -65,7 +63,6 @@ export function useComposerController({
   startReview: (text: string) => Promise<void>;
   startResume: (text: string) => Promise<void>;
   startCompact: (text: string) => Promise<void>;
-  startApps: (text: string) => Promise<void>;
   startMcp: (text: string) => Promise<void>;
   startFast: (text: string) => Promise<void>;
   startStatus: (text: string) => Promise<void>;
@@ -101,7 +98,7 @@ export function useComposerController({
     queueFlushPaused,
     steerEnabled,
     followUpMessageBehavior,
-    appsEnabled,
+
     activeWorkspace,
     connectWorkspace,
     startThreadForWorkspace,
@@ -111,7 +108,6 @@ export function useComposerController({
     startReview,
     startResume,
     startCompact,
-    startApps,
     startMcp,
     startFast,
     startStatus,
@@ -138,11 +134,11 @@ export function useComposerController({
   );
 
   const handleSendPrompt = useCallback(
-    (text: string, appMentions?: AppMention[]) => {
+    (text: string, ) => {
       if (!text.trim()) {
         return;
       }
-      void handleSend(text, [], appMentions);
+      void handleSend(text, []);
     },
     [handleSend],
   );

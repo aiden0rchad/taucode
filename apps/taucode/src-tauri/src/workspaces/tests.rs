@@ -50,6 +50,7 @@ fn workspace_with_id_and_kind(
         parent_id,
         worktree,
         settings: WorkspaceSettings {
+            agent_policy: None,
             codegraph_enabled: None,
             sidebar_collapsed: false,
             sort_order,

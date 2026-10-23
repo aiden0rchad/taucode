@@ -20,9 +20,9 @@ describe("useComposerAutocompleteState file mentions", () => {
         text,
         selectionStart,
         disabled: false,
-        appsEnabled: true,
+
         skills: [],
-        apps: [],
+
         prompts: [],
         files,
         textareaRef,
@@ -52,9 +52,9 @@ describe("useComposerAutocompleteState file mentions", () => {
         text,
         selectionStart,
         disabled: false,
-        appsEnabled: true,
+
         skills: [],
-        apps: [],
+
         prompts: [],
         files,
         textareaRef,
@@ -71,7 +71,7 @@ describe("useComposerAutocompleteState file mentions", () => {
 });
 
 describe("useComposerAutocompleteState slash commands", () => {
-  it("includes built-in slash commands in alphabetical order when apps are enabled", () => {
+  it("includes built-in slash commands in alphabetical order", () => {
     const text = "/";
     const selectionStart = text.length;
     const textareaRef = createRef<HTMLTextAreaElement>();
@@ -85,9 +85,9 @@ describe("useComposerAutocompleteState slash commands", () => {
         text,
         selectionStart,
         disabled: false,
-        appsEnabled: true,
+
         skills: [],
-        apps: [],
+
         prompts: [],
         files: [],
         textareaRef,
@@ -99,7 +99,6 @@ describe("useComposerAutocompleteState slash commands", () => {
     const labels = result.current.autocompleteMatches.map((item) => item.label);
     expect(labels).toEqual(
       expect.arrayContaining([
-        "apps",
         "compact",
         "fast",
         "fork",
@@ -110,8 +109,7 @@ describe("useComposerAutocompleteState slash commands", () => {
         "status",
       ]),
     );
-    expect(labels.slice(0, 9)).toEqual([
-      "apps",
+    expect(labels.slice(0, 8)).toEqual([
       "compact",
       "fast",
       "fork",
@@ -123,101 +121,5 @@ describe("useComposerAutocompleteState slash commands", () => {
     ]);
   });
 
-  it("hides /apps when apps are disabled", () => {
-    const text = "/";
-    const selectionStart = text.length;
-    const textareaRef = createRef<HTMLTextAreaElement>();
-    textareaRef.current = {
-      focus: vi.fn(),
-      setSelectionRange: vi.fn(),
-    } as unknown as HTMLTextAreaElement;
 
-    const { result } = renderHook(() =>
-      useComposerAutocompleteState({
-        text,
-        selectionStart,
-        disabled: false,
-        appsEnabled: false,
-        skills: [],
-        apps: [],
-        prompts: [],
-        files: [],
-        textareaRef,
-        setText: vi.fn(),
-        setSelectionStart: vi.fn(),
-      }),
-    );
-
-    const labels = result.current.autocompleteMatches.map((item) => item.label);
-    expect(labels).not.toContain("apps");
-    expect(labels).toEqual([
-      "compact",
-      "fast",
-      "fork",
-      "mcp",
-      "new",
-      "resume",
-      "review",
-      "status",
-    ]);
-  });
-});
-
-describe("useComposerAutocompleteState $ completions", () => {
-  it("separates skills and apps into grouped results", () => {
-    const text = "$";
-    const selectionStart = text.length;
-    const textareaRef = createRef<HTMLTextAreaElement>();
-    textareaRef.current = {
-      focus: vi.fn(),
-      setSelectionRange: vi.fn(),
-    } as unknown as HTMLTextAreaElement;
-
-    const { result } = renderHook(() =>
-      useComposerAutocompleteState({
-        text,
-        selectionStart,
-        disabled: false,
-        appsEnabled: true,
-        skills: [
-          { name: "skill-a", description: "Skill A" },
-          { name: "skill-b", description: "Skill B" },
-        ],
-        apps: [
-          {
-            id: "connector_calendar",
-            name: "Calendar App",
-            description: "Calendar app",
-            isAccessible: true,
-            installUrl: null,
-            distributionChannel: null,
-          },
-          {
-            id: "not-ready",
-            name: "Not Ready App",
-            description: "Unreleased",
-            isAccessible: false,
-            installUrl: "https://example.com/install",
-            distributionChannel: "beta",
-          },
-        ],
-        prompts: [],
-        files: [],
-        textareaRef,
-        setText: vi.fn(),
-        setSelectionStart: vi.fn(),
-      }),
-    );
-
-    const ids = result.current.autocompleteMatches.map((item) => item.id);
-    const groups = result.current.autocompleteMatches.map((item) => item.group);
-    const appSuggestion = result.current.autocompleteMatches.find(
-      (item) => item.id === "app:connector_calendar",
-    );
-    expect(ids).toEqual(["skill:skill-a", "skill:skill-b", "app:connector_calendar"]);
-    expect(groups).toEqual(["Skills", "Skills", "Apps"]);
-    expect(ids).not.toContain("app:not-ready");
-    expect(appSuggestion?.insertText).toBe("calendar-app");
-    expect(appSuggestion?.mentionPath).toBe("app://connector_calendar");
-  });
 });
