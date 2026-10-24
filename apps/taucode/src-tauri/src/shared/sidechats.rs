@@ -41,6 +41,9 @@ pub(crate) fn enrich(
         if let Some(id) = thread["id"].as_str() {
             let path = metadata_path(session, workspace, id)?;
             let metadata = crate::storage::read_thread_metadata(&path)?;
+            if thread["name"].as_str().is_none_or(str::is_empty) && metadata["importedName"].is_string() {
+                thread["name"] = metadata["importedName"].clone();
+            }
             if metadata.get("sideOf").is_some() {
                 thread["sideOf"] = metadata["sideOf"].clone();
             }

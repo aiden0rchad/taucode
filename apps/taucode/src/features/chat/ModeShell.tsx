@@ -5,6 +5,7 @@ import { matchesShortcut } from "@utils/shortcuts";
 import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import { useThemePreference } from "@/features/layout/hooks/useThemePreference";
 import { ChatView } from "./ChatView";
+import { SettingsImportSection } from "@settings/components/sections/SettingsImportSection";
 import "./chat.css";
 
 const modes: AppMode[] = ["code", "chat", "work"];
@@ -35,6 +36,7 @@ export function ModeShell({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<AppMode>("code");
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [workHistory, setWorkHistory] = useState(false);
   const [error, setError] = useState("");
   useThemePreference(settings?.theme ?? "system");
   useEffect(() => {
@@ -66,6 +68,6 @@ export function ModeShell({ children }: { children: ReactNode }) {
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
     {mode === "code" && children}
     {mode === "chat" && settings && <ChatView settings={settings} />}
-    {mode === "work" && <div className="chat-layout chat-work"><aside className="chat-sidebar"><ModeSwitcher /></aside><main className="chat-placeholder"><h1>Work</h1><p>Work mode is coming soon.</p></main></div>}
+    {mode === "work" && <div className="chat-layout chat-work"><aside className="chat-sidebar"><ModeSwitcher /><button onClick={() => setWorkHistory(!workHistory)}>Imported Work history</button></aside><main className="chat-placeholder">{workHistory ? <SettingsImportSection historyOnly /> : <><h1>Work</h1><p>Work mode is coming soon.</p><p>Import Cowork tasks from Settings → Import to browse their history here.</p></>}</main></div>}
   </ModeContext.Provider>;
 }

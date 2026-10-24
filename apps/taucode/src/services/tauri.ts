@@ -1,4 +1,11 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
+export function importRequest<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
+  return invoke<T>("import_request", { action, params });
+}
+export async function pickImportExport(): Promise<string | null> {
+  const selected = await open({ multiple: false, filters: [{ name: "Chat exports", extensions: ["zip", "json"] }] });
+  return typeof selected === "string" ? selected : null;
+}
 export function chatRequest<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
   return invoke<T>("chat_request", { action, params });
 }

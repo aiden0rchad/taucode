@@ -14,6 +14,7 @@ export const SETTINGS_SECTION_IDS = [
   "agents",
   "providers",
   "connectors",
+  "import",
   "browser",
   "computer",
 ] as const;

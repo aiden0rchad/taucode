@@ -29,6 +29,8 @@ pub(crate) mod connectors;
 pub(crate) mod pi;
 pub(crate) mod sidechats;
 pub(crate) mod chats;
+#[path = "../import/mod.rs"]
+pub(crate) mod imports;
 
 #[cfg(unix)]
 pub(crate) mod local_socket;

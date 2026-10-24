@@ -1,0 +1,2 @@
+{"type":"user","cwd":"@CWD@","sessionId":"22222222-2222-4222-8222-222222222222","userId":"private-user","message":{"role":"user","content":"Explain clocks"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Clocks measure time."}]}}

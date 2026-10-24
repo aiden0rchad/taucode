@@ -8,6 +8,12 @@ import type {
 } from "../types";
 
 export type Unsubscribe = () => void;
+const importListeners = new Set<() => void>();
+export function subscribeImportsChanged(listener: () => void): Unsubscribe {
+  importListeners.add(listener);
+  return () => { importListeners.delete(listener); };
+}
+export function notifyImportsChanged() { for (const listener of importListeners) listener(); }
 
 export type TerminalOutputEvent = {
   workspaceId: string;
