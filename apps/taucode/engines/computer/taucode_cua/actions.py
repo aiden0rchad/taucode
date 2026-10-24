@@ -84,6 +84,7 @@ class StructuredACI(OSWorldACI):
                     usable_elements=len(usable_elements(snapshot)) if snapshot else 0,
                     snapshot_id=snapshot['snapshot_id'] if snapshot else None,
                     snapshot_status=snapshot.get('status', 'unknown') if snapshot else 'missing',
+                    window_lookup=snapshot.get('window_lookup') if snapshot else None,
                     model_result='not_requested', raw_reply='', element_index=None,
                     pixel_fallback_reason=None)
 

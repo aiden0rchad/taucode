@@ -47,6 +47,7 @@ pub struct Snapshot<H> {
     pub id: u64,
     pub elements: Vec<Node>,
     pub status: &'static str,
+    pub lookup: serde_json::Value,
     handles: Vec<H>,
 }
 impl<H> Default for Snapshot<H> {
@@ -55,6 +56,7 @@ impl<H> Default for Snapshot<H> {
             id: 0,
             elements: vec![],
             status: "missing_window",
+            lookup: serde_json::Value::Null,
             handles: vec![],
         }
     }
@@ -101,6 +103,7 @@ impl<H> Snapshot<H> {
         budget: Duration,
     ) {
         self.id = self.id.checked_add(1).expect("AX snapshot id exhausted");
+        self.lookup = serde_json::Value::Null;
         self.elements.clear();
         self.handles.clear();
         self.status = if root.is_none() {
@@ -153,7 +156,7 @@ pub struct Native<'a>(pub &'a Window);
 impl Provider for Native<'_> {
     type Handle = Element;
     fn read(&self, e: &Element) -> Node {
-        // Snapshot reads run off the input lock. Action RPCs keep their 5 ms timeout.
+        // Snapshot reads run off the input lock.
         e.reading(|| {
             let role = e.text("AXRole").unwrap_or_default();
             let secure = secure_field(&role, e.text("AXSubrole").as_deref());

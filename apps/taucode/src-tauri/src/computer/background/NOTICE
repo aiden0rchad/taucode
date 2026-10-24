@@ -8,7 +8,10 @@ key_focus_guard.rs, focus_steal.rs, capture.rs, windows.rs, ax/bindings.rs, curs
 libs/cua-driver/rust/crates/cursor-overlay/src/{lib,motion,bezier,capture_exclusion,z_order}.rs.
 M3c: ax/{bindings,tree,snapshot}.rs, tools/{get_window_state,click,type_text,set_value,scroll}.rs;
 element handles, bounded walks, AX actions and native text-area scroll routing.
-Adapted to taucode dependencies and safety policy.
+AX dispatch/window lookup: retained snapshot proxies, advertised-action-independent
+click dispatch (tools/click.rs), AXChildren/AXWindows union (ax/tree.rs).
+Adapted to taucode dependencies and safety policy; press RPCs use a bounded
+50 ms timeout instead of Cua's 2 s to preserve the kill-switch latency budget.
 
 MIT License
 

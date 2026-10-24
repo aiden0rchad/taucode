@@ -162,3 +162,16 @@ def test_worker_sees_fresh_elements_every_turn(monkeypatch):
     for text in ('first label', 'second label'):
         server.agent.predict('task', {'screenshot': png((10, 10)), 'element_summary': text})
         assert text in json.dumps(server.agent.executor.generator_agent.messages[-2])
+
+
+def test_window_lookup_errors_reach_grounding_and_sidecar_log(capsys):
+    aci = StructuredACI(None, 'darwin', {}, engine_params({'kind': 'openai', 'model': 'fake'}, 'grounding'))
+    lookup = {'pid': 42, 'window_id': 73, 'error': 'target_window_not_found',
+              'attempts': [{'attribute': 'AXWindows', 'error': 'AXWindows: ax_error(-25204)'}]}
+    aci.assign_screenshot({'screenshot': png((100, 100)), 'ax_snapshot': {
+        'snapshot_id': 5, 'status': 'missing_window', 'elements': [], 'window_lookup': lookup}})
+    decision = aci.decision()
+    aci.record_grounding(decision)
+    assert decision['window_lookup'] == lookup
+    assert decision['snapshot_status'] == 'missing_window'
+    assert 'AXWindows: ax_error(-25204)' in capsys.readouterr().err

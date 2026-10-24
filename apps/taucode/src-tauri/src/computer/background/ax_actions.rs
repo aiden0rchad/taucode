@@ -64,6 +64,9 @@ impl Element {
         }
     }
     pub(super) fn reading<T>(&self, read: impl FnOnce() -> T) -> T {
+        self.with_timeout(0.05, read)
+    }
+    fn with_timeout<T>(&self, seconds: f32, call: impl FnOnce() -> T) -> T {
         struct Reset<'a>(&'a Element);
         impl Drop for Reset<'_> {
             fn drop(&mut self) {
@@ -73,23 +76,26 @@ impl Element {
             }
         }
         unsafe {
-            AXUIElementSetMessagingTimeout(self.0, 0.05);
+            AXUIElementSetMessagingTimeout(self.0, seconds);
         }
         let _reset = Reset(self);
-        read()
+        call()
     }
     pub(super) fn app(pid: i32) -> Option<Self> {
         Self::owned(unsafe { AXUIElementCreateApplication(pid) })
     }
     pub(super) fn attr(&self, name: &str) -> Option<Self> {
+        self.attr_result(name).ok()
+    }
+    fn attr_result(&self, name: &str) -> Result<Self, String> {
         let mut result = std::ptr::null();
         let status = unsafe {
             AXUIElementCopyAttributeValue(self.0, string(&NSString::from_str(name)), &mut result)
         };
         if status == 0 {
-            Self::owned_value(result)
+            Self::owned_value(result).ok_or_else(|| format!("{name}: null attribute"))
         } else {
-            None
+            Err(format!("{name}: ax_error({status})"))
         }
     }
     // Attribute results may be strings/arrays/AXValues, not AXUIElements.
@@ -112,8 +118,18 @@ impl Element {
         }
     }
     pub(super) fn window_id(&self) -> Option<u32> {
+        self.window_id_result().ok()
+    }
+    fn window_id_result(&self) -> Result<u32, String> {
         let mut id = 0;
-        (unsafe { _AXUIElementGetWindow(self.0, &mut id) } == 0 && id != 0).then_some(id)
+        let status = unsafe { _AXUIElementGetWindow(self.0, &mut id) };
+        if status == 0 && id != 0 {
+            Ok(id)
+        } else {
+            Err(format!(
+                "_AXUIElementGetWindow: ax_error({status}), id={id}"
+            ))
+        }
     }
     pub(super) fn text(&self, name: &str) -> Option<String> {
         let value = self.attr(name)?;
@@ -130,19 +146,20 @@ impl Element {
         }
     }
     pub(super) fn children(&self, name: &str, limit: usize) -> Vec<Self> {
+        self.children_result(name, limit).unwrap_or_default()
+    }
+    fn children_result(&self, name: &str, limit: usize) -> Result<Vec<Self>, String> {
         if limit == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
-        let Some(array) = self.attr(name) else {
-            return vec![];
-        };
+        let array = self.attr_result(name)?;
         unsafe {
             if CFGetTypeID(array.0) != CFArrayGetTypeID() {
-                return vec![];
+                return Err(format!("{name}: not an AX array"));
             }
-            (0..CFArrayGetCount(array.0).min(limit as isize))
+            Ok((0..CFArrayGetCount(array.0).min(limit as isize))
                 .filter_map(|i| Self::owned(CFRetain(CFArrayGetValueAtIndex(array.0, i))))
-                .collect()
+                .collect())
         }
     }
     pub(super) fn actions(&self) -> Vec<String> {
@@ -200,19 +217,13 @@ impl Element {
                 .or_else(|| self.attr("AXWindow").and_then(|w| w.window_id()))
                 == Some(window)
     }
-    pub(super) fn perform(&self, action: &str) -> Result<bool, String> {
-        action_status(unsafe {
-            AXUIElementPerformAction(self.0, string(&NSString::from_str(action)))
-        })
-    }
-    pub(super) fn set_text(&self, attribute: &str, text: &str) -> Result<bool, String> {
-        action_status(unsafe {
-            AXUIElementSetAttributeValue(
-                self.0,
-                string(&NSString::from_str(attribute)),
-                string(&NSString::from_str(text)),
-            )
-        })
+    pub(super) fn set_text(
+        &self,
+        attribute: &str,
+        text: &str,
+        reason: &mut Option<String>,
+    ) -> Result<bool, String> {
+        action_result(attribute, self.apply(attribute, Some(text)), reason)
     }
 }
 fn target(pid: i32, point: Option<[f64; 2]>) -> Option<Element> {
@@ -346,43 +357,167 @@ pub fn action_status(status: i32) -> Result<bool, String> {
     }
 }
 
-pub(super) fn window_element(pid: i32, id: u32) -> Option<Element> {
+// Keep exact errors for both the durable step log and sidecar.log. Preserve the
+// M3b fallback allowlist; invalid handles/API-disabled remain terminal errors.
+fn action_result(name: &str, status: i32, reason: &mut Option<String>) -> Result<bool, String> {
+    if status == 0 {
+        return Ok(true);
+    }
+    let operation = match name {
+        "AXPress" => "ax_press",
+        "AXPick" => "ax_pick",
+        "AXShowMenu" => "ax_show_menu",
+        "AXValue" => "ax_set_value",
+        "AXSelectedText" => "ax_set_selected_text",
+        _ => "ax_action",
+    };
+    let error = format!("{operation}_failed({status})");
+    *reason = Some(error.clone());
+    action_status(status).map_err(|_| error)
+}
+
+pub(super) fn window_element(pid: i32, id: u32) -> (Option<Element>, serde_json::Value) {
+    let Some(app) = Element::app(pid) else {
+        return (
+            None,
+            serde_json::json!({"pid":pid,"window_id":id,"error":"AXUIElementCreateApplication returned null"}),
+        );
+    };
+    find_window(
+        pid,
+        id,
+        |attribute| app.with_timeout(0.25, || app.children_result(attribute, 128)),
+        |window| window.with_timeout(0.25, || window.window_id_result()),
+    )
+}
+
+// AXWindows works for background apps; AXChildren supplements it, as in Cua's
+// copy_top_level. Never substitute another window or activate the target app.
+fn find_window<H>(
+    pid: i32,
+    id: u32,
+    mut list: impl FnMut(&str) -> Result<Vec<H>, String>,
+    window_id: impl Fn(&H) -> Result<u32, String>,
+) -> (Option<H>, serde_json::Value) {
     let deadline = std::time::Instant::now() + super::ax_tree::SNAPSHOT_BUDGET;
-    let app = Element::app(pid)?;
-    app.reading(|| app.children("AXWindows", 128))
-        .into_iter()
-        .take_while(|_| std::time::Instant::now() < deadline)
-        .find(|w| w.reading(|| w.window_id()) == Some(id))
+    let mut attempts = vec![];
+    for attempt in 1..=2 {
+        for attribute in ["AXWindows", "AXChildren"] {
+            if std::time::Instant::now() >= deadline {
+                return (
+                    None,
+                    serde_json::json!({"pid":pid,"window_id":id,"error":"window_lookup_time_budget","attempts":attempts}),
+                );
+            }
+            let mut row = serde_json::json!({"attempt":attempt,"attribute":attribute});
+            match list(attribute) {
+                Ok(windows) => {
+                    row["count"] = serde_json::json!(windows.len());
+                    let mut candidates = vec![];
+                    for window in windows {
+                        if std::time::Instant::now() >= deadline {
+                            break;
+                        }
+                        match window_id(&window) {
+                            Ok(found) if found == id => {
+                                row["matched_id"] = serde_json::json!(found);
+                                attempts.push(row);
+                                return (
+                                    Some(window),
+                                    serde_json::json!({"pid":pid,"window_id":id,"attempts":attempts}),
+                                );
+                            }
+                            Ok(found) => candidates.push(serde_json::json!({"id":found})),
+                            Err(error) => candidates.push(serde_json::json!({"error":error})),
+                        }
+                    }
+                    row["candidates"] = serde_json::json!(candidates);
+                }
+                Err(error) => row["error"] = serde_json::json!(error),
+            }
+            attempts.push(row);
+        }
+    }
+    (
+        None,
+        serde_json::json!({"pid":pid,"window_id":id,"error":"target_window_not_found","attempts":attempts}),
+    )
+}
+
+trait ActionElement {
+    fn enabled(&self) -> bool;
+    fn actions(&self) -> Vec<String>;
+    fn settable(&self, name: &str) -> bool;
+    fn apply(&self, name: &str, value: Option<&str>) -> i32;
+}
+impl ActionElement for Element {
+    fn enabled(&self) -> bool {
+        Element::enabled(self)
+    }
+    fn actions(&self) -> Vec<String> {
+        Element::actions(self)
+    }
+    fn settable(&self, name: &str) -> bool {
+        Element::settable(self, name)
+    }
+    fn apply(&self, name: &str, value: Option<&str>) -> i32 {
+        // Cua uses the retained proxy and a CFString action, with a 2 s timeout.
+        // Allow a press 50 ms; text writes and preflight reads retain 5 ms.
+        // Click dispatch skips text probes to stay within M3's stop budget.
+        self.with_timeout(if value.is_none() { 0.05 } else { 0.005 }, || unsafe {
+            let name = NSString::from_str(name);
+            if let Some(value) = value {
+                AXUIElementSetAttributeValue(
+                    self.0,
+                    string(&name),
+                    string(&NSString::from_str(value)),
+                )
+            } else {
+                AXUIElementPerformAction(self.0, string(&name))
+            }
+        })
+    }
 }
 
 // Adapted from tools/click.rs, set_value.rs and type_text.rs. No focus/raise writes.
-pub(super) fn element_action(element: &Element, action: &Action) -> Result<bool, String> {
+pub(super) fn element_action(
+    element: &Element,
+    action: &Action,
+    reason: &mut Option<String>,
+) -> Result<bool, String> {
+    dispatch_element(element, action, reason)
+}
+fn dispatch_element(
+    element: &impl ActionElement,
+    action: &Action,
+    reason: &mut Option<String>,
+) -> Result<bool, String> {
     if !element.enabled() {
+        *reason = Some("ax_element_disabled".into());
         return Ok(false);
     }
-    match element_route(
-        action,
-        &element.actions(),
-        element.settable("AXValue"),
-        element.settable("AXSelectedText"),
-    ) {
-        Some("AXValue") => {
-            if let Action::Type { text, .. } = action {
-                element.set_text("AXValue", text)
-            } else {
-                Ok(false)
-            }
+    // Do not spend mutation latency on irrelevant settable-attribute queries.
+    let (actions, value, selected) = match action {
+        Action::Click { .. } => (element.actions(), false, false),
+        Action::Type {
+            overwrite,
+            enter: false,
+            ..
+        } => {
+            let value = *overwrite && element.settable("AXValue");
+            (vec![], value, !value && element.settable("AXSelectedText"))
         }
-        Some("AXSelectedText") => {
-            if let Action::Type { text, .. } = action {
-                element.set_text("AXSelectedText", text)
-            } else {
-                Ok(false)
-            }
-        }
-        Some(name) => element.perform(name),
-        None => Ok(false),
-    }
+        _ => (vec![], false, false),
+    };
+    let Some(name) = element_route(action, &actions, value, selected) else {
+        *reason = Some("ax_element_action_unavailable".into());
+        return Ok(false);
+    };
+    let text = match action {
+        Action::Type { text, .. } => Some(text.as_str()),
+        _ => None,
+    };
+    action_result(name, element.apply(name, text), reason)
 }
 pub(super) fn focused_insertion(
     pid: i32,
@@ -424,6 +559,8 @@ fn element_route<'a>(
             names
                 .iter()
                 .find_map(|name| actions.iter().find(|a| a == name).map(String::as_str))
+                // Cua attempts the requested action even when it is not advertised.
+                .or_else(|| names.first().copied())
         }
         Action::Type {
             overwrite: true,
@@ -437,7 +574,176 @@ fn element_route<'a>(
 
 #[cfg(test)]
 mod element_tests {
+    use super::super::ax_tree::{Node, Provider, Snapshot, SNAPSHOT_BUDGET};
     use super::*;
+    use std::{cell::RefCell, rc::Rc};
+
+    struct FakeElement {
+        token: usize,
+        advertised: Vec<String>,
+        status: i32,
+        calls: Rc<RefCell<Vec<(usize, String)>>>,
+    }
+    impl ActionElement for FakeElement {
+        fn enabled(&self) -> bool {
+            true
+        }
+        fn actions(&self) -> Vec<String> {
+            self.advertised.clone()
+        }
+        fn settable(&self, _: &str) -> bool {
+            panic!("click must not query text attributes")
+        }
+        fn apply(&self, name: &str, value: Option<&str>) -> i32 {
+            assert!(value.is_none());
+            self.calls.borrow_mut().push((self.token, name.into()));
+            self.status
+        }
+    }
+    struct FakeProvider;
+    impl Provider for FakeProvider {
+        type Handle = FakeElement;
+        fn read(&self, e: &FakeElement) -> Node {
+            Node {
+                role: "AXButton".into(),
+                label: "1".into(),
+                actions: e.actions(),
+                enabled: true,
+                ..Node::default()
+            }
+        }
+        fn children(&self, _: &FakeElement, _: usize) -> Vec<FakeElement> {
+            vec![]
+        }
+    }
+    fn click() -> Action {
+        Action::Click {
+            x: 0.,
+            y: 0.,
+            button: "left".into(),
+            clicks: 1,
+            hold_keys: vec![],
+        }
+    }
+    #[test]
+    fn presses_retained_snapshot_handle_even_without_advertised_actions() {
+        for advertised in [vec!["AXPress".into()], vec![]] {
+            let calls = Rc::new(RefCell::new(vec![]));
+            let handle = FakeElement {
+                token: 37,
+                advertised,
+                status: 0,
+                calls: calls.clone(),
+            };
+            let mut snapshot = Snapshot::default();
+            snapshot.replace(&FakeProvider, Some(handle), 10, SNAPSHOT_BUDGET);
+            let id = snapshot.id;
+            // The snapshot owns the original handle, not a reconstructed path/index.
+            assert_eq!(Rc::strong_count(&calls), 2);
+            let (_, retained) = snapshot.resolve(id, 0).unwrap();
+            let mut reason = None;
+            assert!(dispatch_element(retained, &click(), &mut reason).unwrap());
+            assert_eq!(*calls.borrow(), vec![(37, "AXPress".into())]);
+            assert!(reason.is_none());
+            snapshot.replace(&FakeProvider, None, 10, SNAPSHOT_BUDGET);
+            assert!(snapshot.resolve(id, 0).is_err());
+            assert_eq!(Rc::strong_count(&calls), 1);
+        }
+    }
+    #[test]
+    fn press_errors_keep_exact_code_and_existing_fallback_policy() {
+        for status in [-25204, -25205, -25206, -25201, -25202, -25211] {
+            let element = FakeElement {
+                token: 37,
+                advertised: vec![],
+                status,
+                calls: Rc::default(),
+            };
+            let mut reason = None;
+            let result = dispatch_element(&element, &click(), &mut reason);
+            let expected = format!("ax_press_failed({status})");
+            assert_eq!(reason, Some(expected.clone()));
+            if [-25204, -25205, -25206].contains(&status) {
+                assert_eq!(result, Ok(false));
+            } else {
+                assert_eq!(result, Err(expected));
+            }
+            assert_eq!(element.calls.borrow().len(), 1); // No AX mutation retry.
+        }
+    }
+    #[test]
+    fn background_window_lookup_uses_pid_window_list_and_exact_id() {
+        let (window, log) = find_window(
+            42,
+            73,
+            |attribute| {
+                assert_eq!(attribute, "AXWindows"); // No frontmost/focused-window query.
+                Ok(vec![8, 73, 99])
+            },
+            |id| Ok(*id),
+        );
+        assert_eq!(window, Some(73));
+        assert_eq!(log["pid"], 42);
+        assert_eq!(log["window_id"], 73);
+        assert_eq!(log["attempts"][0]["matched_id"], 73);
+    }
+    #[test]
+    fn window_lookup_retries_read_failure_and_records_it() {
+        let mut reads = 0;
+        let (window, log) = find_window(
+            42,
+            73,
+            |attribute| {
+                reads += 1;
+                match (reads, attribute) {
+                    (1, "AXWindows") => Err("AXWindows: ax_error(-25204)".into()),
+                    (2, "AXChildren") => Ok(vec![]),
+                    (3, "AXWindows") => Ok(vec![73]),
+                    _ => panic!("unexpected lookup"),
+                }
+            },
+            |id| Ok(*id),
+        );
+        assert_eq!(window, Some(73));
+        assert_eq!(reads, 3);
+        assert_eq!(log["attempts"][0]["error"], "AXWindows: ax_error(-25204)");
+    }
+    #[test]
+    fn window_lookup_uses_children_union_but_never_substitutes_wrong_id() {
+        let (window, _) = find_window(
+            42,
+            73,
+            |attribute| {
+                Ok(if attribute == "AXChildren" {
+                    vec![73]
+                } else {
+                    vec![8]
+                })
+            },
+            |id| Ok(*id),
+        );
+        assert_eq!(window, Some(73));
+        let (window, log) = find_window(
+            42,
+            73,
+            |_| Ok(vec![8, 0]),
+            |id| {
+                if *id == 0 {
+                    Err("_AXUIElementGetWindow: ax_error(-25202), id=0".into())
+                } else {
+                    Ok(*id)
+                }
+            },
+        );
+        assert_eq!(window, None);
+        assert_eq!(log["error"], "target_window_not_found");
+        assert_eq!(log["attempts"].as_array().unwrap().len(), 4);
+        assert_eq!(log["attempts"][0]["candidates"][0]["id"], 8);
+        assert_eq!(
+            log["attempts"][0]["candidates"][1]["error"],
+            "_AXUIElementGetWindow: ax_error(-25202), id=0"
+        );
+    }
     #[test]
     fn routes_press_value_selected_text_and_fallback() {
         let mut action = Action::Click {
@@ -455,7 +761,7 @@ mod element_tests {
             element_route(&action, &["AXPick".into()], false, false),
             Some("AXPick")
         );
-        assert_eq!(element_route(&action, &[], false, false), None);
+        assert_eq!(element_route(&action, &[], false, false), Some("AXPress"));
         action = Action::Type {
             text: "hi".into(),
             x: None,
