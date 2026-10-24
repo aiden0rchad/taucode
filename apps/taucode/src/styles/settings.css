@@ -24,12 +24,8 @@
   background: var(--surface-topbar);
 }
 
-.app.reduced-transparency .settings-titlebar {
-  backdrop-filter: none;
-}
-
 .settings-title {
-  font-size: 15px;
+  font-size: var(--font-title);
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -104,7 +100,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--font-small);
   font-weight: 600;
 }
 
@@ -119,7 +115,7 @@
 }
 
 .settings-mobile-detail-title {
-  font-size: 12px;
+  font-size: var(--font-small);
   font-weight: 600;
   color: var(--text-subtle);
 }
@@ -132,7 +128,7 @@
 }
 
 .settings-field-label {
-  font-size: 12px;
+  font-size: var(--font-small);
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -161,11 +157,11 @@
 
 .settings-button-compact {
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--font-small);
 }
 
 .settings-help {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
 }
 
@@ -196,7 +192,7 @@
 
 .settings-mobile-remote.is-active {
   border-color: color-mix(in srgb, var(--border-accent) 70%, var(--border-muted));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--border-accent) 35%, transparent);
+  box-shadow: none;
 }
 
 .settings-mobile-remote-main {
@@ -214,7 +210,7 @@
 }
 
 .settings-mobile-remote-name {
-  font-size: 12px;
+  font-size: var(--font-small);
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -225,16 +221,16 @@
   justify-content: center;
   border-radius: 999px;
   padding: 2px 8px;
-  font-size: 10px;
+  font-size: var(--font-small);
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--text-strong);
-  background: color-mix(in srgb, var(--border-accent) 18%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border-accent) 45%, transparent);
+  background: var(--border-accent);
+  border: 1px solid var(--border-accent);
 }
 
 .settings-mobile-remote-meta {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
   white-space: nowrap;
   overflow: hidden;
@@ -242,7 +238,7 @@
 }
 
 .settings-mobile-remote-last {
-  font-size: 10px;
+  font-size: var(--font-small);
   color: var(--text-faint);
 }
 
@@ -256,7 +252,7 @@
 .settings-mobile-remote-action {
   min-width: 28px;
   padding: 5px 8px;
-  font-size: 11px;
+  font-size: var(--font-small);
 }
 
 .settings-mobile-remote-action-danger {
@@ -273,9 +269,7 @@
 
 .settings-add-remote-overlay .ds-modal-backdrop,
 .settings-delete-remote-overlay .ds-modal-backdrop {
-  background: rgba(5, 8, 14, 0.8);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  background: var(--bg-surface-raised);
 }
 
 .settings-add-remote-card {
@@ -284,11 +278,11 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: #141b27;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border);
   border-radius: 16px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-  color: #eef3ff;
+  box-shadow: none;
+  color: var(--text);
 }
 
 .settings-add-remote-header {
@@ -299,14 +293,14 @@
 }
 
 .settings-add-remote-title {
-  font-size: 14px;
+  font-size: var(--font-ui);
   font-weight: 700;
-  color: #f5f8ff;
+  color: var(--text);
 }
 
 .settings-add-remote-close {
   padding: 4px;
-  color: #dce6f7;
+  color: var(--text);
 }
 
 .settings-add-remote-close svg {
@@ -327,22 +321,22 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: #141b27;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border);
   border-radius: 16px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-  color: #eef3ff;
+  box-shadow: none;
+  color: var(--text);
 }
 
 .settings-delete-remote-title {
-  font-size: 14px;
+  font-size: var(--font-ui);
   font-weight: 700;
-  color: #f5f8ff;
+  color: var(--text);
 }
 
 .settings-delete-remote-message {
-  font-size: 12px;
-  color: rgba(232, 240, 251, 0.86);
+  font-size: var(--font-small);
+  color: var(--text-muted);
   line-height: 1.45;
 }
 
@@ -355,33 +349,33 @@
 
 .settings-add-remote-card .settings-field-label,
 .settings-add-remote-card .settings-help {
-  color: rgba(232, 240, 251, 0.86);
+  color: var(--text-muted);
 }
 
 .settings-add-remote-card .settings-help-error {
-  color: #ffb1b1;
+  color: var(--danger);
 }
 
 .settings-add-remote-card .settings-input {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #f5f8ff;
+  background: var(--bg-surface-raised);
+  border-color: var(--border);
+  color: var(--text);
 }
 
 .settings-add-remote-card .settings-input::placeholder {
-  color: rgba(232, 240, 251, 0.52);
+  color: var(--text-muted);
 }
 
 .settings-add-remote-card .ghost,
 .settings-delete-remote-card .ghost {
-  color: #dce6f7;
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--bg-surface-raised);
 }
 
 .settings-add-remote-card .ghost:hover,
 .settings-delete-remote-card .ghost:hover {
-  background: rgba(255, 255, 255, 0.11);
+  background: var(--bg-surface-raised);
 }
 
 .settings-shortcuts-search {
@@ -396,7 +390,7 @@
   background: var(--surface-1);
   color: var(--text-strong);
   font-family: var(--code-font-family);
-  font-size: 11px;
+  font-size: var(--font-small);
   line-height: 1.4;
   overflow-x: auto;
   white-space: pre-wrap;
@@ -463,7 +457,7 @@
   background: var(--surface-1);
   color: var(--text-strong);
   font-family: var(--code-font-family);
-  font-size: 13px;
+  font-size: var(--font-ui);
   line-height: 1.5;
   padding: 10px 12px;
 }
@@ -476,16 +470,16 @@
 .settings-agents-textarea:focus {
   outline: none;
   border-color: var(--border-strong);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
+  box-shadow: none;
 }
 
 .settings-agents-error {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-danger);
-  background: rgba(236, 72, 153, 0.08);
+  background: var(--bg-surface-raised);
   border-radius: 10px;
   padding: 8px 10px;
-  border: 1px solid rgba(236, 72, 153, 0.2);
+  border: 1px solid var(--border);
 }
 
 .settings-agents-stepper {
@@ -501,7 +495,7 @@
 .settings-agents-stepper-value {
   min-width: 2ch;
   text-align: center;
-  font-size: 13px;
+  font-size: var(--font-ui);
   font-weight: 700;
   color: var(--text-strong);
 }
@@ -511,7 +505,7 @@
   height: 28px;
   padding: 0;
   line-height: 1;
-  font-size: 14px;
+  font-size: var(--font-ui);
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -553,7 +547,7 @@
 }
 
 .settings-agents-inline-label {
-  font-size: 10px;
+  font-size: var(--font-small);
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--text-muted);
@@ -561,9 +555,9 @@
 }
 
 .settings-agents-inline-separator {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-muted);
-  opacity: 0.8;
+  opacity: 1;
 }
 
 .settings-agents-model-field--model .settings-select {
@@ -604,7 +598,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
 }
 
@@ -624,11 +618,11 @@
 
 .settings-download-fill {
   height: 100%;
-  background: linear-gradient(90deg, rgba(100, 200, 255, 0.7), rgba(120, 235, 190, 0.8));
+  background: var(--bg-surface);
 }
 
 .settings-download-meta {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
 }
 
@@ -640,14 +634,14 @@
   border: 1px solid var(--border-muted);
   background: var(--surface-control);
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: var(--font-small);
   transition: border-color var(--ds-dur-normal) var(--ds-ease-out-soft),
               box-shadow var(--ds-dur-normal) var(--ds-ease-out-soft);
 }
 
 .settings-input--compact {
   padding: 8px 10px;
-  font-size: 11px;
+  font-size: var(--font-small);
 }
 
 .settings-input--scale {
@@ -677,7 +671,7 @@
 
 .settings-scale-reset {
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: var(--font-small);
 }
 
 .settings-select {
@@ -686,7 +680,7 @@
   border: 1px solid var(--border-muted);
   background: var(--surface-control);
   color: var(--text-strong);
-  font-size: 12px;
+  font-size: var(--font-small);
   transition: border-color var(--ds-dur-normal) var(--ds-ease-out-soft),
               box-shadow var(--ds-dur-normal) var(--ds-ease-out-soft);
 }
@@ -698,7 +692,7 @@
 
 .settings-select--compact {
   padding: 6px 8px;
-  font-size: 11px;
+  font-size: var(--font-small);
 }
 
 .settings-segmented {
@@ -722,7 +716,7 @@
   height: calc(100% - 8px);
   border-radius: 999px;
   background: var(--surface-card);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
+  box-shadow: none;
   transition: transform 200ms cubic-bezier(0.645, 0.045, 0.355, 1);
   z-index: 0;
 }
@@ -740,7 +734,7 @@
   border-radius: 999px;
   background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-small);
   font-weight: 600;
   padding: 0;
   min-width: 72px;
@@ -765,7 +759,7 @@
 
 .settings-segmented-option:hover:not(.is-disabled) {
   color: var(--text-strong);
-  background: color-mix(in srgb, var(--surface-card) 55%, transparent);
+  background: var(--surface-card);
 }
 
 .settings-segmented-option.is-active {
@@ -783,14 +777,14 @@
 }
 
 .settings-section-title {
-  font-size: 15px;
+  font-size: var(--font-title);
   font-weight: 600;
   color: var(--text-strong);
   margin-bottom: 4px;
 }
 
 .settings-section-subtitle {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
   margin-bottom: 16px;
 }
@@ -798,7 +792,7 @@
 .settings-subsection-title {
   margin-top: 18px;
   margin-bottom: 6px;
-  font-size: 12px;
+  font-size: var(--font-small);
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -806,7 +800,7 @@
 }
 
 .settings-subsection-subtitle {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
   margin-bottom: 12px;
 }
@@ -837,7 +831,7 @@
 }
 
 .settings-group-error {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--status-error);
 }
 
@@ -873,7 +867,7 @@
 }
 
 .settings-group-copies-label {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-faint);
 }
 
@@ -891,7 +885,7 @@
   border: 1px solid var(--border-muted);
   background: var(--surface-control);
   color: var(--text-strong);
-  font-size: 11px;
+  font-size: var(--font-small);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -919,7 +913,7 @@
 
 .settings-project-group-label {
   text-transform: uppercase;
-  font-size: 11px;
+  font-size: var(--font-small);
   letter-spacing: 0.08em;
   color: var(--text-faint);
   padding-left: 4px;
@@ -944,13 +938,13 @@
 }
 
 .settings-project-name {
-  font-size: 13px;
+  font-size: var(--font-ui);
   font-weight: 600;
   color: var(--text-strong);
 }
 
 .settings-project-path {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
   white-space: nowrap;
   overflow: hidden;
@@ -1031,24 +1025,24 @@
 }
 
 .settings-open-app-status {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--status-error);
   padding: 2px 6px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--status-error) 40%, transparent);
-  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+  border: 1px solid var(--status-error);
+  background: var(--status-error);
 }
 
 .settings-open-app-input[data-invalid] {
   border-color: color-mix(in srgb, var(--status-error) 60%, var(--border-muted));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-error) 25%, transparent);
+  box-shadow: none;
 }
 
 .settings-open-app-default {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-muted);
 }
 
@@ -1138,17 +1132,17 @@
   border-radius: 12px;
   border: 1px solid var(--border-muted);
   background: var(--surface-card);
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-muted);
 }
 
 .settings-doctor.ok {
-  border-color: rgba(120, 235, 190, 0.4);
+  border-color: var(--border);
   color: var(--text-strong);
 }
 
 .settings-doctor.error {
-  border-color: rgba(255, 120, 120, 0.45);
+  border-color: var(--border);
   color: var(--text-strong);
 }
 
@@ -1169,7 +1163,7 @@
 }
 .settings-empty {
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: var(--font-small);
 }
 
 .settings-toggle-row {
@@ -1202,13 +1196,13 @@
 }
 
 .settings-toggle-title {
-  font-size: 13px;
+  font-size: var(--font-ui);
   font-weight: 600;
   color: var(--text-strong);
 }
 
 .settings-toggle-subtitle {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
 }
 
@@ -1227,13 +1221,8 @@
 }
 
 .settings-toggle.on {
-  background: linear-gradient(135deg, rgba(100, 200, 255, 0.6), rgba(120, 235, 190, 0.6));
+  background: var(--bg-surface);
   border-color: var(--border-accent);
-}
-
-.app.reduced-transparency .settings-toggle:not(.on) {
-  background: var(--surface-control-hover);
-  border-color: var(--border-stronger);
 }
 
 .settings-toggle-knob {
@@ -1241,7 +1230,7 @@
   height: 16px;
   border-radius: 999px;
   background: var(--surface-card-strong);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
   transition: transform var(--ds-dur-normal) var(--ds-ease-spring);
 }
 

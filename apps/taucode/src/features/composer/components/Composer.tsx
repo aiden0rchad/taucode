@@ -576,7 +576,7 @@ export const Composer = memo(function Composer({
           ))}
         </div>
       ) : null}
-      <ComposerInput
+      <ComposerInput engine={engine}
         text={text}
         disabled={disabled}
         sendLabel={effectiveSendLabel}

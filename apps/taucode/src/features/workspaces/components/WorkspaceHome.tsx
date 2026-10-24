@@ -30,16 +30,13 @@ import { isComposingEvent } from "../../../utils/keys";
 import { FileEditorCard } from "../../shared/components/FileEditorCard";
 import { WorkspaceHomeRunControls } from "./WorkspaceHomeRunControls";
 import { WorkspaceHomeHistory } from "./WorkspaceHomeHistory";
-import { WorkspaceHomeGitInitBanner } from "./WorkspaceHomeGitInitBanner";
 import { buildIconPath } from "./workspaceHomeHelpers";
 import { useWorkspaceHomeSuggestionsStyle } from "../hooks/useWorkspaceHomeSuggestionsStyle";
 import type { ThreadStatusById } from "../../../utils/threadStatus";
 
 type WorkspaceHomeProps = {
   workspace: WorkspaceInfo;
-  showGitInitBanner: boolean;
-  initGitRepoLoading: boolean;
-  onInitGitRepo: () => void | Promise<void>;
+  engine?: import("@/types").EngineKind;
   runs: WorkspaceHomeRun[];
   recentThreadInstances: WorkspaceHomeRunInstance[];
   recentThreadsUpdatedAt: number | null;
@@ -100,9 +97,7 @@ type WorkspaceHomeProps = {
 
 export function WorkspaceHome({
   workspace,
-  showGitInitBanner,
-  initGitRepoLoading,
-  onInitGitRepo,
+  engine,
   runs,
   recentThreadInstances,
   recentThreadsUpdatedAt,
@@ -364,16 +359,10 @@ export function WorkspaceHome({
         </div>
       </div>
 
-      {showGitInitBanner && (
-        <WorkspaceHomeGitInitBanner
-          isLoading={initGitRepoLoading}
-          onInitGitRepo={onInitGitRepo}
-        />
-      )}
 
       <div className="workspace-home-composer">
         <div className="composer">
-          <ComposerInput
+          <ComposerInput engine={engine}
             text={prompt}
             disabled={isSubmitting}
             sendLabel="Send"

@@ -1,13 +1,13 @@
 .empty {
   color: var(--text-faint);
-  font-size: 13px;
+  font-size: var(--font-ui);
 }
 
 button {
   border: none;
   border-radius: 10px;
   padding: 8px 14px;
-  font-size: 13px;
+  font-size: var(--font-ui);
   font-weight: 600;
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease, filter 0.15s ease;
@@ -20,9 +20,9 @@ button:disabled {
 }
 
 .primary {
-  background: linear-gradient(135deg, #62b7ff, #4fe3a3);
-  color: #0b0f1a;
-  box-shadow: 0 12px 22px var(--shadow-accent);
+  background: var(--accent);
+  color: var(--accent-text);
+  box-shadow: none;
 }
 
 .secondary {
@@ -50,12 +50,12 @@ button:disabled {
 
 button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 12px 18px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
 }
 
 button:active:not(:disabled) {
   transform: scale(var(--ds-active-scale));
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: none;
   transition-duration: 50ms;
 }
 
@@ -68,5 +68,5 @@ button:active:not(:disabled) {
 }
 
 .ghost:active:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-surface-raised);
 }

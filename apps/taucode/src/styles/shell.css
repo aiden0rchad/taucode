@@ -1,0 +1,75 @@
+/* Shared shell chrome and controls for Code, Chat and Work. */
+.app-shell { font: var(--font-ui)/1.5 var(--ui-font-family); color: var(--text); background: var(--bg-app); --main-topbar-height: 44px; }
+.app-shell.chat-layout { position: relative; grid-template-columns: var(--sidebar-width, 280px) minmax(0, 1fr); }
+.app-shell .sidebar, .app-shell .chat-sidebar { padding: var(--sidebar-top-padding, 36px) 12px 12px; gap: 10px; background: var(--bg-sidebar); }
+.mode-switcher { flex-shrink: 0; display: flex; gap: 3px; padding: 3px; margin: 0; height: 32px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); }
+.mode-switcher button { font: inherit; flex: 1; padding: 3px 8px; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); cursor: pointer; }
+.mode-switcher button[aria-pressed="true"] { background: var(--bg-surface-raised); color: var(--text); box-shadow: none; }
+.shell-primary-action { flex-shrink: 0; }
+.shell-primary-action .ui-button { width: 100%; text-align: left; justify-content: flex-start; }
+.shell-footer { display: flex; align-items: center; gap: 6px; margin-top: auto; border-top: 1px solid var(--border); padding-top: 8px; flex-shrink: 0; }
+.shell-section-menu { border-bottom: 1px solid var(--border); padding: 8px 0; }
+.shell-section-menu summary { cursor: pointer; font-size: var(--font-small); color: var(--text-muted); }
+.shell-section-menu[open] > * + * { margin-top: 8px; }
+.app-shell .main-topbar { height: var(--main-topbar-height); min-height: var(--main-topbar-height); padding: 0 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); background: var(--bg-app); flex-shrink: 0; }
+.main-topbar-left { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.main-topbar-left > strong { font-size: var(--font-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell-header-menu { margin-left: auto; position: relative; flex-shrink: 0; }
+.shell-header-menu > summary { display: none; cursor: pointer; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
+.shell-header-actions, .shell-mode-actions, .shell-panel-action { display: flex; align-items: center; gap: 6px; }
+.shell-panel-action:empty, .shell-mode-actions:empty { display: none; }
+.app-shell .ui-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font: inherit; line-height: 1.4; color: var(--text); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; padding: 5px 9px; min-height: 28px; cursor: pointer; }
+.app-shell .ui-button-md { padding: 8px 12px; min-height: 34px; }
+.app-shell .ui-button-ghost { background: transparent; border-color: transparent; }
+.app-shell .ui-button-primary, .app-shell .composer-send { color: var(--accent-text); background: var(--accent); border-color: var(--accent); }
+.app-shell .ui-button-danger { color: var(--danger); border-color: var(--danger); }
+.app-shell .ui-button:hover:not(:disabled) { background: var(--bg-surface-raised); color: var(--text); }
+.app-shell .ui-button-primary:hover:not(:disabled) { background: var(--accent); color: var(--accent-text); }
+.app-shell button:disabled { cursor: default; opacity: .5; }
+.app-shell :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app-shell .ui-select, .app-shell .ui-textarea, .app-shell input[type="search"], .app-shell .sidebar-search-input { font: inherit; color: var(--text); background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 6px; padding: 6px 8px; min-width: 0; }
+.app-shell .ui-textarea { width: 100%; resize: vertical; line-height: 1.6; }
+.app-shell .chat-composer, .app-shell .work-composer, .app-shell .composer-input { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 12px; padding: 12px; box-shadow: none; }
+.app-shell .chat-composer:focus-within, .app-shell .work-composer:focus-within, .app-shell .composer-input:focus-within { border-color: var(--accent); outline: 1px solid var(--accent); }
+.app-shell .chat-composer textarea, .app-shell .work-composer textarea { border: 0; outline: none; background: transparent; }
+.ui-empty-state { padding: clamp(36px, 8vh, 90px) 0 32px; }
+.ui-empty-state h1, .workspace-home h1 { font-size: var(--font-h1); font-weight: 500; letter-spacing: -.03em; margin: 12px 0; }
+.ui-empty-state p { color: var(--text-muted); font-size: var(--font-ui); }
+.ui-suggestions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 28px; }
+.ui-card { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); overflow: hidden; }
+.ui-card:hover { border-color: var(--border-strong); background: var(--bg-surface-raised); }
+.ui-card > .ui-button { width: 100%; height: 100%; padding: 16px; align-items: start; flex-direction: column; text-align: left; font-size: var(--font-small); line-height: 1.6; }
+.ui-card > .ui-button span { color: var(--text-faint); }
+.ui-list-row { border: 1px solid transparent; border-radius: 6px; padding: 6px; margin: 2px 0; font-size: var(--font-ui); color: var(--text); }
+.ui-list-row:hover { background: var(--bg-surface); }
+.ui-list-row.is-active { background: var(--bg-surface-raised); }
+.ui-list-row small, .ui-list-row .thread-details, .ui-list-row .thread-meta { font-size: var(--font-small); color: var(--text-muted); }
+.ui-list-row .work-task { border: 0; padding: 0; margin: 0; display: grid; background: transparent; }
+.chat-list h2, .work-space h3 { font-size: var(--font-small); }
+.chat-list { min-height: 0; }
+.chat-main { grid-column: 2; }
+.work-task-view.inspector-collapsed { grid-template-columns: minmax(0, 1fr); }
+.ds-popover { box-shadow: 0 6px 18px #00000026; }
+@media (max-width: 900px) { .ui-suggestions { grid-template-columns: 1fr; } }
+@media (max-width: 700px) {
+  .shell-header-menu > summary { display: block; }
+  .shell-header-actions { position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; padding: 10px; max-width: calc(100vw - 24px); flex-wrap: wrap; background: var(--bg-surface-raised); border: 1px solid var(--border-strong); border-radius: 8px; }
+  .shell-mode-actions, .shell-mode-actions .main-header-actions { flex-wrap: wrap; }
+  .app-shell .main-topbar { padding-inline: 12px; }
+}
+@media (max-width: 600px) {
+  .app-shell.chat-layout { grid-template-columns: minmax(0, 1fr); }
+  .chat-main { grid-column: 1; }
+  .chat-layout > .sidebar-resizer { display: none; }
+  .app-shell .chat-sidebar { padding-top: 36px; }
+}
+.app-shell.layout-desktop .main-topbar { grid-column: 1 / -1; }
+.app-shell.layout-desktop .right-panel { grid-row: 2 / -1; }
+.app-shell .composer-action.is-send { background: var(--accent); color: var(--accent-text); border: 1px solid var(--accent); border-radius: 6px; }
+.app-shell .workspace-home-title { font-size: var(--font-h1); }
+.app-shell .thread-name { font-size: var(--font-ui); }
+.app-shell .shell-primary-action .ui-button { justify-content: flex-start; }
+.app-shell .sidebar-search-input, .app-shell .chat-sidebar > input { width: 100%; min-height: 30px; }
+.app-shell.layout-desktop .home { grid-row: 2 / -1; }
+.app-shell.chat-layout .main-topbar { padding-right: calc(16px + var(--window-caption-width, 0px)); }
+.shell-header-menu > summary { -webkit-app-region: no-drag; }

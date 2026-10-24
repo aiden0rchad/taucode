@@ -1,3 +1,4 @@
+import { HeaderActions } from "./MainTopbar";
 import { memo } from "react";
 import AlignLeft from "lucide-react/dist/esm/icons/align-left";
 import Columns2 from "lucide-react/dist/esm/icons/columns-2";
@@ -58,13 +59,13 @@ export const MainHeaderActions = memo(function MainHeaderActions({
           </button>
         </div>
       )}
-      {!isCompact ? (
+      <HeaderActions panel>{!isCompact ? (
         rightPanelCollapsed ? (
           <RightPanelExpandButton {...sidebarToggleProps} />
         ) : (
           <RightPanelCollapseButton {...sidebarToggleProps} />
         )
-      ) : null}
+      ) : null}</HeaderActions>
     </>
   );
 });

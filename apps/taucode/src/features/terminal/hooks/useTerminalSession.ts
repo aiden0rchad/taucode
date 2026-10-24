@@ -260,7 +260,7 @@ export function useTerminalSession({
         cursorBlink: true,
         fontSize: 12,
         fontFamily: appearance.fontFamily,
-        allowTransparency: true,
+        allowTransparency: false,
         theme: appearance.theme,
         scrollback: 5000,
       });

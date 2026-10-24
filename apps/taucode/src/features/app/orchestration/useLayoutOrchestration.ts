@@ -8,7 +8,6 @@ type UseAppShellOrchestrationOptions = {
   isTablet: boolean;
   sidebarCollapsed: boolean;
   rightPanelCollapsed: boolean;
-  shouldReduceTransparency: boolean;
   isWorkspaceDropActive: boolean;
   centerMode: "chat" | "diff";
   selectedDiffPath: string | null;
@@ -29,7 +28,6 @@ export function useAppShellOrchestration({
   isTablet,
   sidebarCollapsed,
   rightPanelCollapsed,
-  shouldReduceTransparency,
   isWorkspaceDropActive,
   centerMode,
   selectedDiffPath,
@@ -49,9 +47,7 @@ export function useAppShellOrchestration({
 
   const appClassName = `app ${isCompact ? "layout-compact" : "layout-desktop"}${
     isPhone ? " layout-phone" : ""
-  }${isTablet ? " layout-tablet" : ""}${
-    shouldReduceTransparency ? " reduced-transparency" : ""
-  }${!isCompact && sidebarCollapsed ? " sidebar-collapsed" : ""}${
+  }${isTablet ? " layout-tablet" : ""}${!isCompact && sidebarCollapsed ? " sidebar-collapsed" : ""}${
     !isCompact && rightPanelCollapsed ? " right-panel-collapsed" : ""
   }${isWindows ? " is-windows" : ""}`;
 

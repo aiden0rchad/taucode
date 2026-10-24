@@ -35,13 +35,13 @@
 }
 
 .home-title {
-  font-size: 44px;
+  font-size: var(--font-h1);
   font-weight: 600;
   letter-spacing: -0.02em;
 }
 
 .home-subtitle {
-  font-size: 16px;
+  font-size: var(--font-title);
   color: var(--text-muted);
 }
 
@@ -66,14 +66,14 @@
 }
 
 .home-section-title {
-  font-size: 13px;
+  font-size: var(--font-ui);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-faint);
 }
 
 .home-section-meta {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
 }
 
@@ -102,7 +102,7 @@
 }
 
 .home-usage-control-label {
-  font-size: 11px;
+  font-size: var(--font-small);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-faint);
@@ -124,15 +124,15 @@
   border: none;
   background: transparent;
   color: var(--text-stronger);
-  font-size: 12px;
+  font-size: var(--font-small);
   padding: 3px 18px 3px 0;
   cursor: pointer;
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  background-image: linear-gradient(45deg, transparent 50%, var(--select-caret) 50%),
-    linear-gradient(135deg, var(--select-caret) 50%, transparent 50%);
+  background-image: none;
+  appearance: auto;
   background-position: calc(100% - 6px) calc(50% + 1px),
     calc(100% - 2px) calc(50% + 1px);
   background-size: 5px 5px, 5px 5px;
@@ -164,7 +164,7 @@
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-small);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: 4px 10px;
@@ -175,7 +175,7 @@
 .home-usage-toggle-button.is-active {
   background: var(--surface-card-strong);
   color: var(--text-stronger);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow: none;
 }
 
 .home-usage-refresh {
@@ -233,10 +233,9 @@
 .home-usage-card {
   padding: 12px 14px;
   border-radius: 14px;
-  background: linear-gradient(135deg, rgba(98, 176, 255, 0.15), transparent 60%),
-    var(--surface-card);
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -251,17 +250,15 @@
 }
 
 .home-usage-card.is-up {
-  background: linear-gradient(135deg, rgba(88, 190, 255, 0.18), transparent 58%),
-    var(--surface-card);
+  background: var(--bg-surface);
 }
 
 .home-usage-card.is-down {
-  background: linear-gradient(135deg, rgba(255, 177, 124, 0.16), transparent 58%),
-    var(--surface-card);
+  background: var(--bg-surface);
 }
 
 .home-usage-label {
-  font-size: 11px;
+  font-size: var(--font-small);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-faint);
@@ -280,7 +277,7 @@
 }
 
 .home-usage-number {
-  font-size: 24px;
+  font-size: var(--font-title);
   font-weight: 600;
   letter-spacing: -0.01em;
   white-space: nowrap;
@@ -302,25 +299,23 @@
 }
 
 .home-usage-suffix {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .home-usage-caption {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
 }
 
 .home-usage-chart-card {
   padding: 12px 14px;
   border-radius: 16px;
-  background:
-    radial-gradient(circle at top, rgba(62, 156, 255, 0.16), transparent 60%),
-    var(--surface-card);
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
 }
 
 .home-usage-chart-nav {
@@ -332,7 +327,7 @@
 }
 
 .home-usage-chart-range {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-stronger);
   letter-spacing: 0.01em;
 }
@@ -348,7 +343,7 @@
   height: 28px;
   border-radius: 999px;
   border: 1px solid var(--border-subtle);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-surface-raised);
   color: var(--text-stronger);
   display: inline-flex;
   align-items: center;
@@ -367,7 +362,7 @@
 .home-usage-chart-button:disabled {
   opacity: 0.38;
   cursor: default;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-surface-raised);
   color: var(--text-faint);
   border-color: var(--border-subtle);
   transform: none;
@@ -400,8 +395,8 @@
   display: block;
   width: 100%;
   border-radius: 2px;
-  background: linear-gradient(180deg, rgba(99, 186, 255, 0.9), rgba(78, 132, 255, 0.65));
-  box-shadow: 0 6px 14px rgba(30, 100, 200, 0.25);
+  background: var(--bg-surface);
+  box-shadow: none;
 }
 
 .home-usage-bar::after {
@@ -415,7 +410,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--font-small);
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
@@ -428,7 +423,7 @@
 }
 
 .home-usage-bar-label {
-  font-size: 10px;
+  font-size: var(--font-small);
   color: var(--text-faint);
 }
 
@@ -441,7 +436,7 @@
 
 
 .home-usage-models-label {
-  font-size: 12px;
+  font-size: var(--font-small);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-faint);
@@ -451,7 +446,7 @@
 }
 
 .home-usage-models-hint {
-  font-size: 10px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
   text-transform: none;
   letter-spacing: 0.02em;
@@ -470,9 +465,9 @@
   gap: 6px;
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-stronger);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-surface-raised);
   border: 1px solid var(--border-subtle);
   max-width: 100%;
   min-width: 0;
@@ -481,12 +476,12 @@
 }
 
 .home-usage-model-share {
-  font-size: 10px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
 }
 
 .home-usage-model-empty {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-faint);
 }
 
@@ -494,24 +489,24 @@
   padding: 14px;
   border-radius: 14px;
   border: 1px dashed var(--border-subtle);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-surface-raised);
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
 .home-usage-empty-title {
-  font-size: 14px;
+  font-size: var(--font-ui);
   color: var(--text-stronger);
 }
 
 .home-usage-empty-subtitle {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-faint);
 }
 
 .home-usage-error {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-accent);
 }
 
@@ -560,11 +555,9 @@
   position: relative;
   padding: 14px 14px 16px;
   border-radius: 16px;
-  background:
-    linear-gradient(135deg, rgba(100, 200, 255, 0.12), transparent 60%),
-    var(--surface-card);
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
   overflow: hidden;
   text-align: left;
 }
@@ -575,7 +568,7 @@
   inset: 0;
   border-radius: 16px;
   border: 1px solid var(--border-strong);
-  opacity: 0.4;
+  opacity: 1;
   pointer-events: none;
 }
 
@@ -589,7 +582,7 @@
 
 .home-latest-card-button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.24);
+  box-shadow: none;
 }
 
 .home-latest-card-button:focus-visible {
@@ -606,12 +599,7 @@
 .home-latest-skeleton {
   height: 8px;
   border-radius: 999px;
-  background: linear-gradient(
-    110deg,
-    rgba(255, 255, 255, 0.04) 8%,
-    rgba(255, 255, 255, 0.18) 18%,
-    rgba(255, 255, 255, 0.04) 33%
-  );
+  background: var(--bg-surface);
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }
@@ -650,14 +638,14 @@
 }
 
 .home-latest-label {
-  font-size: 13px;
+  font-size: var(--font-ui);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-faint);
 }
 
 .home-latest-time {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
 }
 
@@ -669,13 +657,13 @@
 }
 
 .home-latest-project-name {
-  font-size: 12px;
+  font-size: var(--font-small);
   font-weight: 600;
   color: var(--text-stronger);
 }
 
 .home-latest-group {
-  font-size: 10px;
+  font-size: var(--font-small);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -686,7 +674,7 @@
 }
 
 .home-latest-message {
-  font-size: 13px;
+  font-size: var(--font-ui);
   color: var(--text-stronger);
   line-height: 1.45;
   display: -webkit-box;
@@ -697,7 +685,7 @@
 
 .home-latest-status {
   margin-top: 8px;
-  font-size: 11px;
+  font-size: var(--font-small);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -712,12 +700,12 @@
 }
 
 .home-latest-empty-title {
-  font-size: 15px;
+  font-size: var(--font-title);
   color: var(--text-stronger);
 }
 
 .home-latest-empty-subtitle {
-  font-size: 13px;
+  font-size: var(--font-ui);
   color: var(--text-faint);
 }
 
@@ -818,13 +806,13 @@
   gap: 10px;
   padding: 16px 20px;
   border-radius: 18px;
-  font-size: 15px;
+  font-size: var(--font-title);
   min-height: 56px;
   white-space: nowrap;
 }
 
 .home-icon {
-  font-size: 18px;
+  font-size: var(--font-title);
   line-height: 1;
 }
 

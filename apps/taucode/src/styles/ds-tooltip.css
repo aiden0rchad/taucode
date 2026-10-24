@@ -20,11 +20,11 @@
   border-radius: 8px;
   background: var(--surface-command);
   color: var(--text-emphasis);
-  font-size: 10px;
+  font-size: var(--font-small);
   line-height: 1.2;
   white-space: nowrap;
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 14px 24px rgba(0, 0, 0, 0.22);
+  box-shadow: none;
 }
 
 .ds-tooltip-trigger[data-tooltip]::before {

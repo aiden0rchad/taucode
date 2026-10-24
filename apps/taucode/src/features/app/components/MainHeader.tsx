@@ -1,3 +1,4 @@
+import { HeaderActions } from "./MainTopbar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Check from "lucide-react/dist/esm/icons/check";
 import Copy from "lucide-react/dist/esm/icons/copy";
@@ -22,6 +23,7 @@ import { useMenuController } from "../hooks/useMenuController";
 type MainHeaderProps = {
   engine?: import("@/types").EngineKind;
   workspace: WorkspaceInfo;
+  threadTitle?: string;
   parentName?: string | null;
   worktreeLabel?: string | null;
   disableBranchMenu?: boolean;
@@ -76,6 +78,7 @@ type MainHeaderProps = {
 export function MainHeader({
   engine,
   workspace,
+  threadTitle,
   parentName = null,
   worktreeLabel = null,
   disableBranchMenu = false,
@@ -187,11 +190,11 @@ export function MainHeader({
   };
 
   return (
-    <header className="main-header" data-tauri-drag-region>
+    <div className="main-header" data-tauri-drag-region>
       <div className="workspace-header">
         <div className="workspace-title-line">
           <span className="workspace-title">
-            {parentName ? parentName : workspace.name}
+            {threadTitle || parentName || workspace.name}
             {engine && <span className="engine-badge">{engine}</span>}
           </span>
           <span className="workspace-separator" aria-hidden>
@@ -339,7 +342,7 @@ export function MainHeader({
                 </PopoverSurface>
               )}
             </div>
-          ) : (
+          ) : branchName && branchName !== "unknown" ? (
             <div className="workspace-branch-menu" ref={menuRef}>
               <MenuTrigger
                 isOpen={menuOpen}
@@ -476,10 +479,10 @@ export function MainHeader({
                 </PopoverSurface>
               )}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
-      <div className="main-header-actions">
+      <HeaderActions><div className="main-header-actions">
         {showWorkspaceTools &&
           onRunLaunchScript &&
           onOpenLaunchScriptEditor &&
@@ -573,7 +576,7 @@ export function MainHeader({
           </span>
         </button>
         {extraActionsNode}
-      </div>
-    </header>
+      </div></HeaderActions>
+    </div>
   );
 }

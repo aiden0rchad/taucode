@@ -22,19 +22,19 @@
 
 .error-toast-title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-ui);
 }
 
 .error-toast-dismiss {
-  font-size: 18px;
+  font-size: var(--font-title);
   line-height: 1;
   padding: 0 4px;
 }
 
 .error-toast-body {
   margin-top: 4px;
-  font-size: 12px;
-  opacity: 0.95;
+  font-size: var(--font-small);
+  opacity: 1;
 }
 
 @media (max-width: 720px) {

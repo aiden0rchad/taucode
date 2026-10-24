@@ -24,7 +24,6 @@ import {
 
 type SettingsDisplaySectionProps = {
   appSettings: AppSettings;
-  reduceTransparency: boolean;
   scaleShortcutTitle: string;
   scaleShortcutText: string;
   scaleDraft: string;
@@ -32,7 +31,6 @@ type SettingsDisplaySectionProps = {
   codeFontDraft: string;
   codeFontSizeDraft: number;
   onUpdateAppSettings: (next: AppSettings) => Promise<void>;
-  onToggleTransparency: (value: boolean) => void;
   onSetScaleDraft: Dispatch<SetStateAction<string>>;
   onCommitScale: () => Promise<void>;
   onResetScale: () => Promise<void>;
@@ -48,7 +46,6 @@ type SettingsDisplaySectionProps = {
 
 export function SettingsDisplaySection({
   appSettings,
-  reduceTransparency,
   scaleShortcutTitle,
   scaleShortcutText,
   scaleDraft,
@@ -56,7 +53,6 @@ export function SettingsDisplaySection({
   codeFontDraft,
   codeFontSizeDraft,
   onUpdateAppSettings,
-  onToggleTransparency,
   onSetScaleDraft,
   onCommitScale,
   onResetScale,
@@ -320,15 +316,6 @@ export function SettingsDisplaySection({
           and other conversation items.
         </div>
       </div>
-      <SettingsToggleRow
-        title="Reduce transparency"
-        subtitle="Use solid surfaces instead of glass."
-      >
-        <SettingsToggleSwitch
-          pressed={reduceTransparency}
-          onClick={() => onToggleTransparency(!reduceTransparency)}
-        />
-      </SettingsToggleRow>
       <div className="settings-toggle-row settings-scale-row">
         <div>
           <div className="settings-toggle-title">Interface scale</div>

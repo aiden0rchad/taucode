@@ -153,7 +153,7 @@ export function DesktopLayout({
       <section className="main">
         {updateToastNode}
         {errorToastsNode}
-        {showHome && homeNode}
+        {showHome && <><MainTopbar leftNode={<strong>Home</strong>} actionsNode={topbarActionsNode} />{homeNode}</>}
 
         {showWorkspace && (
           <>

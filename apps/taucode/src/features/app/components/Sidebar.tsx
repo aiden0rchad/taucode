@@ -1,3 +1,4 @@
+import { PrimaryAction } from "./AppShell";
 import type {
   RequestUserInputRequest,
   ThreadListOrganizeMode,
@@ -842,6 +843,7 @@ export const Sidebar = memo(function Sidebar({
     >
       <div className="sidebar-drag-strip" />
       <SidebarHeader
+        primaryAction={<PrimaryAction onClick={() => { const workspace = workspaces.find(w => w.id === activeWorkspaceId); if (workspace) onAddAgent(workspace); else onAddWorkspace(); }}>New thread</PrimaryAction>}
         onSelectHome={onSelectHome}
         onAddWorkspace={onAddWorkspace}
         onToggleSearch={() => setIsSearchOpen((prev) => !prev)}

@@ -11,7 +11,6 @@ import { MainAppShell } from "@app/components/MainAppShell";
 import { useThreads } from "@threads/hooks/useThreads";
 import { usePullRequestComposer } from "@/features/git/hooks/usePullRequestComposer";
 import { useAutoExitEmptyDiff } from "@/features/git/hooks/useAutoExitEmptyDiff";
-import { isMissingRepo } from "@/features/git/utils/repoErrors";
 import { useModels } from "@/features/models/hooks/useModels";
 import { modelsForThread } from "@/features/models/utils/modelListResponse";
 import { useCollaborationModes } from "@/features/collaboration/hooks/useCollaborationModes";
@@ -83,7 +82,7 @@ import {
 import { useAppShellOrchestration } from "@app/orchestration/useLayoutOrchestration";
 import { normalizeCodexArgsInput } from "@/utils/codexArgsInput";
 import { subscribeTrayOpenThread } from "@services/events";
-import { BrowserDock } from "@/features/browser/BrowserDock";
+import { AppModals } from "./AppModals";
 
 const SettingsView = lazy(() =>
   import("@settings/components/SettingsView").then((module) => ({
@@ -91,7 +90,7 @@ const SettingsView = lazy(() =>
   })),
 );
 
-export default function MainApp() {
+export default function MainApp({ settingsOnly = false, onSettingsClose = () => {} }: { settingsOnly?: boolean; onSettingsClose?: () => void }) {
   const [selectedEngine, setSelectedEngine] = useState<import("@/types").EngineKind | undefined>();
   const {
     appSettings,
@@ -99,8 +98,6 @@ export default function MainApp() {
     doctor,
     codexUpdate,
     appSettingsLoading,
-    reduceTransparency,
-    setReduceTransparency,
     scaleShortcutTitle,
     scaleShortcutText,
     queueSaveSettings,
@@ -123,7 +120,6 @@ export default function MainApp() {
     addDebugEntry,
     handleCopyDebug,
     clearDebugEntries,
-    shouldReduceTransparency,
   } = useAppBootstrapOrchestration();
   useModeSettings(appSettings);
   const {
@@ -611,7 +607,6 @@ export default function MainApp() {
     selectedCommitSha,
     diffSource,
     setDiffSource,
-    gitStatus,
     gitLogEntries,
     gitLogAheadEntries,
     gitLogBehindEntries,
@@ -997,8 +992,6 @@ export default function MainApp() {
       moveWorkspaceGroup,
       deleteWorkspaceGroup,
       assignWorkspaceGroup,
-      reduceTransparency,
-      setReduceTransparency,
       appSettings,
       openAppIconById,
       queueSaveSettings,
@@ -1369,7 +1362,6 @@ export default function MainApp() {
     isTablet,
     sidebarCollapsed,
     rightPanelCollapsed,
-    shouldReduceTransparency,
     isWorkspaceDropActive,
     centerMode,
     selectedDiffPath,
@@ -1457,11 +1449,6 @@ export default function MainApp() {
     Boolean(activeWorkspace?.connected) &&
     appSettings.backendMode === "remote" &&
     remoteThreadConnectionState === "polling";
-  const gitRootOverride = activeWorkspace?.settings.gitRoot;
-  const hasGitRootOverride =
-    typeof gitRootOverride === "string" && gitRootOverride.trim().length > 0;
-  const showGitInitBanner =
-    Boolean(activeWorkspace) && !hasGitRootOverride && isMissingRepo(gitStatus.error);
   const displayNodes = useMainAppDisplayNodes({
     showCompactCodexThreadActions,
     handleMobileThreadRefresh,
@@ -1475,9 +1462,7 @@ export default function MainApp() {
     workspaceHomeProps: activeWorkspace
       ? {
           workspace: activeWorkspace,
-          showGitInitBanner,
-          initGitRepoLoading,
-          onInitGitRepo: modalActions.openInitGitRepoPrompt,
+          engine: selectedEngine,
           runs: workspaceRuns,
           recentThreadInstances,
           recentThreadsUpdatedAt,
@@ -1906,11 +1891,13 @@ export default function MainApp() {
   });
 
   const agentDetails = useMemo(() => agentThreadDetails(Object.values(threadsByWorkspace).flat(), threadStatusById, tokenUsageByThread), [threadsByWorkspace, threadStatusById, tokenUsageByThread]);
+  if (settingsOnly) return <AppModals {...mainAppShellProps.appModalsProps} settingsOpen onCloseSettings={onSettingsClose} />;
+
   return <AgentsContext.Provider value={{ details: agentDetails, workspaceId: activeWorkspaceId, threadId: activeThreadId, itemsByThread,
     policy: appSettings.agentPolicy ? { ...appSettings.agentPolicy.subagents, ...activeWorkspace?.settings.agentPolicy?.subagents } : undefined }}>
     <Checkpoints running={threadStatusById} onChanged={async (workspace, thread, text) => {
     await refreshThread(workspace, thread);
     if (text !== undefined) composerWorkspaceState.restoreDraftForThread(thread, text);
     if (text !== undefined && workspace === activeWorkspaceId && thread === activeThreadId) setPrefillDraft({ id: `rewind-${Date.now()}`, text, createdAt: Date.now() });
-  }} /><BrowserDock searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><MainAppShell {...mainAppShellProps} /></BrowserDock></AgentsContext.Provider>;
+  }} /><MainAppShell {...mainAppShellProps} /></AgentsContext.Provider>;
 }

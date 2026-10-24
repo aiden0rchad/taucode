@@ -154,7 +154,7 @@ describe("ThreadList", () => {
     const role = screen.getByText("Explorer");
     expect(pill.className).toContain("thread-subagent-pill");
     expect(role.className).toContain("thread-subagent-role");
-    expect((pill as HTMLElement).style.getPropertyValue("--thread-subagent-pill-hue")).toBeTruthy();
+    expect(pill.closest(".ui-list-row")).toBeTruthy();
     expect(container.querySelector(".thread-workspace-label")).toBeNull();
   });
 

@@ -50,8 +50,8 @@ export function PhoneLayout({
       {approvalToastsNode}
       {updateToastNode}
       {errorToastsNode}
-      {activeTab === "home" && <div className="compact-panel">{homeNode}</div>}
-      {activeTab === "projects" && <div className="compact-panel">{sidebarNode}</div>}
+      {activeTab === "home" && <div className="compact-panel"><MainTopbar leftNode={<strong>Home</strong>} actionsNode={topbarActionsNode} />{homeNode}</div>}
+      {activeTab === "projects" && <div className="compact-panel"><MainTopbar leftNode={<strong>Projects</strong>} actionsNode={topbarActionsNode} />{sidebarNode}</div>}
       {activeTab === "codex" && (
         <div className="compact-panel">
           {activeWorkspace ? (
@@ -66,13 +66,13 @@ export function PhoneLayout({
               </div>
             </>
           ) : (
-            compactEmptyCodexNode
+            <><MainTopbar leftNode={<strong>Code</strong>} />{compactEmptyCodexNode}</>
           )}
         </div>
       )}
       {activeTab === "git" && (
         <div className="compact-panel">
-          {!activeWorkspace && compactEmptyGitNode}
+          {!activeWorkspace && <><MainTopbar leftNode={<strong>Git</strong>} />{compactEmptyGitNode}</>}
           {activeWorkspace && (
             <>
               <MainTopbar
@@ -93,7 +93,7 @@ export function PhoneLayout({
         </div>
       )}
       {activeTab === "log" && (
-        <div className="compact-panel">{debugPanelNode}</div>
+        <div className="compact-panel"><MainTopbar leftNode={<strong>Debug log</strong>} actionsNode={topbarActionsNode} />{debugPanelNode}</div>
       )}
       {tabBarNode}
     </div>

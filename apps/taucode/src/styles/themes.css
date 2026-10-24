@@ -1,4 +1,5 @@
-@import "./themes.dark.css";
-@import "./themes.dim.css";
-@import "./themes.light.css";
-@import "./themes.system.css";
+@import "./tokens.css";
+
+:root { font-family: var(--ui-font-family); font-size: var(--font-ui); color: var(--text); background: var(--bg-app); color-scheme: dark; font-synthesis: none; text-rendering: optimizeLegibility; }
+:root[data-theme="light"] { color-scheme: light; }
+@media (prefers-color-scheme: light) { :root:not([data-theme]) { color-scheme: light; } }

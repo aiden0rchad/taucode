@@ -3,7 +3,6 @@
 .browser-main > .app { width: 100%; }
 .browser-dock { display: flex; min-width: 320px; max-width: 80vw; height: 100%; background: var(--surface-right-panel); border-left: 1px solid var(--ds-border-subtle); }
 .browser-pane { padding: 10px; gap: 8px; min-width: 0; }
-.browser-toggle { position: fixed; right: 12px; bottom: 10px; z-index: 20; }
 .browser-resize { width: 5px; flex-shrink: 0; cursor: col-resize; background: transparent; border: 0; padding: 0; }
 .browser-resize:focus-visible, .browser-resize:hover { background: var(--text-muted); }
 .browser-toolbar, .browser-tabs, .browser-tab, .browser-agent { display: flex; align-items: center; gap: 4px; }
@@ -15,10 +14,10 @@
 .browser-tab span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .browser-tab img { width: 14px; height: 14px; }
 .browser-toolbar input { min-width: 0; flex: 1; padding: 7px 10px; background: var(--surface-card); color: var(--text-strong); border: 1px solid var(--ds-border-subtle); border-radius: 7px; }
-.browser-agent { justify-content: space-between; font-size: 12px; color: var(--text-muted); }
-.browser-error { color: var(--text-strong); font-size: 12px; overflow-wrap: anywhere; }
+.browser-agent { justify-content: space-between; font-size: var(--font-small); color: var(--text-muted); }
+.browser-error { color: var(--text-strong); font-size: var(--font-small); overflow-wrap: anywhere; }
 .browser-surface { flex: 1; position: relative; min-height: 100px; overflow: hidden; border-radius: 6px; background: white; }
 .browser-surface canvas { display: block; width: 100%; height: 100%; }
 .browser-keyboard { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; padding: 0; border: 0; }
-.browser-empty { position: absolute; inset: 0; display: grid; place-items: center; color: #666; font-size: 13px; pointer-events: none; }
+.browser-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text); font-size: var(--font-ui); pointer-events: none; }
 @media (max-width: 720px) { .browser-dock { position: fixed; inset: 0; width: 100vw !important; max-width: none; z-index: 30; } }

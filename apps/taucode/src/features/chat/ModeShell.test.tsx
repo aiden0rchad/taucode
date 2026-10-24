@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SidebarFooter } from "@app/components/AppShell";
 import type { AppSettings } from "@/types";
 import { ModeShell, ModeSwitcher, modeShortcut } from "./ModeShell";
 import { getAppSettings, setWindowMode } from "@services/tauri";
 vi.mock("@services/tauri", () => ({ getAppSettings: vi.fn(), setWindowMode: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/features/work/WorkView", () => ({ WorkView: () => <><ModeSwitcher /><p>Work content</p></> }));
-vi.mock("./ChatView", () => ({ ChatView: () => <><ModeSwitcher /><p>Chat content</p></> }));
+vi.mock("./ChatView", () => ({ ChatView: () => <><ModeSwitcher /><p>Chat content</p><SidebarFooter /></> }));
 vi.mock("@/features/layout/hooks/useWindowLabel", () => ({ useWindowLabel: () => "second-window" }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 describe("mode switching", () => {
@@ -19,6 +20,18 @@ describe("mode switching", () => {
     expect(await screen.findByText("Work content")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Code" }));
     expect(await screen.findByText("Code content")).toBeTruthy();
+  });
+  it("opens Settings without switching modes and removes the retired preference", async () => {
+    localStorage.setItem("reduceTransparency", "false");
+    vi.mocked(getAppSettings).mockResolvedValue({ windowModes: { "second-window": "chat" } } as unknown as AppSettings);
+    render(<ModeShell renderSettings={close => <button onClick={close}>Close settings</button>}><p>Code content</p></ModeShell>);
+    fireEvent.click(await screen.findByRole("button", { name: "Open settings" }));
+    expect(await screen.findByRole("button", { name: "Close settings" })).toBeTruthy();
+    expect(screen.getByText("Chat content")).toBeTruthy();
+    expect(setWindowMode).not.toHaveBeenCalled();
+    expect(localStorage.getItem("reduceTransparency")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
+    expect(screen.queryByRole("button", { name: "Close settings" })).toBeNull();
   });
   it("reserves only unbound command-number shortcuts", () => {
     const event = new KeyboardEvent("keydown", { key: "2", metaKey: true });

@@ -20,13 +20,13 @@
 }
 
 .review-inline-title {
-  font-size: 14px;
+  font-size: var(--font-ui);
   font-weight: 600;
   color: var(--text-strong);
 }
 
 .review-inline-subtitle {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
 }
 
@@ -42,7 +42,7 @@
   background: var(--surface-card-muted);
   color: var(--text-strong);
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--font-ui);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -61,7 +61,7 @@
 
 .review-inline-option.is-selected {
   border-color: var(--border-accent);
-  box-shadow: 0 0 0 1px rgba(77, 163, 255, 0.25);
+  box-shadow: none;
 }
 
 .review-inline-option-title {
@@ -69,7 +69,7 @@
 }
 
 .review-inline-option-subtitle {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-faint);
 }
 
@@ -81,7 +81,7 @@
 }
 
 .review-inline-label {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-faint);
 }
 
@@ -92,12 +92,12 @@
   background: var(--surface-card-muted);
   color: var(--text-strong);
   padding: 9px 11px;
-  font-size: 13px;
+  font-size: var(--font-ui);
 }
 
 .review-inline-input:focus,
 .review-inline-textarea:focus {
-  outline: 2px solid rgba(77, 163, 255, 0.35);
+  outline: 2px solid var(--border);
   outline-offset: 1px;
 }
 
@@ -107,7 +107,7 @@
 }
 
 .review-inline-hint {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
 }
 
@@ -126,7 +126,7 @@
   background: var(--surface-card-muted);
   color: var(--text-strong);
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--font-ui);
   text-align: left;
 }
 
@@ -137,7 +137,7 @@
 
 .review-inline-list-item.is-selected {
   border-color: var(--border-accent);
-  box-shadow: 0 0 0 1px rgba(77, 163, 255, 0.25);
+  box-shadow: none;
 }
 
 .review-inline-commit {
@@ -151,21 +151,21 @@
 }
 
 .review-inline-commit-meta {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--text-faint);
 }
 
 .review-inline-empty {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--text-subtle);
   padding: 4px 2px;
 }
 
 .review-inline-error {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--accent-danger);
-  background: rgba(255, 100, 100, 0.08);
-  border: 1px solid rgba(255, 100, 100, 0.2);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border);
   padding: 7px 9px;
   border-radius: 9px;
 }

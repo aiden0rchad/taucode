@@ -10,7 +10,6 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "taucode",
@@ -25,7 +24,7 @@
           "x": 19,
           "y": 24
         },
-        "transparent": true,
+        "transparent": false,
         "devtools": true
       }
     ],

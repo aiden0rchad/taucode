@@ -33,7 +33,7 @@
 }
 
 .clone-modal-suggested-label {
-  font-size: 11px;
+  font-size: var(--font-small);
   color: var(--ds-text-faint);
 }
 
@@ -47,7 +47,7 @@
   flex: 1;
   min-width: 0;
   color: var(--ds-text-subtle);
-  font-size: 12px;
+  font-size: var(--font-small);
 }
 
 .clone-modal-button {
