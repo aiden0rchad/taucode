@@ -776,6 +776,7 @@ export type CheckpointResponse = {
 
 export type WorkSpace = {
   id: string; name: string; path: string; kind: "work"; readOnlyFolders: string[];
+  readOnly?: boolean;
 };
 export type WorkStatus = "queued" | "running" | "needs-input" | "done" | "failed" | "stopped";
 export type WorkRequest = {
@@ -783,6 +784,7 @@ export type WorkRequest = {
   params: { reason?: string; command?: string; diffPreview?: string; questions?: { question: string; options?: { label: string }[] }[] };
 };
 export type WorkTask = {
+  importId?: string | null;
   id: string; spaceId: string; threadId: string | null; title: string; brief: string;
   attachments: string[]; model: string; accessMode: "ask" | "read-only" | "full-access"; status: WorkStatus;
   plan: TurnPlanStep[]; outputs: string[]; pending: WorkRequest[]; error: string | null;

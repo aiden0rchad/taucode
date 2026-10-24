@@ -48,7 +48,7 @@ it("uses the export picker and renders read-only history with continuation", asy
     if (action === "logs") return [log];
     if (action === "status") return { running: false, completed: 0, total: 0 };
     if (action === "export") return { entries: [], warnings: ["Synthetic export"] };
-    if (action === "read") return { title: "Clock history", source: "cowork", messages: [{ role: "assistant", text: "Clock report" }], raw: [{ type: "unknown" }], attachments: ["outputs/report.txt"] };
+    if (action === "read") return { title: "Clock history", source: "chatgpt", kind: "chat", messages: [{ role: "assistant", text: "Clock report" }], raw: [{ type: "unknown" }], attachments: ["outputs/report.txt"] };
     return {};
   });
   render(<SettingsImportSection />);
@@ -61,4 +61,18 @@ it("uses the export picker and renders read-only history with continuation", asy
   expect(screen.getByText("Audit entry 1")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Continue in pi" }));
   expect(await screen.findByText(/Continuation created/)).toBeTruthy();
+});
+
+it("directs imported Cowork continuation to Work mode", async () => {
+  vi.mocked(importRequest).mockImplementation(async action => {
+    if (action === "logs") return [{ ...log, created: [{ key: "cowork:1", title: "Cowork report", kind: "work" }] }];
+    if (action === "status") return { running: false, completed: 0, total: 0 };
+    if (action === "read") return { title: "Cowork report", source: "cowork", kind: "work", messages: [], raw: [], attachments: [] };
+    return {};
+  });
+  render(<SettingsImportSection />);
+  fireEvent.click(await screen.findByText(/import-1 ·/));
+  fireEvent.click(screen.getByRole("button", { name: "Cowork report" }));
+  expect(await screen.findByText(/Open Work mode to continue as a new task/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Continue in pi" })).toBeNull();
 });

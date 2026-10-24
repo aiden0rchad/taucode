@@ -104,7 +104,7 @@ export function SettingsImportSection({ historyOnly = false }: { historyOnly?: b
       {[...log.skipped,...log.warnings].map((message,i) => <p key={i}>{message}</p>)}
     </details>)}
     {history && <article className="import-transcript" aria-label="Imported transcript"><h3>{history.transcript.title}</h3><p>Read-only imported snapshot · {history.transcript.source}</p>
-      <button disabled={disabled} onClick={() => void run(async () => { await importRequest("continue", { logId: history.logId, key: history.key }); notifyImportsChanged(); setNotice("Continuation created. Open Chat mode to continue in pi."); })}>Continue in pi</button><button onClick={() => setHistory(null)}>Close transcript</button>
+      {history.transcript.kind === "work" ? <p>Available in Work mode with copied outputs and uploads. Open Work mode to continue as a new task.</p> : <button disabled={disabled} onClick={() => void run(async () => { await importRequest("continue", { logId: history.logId, key: history.key }); notifyImportsChanged(); setNotice("Continuation created. Open Chat mode to continue in pi."); })}>Continue in pi</button>}<button onClick={() => setHistory(null)}>Close transcript</button>
       {history.transcript.messages?.map((m,i) => <div key={i}><strong>{m.role}</strong><p>{m.text}</p></div>)}
       {history.transcript.raw?.map((entry,i) => <details key={i}><summary>Audit entry {i + 1}</summary><pre>{JSON.stringify(entry,null,2)}</pre></details>)}
       {!!history.transcript.attachments?.length && <><h4>Copied attachments</h4><ul>{history.transcript.attachments.map(name => <li key={name}>{name}</li>)}</ul></>}

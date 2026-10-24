@@ -491,6 +491,11 @@ fn claude(roots: &Roots, cancel: &AtomicBool) -> Result<Vec<Entry>, String> {
                 entry.warning = Some("Transcript is missing; metadata only".into());
             }
             if kind == "work" {
+                let completed = value["status"].as_str().map_or_else(
+                    || entry.messages.last().is_some_and(|m| m["role"] == "assistant"),
+                    |status| matches!(status, "completed" | "done"),
+                );
+                entry.work_status = Some(if entry.archived || entry.warning.is_some() || !completed { "stopped" } else { "done" }.into());
                 for folder in ["uploads", "outputs"] {
                     let base = path.with_extension("").join(folder);
                     for file in io::files(&base, 16, cancel)? {

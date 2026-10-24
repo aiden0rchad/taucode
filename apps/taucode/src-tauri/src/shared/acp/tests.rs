@@ -515,7 +515,9 @@ async fn router_checkpoints_sidechats_and_task_transcripts() {
     let root = data.join("workspace");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("file"), "before").unwrap();
-    let checkpoints = Checkpoints::new(data.clone(), "workspace".into(), root.to_string_lossy().into(), Arc::new(|_| {}));
+    let checkpoint_events = Arc::new(std::sync::Mutex::new(vec![]));
+    let captured = checkpoint_events.clone();
+    let checkpoints = Checkpoints::with_limits(data.clone(), "workspace".into(), root.to_string_lossy().into(), Arc::new(move |e| captured.lock().unwrap().push(e)), crate::shared::checkpoints::CheckpointLimits::testing());
     let (tx, mut completed) = tokio::sync::mpsc::unbounded_channel();
     let observer = checkpoints.clone();
     let mut session = WorkspaceSession::lazy(Box::new(|| Box::pin(async { Err("Codex must not be used".into()) })), vec![provider("anthropic")], AgentPolicy::default(), None, None, "workspace".into());
@@ -548,7 +550,7 @@ async fn router_checkpoints_sidechats_and_task_transcripts() {
     }
     let rows = checkpoints.request(&session, "workspace", json!({"threadId":id,"action":"list"})).await.unwrap();
     let rows = rows["checkpoints"].as_array().unwrap();
-    assert_eq!(rows.len(), 6);
+    assert_eq!(rows.len(), 6, "checkpoint events: {:?}", checkpoint_events.lock().unwrap().iter().map(|e| &e.message).collect::<Vec<_>>());
     assert!(rows.iter().all(|r| r["commit"].is_string() && r["metadata"]["engine"] == "claude"));
     let capabilities = checkpoints.request(&session, "workspace", json!({"threadId":id,"action":"capabilities"})).await.unwrap();
     assert_eq!(capabilities, json!({"engine":"claude","conversation":false}));

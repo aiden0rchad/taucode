@@ -14,6 +14,27 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Clone, Copy)]
+pub struct CheckpointLimits {
+    pub before_wait: Duration,
+    pub snapshot: Duration,
+    pub restore: Duration,
+}
+impl Default for CheckpointLimits {
+    fn default() -> Self {
+        Self { before_wait: Duration::from_secs(2), snapshot: Duration::from_secs(30), restore: Duration::from_secs(60) }
+    }
+}
+impl CheckpointLimits {
+    fn unavailable(&self) -> String {
+        format!("checkpoint unavailable: snapshot exceeded {} s", self.before_wait.as_secs_f64())
+    }
+    #[cfg(test)]
+    pub fn testing() -> Self {
+        Self { before_wait: Duration::from_secs(60), snapshot: Duration::from_secs(60), restore: Duration::from_secs(60) }
+    }
+}
+
 #[derive(Clone)]
 struct Active {
     metadata: Value,
@@ -40,6 +61,7 @@ impl Drop for RewindGuard<'_> {
     }
 }
 pub struct Checkpoints {
+    limits: CheckpointLimits,
     data: PathBuf,
     paths: Mutex<HashMap<String, String>>,
     state: Mutex<State>,
@@ -63,7 +85,17 @@ impl Checkpoints {
         path: String,
         emit: Arc<dyn Fn(AppServerEvent) + Send + Sync>,
     ) -> Arc<Self> {
+        Self::with_limits(data, workspace, path, emit, CheckpointLimits::default())
+    }
+    pub fn with_limits(
+        data: PathBuf,
+        workspace: String,
+        path: String,
+        emit: Arc<dyn Fn(AppServerEvent) + Send + Sync>,
+        limits: CheckpointLimits,
+    ) -> Arc<Self> {
         Arc::new(Self {
+            limits,
             data,
             paths: Mutex::new(HashMap::from([(workspace, path)])),
             state: Mutex::new(State::default()),
@@ -76,10 +108,11 @@ impl Checkpoints {
     }
     fn repo(&self, workspace: &str) -> Result<Repository, String> {
         let paths = self.paths.lock().unwrap();
-        Repository::new(
+        Repository::with_limits(
             &self.data,
             workspace,
             Path::new(paths.get(workspace).ok_or("Unknown workspace")?),
+            self.limits,
         )
     }
     fn notify(&self, workspace: &str, thread: &str, warning: Option<&str>) {
@@ -129,9 +162,9 @@ impl Checkpoints {
             let row = tokio::task::spawn_blocking(move || copy.snapshot(metadata))
                 .await
                 .map_err(|e| e.to_string())??;
-            if started.elapsed() >= Duration::from_secs(2) {
+            if started.elapsed() >= this.limits.before_wait {
                 repo.unavailable(&key.1, &row.id)?;
-                return Err("checkpoint unavailable: snapshot exceeded 2 s".into());
+                return Err(this.limits.unavailable());
             }
             if let Some(active) = this.state.lock().unwrap().active.get_mut(&key) {
                 active.checkpoint = Some(row.id.clone());
@@ -139,11 +172,11 @@ impl Checkpoints {
             this.notify(&key.0, &key.1, row.warning.as_deref());
             Ok::<_, String>(())
         });
-        let warning = match tokio::time::timeout(Duration::from_secs(2), &mut task).await {
+        let warning = match tokio::time::timeout(self.limits.before_wait, &mut task).await {
             Ok(Ok(Ok(()))) => None,
             Ok(Ok(Err(e))) => Some(e),
             Ok(Err(e)) => Some(e.to_string()),
-            Err(_) => Some("checkpoint unavailable: snapshot exceeded 2 s".into()),
+            Err(_) => Some(self.limits.unavailable()),
         };
         if let Some(warning) = warning {
             self.notify(workspace, thread, Some(&warning));

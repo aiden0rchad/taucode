@@ -37,9 +37,11 @@ export function WorkView({ settings }: { settings: AppSettings }) {
   const [readOnlyFolders, setReadOnlyFolders] = useState<string[]>([]);
   const tasksRef = useRef(work.state.tasks);
   tasksRef.current = work.state.tasks;
-  const selectedSpace = spaceId || work.state.spaces[0]?.id || "";
+  const writableSpaces = work.state.spaces.filter(s => !s.readOnly);
+  const selectedSpace = writableSpaces.find(s => s.id === spaceId)?.id || writableSpaces[0]?.id || "";
   const needs = work.state.tasks.filter(t => t.status === "needs-input");
   const task = work.task;
+  const continuationSpace = writableSpaces.find(s => s.id === spaceId)?.id || writableSpaces.find(s => s.id === task?.spaceId)?.id || selectedSpace;
   const active = task?.status === "running" || task?.status === "needs-input";
   const nativeDrop = useRef<(paths: string[]) => void>(() => {});
   useEffect(() => subscribeWindowDragDrop(event => { if (event.payload.type === "drop") nativeDrop.current(event.payload.paths ?? []); }), []);
@@ -59,7 +61,7 @@ export function WorkView({ settings }: { settings: AppSettings }) {
     const created = await work.mutate<WorkTask>("create", { spaceId: selectedSpace, brief, model, accessMode: access, attachments, runNow });
     work.setActive(created.id); setBrief(""); setAttachments([]); setShowList(false);
   });
-  const selectTask = (id: string) => { work.setActive(id); setShowList(false); };
+  const selectTask = (id: string) => { work.setActive(id); setSpaceId(""); setShowList(false); };
   const taskButton = (entry: WorkTask) => <button className="work-task" key={entry.id} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}><span className={"work-status " + entry.status} aria-label={entry.status} />{entry.title}<small>{entry.status.replace("-", " ")}</small></button>;
   const checkpoints = useCallback<typeof checkpointRequest>((_space, params) => {
     const task = tasksRef.current.find(t => t.threadId === params.threadId);
@@ -73,6 +75,7 @@ export function WorkView({ settings }: { settings: AppSettings }) {
         <section aria-label="Needs input inbox" className="work-inbox"><h2>Needs input · {needs.length}</h2>{needs.map(taskButton)}{!needs.length && <p className="chat-muted">You’re all caught up.</p>}</section>
         {work.state.spaces.map(space => <section className="work-space" key={space.id} aria-label={space.name}>
           <h2 title={space.path}>{space.name}</h2>
+          {space.readOnly && <p className="chat-muted">Read-only history. Choose an available space to continue.</p>}
           {!!space.readOnlyFolders.length && <details><summary>{space.readOnlyFolders.length} read-only folders</summary>{space.readOnlyFolders.map(path => <p key={path} className="chat-muted">{path}</p>)}</details>}
           {workGroups.map(([label, statuses]) => {
             const entries = work.state.tasks.filter(t => t.spaceId === space.id && (statuses as readonly string[]).includes(t.status));
@@ -87,7 +90,7 @@ export function WorkView({ settings }: { settings: AppSettings }) {
     <main className="chat-main">
       <header className="chat-header"><button className="chat-list-toggle" aria-expanded={showList} onClick={() => setShowList(!showList)}>☰ Spaces</button><strong>{task?.title || "New task"}</strong>
         {task && <div className="work-actions"><span role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && <button disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop task</button>}
-          {task.threadId && <RewindAction workspaceId={task.spaceId} threadId={task.threadId} running={active} />}
+          {task.threadId && !task.importId && <RewindAction workspaceId={task.spaceId} threadId={task.threadId} running={active} />}
         </div>}
       </header>
       {work.error && <p role="alert" className="work-error">{work.error}</p>}
@@ -105,7 +108,15 @@ export function WorkView({ settings }: { settings: AppSettings }) {
           {work.items.map(item => item.kind === "message" ? <article className={"chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown value={item.text} codeBlock showFilePath={false} /></article> : item.kind === "tool" ? <details className="work-tool" key={item.id}><summary>{item.title} · {item.status}</summary><pre>{item.detail}</pre>{item.output && <Markdown value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown value={item.content || item.summary} showFilePath={false} /></details> : null)}
           {task.status === "queued" && <p className="chat-muted">Waiting for an available slot. One task runs in each space at a time.</p>}
           {active && <p className="chat-muted">This task keeps running when you switch modes or hide the window.</p>}
-          {!active && task.status !== "queued" && <button onClick={() => { setBrief("Continue this task:\n" + task.brief + "\n\nReviewed plan:\n" + task.plan.map(p => "- " + p.step).join("\n") + "\n\nAsk before changing any existing files."); setSpaceId(task.spaceId); setAccess("ask"); setModel(task.model); work.setActive(null); }}>Continue as a new task…</button>}
+          {task.importId ? <section aria-label="Continue imported task">
+            <p className="chat-muted">Read-only Cowork history. Continue starts a new task with summarized context and the last 10 messages.</p>
+            <label>Space <select aria-label="Continuation space" value={continuationSpace} onChange={e => setSpaceId(e.target.value)} disabled={busy}><option value="" disabled>Choose an available space</option>{writableSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+            <label>Model <select aria-label="Continuation model" value={model} onChange={e => setModel(e.target.value)} disabled={busy}>{!models.length && <option value="">Enable a provider in Code → Settings</option>}{models.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}</select></label>
+            <button disabled={busy || !selectedSpace || !model} onClick={() => { void run(async () => {
+              const created = await work.mutate<WorkTask>("continue", { taskId: task.id, spaceId: continuationSpace, model });
+              work.setActive(created.id);
+            }); }}>Continue</button>
+          </section> : !active && task.status !== "queued" && <button onClick={() => { setBrief("Continue this task:\n" + task.brief + "\n\nReviewed plan:\n" + task.plan.map(p => "- " + p.step).join("\n") + "\n\nAsk before changing any existing files."); setSpaceId(task.spaceId); setAccess("ask"); setModel(task.model); work.setActive(null); }}>Continue as a new task…</button>}
         </div></div>
         <aside className="work-inspector" aria-label="Task details">
           <section aria-label="Plan"><h2>Plan</h2>{task.plan.length ? <ul className="work-plan">{task.plan.map((step, index) => <li key={index}><input type="checkbox" aria-label={step.step} checked={step.status === "completed"} readOnly /><span>{step.step}</span></li>)}</ul> : <p className="chat-muted">The task’s checklist will appear here.</p>}</section>
@@ -118,7 +129,7 @@ export function WorkView({ settings }: { settings: AppSettings }) {
           <div className="chat-examples work-templates">{templates.map(template => <button key={template.title} onClick={() => { setBrief(template.brief); setAccess(template.access); }}>{template.title}<span aria-hidden>↗</span></button>)}</div>
         </div>
         <form className="work-composer" aria-label="New task" onSubmit={e => { e.preventDefault(); void create(true); }} onDragOver={e => e.preventDefault()}>
-          <div className="work-fields"><label>Space <select aria-label="Space" value={selectedSpace} disabled={busy} onChange={e => { setSpaceId(e.target.value); setAttachments([]); }}><option value="" disabled>Choose a space</option>{work.state.spaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+          <div className="work-fields"><label>Space <select aria-label="Space" value={selectedSpace} disabled={busy} onChange={e => { setSpaceId(e.target.value); setAttachments([]); }}><option value="" disabled>Choose a space</option>{writableSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
             <label>Model <select aria-label="Work model" value={model} disabled={busy} onChange={e => setModel(e.target.value)}>{!models.length && <option value="">Enable a provider in Code → Settings</option>}{models.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}</select></label>
             <label>Access <select aria-label="Access mode" value={access} onChange={e => setAccess(e.target.value as WorkTask["accessMode"])}><option value="ask">Ask</option><option value="read-only">Read only</option><option value="full-access">Full access</option></select></label>
           </div>

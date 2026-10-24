@@ -32,6 +32,16 @@ pub struct Change {
 pub struct Repository {
     pub root: PathBuf,
     pub dir: PathBuf,
+    limits: super::CheckpointLimits,
+}
+
+struct Lock(fs::File);
+impl Drop for Lock {
+    fn drop(&mut self) {
+        // A concurrent fork can inherit this open file description. Closing only
+        // our descriptor can leave its flock held until that child execs/exits.
+        let _ = self.0.unlock();
+    }
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -53,6 +63,9 @@ fn thread_ref(id: &str) -> Result<String> {
 }
 impl Repository {
     pub fn new(data: &Path, workspace: &str, root: &Path) -> Result<Self> {
+        Self::with_limits(data, workspace, root, super::CheckpointLimits::default())
+    }
+    pub fn with_limits(data: &Path, workspace: &str, root: &Path, limits: super::CheckpointLimits) -> Result<Self> {
         valid_id(workspace)?;
         let root = root.canonicalize().map_err(err)?;
         let home = std::env::var_os("HOME").and_then(|p| fs::canonicalize(p).ok());
@@ -93,11 +106,12 @@ impl Repository {
             return Err("Checkpoints disabled for this folder.".into());
         }
         Ok(Self {
+            limits,
             root,
             dir: data.join("checkpoints").join(format!("{workspace}.git")),
         })
     }
-    fn lock(&self) -> Result<fs::File> {
+    fn lock(&self) -> Result<Lock> {
         fs::create_dir_all(&self.dir).map_err(err)?;
         let path = self.dir.join("taucode.lock");
         let file = OpenOptions::new()
@@ -108,7 +122,7 @@ impl Repository {
             .map_err(err)?;
         file.try_lock()
             .map_err(|e| format!("Checkpoint workspace busy: {e}"))?;
-        Ok(file)
+        Ok(Lock(file))
     }
     fn command(&self) -> Result<Command> {
         let mut cmd = Command::new(crate::utils::resolve_git_binary()?);
@@ -216,7 +230,7 @@ impl Repository {
         let mut rows = self.records(thread)?;
         if let Some(row) = rows.iter_mut().find(|r| r.id == id) {
             row.commit = None;
-            row.warning = Some("checkpoint unavailable: snapshot exceeded 2 s".into());
+            row.warning = Some(self.limits.unavailable());
         }
         self.save(thread, &rows)
     }
@@ -231,7 +245,7 @@ impl Repository {
                 row.metadata["userItemId"] = item.into();
             }
             if let Some(old) = &row.commit {
-                let deadline = Instant::now() + Duration::from_secs(30);
+                let deadline = Instant::now() + self.limits.snapshot;
                 let tree = self.text(&["rev-parse", &format!("{old}^{{tree}}")], deadline)?;
                 let parent = self
                     .text(&["rev-parse", "--verify", &format!("{old}^")], deadline)
@@ -370,7 +384,7 @@ impl Repository {
     }
     pub fn snapshot(&self, metadata: Value) -> Result<Checkpoint> {
         let _lock = self.lock()?;
-        self.snapshot_locked(metadata, Instant::now() + Duration::from_secs(30))
+        self.snapshot_locked(metadata, Instant::now() + self.limits.snapshot)
     }
     fn snapshot_locked(&self, metadata: Value, deadline: Instant) -> Result<Checkpoint> {
         self.initialize(deadline)?;
@@ -478,7 +492,7 @@ impl Repository {
     }
     pub fn diff(&self, thread: &str, id: &str) -> Result<Vec<Change>> {
         let _lock = self.lock()?;
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = Instant::now() + self.limits.snapshot;
         self.initialize(deadline)?;
         let target = self.target(thread, id)?;
         let (current, skipped) = self.tree(deadline)?;
@@ -530,7 +544,7 @@ impl Repository {
         metadata: Value,
     ) -> Result<Checkpoint> {
         let _lock = self.lock()?;
-        let deadline = Instant::now() + Duration::from_secs(60);
+        let deadline = Instant::now() + self.limits.restore;
         self.initialize(deadline)?;
         let target = self.target(thread, id)?;
         let old = self.entries(target.commit.as_ref().unwrap(), deadline)?;
@@ -571,7 +585,7 @@ impl Repository {
         }
         let safety = self.snapshot_locked(
             metadata,
-            deadline.min(Instant::now() + Duration::from_secs(30)),
+            deadline.min(Instant::now() + self.limits.snapshot),
         )?;
         if safety.commit.is_none() || paths.iter().any(|p| safety.skipped.contains(p)) {
             return Err("Safety checkpoint unavailable; no files restored".into());
@@ -736,6 +750,20 @@ fn run(mut cmd: Command, args: &[&str], input: Vec<u8>, deadline: Instant) -> Re
 #[cfg(test)]
 mod timeout_tests {
     use super::*;
+    #[test]
+    fn releases_lock_even_when_another_descriptor_is_alive() {
+        let data = std::env::temp_dir().join(format!("checkpoint-lock-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&data).unwrap();
+        let repo = Repository::new(&data, "workspace", &data).unwrap();
+        let lock = repo.lock().unwrap();
+        let inherited = lock.0.try_clone().unwrap();
+        assert!(repo.lock().is_err());
+        drop(lock);
+        let next = repo.lock().expect("explicit unlock releases inherited open file descriptions");
+        drop(next);
+        drop(inherited);
+        fs::remove_dir_all(data).unwrap();
+    }
     #[test]
     fn kills_timed_out_process() {
         let deadline = Instant::now() + Duration::from_millis(25);

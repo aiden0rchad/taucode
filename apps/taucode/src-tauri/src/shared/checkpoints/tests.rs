@@ -12,7 +12,7 @@ impl Fixture {
             std::env::temp_dir().join(format!("taucode-checkpoint-{}", uuid::Uuid::new_v4()));
         let root = data.join("workspace");
         fs::create_dir_all(&root).unwrap();
-        let repo = Repository::new(&data, "workspace", &root).unwrap();
+        let repo = Repository::with_limits(&data, "workspace", &root, CheckpointLimits::testing()).unwrap();
         Self { data, root, repo }
     }
     fn write(&self, path: &str, text: &str) {
@@ -216,11 +216,14 @@ fn codex_rollback_fixture() {
 async fn lifecycle_binds_engine_ids_and_snapshots_after_completion() {
     let f = Fixture::new();
     f.write("file", "before");
-    let checkpoints = Checkpoints::new(
+    let events = Arc::new(Mutex::new(vec![]));
+    let captured = events.clone();
+    let checkpoints = Checkpoints::with_limits(
         f.data.clone(),
         "workspace".into(),
         f.root.to_str().unwrap().into(),
-        Arc::new(|_| {}),
+        Arc::new(move |e| captured.lock().unwrap().push(e)),
+        CheckpointLimits::testing(),
     );
     checkpoints
         .before(
@@ -238,7 +241,8 @@ async fn lifecycle_binds_engine_ids_and_snapshots_after_completion() {
         message: json!({"method":"turn/completed","params":{"threadId":"thread"}}),
     }).unwrap().await.unwrap();
     let rows = f.repo.list("thread").unwrap();
-    assert_eq!(rows.len(), 2);
+    assert_eq!(rows.len(), 2, "checkpoint events: {:?}", events.lock().unwrap().iter().map(|e| &e.message).collect::<Vec<_>>());
+    assert!(rows.iter().all(|r| r.commit.is_some()), "{rows:?}");
     assert_eq!(rows[0].metadata["userItemId"], "real-user");
     assert_eq!(rows[0].metadata["turnId"], "real-turn");
     assert_eq!(rows[1].metadata["kind"], "after");
@@ -255,11 +259,12 @@ async fn before_timeout_proceeds_and_is_unavailable_but_after_still_runs() {
     f.write("file", "before");
     let events = Arc::new(Mutex::new(vec![]));
     let captured = events.clone();
-    let checkpoints = Checkpoints::new(
+    let checkpoints = Checkpoints::with_limits(
         f.data.clone(),
         "workspace".into(),
         f.root.to_str().unwrap().into(),
         Arc::new(move |e| captured.lock().unwrap().push(e)),
+        CheckpointLimits { before_wait: Duration::from_millis(20), ..CheckpointLimits::testing() },
     );
     let operation = checkpoints.operation.lock().await;
     let started = Instant::now();

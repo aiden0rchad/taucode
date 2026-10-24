@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConversationItem, WorkState, WorkTask } from "@/types";
 import { workRequest } from "@services/tauri";
-import { subscribeAppServerEvents } from "@services/events";
+import { subscribeAppServerEvents, subscribeImportsChanged } from "@services/events";
 import { buildConversationItem, buildItemsFromThread } from "@utils/threadItems";
 
 export const workGroups = [
@@ -30,6 +30,7 @@ export function useWork() {
     if (activeRef.current?.id === task.id && version === revision.current) setItems(buildItemsFromThread(result.result.thread));
   }, []);
   useEffect(() => { void refresh().catch(e => setError(String(e))); }, [refresh]);
+  useEffect(() => subscribeImportsChanged(() => { void refresh().catch(e => setError(String(e))); }), [refresh]);
   useEffect(() => {
     setItems([]);
     revision.current++;

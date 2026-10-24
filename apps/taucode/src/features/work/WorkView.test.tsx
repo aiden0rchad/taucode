@@ -5,13 +5,16 @@ import type { AppSettings, WorkState, WorkTask } from "@/types";
 import { WorkView } from "./WorkView";
 import { workRequest, workOutput, workAttachment, pickWorkAttachments } from "@services/tauri";
 
-const events = vi.hoisted(() => ({ listener: (_event: unknown) => {} }));
+const events = vi.hoisted(() => ({ listener: (_event: unknown) => {}, importsChanged: () => {} }));
 vi.mock("@services/tauri", () => ({
   workRequest: vi.fn(), workOutput: vi.fn(), workAttachment: vi.fn(),
   pickWorkspacePath: vi.fn(), pickWorkspacePaths: vi.fn(), pickWorkAttachments: vi.fn(),
   checkpointRequest: vi.fn(),
 }));
-vi.mock("@services/events", () => ({ subscribeAppServerEvents: (listener: typeof events.listener) => { events.listener = listener; return () => {}; } }));
+vi.mock("@services/events", () => ({
+  subscribeAppServerEvents: (listener: typeof events.listener) => { events.listener = listener; return () => {}; },
+  subscribeImportsChanged: (listener: () => void) => { events.importsChanged = listener; return () => {}; },
+}));
 vi.mock("@services/dragDrop", () => ({ subscribeWindowDragDrop: () => () => {} }));
 vi.mock("@/features/chat/ModeShell", () => ({ ModeSwitcher: () => <nav>Code Chat Work</nav> }));
 vi.mock("@/features/checkpoints/Checkpoints", () => ({ Checkpoints: () => null, RewindAction: () => <button>Rewind…</button> }));
@@ -38,6 +41,42 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Work mode", () => {
+  it("shows imported transcripts and copies, continues in Work, and refreshes after undo", async () => {
+    const imported = { ...task("Cowork report", "done"), importId: "synthetic-import", outputs: ["outputs/report.pdf", "uploads/notes.txt"] };
+    state.tasks = [imported];
+    const request = vi.mocked(workRequest).getMockImplementation()!;
+    vi.mocked(workRequest).mockImplementation(async (action, params) => {
+      if (action === "read") return { result: { thread: { turns: [{ items: [{ id: "answer", type: "agentMessage", text: "Imported report transcript" }] }] } } };
+      if (action === "continue") { const next = task("Continued report", "running"); state.tasks.push(next); return next; }
+      return request(action, params);
+    });
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Cowork report/ }));
+    expect(await screen.findByText("Imported report transcript")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Rewind…" })).toBeNull();
+    expect(screen.getByText("uploads/notes.txt")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Quick Look" }));
+    await waitFor(() => expect(workOutput).toHaveBeenCalledWith("Cowork report", "outputs/report.pdf", "preview"));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("continue", { taskId: "Cowork report", spaceId: "space", model: "local/test" }));
+    expect(await screen.findByRole("button", { name: "Stop task" })).toBeTruthy();
+    state.tasks = state.tasks.filter(t => !t.importId);
+    events.importsChanged();
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Cowork report/ })).toBeNull());
+    expect(screen.getByRole("button", { name: /Continued report/ })).toBeTruthy();
+  });
+  it("keeps a missing-folder space read-only and requires a real continuation destination", async () => {
+    state.spaces = [{ id: "imported-missing", name: "Imported (folder missing)", path: "", kind: "work", readOnly: true, readOnlyFolders: [] }];
+    state.tasks = [{ ...task("Missing report", "stopped"), spaceId: "imported-missing", importId: "synthetic-import" }];
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Missing report/ }));
+    expect(screen.getByRole("button", { name: "Continue" })).toHaveProperty("disabled", true);
+    expect(screen.queryByRole("option", { name: "Imported (folder missing)" })).toBeNull();
+    state.spaces.push({ id: "space", name: "Available", path: "/synthetic", kind: "work", readOnlyFolders: [] });
+    events.importsChanged();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Continue" })).toHaveProperty("disabled", false));
+    expect(screen.getByRole("combobox", { name: "Continuation space" })).toHaveProperty("value", "space");
+  });
   it("queues a task with registry model, attachments, space and Ask default", async () => {
     render(<WorkView settings={settings} />);
     await screen.findByRole("option", { name: "Research" });

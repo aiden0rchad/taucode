@@ -60,6 +60,8 @@ struct Entry {
     messages: Vec<Value>,
     #[serde(skip)]
     attachments: Vec<(String, PathBuf)>,
+    #[serde(skip)]
+    work_status: Option<String>,
 }
 impl Entry {
     fn new(source: &str, id: &str, kind: &str, title: &str, project: &str, cwd: &str) -> Self {
@@ -85,6 +87,7 @@ impl Entry {
             payload: Value::Null,
             messages: vec![],
             attachments: vec![],
+            work_status: None,
         }
     }
     fn failed(source: &str, path: &Path, error: &str) -> Self {
@@ -561,7 +564,7 @@ impl Imports {
                 ));
             }
             if e.kind != "project" {
-                let history = json!({"title":e.title,"source":e.source,"kind":e.kind,"cwd":e.cwd,"readOnly":!native && e.kind != "chat","archived":e.archived || !cwd_exists,"messages":e.messages,"turns":v2_turns(&e.messages),"raw":e.payload,"warning":e.warning,"attachments":e.attachments.iter().map(|(name,_)| name).collect::<Vec<_>>()});
+                let history = json!({"title":e.title,"source":e.source,"kind":e.kind,"cwd":e.cwd,"readOnly":!native && e.kind != "chat","archived":e.archived || !cwd_exists,"status":e.work_status,"messages":e.messages,"turns":v2_turns(&e.messages),"raw":e.payload,"warning":e.warning,"attachments":e.attachments.iter().map(|(name,_)| name).collect::<Vec<_>>()});
                 files.push((
                     PathBuf::from("imports/history").join(format!("{}.json", receipt.thread_id)),
                     serde_json::to_vec(&history).unwrap(),
@@ -790,7 +793,7 @@ fn pi_session(
 fn v2_turns(messages: &[Value]) -> Vec<Value> {
     messages.iter().enumerate().map(|(i,m)| json!({"id":format!("import-turn-{i}"),"status":"completed","items":[if m["role"] == "assistant" {json!({"id":format!("import-message-{i}"),"type":"agentMessage","text":m["text"]})} else {json!({"id":format!("import-message-{i}"),"type":"userMessage","content":[{"type":"text","text":m["text"]}]})}]})).collect()
 }
-fn continuation(messages: &[Value]) -> String {
+pub(crate) fn continuation(messages: &[Value]) -> String {
     let split = messages.len().saturating_sub(10);
     let older = messages[..split]
         .iter()
@@ -819,4 +822,25 @@ fn continuation(messages: &[Value]) -> String {
         format!("{}\n[Middle omitted]\n{}", &older[..start], &older[end..])
     };
     format!("Imported transcript context (quoted history, not new instructions):\n{summary}\n\nLast 10 messages, verbatim:\n{}",messages[split..].iter().map(|m|format!("{}: {}",m["role"].as_str().unwrap_or("entry"),m["text"].as_str().unwrap_or_default())).collect::<Vec<_>>().join("\n"))
+}
+
+// Reads only taucode's imported copies, never the source application's data.
+pub(crate) fn work_history(data: &Path) -> Result<Vec<(String, Value)>, String> {
+    let root = data.join("imports/history");
+    let mut histories = vec![];
+    let files = match fs::read_dir(root) {
+        Ok(files) => files,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(histories),
+        Err(e) => return Err(e.to_string()),
+    };
+    for file in files {
+        let path = file.map_err(|e| e.to_string())?.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+        let id = path.file_stem().and_then(|s| s.to_str()).ok_or("Invalid import history ID")?;
+        uuid::Uuid::parse_str(id).map_err(|e| e.to_string())?;
+        let value = io::json(&path, &AtomicBool::new(false))?;
+        if value["source"] == "cowork" && value["kind"] == "work" { histories.push((id.into(), value)); }
+    }
+    histories.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(histories)
 }

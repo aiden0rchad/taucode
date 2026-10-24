@@ -109,6 +109,98 @@ impl Drop for Fixture {
     }
 }
 
+#[derive(Clone)]
+struct WorkSink;
+impl crate::backend::events::EventSink for WorkSink {
+    fn emit_app_server_event(&self, _: crate::backend::events::AppServerEvent) {}
+    fn emit_terminal_output(&self, _: crate::backend::events::TerminalOutput) {}
+    fn emit_terminal_exit(&self, _: crate::backend::events::TerminalExit) {}
+}
+
+#[tokio::test]
+async fn cowork_imports_link_existing_work_spaces_copies_transcripts_and_undo() {
+    let mut f = Fixture::new();
+    let upload = f.service.roots.desktop.join("local-agent-mode-sessions/acct/org/local_task/uploads/notes.txt");
+    fs::create_dir_all(upload.parent().unwrap()).unwrap();
+    fs::write(&upload, "Synthetic uploaded notes").unwrap();
+    let work = crate::shared::work::Work::new(f.service.data.clone(), WorkSink);
+    let space = work.request(&f.settings, "add-space", json!({"path":f.root.join("project"),"readOnlyFolders":[]})).await.unwrap();
+    let log = f.detect_and_import();
+    let list = work.request(&f.settings, "list", json!({})).await.unwrap();
+    assert_eq!(list["spaces"].as_array().unwrap().len(), 1);
+    assert_eq!(list["tasks"].as_array().unwrap().len(), 1);
+    let task = &list["tasks"][0];
+    assert_eq!(task["spaceId"], space["id"]);
+    assert_eq!(task["status"], "done");
+    assert_eq!(task["outputs"].as_array().unwrap().len(), 2);
+    let read = work.request(&f.settings, "read", json!({"taskId":task["id"]})).await.unwrap();
+    assert!(read.to_string().contains("Report completed"));
+    for name in ["outputs/report.txt", "uploads/notes.txt"] {
+        let copy = work.output(&f.settings, task["id"].as_str().unwrap(), name).await.unwrap();
+        assert!(copy.starts_with(f.service.data.join("imports/attachments")));
+        assert!(fs::read_to_string(copy).unwrap().contains("Synthetic"));
+    }
+    assert!(work.output(&f.settings, task["id"].as_str().unwrap(), "../escape").await.is_err());
+    #[cfg(unix)] {
+        let copies = f.service.data.join("imports/attachments").join(task["importId"].as_str().unwrap());
+        let outside = f.root.join("outside-copies");
+        fs::rename(&copies, &outside).unwrap();
+        std::os::unix::fs::symlink(&outside, &copies).unwrap();
+        assert!(work.output(&f.settings, task["id"].as_str().unwrap(), "outputs/report.txt").await.is_err());
+        fs::remove_file(&copies).unwrap();
+        fs::rename(outside, copies).unwrap();
+    }
+    assert!(work.request(&f.settings, "checkpoint", json!({"taskId":task["id"],"request":{"action":"undo"}})).await.is_err());
+    // An existing M4e copy without the new status field also appears after restart.
+    let history_path = f.service.data.join("imports/history").join(format!("{}.json", task["importId"].as_str().unwrap()));
+    let mut history = storage::read_thread_metadata(&history_path).unwrap();
+    history.as_object_mut().unwrap().remove("status");
+    storage::write_thread_metadata(&history_path, &history).unwrap();
+    let restarted = crate::shared::work::Work::new(f.service.data.clone(), WorkSink);
+    assert_eq!(restarted.request(&f.settings, "list", json!({})).await.unwrap()["tasks"][0]["status"], "done");
+    f.call("undo", json!({"logId":log["id"],"confirmChanged":true}));
+    let list = work.request(&f.settings, "list", json!({})).await.unwrap();
+    assert!(list["tasks"].as_array().unwrap().is_empty());
+    assert_eq!(list["spaces"][0]["id"], space["id"]);
+}
+
+#[tokio::test]
+async fn cowork_missing_and_incomplete_tasks_are_read_only_and_undoable() {
+    let mut f = Fixture::new();
+    let metadata = f.service.roots.desktop.join("local-agent-mode-sessions/acct/org/local_task.json");
+    let mut value = io::json(&metadata, &AtomicBool::new(false)).unwrap();
+    value["status"] = json!("running");
+    fs::write(metadata, serde_json::to_vec(&value).unwrap()).unwrap();
+    fs::remove_dir(f.root.join("project")).unwrap();
+    let log = f.detect_and_import();
+    let work = crate::shared::work::Work::new(f.service.data.clone(), WorkSink);
+    let list = work.request(&f.settings, "list", json!({})).await.unwrap();
+    assert_eq!(list["tasks"][0]["status"], "stopped");
+    assert_eq!(list["spaces"][0]["name"], "Imported (folder missing)");
+    assert_eq!(list["spaces"][0]["readOnly"], true);
+    assert!(work.request(&f.settings, "continue", json!({"taskId":list["tasks"][0]["id"],"model":"local/test"})).await.unwrap_err().contains("available folder"));
+    assert!(work.attachment(&f.settings, "imported-missing", &f.root.join("nonexistent")).await.unwrap_err().contains("read-only"));
+    f.call("undo", json!({"logId":log["id"]}));
+    let list = work.request(&f.settings, "list", json!({})).await.unwrap();
+    assert!(list["tasks"].as_array().unwrap().is_empty());
+    assert!(list["spaces"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn cowork_completion_respects_archive_and_explicit_status() {
+    let mut f = Fixture::new();
+    let path = f.service.roots.desktop.join("local-agent-mode-sessions/acct/org/local_task.json");
+    let mut metadata = io::json(&path, &AtomicBool::new(false)).unwrap();
+    for (archived, status, expected) in [(false, "completed", "done"), (true, "completed", "stopped"), (false, "running", "stopped"), (false, "failed", "stopped")] {
+        metadata["isArchived"] = json!(archived);
+        metadata["status"] = json!(status);
+        fs::write(&path, serde_json::to_vec(&metadata).unwrap()).unwrap();
+        f.call("detect", json!({}));
+        let catalog = f.service.catalog.lock().unwrap();
+        assert_eq!(catalog.iter().find(|e| e.kind == "work").unwrap().work_status.as_deref(), Some(expected));
+    }
+}
+
 #[test]
 fn synthetic_sources_are_allowlisted_sanitized_idempotent_and_undoable() {
     let mut f = Fixture::new();

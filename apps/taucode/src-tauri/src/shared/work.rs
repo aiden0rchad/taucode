@@ -13,10 +13,16 @@ pub(crate) struct Space {
     pub path: String,
     pub kind: WorkspaceKind,
     pub read_only_folders: Vec<String>,
+    #[serde(default)]
+    pub read_only: bool,
+    #[serde(default)]
+    imported: bool,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Task {
+    #[serde(default)]
+    import_id: Option<String>,
     id: String,
     space_id: String,
     thread_id: Option<String>,
@@ -120,6 +126,7 @@ impl Work {
             self.save(&state.store)?;
             state.loaded = true;
         }
+        self.sync_imports(&mut state.store)?;
         if let Some(mut rx) = self.rx.lock().await.take() {
             let weak = Arc::downgrade(self);
             tokio::spawn(async move {
@@ -135,6 +142,47 @@ impl Work {
             });
         }
         Ok(())
+    }
+    fn sync_imports(&self, store: &mut Store) -> Result<(), String> {
+        let histories = super::imports::work_history(&self.data)?;
+        store.tasks.retain(|t| t.import_id.is_none());
+        for (id, history) in histories {
+            let path = directory(history["cwd"].as_str().unwrap_or_default()).ok()
+                .filter(|path| super::checkpoints::validate_space(&self.data, "import-validation", Path::new(path)).is_ok());
+            let space = match store.spaces.iter().find(|s| match &path { Some(path) => !s.read_only && s.path == *path, None => s.id == "imported-missing" }) {
+                Some(space) => space.clone(),
+                None => {
+                    let read_only = path.is_none();
+                    let space = Space {
+                        id: if read_only { "imported-missing".into() } else { uuid::Uuid::new_v4().to_string() },
+                        name: path.as_ref().and_then(|p| Path::new(p).file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Imported (folder missing)".into()),
+                        path: path.unwrap_or_default(), kind: WorkspaceKind::Work, read_only_folders: vec![], read_only, imported: true,
+                    };
+                    store.spaces.push(space.clone());
+                    space
+                }
+            };
+            let task_id = format!("import-{id}");
+            let completed = history["status"].as_str().map_or_else(
+                || history["archived"] != true && history["warning"].is_null() && history["messages"].as_array().and_then(|m| m.last()).is_some_and(|m| m["role"] == "assistant"),
+                |status| status == "done",
+            );
+            store.tasks.push(Task {
+                id: task_id.clone(), import_id: Some(id), space_id: space.id, thread_id: Some(task_id),
+                title: history["title"].as_str().unwrap_or("Imported Cowork task").into(),
+                brief: history["messages"].as_array().and_then(|m| m.iter().find(|m| m["role"] == "user")).and_then(|m| m["text"].as_str()).unwrap_or_default().into(),
+                attachments: vec![], model: String::new(), access_mode: "read-only".into(),
+                status: if completed { "done" } else { "stopped" }.into(), plan: vec![],
+                outputs: history["attachments"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_owned)).collect(),
+                pending: vec![], error: history["warning"].as_str().map(str::to_owned),
+            });
+        }
+        store.spaces.retain(|s| !s.imported || store.tasks.iter().any(|t| t.space_id == s.id));
+        Ok(())
+    }
+    fn imported_history(&self, task: &Task) -> Result<Value, String> {
+        let id = task.import_id.as_ref().ok_or("Not an imported task")?;
+        super::imports::work_history(&self.data)?.into_iter().find(|(key, _)| key == id).map(|(_, value)| value).ok_or("Imported task was removed".into())
     }
     async fn session(&self, state: &mut State, space: &Space) -> Arc<WorkspaceSession> {
         if let Some(session) = state.sessions.get(&space.id) {
@@ -152,7 +200,11 @@ impl Work {
         #[cfg(test)] { session.pi.fake = true; }
         session.pi.configure(&space.id, state.settings.providers.clone(), state.settings.agent_policy.clone()).await;
         session.pi.read_only_folders.lock().await.insert(space.id.clone(), space.read_only_folders.clone());
-        session.checkpoints = Some(Checkpoints::new(self.data.clone(), space.id.clone(), space.path.clone(), self.emit.clone()));
+        #[cfg(not(test))]
+        let limits = super::checkpoints::CheckpointLimits::default();
+        #[cfg(test)]
+        let limits = super::checkpoints::CheckpointLimits::testing();
+        session.checkpoints = Some(Checkpoints::with_limits(self.data.clone(), space.id.clone(), space.path.clone(), self.emit.clone(), limits));
         let session = Arc::new(session);
         state.sessions.insert(space.id.clone(), session.clone());
         session
@@ -252,7 +304,14 @@ impl Work {
         }
         result
     }
-    async fn action(&self, state: &mut State, action: &str, params: Value) -> Result<Value, String> {
+    async fn action(&self, state: &mut State, mut action: &str, mut params: Value) -> Result<Value, String> {
+        if action == "continue" {
+            let task = state.store.tasks.iter().find(|t| Some(t.id.as_str()) == params["taskId"].as_str()).ok_or("Unknown task")?;
+            let history = self.imported_history(task)?;
+            let context = super::imports::continuation(history["messages"].as_array().ok_or("No transcript to continue")?);
+            params = json!({"spaceId":params["spaceId"].as_str().unwrap_or(&task.space_id), "model":params["model"], "brief":format!("Continue: {}\n\n{}\n\nContinue this task. Ask before changing existing files.", task.title, context), "attachments":[], "accessMode":"ask", "runNow":true});
+            action = "create";
+        }
         match action {
             "list" => return Ok(json!(state.store)),
             "add-space" => {
@@ -261,7 +320,7 @@ impl Work {
                 let folders: Vec<String> = serde_json::from_value(params["readOnlyFolders"].clone()).map_err(|_| "Invalid read-only folders")?;
                 if folders.len() > 20 { return Err("Choose at most 20 read-only folders".into()); }
                 let folders = folders.iter().map(|p| directory(p)).collect::<Result<Vec<_>, _>>()?;
-                let space = Space { id: uuid::Uuid::new_v4().to_string(), name: Path::new(&path).file_name().unwrap().to_string_lossy().into_owned(), path, kind: WorkspaceKind::Work, read_only_folders: folders };
+                let space = Space { id: uuid::Uuid::new_v4().to_string(), name: Path::new(&path).file_name().unwrap().to_string_lossy().into_owned(), path, kind: WorkspaceKind::Work, read_only_folders: folders, read_only: false, imported: false };
                 // Validate checkpoint support before accepting the space.
                 super::checkpoints::validate_space(&self.data, &space.id, Path::new(&space.path))?;
                 state.store.spaces.push(space.clone());
@@ -275,6 +334,7 @@ impl Work {
             "create" => {
                 let space_id = params["spaceId"].as_str().ok_or("Choose a space")?;
                 let space = state.store.spaces.iter().find(|s| s.id == space_id).ok_or("Unknown space")?;
+                if space.read_only { return Err("Choose an available folder to continue this imported task".into()); }
                 let brief = params["brief"].as_str().unwrap_or("").trim();
                 if brief.is_empty() || brief.len() > 100_000 { return Err("Brief must be 1–100000 bytes".into()); }
                 let mode = params["accessMode"].as_str().unwrap_or("ask");
@@ -285,7 +345,7 @@ impl Work {
                 let model = params["model"].as_str().ok_or("Select a model")?;
                 let (provider, model_id) = model.split_once('/').ok_or("Select a registry model")?;
                 if !state.settings.providers.iter().any(|p| p.enabled && p.id == provider && p.models.iter().any(|m| m.enabled && m.id == model_id)) { return Err("Enable this registry model in Settings".into()); }
-                let task = Task { id: uuid::Uuid::new_v4().to_string(), space_id: space_id.into(), thread_id: None, title: brief.lines().next().unwrap().chars().take(100).collect(), brief: brief.into(), attachments, model: model.into(), access_mode: mode.into(), status: "queued".into(), plan: vec![], outputs: vec![], pending: vec![], error: None };
+                let task = Task { id: uuid::Uuid::new_v4().to_string(), import_id: None, space_id: space_id.into(), thread_id: None, title: brief.lines().next().unwrap().chars().take(100).collect(), brief: brief.into(), attachments, model: model.into(), access_mode: mode.into(), status: "queued".into(), plan: vec![], outputs: vec![], pending: vec![], error: None };
                 let result = json!(task);
                 if params["runNow"] == true { state.store.tasks.insert(0, task); } else { state.store.tasks.push(task); }
                 return Ok(result);
@@ -304,6 +364,12 @@ impl Work {
         if action == "stop" { self.stop(state, id).await?; return Ok(json!({})); }
         let index = state.store.tasks.iter().position(|t| t.id == id).ok_or("Unknown task")?;
         let task = state.store.tasks[index].clone();
+        if task.import_id.is_some() {
+            return if action == "read" {
+                let history = self.imported_history(&task)?;
+                Ok(json!({"result":{"thread":{"id":task.thread_id,"turns":history["turns"]}}}))
+            } else { Err("Imported tasks are read-only. Continue as a new task.".into()) };
+        }
         let space = state.store.spaces.iter().find(|s| s.id == task.space_id).unwrap().clone();
         let thread = task.thread_id.as_deref().ok_or("Task is queued")?;
         let session = self.session(state, &space).await;
@@ -357,6 +423,7 @@ impl Work {
         self.initialize(&mut state).await?;
         state.settings = settings.clone();
         let space = state.store.spaces.iter().find(|s| s.id == space_id).ok_or("Choose a space")?;
+        if space.read_only { return Err("This imported space is read-only".into()); }
         let file = std::fs::File::open(source).map_err(|e| e.to_string())?;
         let metadata = file.metadata().map_err(|e| e.to_string())?;
         if !metadata.is_file() || metadata.len() > 50 * 1024 * 1024 { return Err("Attach a regular file up to 50 MB".into()); }
@@ -385,6 +452,12 @@ impl Work {
         state.settings = settings.clone();
         let task = state.store.tasks.iter().find(|t| t.id == task_id).ok_or("Unknown task")?;
         if !task.outputs.iter().any(|p| p == path) { return Err("Unknown task output".into()); }
+        if let Some(id) = &task.import_id {
+            let root = self.data.canonicalize().map_err(|e| e.to_string())?.join("imports/attachments");
+            let folder = root.join(id).canonicalize().map_err(|e| e.to_string())?;
+            if !folder.starts_with(&root) { return Err("Output must be inside imported copies".into()); }
+            return contained(&folder.to_string_lossy(), path);
+        }
         let space = state.store.spaces.iter().find(|s| s.id == task.space_id).unwrap();
         contained(&space.path, path)
     }
@@ -403,12 +476,55 @@ mod tests {
         fn emit_terminal_exit(&self, _: TerminalExit) {}
     }
     fn task(id: &str, space: &str, status: &str) -> Task {
-        Task { id: id.into(), space_id: space.into(), thread_id: Some(id.into()), title: id.into(), brief: "brief".into(), attachments: vec![], model: "local/test".into(), access_mode: "ask".into(), status: status.into(), plan: vec![], outputs: vec![], pending: vec![], error: None }
+        Task { import_id: None, id: id.into(), space_id: space.into(), thread_id: Some(id.into()), title: id.into(), brief: "brief".into(), attachments: vec![], model: "local/test".into(), access_mode: "ask".into(), status: status.into(), plan: vec![], outputs: vec![], pending: vec![], error: None }
     }
     fn temp() -> PathBuf {
         let root = std::env::temp_dir().join(format!("work-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+    #[tokio::test]
+    async fn imported_continuation_runs_with_summary_and_survives_undo() {
+        let root = temp();
+        let folder = root.join("folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        let data = root.join("data");
+        let history = data.join("imports/history");
+        std::fs::create_dir_all(&history).unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let path = history.join(format!("{id}.json"));
+        let messages: Vec<_> = (0..15).map(|i| json!({"role":if i % 2 == 0 {"user"} else {"assistant"},"text":format!("Synthetic message {i}")})).collect();
+        config::write_json(&path, &json!({"source":"cowork","kind":"work","cwd":folder,"title":"Report","status":"stopped","messages":messages,"turns":[],"attachments":[]})).unwrap();
+        let work = Work::new(data, Sink::default());
+        let mut state = work.state.lock().await;
+        work.initialize(&mut state).await.unwrap();
+        state.settings.providers = vec![serde_json::from_value(json!({"id":"local","name":"Synthetic","kind":"ollama","enabled":true,"auth":{"type":"none"},"models":[{"id":"test","enabled":true}]})).unwrap()];
+        let imported = state.store.tasks[0].clone();
+        let continuation = work.action(&mut state, "continue", json!({"taskId":imported.id,"model":"local/test"})).await.unwrap();
+        assert_eq!(continuation["status"], "queued");
+        assert_eq!(continuation["accessMode"], "ask");
+        assert!(continuation["importId"].is_null());
+        let brief = continuation["brief"].as_str().unwrap();
+        assert!(brief.contains(&super::super::imports::continuation(&messages)));
+        assert_eq!(state.store.tasks.iter().find(|t| t.id == imported.id).unwrap().status, "stopped");
+        work.pump(&mut state).await;
+        assert_eq!(state.store.tasks[0].status, "running", "{:?}", state.store.tasks[0].error);
+        assert!(state.store.tasks[0].thread_id.is_some());
+        let session = state.sessions.get(&imported.space_id).unwrap().clone();
+        let requests = std::fs::read_dir(work.data.join("pi/sessions").join(&imported.space_id)).unwrap()
+            .map(|f| f.unwrap().path()).find(|p| p.extension().is_some_and(|e| e == "requests")).unwrap();
+        let sent = std::fs::read_to_string(requests).unwrap();
+        let prompt = sent.lines().map(|s| serde_json::from_str::<Value>(s).unwrap()).find(|v| v["type"] == "prompt").unwrap();
+        assert!(prompt["message"].as_str().unwrap().contains(brief));
+        std::fs::remove_file(path).unwrap();
+        work.sync_imports(&mut state.store).unwrap();
+        assert_eq!(state.store.tasks.len(), 1);
+        assert_eq!(state.store.tasks[0].id, continuation["id"].as_str().unwrap());
+        assert_eq!(state.store.spaces.len(), 1);
+        work.action(&mut state, "stop-all", json!({})).await.unwrap();
+        session.pi.shutdown().await.unwrap();
+        drop(state);
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn global_queue_caps_concurrency_and_serializes_each_space() {
@@ -475,7 +591,7 @@ mod tests {
         std::fs::write(folder.join("existing.txt"), "before").unwrap();
         let sink = Sink::default();
         let service = Work::new(root.join("data"), sink.clone());
-        let space = Space { id: "space".into(), name: "Space".into(), path: folder.canonicalize().unwrap().to_string_lossy().into_owned(), kind: WorkspaceKind::Work, read_only_folders: vec![] };
+        let space = Space { id: "space".into(), name: "Space".into(), path: folder.canonicalize().unwrap().to_string_lossy().into_owned(), kind: WorkspaceKind::Work, read_only_folders: vec![], read_only: false, imported: false };
         let mut state = service.state.lock().await;
         state.store.spaces.push(space.clone());
         state.store.tasks.push(task("thread", "space", "running"));
@@ -521,7 +637,7 @@ mod tests {
         for id in ["one", "two", "three"] {
             let path = root.join(id);
             std::fs::create_dir(&path).unwrap();
-            state.store.spaces.push(Space { id:id.into(), name:id.into(), path:path.to_string_lossy().into_owned(), kind:WorkspaceKind::Work, read_only_folders:vec![] });
+            state.store.spaces.push(Space { id:id.into(), name:id.into(), path:path.to_string_lossy().into_owned(), kind:WorkspaceKind::Work, read_only_folders:vec![], read_only: false, imported: false });
             let mut entry = task(id, id, "queued");
             entry.thread_id = None;
             state.store.tasks.push(entry);
