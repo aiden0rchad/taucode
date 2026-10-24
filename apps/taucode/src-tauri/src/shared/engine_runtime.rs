@@ -1,3 +1,7 @@
+#[path = "engine_files.rs"]
+mod engine_files;
+use engine_files::copy_tree;
+
 use serde_json::{json, Value};
 use std::{
     fs,
@@ -49,27 +53,6 @@ pub(crate) fn source(engine: &str, resource: Option<&Path>) -> Result<PathBuf, S
         &std::env::current_exe().map_err(|e| e.to_string())?,
         dev.as_deref(),
     )
-}
-
-fn copy_tree(source: &Path, target: &Path) -> Result<(), String> {
-    fs::create_dir_all(target).map_err(|e| e.to_string())?;
-    for entry in fs::read_dir(source).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        if matches!(
-            entry.file_name().to_str(),
-            Some("node_modules" | ".venv" | "__pycache__" | ".pytest_cache" | "tests")
-        ) {
-            continue;
-        }
-        let kind = entry.file_type().map_err(|e| e.to_string())?;
-        let path = target.join(entry.file_name());
-        if kind.is_dir() {
-            copy_tree(&entry.path(), &path)?;
-        } else if kind.is_file() {
-            fs::copy(entry.path(), path).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
 }
 
 fn executable(engine: &str) -> &'static str {
@@ -157,7 +140,7 @@ pub(crate) async fn prepare(
         let dir = root.join(engine);
         let locked = fs::read(src.join(lock_name)).map_err(|e| e.to_string())?;
         let installed = fs::read(dir.join(".installed-lock")).ok();
-        copy_tree(&src, &dir)?;
+        copy_tree(&src, &dir).map_err(|e| e.to_string())?;
         if engine != "computer" {
             check_node(&std::env::var_os("TAUCODE_NODE").unwrap_or_else(|| "node".into())).await?;
         }
@@ -195,6 +178,89 @@ pub(crate) async fn prepare(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn copy_tree_adds_updates_prunes_and_preserves_installed_dependencies() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let src = root.join("bundle");
+        let dst = root.join("installed");
+        fs::create_dir_all(src.join("taucode_cua/obsolete")).unwrap();
+        fs::write(src.join("taucode_cua/actions.py"), "old actions").unwrap();
+        fs::write(src.join("taucode_cua/removed.py"), "removed").unwrap();
+        fs::write(src.join("taucode_cua/obsolete/module.py"), "removed").unwrap();
+        copy_tree(&src, &dst).unwrap();
+        for dir in [
+            "node_modules",
+            ".venv",
+            "taucode_cua/__pycache__",
+            "tests",
+            "evals",
+        ] {
+            fs::create_dir_all(dst.join(dir)).unwrap();
+            fs::write(dst.join(dir).join("local"), "local").unwrap();
+        }
+        fs::write(dst.join(".installed-lock"), "locked").unwrap();
+        fs::write(src.join("taucode_cua/actions.py"), "import elements").unwrap();
+        fs::write(src.join("taucode_cua/elements.py"), "new module").unwrap();
+        fs::remove_file(src.join("taucode_cua/removed.py")).unwrap();
+        fs::remove_dir_all(src.join("taucode_cua/obsolete")).unwrap();
+        for _ in 0..2 {
+            copy_tree(&src, &dst).unwrap();
+            assert_eq!(
+                fs::read_to_string(dst.join("taucode_cua/actions.py")).unwrap(),
+                "import elements"
+            );
+            assert_eq!(
+                fs::read_to_string(dst.join("taucode_cua/elements.py")).unwrap(),
+                "new module"
+            );
+            for path in [
+                "taucode_cua/removed.py",
+                "taucode_cua/obsolete",
+                "taucode_cua/__pycache__",
+                "tests",
+                "evals",
+            ] {
+                assert!(!dst.join(path).exists(), "Stale resource: {path}");
+            }
+            for path in ["node_modules/local", ".venv/local"] {
+                assert_eq!(fs::read_to_string(dst.join(path)).unwrap(), "local");
+            }
+            assert_eq!(
+                fs::read_to_string(dst.join(".installed-lock")).unwrap(),
+                "locked"
+            );
+        }
+        assert!(copy_tree(&root.join("missing"), &dst).is_err());
+        assert!(dst.join("taucode_cua/elements.py").is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn copy_tree_replaces_types_without_following_destination_symlinks() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let src = root.join("bundle");
+        let dst = root.join("installed");
+        fs::create_dir_all(src.join("directory")).unwrap();
+        fs::create_dir_all(dst.join("file")).unwrap();
+        fs::write(src.join("file"), "new file").unwrap();
+        fs::write(src.join("directory/new"), "new child").unwrap();
+        fs::write(src.join("link"), "source").unwrap();
+        fs::write(dst.join("directory"), "old file").unwrap();
+        let outside = root.join("outside");
+        fs::write(&outside, "untouched").unwrap();
+        std::os::unix::fs::symlink(&outside, dst.join("link")).unwrap();
+        std::os::unix::fs::symlink(&outside, dst.join("stale-link")).unwrap();
+        copy_tree(&src, &dst).unwrap();
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "untouched");
+        assert_eq!(fs::read_to_string(dst.join("file")).unwrap(), "new file");
+        assert_eq!(
+            fs::read_to_string(dst.join("directory/new")).unwrap(),
+            "new child"
+        );
+        assert_eq!(fs::read_to_string(dst.join("link")).unwrap(), "source");
+        assert!(fs::symlink_metadata(dst.join("stale-link")).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn resolves_packaged_daemon_and_debug_paths_without_release_fallback() {
         let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
