@@ -16,7 +16,7 @@ pub(crate) async fn engine_runtime(action: String, engine: Option<String>, state
         "status" => (),
         _ => return Err("Unknown runtime action".into()),
     }
-    Ok(crate::shared::engine_runtime::status(data))
+    Ok(crate::shared::engine_runtime::status(data).await)
 }
 #[tauri::command]
 pub(crate) async fn provider_test_and_fetch(

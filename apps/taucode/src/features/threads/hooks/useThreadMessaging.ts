@@ -180,6 +180,7 @@ export function useThreadMessaging({
       const summary = threadsByWorkspace?.[workspace.id]?.find(t => t.id === threadId);
       const provider = resolvedModel?.split("/")[0];
       if (summary?.engine !== "pi" && provider && summary?.modelProvider && provider !== summary.modelProvider) {
+        if (summary?.engine === "claude") { pushThreadErrorMessage(threadId, "Start a new Claude Code thread to switch providers."); return { status: "blocked" }; }
         if (isProcessing) { pushThreadErrorMessage(threadId, "Finish or interrupt the running turn before switching providers."); return { status: "blocked" }; }
         const usage = tokenUsageByThread?.[threadId];
         const tokens = usage?.last.totalTokens ?? usage?.total.totalTokens ?? 0;

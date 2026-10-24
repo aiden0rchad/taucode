@@ -1,4 +1,10 @@
-import type { ModelOption } from "../../../types";
+import type { ModelOption, ThreadSummary } from "../../../types";
+
+export function modelsForThread(models: ModelOption[], thread: ThreadSummary | undefined): ModelOption[] {
+  return thread?.engine === "claude"
+    ? models.filter(m => m.providerId === thread.modelProvider && m.engines?.includes("claude"))
+    : models;
+}
 
 export function normalizeEffortValue(value: unknown): string | null {
   if (typeof value !== "string") {
@@ -88,7 +94,7 @@ export function parseModelListResponse(response: unknown): ModelOption[] {
         id: String(record.id ?? record.model ?? ""),
         model: modelSlug,
         ...(typeof record.providerId === "string" ? { providerId: record.providerId, providerName: String(record.providerName ?? record.providerId), modelId: String(record.modelId ?? "") } : {}),
-        ...(Array.isArray(record.engines) ? { engines: record.engines.filter((v): v is "pi" | "codex" => v === "pi" || v === "codex") } : {}),
+        ...(Array.isArray(record.engines) ? { engines: record.engines.filter((v): v is "pi" | "codex" | "claude" => v === "pi" || v === "codex" || v === "claude") } : {}),
         displayName,
         description: String(record.description ?? ""),
         supportedReasoningEfforts: parseReasoningEfforts(record),

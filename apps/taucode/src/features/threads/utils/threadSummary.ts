@@ -20,6 +20,12 @@ type BuildThreadSummaryFromThreadOptions = {
   getCustomName?: (workspaceId: string, threadId: string) => string | undefined;
 };
 
+export function extractEngineCapabilities(thread: Record<string, unknown> | null | undefined): Pick<ThreadSummary, "capabilities"> {
+  if (thread?.engine !== "claude") return {};
+  const capabilities = thread.capabilities as Record<string, unknown> | undefined;
+  return { capabilities: { fork: capabilities?.fork === true, rewind: false } };
+}
+
 export function extractThreadFromResponse(
   response: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> | null {
@@ -64,7 +70,8 @@ export function buildThreadSummaryFromThread({
   return {
     id,
     name,
-    ...(thread.engine === "pi" || thread.engine === "codex" ? { engine: thread.engine } : {}),
+    ...extractEngineCapabilities(thread),
+    ...(thread.engine === "pi" || thread.engine === "codex" || thread.engine === "claude" ? { engine: thread.engine } : {}),
     ...(typeof thread.modelProvider === "string" ? { modelProvider: thread.modelProvider } : {}),
     updatedAt: getThreadTimestamp(thread),
     createdAt: getThreadCreatedTimestamp(thread),

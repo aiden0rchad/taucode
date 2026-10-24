@@ -155,7 +155,7 @@ pub(super) async fn handle_rpc_request(
             Some("status") => (),
             _ => return Err("Unknown runtime action".into()),
         }
-        return Ok(shared::engine_runtime::status(&state.data_dir));
+        return Ok(shared::engine_runtime::status(&state.data_dir).await);
     }
     if method == "computer_request_permissions" {
         return crate::shared::computer::ipc(&state.data_dir, json!({"action":"requestPermissions"})).await;
