@@ -34,7 +34,7 @@ def test_downscale(size, expected):
     assert Image.open(io.BytesIO(sent)).size == expected
 
 
-@pytest.mark.parametrize('mode', ['pixels', 'ui-tars'])
+@pytest.mark.parametrize('mode', ['elements', 'pixels', 'ui-tars'])
 def test_grounding_prompt_image_and_space(mode):
     config = engine_params({'kind': 'openai', 'model': 'fake', 'mode': mode, 'width': 1000, 'height': 1000}, 'grounding')
     aci = StructuredACI(None, 'darwin', {}, config)
@@ -43,7 +43,7 @@ def test_grounding_prompt_image_and_space(mode):
     original = png((3200, 2000))
     aci.assign_screenshot({'screenshot': downscale(original)[0], 'grounding_screenshot': original})
     assert aci.click('Search field')['x'] == 900
-    if mode == 'pixels':
+    if mode != 'ui-tars':
         assert seen['text_content'] == 'This is a 1920x1200 screenshot. Give the pixel coordinates of the center of Search field. Answer ONLY as (x, y) in pixels.'
         assert Image.open(io.BytesIO(seen['image_content'])).size == (1920, 1200)
         assert (config['grounding_width'], config['grounding_height']) == (1920, 1200)
@@ -53,7 +53,7 @@ def test_grounding_prompt_image_and_space(mode):
         assert (config['grounding_width'], config['grounding_height']) == (1000, 1000)
 
 
-@pytest.mark.parametrize('mode', ['pixels', 'ui-tars'])
+@pytest.mark.parametrize('mode', ['elements', 'pixels', 'ui-tars'])
 def test_server_resizes_planner_and_returns_correct_coordinate_space(mode):
     server = Server()
     config = {'kind': 'openai', 'model': 'fake', 'mode': mode, 'width': 1000, 'height': 1000}
@@ -66,11 +66,11 @@ def test_server_resizes_planner_and_returns_correct_coordinate_space(mode):
     server.agent.predict = predict
     result = server.dispatch('predict', {'instruction': 'test', 'screen_size': [3200, 2000], 'screenshot_png_b64': base64.b64encode(original).decode()})
     action = result['action']
-    assert (action['grounding_width'], action['grounding_height']) == ((1920, 1200) if mode == 'pixels' else (1000, 1000))
+    assert (action['grounding_width'], action['grounding_height']) == ((1920, 1200) if mode != 'ui-tars' else (1000, 1000))
 
 
 def test_mode_default_and_validation():
     config = {'kind': 'openai', 'model': 'fake'}
-    assert engine_params(config, 'grounding')['grounding_mode'] == 'pixels'
+    assert engine_params(config, 'grounding')['grounding_mode'] == 'elements'
     with pytest.raises(ValueError, match='Invalid grounding mode'):
         engine_params({**config, 'mode': 'code'}, 'grounding')

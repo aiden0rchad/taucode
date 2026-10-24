@@ -340,7 +340,8 @@ async fn load_thread_history_page(
         .ok_or("Invalid thread/turns/list data")?;
     // The wire page is newest first; the conversation renders oldest first.
     turns.reverse();
-    for turn in turns {
+    use futures_util::{stream, StreamExt, TryStreamExt};
+    *turns = stream::iter(std::mem::take(turns).into_iter().map(|mut turn: Value| async move {
         let turn_id = turn
             .get("id")
             .and_then(Value::as_str)
@@ -390,7 +391,11 @@ async fn load_thread_history_page(
         }
         turn["items"] = json!(items);
         turn["itemsView"] = json!("full");
-    }
+        Ok::<Value, String>(turn)
+    }))
+    .buffered(4)
+    .try_collect::<Vec<_>>()
+    .await?;
     Ok(page)
 }
 

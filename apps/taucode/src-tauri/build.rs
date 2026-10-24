@@ -1,4 +1,18 @@
+#[path = "src/shared/engine_files.rs"]
+mod engine_files;
+
 fn main() {
+    // Tauri directory mappings have no excludes. Stage clean trees so local
+    // Python caches, test fixtures and dependencies can never enter the bundle.
+    for dir in ["computer/taucode_cua", "pi/extensions"] {
+        let source = std::path::Path::new("../engines").join(dir);
+        let target = std::path::Path::new("target/engine-resources").join(dir);
+        println!("cargo:rerun-if-changed={}", source.display());
+        if target.exists() {
+            std::fs::remove_dir_all(&target).expect("clean staged engine resources");
+        }
+        engine_files::copy_tree(&source, &target).expect("stage engine resources");
+    }
     tauri_build::build();
 
     // ScreenCaptureKit's Swift bridge needs the active toolchain's compatibility libraries.

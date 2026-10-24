@@ -149,6 +149,14 @@ pub(super) async fn handle_rpc_request(
     params: Value,
     client_version: String,
 ) -> Result<Value, String> {
+    if method == "engine_runtime" {
+        match params["action"].as_str() {
+            Some("prepare") => { shared::engine_runtime::prepare(&state.data_dir, params["engine"].as_str().ok_or("Missing engine")?, None).await?; }
+            Some("status") => (),
+            _ => return Err("Unknown runtime action".into()),
+        }
+        return Ok(shared::engine_runtime::status(&state.data_dir));
+    }
     if method == "computer_request_permissions" {
         return crate::shared::computer::ipc(&state.data_dir, json!({"action":"requestPermissions"})).await;
     }

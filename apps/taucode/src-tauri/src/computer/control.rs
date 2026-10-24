@@ -19,6 +19,10 @@ pub enum Event {
 }
 pub trait Input: Send {
     fn post(&mut self, event: &Event) -> Result<(), String>;
+    fn stop(&mut self) {}
+    fn end_action(&mut self, _cancelled: bool) -> Option<Box<dyn FnOnce() + Send>> {
+        None
+    }
 }
 struct Held {
     input: Box<dyn Input>,
@@ -32,6 +36,34 @@ pub struct Control {
     held: Mutex<Held>,
 }
 impl Control {
+    pub fn replace_input(&self, input: impl Input + 'static) {
+        self.stop();
+        self.held.lock().unwrap().input = Box::new(input);
+    }
+    pub fn install_input(&self, input: impl Input + 'static) -> Result<(), String> {
+        let mut held = self.held.lock().map_err(|_| "Input lock poisoned")?;
+        if self.stopped() {
+            return Err("Stopped".into());
+        }
+        held.input.stop();
+        held.input = Box::new(input);
+        Ok(())
+    }
+    pub fn guarded<T>(
+        &self,
+        expected: &Context,
+        context: impl FnOnce() -> Result<Context, String>,
+        action: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let _held = self.held.lock().map_err(|_| "Input lock poisoned")?;
+        if self.stopped() || self.paused.load(Ordering::SeqCst) {
+            return Err("Run stopped or paused".into());
+        }
+        if context()? != *expected {
+            return Err("Focus or secure-field state changed; action cancelled".into());
+        }
+        action()
+    }
     pub fn new(input: impl Input + 'static) -> Self {
         Self {
             stopped: AtomicBool::new(true),
@@ -45,7 +77,8 @@ impl Control {
         }
     }
     pub fn start(&self) {
-        self.stop();
+        self.stopped.store(true, Ordering::SeqCst);
+        self.release();
         self.paused.store(false, Ordering::SeqCst);
         self.stopped.store(false, Ordering::SeqCst);
     }
@@ -56,7 +89,7 @@ impl Control {
         self.paused.store(paused, Ordering::SeqCst);
         if paused {
             self.epoch.fetch_add(1, Ordering::SeqCst);
-            self.release();
+            self.release_with(true);
         }
     }
     pub fn stopped(&self) -> bool {
@@ -109,9 +142,17 @@ impl Control {
     }
     pub fn stop(&self) {
         self.stopped.store(true, Ordering::SeqCst);
-        self.release();
+        self.release_with(true);
+        self.held
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .input
+            .stop();
     }
     pub fn release(&self) {
+        self.release_with(false);
+    }
+    fn release_with(&self, cancelled: bool) {
         let mut held = self.held.lock().unwrap_or_else(|e| e.into_inner());
         for key in std::mem::take(&mut held.keys).into_iter().rev() {
             let _ = held.input.post(&Event::Key(key, false));
@@ -123,6 +164,11 @@ impl Control {
                 down: false,
                 clicks: 1,
             });
+        }
+        let finish = held.input.end_action(cancelled);
+        drop(held); // Focus settle/restore must never block the kill-switch input lock.
+        if let Some(finish) = finish {
+            finish();
         }
     }
     pub async fn checkpoint(&self) -> Result<(), String> {

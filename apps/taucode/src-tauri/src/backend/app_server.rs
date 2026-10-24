@@ -1072,6 +1072,13 @@ async fn spawn_codex_engine<E: EventSink>(
         &policy,
         &crate::shared::providers::Keychain,
     )?;
+    for p in settings.providers.iter().filter(|p| p.enabled && crate::shared::providers::codex_usable(p)) {
+        if matches!(p.auth, crate::types::ProviderAuth::Command { .. }) {
+            if let Some(key) = crate::shared::providers::token(p, &crate::shared::providers::Keychain).await? {
+                provider_env.push((crate::shared::engines::key_env(&p.id), key));
+            }
+        }
+    }
     let codex_bin = default_codex_bin;
     let _ = check_codex_installation(codex_bin.clone()).await?;
 

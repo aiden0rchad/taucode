@@ -33,8 +33,8 @@ pub(crate) async fn computer_request(
         .await;
     }
     if params["action"] == "approve" {
-        if window.label() != "computer-hud" {
-            return Err("Approve in the computer HUD".into());
+        if window.label() != "main" {
+            return Err("Approve in the main app UI".into());
         }
         state.computer.answer(
             params["id"].as_str().ok_or("Missing approval ID")?,

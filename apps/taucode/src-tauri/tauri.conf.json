@@ -61,9 +61,19 @@
       "infoPlist": "./Info.plist"
     },
     "resources": {
-      "../engines/computer/taucode_cua/": "engines/computer/taucode_cua/",
+      "../engines/pi/no-accounts.mjs": "engines/pi/no-accounts.mjs",
+      "../engines/pi/package-lock.json": "engines/pi/package-lock.json",
+      "../engines/pi/package.json": "engines/pi/package.json",
+      "../engines/browser/package-lock.json": "engines/browser/package-lock.json",
+      "../engines/browser/package.json": "engines/browser/package.json",
       "../engines/computer/pyproject.toml": "engines/computer/pyproject.toml",
-      "../engines/computer/uv.lock": "engines/computer/uv.lock"
+      "../engines/computer/uv.lock": "engines/computer/uv.lock",
+      "target/engine-resources/computer/taucode_cua/": "engines/computer/taucode_cua/",
+      "target/engine-resources/pi/extensions/": "engines/pi/extensions/",
+      "../engines/pi/.gitignore": "engines/pi/.gitignore",
+      "../engines/browser/.gitignore": "engines/browser/.gitignore",
+      "../engines/computer/README.md": "engines/computer/README.md",
+      "../engines/computer/.gitignore": "engines/computer/.gitignore"
     }
   },
   "plugins": {}

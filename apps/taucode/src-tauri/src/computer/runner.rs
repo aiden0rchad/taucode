@@ -11,6 +11,12 @@ pub struct Frame {
     pub thumbnail: String,
     pub display: Display,
 }
+#[derive(Debug, PartialEq)]
+pub enum Preparation {
+    Events,
+    Handled,
+    NeedsForeground,
+}
 pub trait Environment {
     fn capture(&mut self) -> BoxFuture<'_, Result<Frame, String>>;
     fn predict<'a>(
@@ -19,6 +25,29 @@ pub trait Environment {
         frame: &'a Frame,
     ) -> BoxFuture<'a, Result<Prediction, String>>;
     fn context(&self) -> Result<Context, String>;
+    fn ground_target(
+        &self,
+        prediction: &Prediction,
+        _: &mut Action,
+    ) -> Result<(String, bool), String> {
+        if prediction.element_target()?.is_some() {
+            return Err("Element snapshots unavailable".into());
+        }
+        Ok((String::new(), false))
+    }
+    fn verify_target(&self) -> Result<(), String> {
+        Ok(())
+    }
+    fn prepare(&self, _: &Action, _: &Control, _: &Context) -> Result<Preparation, String> {
+        Ok(Preparation::Events)
+    }
+    fn begin_foreground(&self, _: &Control, _: &Context) -> Result<(), String> {
+        Err("Foreground fallback unavailable".into())
+    }
+    fn end_action(&self) {}
+    fn capture_description(&self) -> String {
+        "Current frontmost application".into()
+    }
     fn planner_error(&self, error: String) -> String {
         error
     }
@@ -225,17 +254,19 @@ async fn execute(
             }
             Action::Open { app_or_file } => {
                 control.checkpoint().await?;
-                if env.context()? != *c {
-                    return Err("Focus changed".into());
-                }
-                env.open(app_or_file, target.ok_or("Missing target app")?)?;
+                control.guarded(
+                    c,
+                    || env.context(),
+                    || env.open(app_or_file, target.ok_or("Missing target app")?),
+                )?;
             }
             Action::SwitchApp { app } => {
                 control.checkpoint().await?;
-                if env.context()? != *c {
-                    return Err("Focus changed".into());
-                }
-                env.open(app, target.ok_or("Missing target app")?)?;
+                control.guarded(
+                    c,
+                    || env.context(),
+                    || env.open(app, target.ok_or("Missing target app")?),
+                )?;
             }
             Action::Wait { seconds } => {
                 control
@@ -276,11 +307,13 @@ pub async fn run(
         for step in 0..settings.max_steps {
             control.checkpoint().await?;
             let context = env.context()?;
-            if context.app != "dev.taucode.desktop" && !app_allowed(&context.app, settings, apps) {
+            if (settings.mode == "background" || context.app != "dev.taucode.desktop")
+                && !app_allowed(&context.app, settings, apps)
+            {
                 return Err(format!("App blocked: {}", context.app));
             }
             let frame = control.until(env.capture()).await?;
-            let scoped = format!("{instruction}\n\nHost policy: allowed application bundle IDs: {}. Current frontmost application: {}. If taucode is frontmost, first use switch_applications with an allowed bundle ID. Never interact with taucode itself.", apps.join(", "), context.app);
+            let scoped = format!("{instruction}\n\nHost policy: allowed application bundle IDs: {}. {}: {}. {} Never interact with taucode itself.", apps.join(", "), env.capture_description(), context.app, if settings.mode == "background" { "This run is bound to this app. Coordinates refer only to its captured window. Do not switch to another app." } else { "If taucode is frontmost, first use switch_applications with an allowed bundle ID." });
             phase = "predictMs";
             phase_start = Instant::now();
             pending = Some(
@@ -298,13 +331,24 @@ pub async fn run(
                 }
             };
             let predict_ms = phase_start.elapsed().as_millis() as u64;
-            let action = prediction
+            let mut action = prediction
                 .validated(frame.display)
                 .map_err(|e| env.planner_error(e))?;
-            let description = prediction.action["target"].as_str().unwrap_or("");
+            let (element_label, secure) = env.ground_target(&prediction, &mut action)?;
+            let description = format!(
+                "{} {}",
+                prediction.action["target"].as_str().unwrap_or(""),
+                element_label
+            )
+            .trim()
+            .to_owned();
             pending = Some(
                 json!({"step":step+1,"thumbnail":frame.thumbnail,"action":action,"target":description,"reflection":prediction.reflection,"planText":prediction.plan_text,"predictMs":predict_ms,"executeMs":0,"waitMs":0}),
             );
+            if let Some((id, index)) = prediction.element_target()? {
+                pending.as_mut().unwrap()["action"]["snapshot_id"] = json!(id);
+                pending.as_mut().unwrap()["action"]["element_index"] = json!(index);
+            }
             phase = "waitMs";
             phase_start = Instant::now();
             control.checkpoint().await?;
@@ -321,10 +365,15 @@ pub async fn run(
             if current != context {
                 return Err("Focus changed while planning; action cancelled".into());
             }
+            let policy_context = Context {
+                secure: current.secure || secure,
+                ..current.clone()
+            };
+            env.verify_target()?;
             match decide(
                 &policy_action,
-                description,
-                &current,
+                &description,
+                &policy_context,
                 settings,
                 apps,
                 step,
@@ -354,7 +403,7 @@ pub async fn run(
             }
             if let Decision::Deny(reason) = decide(
                 &policy_action,
-                description,
+                &description,
                 &after,
                 settings,
                 apps,
@@ -370,15 +419,69 @@ pub async fn run(
                 "executeMs"
             };
             phase_start = Instant::now();
-            let outcome = execute(env, control, &after, &action, target.as_deref())
-                .await
-                .and_then(|()| {
-                    if let Action::Fail { reason } = &action {
-                        Err(env.planner_error(reason.clone()))
-                    } else {
+            env.verify_target()?;
+            let preparation = env.prepare(&action, control, &after)?;
+            if preparation == Preparation::NeedsForeground {
+                if !settings.allow_foreground_fallback {
+                    return Err(
+                        "Background input unavailable; foreground fallback is disabled".into(),
+                    );
+                }
+                let reason =
+                    "This app ignored background input; take over the mouse for this step?";
+                phase = "waitMs";
+                phase_start = Instant::now();
+                let entry = pending.as_mut().unwrap();
+                entry["kind"] = json!("approval_wait");
+                entry["reason"] = json!(reason);
+                env.progress(entry.clone())?;
+                control.until(env.approve(reason, &action, &after)).await?;
+                control.checkpoint().await?;
+                if env.context()? != after {
+                    return Err("Target changed after fallback approval".into());
+                }
+                if let Decision::Deny(reason) = decide(
+                    &policy_action,
+                    &description,
+                    &after,
+                    settings,
+                    apps,
+                    step,
+                    start.elapsed(),
+                ) {
+                    return Err(reason);
+                }
+                env.verify_target()?;
+                env.begin_foreground(control, &after)?;
+                entry["waitMs"] = json!(
+                    entry["waitMs"].as_u64().unwrap_or(0)
+                        + phase_start.elapsed().as_millis() as u64
+                );
+                entry["foregroundApproval"] = json!(true);
+                entry.as_object_mut().unwrap().remove("kind");
+                phase = "executeMs";
+                phase_start = Instant::now();
+                // Activation is asynchronous; no input until the exact app regains focus.
+                control
+                    .until(async {
+                        tokio::time::sleep(Duration::from_millis(150)).await;
                         Ok(())
-                    }
-                });
+                    })
+                    .await?;
+            }
+            let outcome = if preparation == Preparation::Handled {
+                Ok(())
+            } else {
+                execute(env, control, &after, &action, target.as_deref()).await
+            };
+            env.end_action();
+            let outcome = outcome.and_then(|()| {
+                if let Action::Fail { reason } = &action {
+                    Err(env.planner_error(reason.clone()))
+                } else {
+                    Ok(())
+                }
+            });
             let mut entry = pending.take().unwrap();
             entry[phase] = json!(
                 entry[phase].as_u64().unwrap_or(0) + phase_start.elapsed().as_millis() as u64

@@ -76,9 +76,13 @@ impl Drop for CancelOnDrop {
 
 struct UpstreamHandler {
     changes: Option<mpsc::UnboundedSender<()>>,
+    progress: mpsc::UnboundedSender<ProgressNotificationParam>,
 }
 
 impl ClientHandler for UpstreamHandler {
+    async fn on_progress(&self, params: ProgressNotificationParam, _: NotificationContext<RoleClient>) {
+        let _ = self.progress.send(params);
+    }
     async fn on_tool_list_changed(&self, _: NotificationContext<RoleClient>) {
         if let Some(changes) = &self.changes {
             let _ = changes.send(());
@@ -88,6 +92,7 @@ impl ClientHandler for UpstreamHandler {
 
 struct Session {
     service: Upstream,
+    progress: mpsc::UnboundedReceiver<ProgressNotificationParam>,
     epoch: u64,
     // Held through child shutdown, including eviction, to bound live processes.
     _permit: Option<OwnedSemaphorePermit>,
@@ -180,10 +185,12 @@ impl Proxy {
         };
         let mut command = Command::new(&self.command[0]);
         command.args(&self.command[1..]).kill_on_drop(true);
+        let (progress, progress_rx) = mpsc::unbounded_channel();
         let service = timeout(
             Duration::from_secs(30),
             UpstreamHandler {
                 changes: (key == self.default_key).then(|| self.changes.clone()),
+                progress,
             }
             .serve(PreserveMeta(TokioChildProcess::new(command)?)),
         )
@@ -191,6 +198,7 @@ impl Proxy {
         .context("upstream initialization timed out")??;
         Ok(Session {
             service,
+            progress: progress_rx,
             epoch,
             _permit: permit,
         })
@@ -363,11 +371,15 @@ impl ServerHandler for Proxy {
             request.meta = Some(context.meta);
         }
         let mut slot = self.session(&key).await?;
+        let token = request.meta.as_ref().and_then(|m| m.get("progressToken"))
+            .and_then(|v| serde_json::from_value::<ProgressToken>(v.clone()).ok());
         let mut request = CallToolRequest::new(request);
         request
             .extensions
             .insert(OriginalMeta(request.params.meta.clone()));
-        let service = &slot.session.as_ref().expect("initialized session").service;
+        let session = slot.session.as_mut().expect("initialized session");
+        while session.progress.try_recv().is_ok() {}
+        let service = &session.service;
         let result = async {
             let handle = service
                 .send_request_with_option(
@@ -376,7 +388,20 @@ impl ServerHandler for Proxy {
                 )
                 .await?;
             let mut cancellation = CancelOnDrop(Some((service.peer().clone(), handle.id.clone())));
-            let result = handle.await_response().await;
+            let response = handle.await_response();
+            tokio::pin!(response);
+            let result = loop {
+                tokio::select! {
+                    biased;
+                    Some(mut progress) = session.progress.recv() => {
+                        if token.as_ref() == Some(&progress.progress_token) {
+                            progress.progress_token = token.clone().expect("matched token");
+                            context.peer.notify_progress(progress).await?;
+                        }
+                    }
+                    result = &mut response => break result,
+                }
+            };
             cancellation.0 = None;
             match result? {
                 ServerResult::CallToolResult(result) => Ok(CallToolResponse::Complete(result)),

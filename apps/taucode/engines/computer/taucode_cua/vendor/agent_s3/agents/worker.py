@@ -198,6 +198,8 @@ class Worker(BaseModule):
             f"\nCurrent Text Buffer = [{','.join(self.grounding_agent.notes)}]\n"
         )
 
+        generator_message += '\n' + obs.get('element_summary', '')
+
         # Finalize the generator message
         self.generator_agent.add_message(
             generator_message, image_content=obs["screenshot"], role="user"

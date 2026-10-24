@@ -113,13 +113,6 @@ pub fn run() {
                 .build(),
         )
         .on_window_event(|window, event| {
-            if window.label() == "computer-hud"
-                && matches!(event, WindowEvent::CloseRequested { .. })
-            {
-                if let Some(state) = window.app_handle().try_state::<state::AppState>() {
-                    state.computer.stop();
-                }
-            }
             if window.label() != "main" {
                 return;
             }
@@ -130,6 +123,7 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            let _ = shared::engine_runtime::RESOURCES.set(app.path().resource_dir()?);
             let state = state::AppState::load(&app.handle());
             #[cfg(desktop)]
             tauri::async_runtime::block_on(state.browser.serve()).map_err(std::io::Error::other)?;
@@ -209,6 +203,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
+            providers::engine_runtime,
             computer_commands::computer_request,
             computer_commands::computer_request_permissions,
             browser_commands::browser_request,

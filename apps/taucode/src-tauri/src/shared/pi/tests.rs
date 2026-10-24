@@ -108,13 +108,10 @@ fn recorded_translation_reconstructs_deltas_and_prompt_turns() {
         }
     }
     assert!(t.total["totalTokens"].as_u64().unwrap() > 0);
-    let (failed, errors) = replay("rpc_compact_too_small.jsonl");
-    assert_eq!(failed.turns.last().unwrap()["status"], "failed");
-    assert!(errors.iter().any(|e| e["method"] == "error"
-        && e["params"]["error"]["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("Nothing to compact")));
+    let (small, events) = replay("rpc_compact_too_small.jsonl");
+    assert_eq!(small.turns.last().unwrap()["status"], "completed");
+    assert!(!events.iter().any(|e| e["method"] == "error"));
+    assert!(events.iter().any(|e| e["params"]["item"]["notice"] == "Nothing to compact yet"));
 }
 #[test]
 fn recorded_history_equals_live_items_and_turns() {
@@ -372,15 +369,7 @@ fn every_provider_and_auth_config_is_secret_free() {
                 );
             }
             if auth["type"] == "command" {
-                let cmd = models["providers"][&id]["apiKey"]
-                    .as_str()
-                    .unwrap()
-                    .strip_prefix('!')
-                    .unwrap();
-                assert_eq!(
-                    shell_words::split(cmd).unwrap(),
-                    vec!["/path with spaces/key", "a'b", "$(never)"]
-                );
+                assert_eq!(models["providers"][&id]["apiKey"], "$TAUCODE_PROVIDER_LOCAL_KEY");
             }
             for name in ["models.json", "mcp.json", "settings.json"] {
                 assert!(!std::fs::read_to_string(dir.join(name))

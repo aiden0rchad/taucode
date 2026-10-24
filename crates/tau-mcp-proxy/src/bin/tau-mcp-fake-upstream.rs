@@ -60,6 +60,14 @@ impl ServerHandler for Fake {
             _ => return Err(ErrorData::invalid_params("unknown tool", None)),
         }
         if let Some(args) = &request.arguments {
+            if args.get("progress").and_then(|v| v.as_bool()) == Some(true) {
+                if let Some(token) = context.meta.get("progressToken") {
+                    let mut progress = ProgressNotificationParam::new(serde_json::from_value(token.clone()).unwrap(), 1.0);
+                    progress.total = Some(2.0);
+                    progress.message = Some("Working".into());
+                    context.peer.notify_progress(progress).await.map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+                }
+            }
             if args.get("notify").and_then(|v| v.as_bool()) == Some(true) {
                 context
                     .peer

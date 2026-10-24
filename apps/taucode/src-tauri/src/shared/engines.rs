@@ -561,7 +561,7 @@ pub(crate) fn codex_config(
         match &p.auth {
             ProviderAuth::ApiKey => config.push_str(&format!("env_key = {}\n", quote(&key_env(&p.id)))),
             ProviderAuth::Env { var } => config.push_str(&format!("env_key = {}\n", quote(var))),
-            ProviderAuth::Command { command, args } => config.push_str(&format!("auth = {{ command = {}, args = [{}], timeout_ms = 5000, refresh_interval_ms = 300000 }}\n", quote(command), args.iter().map(|a| quote(a)).collect::<Vec<_>>().join(", "))),
+            ProviderAuth::Command { .. } => config.push_str(&format!("env_key = {}\n", quote(&key_env(&p.id)))),
             ProviderAuth::None => (),
         }
         if !p.extra_headers.is_empty() {

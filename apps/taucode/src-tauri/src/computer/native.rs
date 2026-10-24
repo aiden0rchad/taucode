@@ -1,3 +1,5 @@
+// Background mouse timing adapted from trycua/cua input/mouse.rs.
+// Copyright (c) 2025 Cua AI, Inc. (MIT); see background/NOTICE.
 use super::{
     control::{Event, Input},
     policy::{Context, Display},
@@ -279,6 +281,7 @@ pub fn capture(allowed: &[String]) -> Result<Frame, String> {
         png: STANDARD.encode(png),
         thumbnail: STANDARD.encode(thumbnail),
         display: Display {
+            origin: [0., 0.],
             width: main.bounds().size.width,
             height: main.bounds().size.height,
             pixel_width: width,
@@ -286,7 +289,7 @@ pub fn capture(allowed: &[String]) -> Result<Frame, String> {
         },
     })
 }
-unsafe fn encode_png(image: *const c_void) -> Result<Vec<u8>, String> {
+pub(super) unsafe fn encode_png(image: *const c_void) -> Result<Vec<u8>, String> {
     let allocated: *mut AnyObject = msg_send![class!(NSBitmapImageRep), alloc];
     let bitmap: *mut AnyObject = msg_send![allocated, initWithCGImage:image];
     let bitmap = Retained::from_raw(bitmap).ok_or("Cannot create PNG encoder")?;
@@ -298,12 +301,55 @@ unsafe fn encode_png(image: *const c_void) -> Result<Vec<u8>, String> {
 }
 #[derive(Default)]
 pub struct NativeInput {
+    pub session: Option<std::sync::Arc<super::background::Session>>,
     flags: CGEventFlags,
+    point: [f64; 2],
+    group: i64,
+}
+impl NativeInput {
+    pub fn background(session: std::sync::Arc<super::background::Session>) -> Self {
+        Self {
+            session: Some(session),
+            ..Default::default()
+        }
+    }
 }
 impl Input for NativeInput {
+    fn end_action(&mut self, cancelled: bool) -> Option<Box<dyn FnOnce() + Send>> {
+        self.session.as_ref()?.finish_delivery(cancelled)
+    }
+    fn stop(&mut self) {
+        if let Some(session) = &self.session {
+            session.stop();
+        }
+    }
+
     fn post(&mut self, event: &Event) -> Result<(), String> {
-        let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
-            .map_err(|_| "Cannot create event source")?;
+        let background = self
+            .session
+            .as_ref()
+            .filter(|s| !s.foreground.load(std::sync::atomic::Ordering::SeqCst));
+        if let Some(session) = &self.session {
+            session.check()?;
+        }
+        if let Some(session) = background {
+            session.guard.arm();
+            match event {
+                Event::Mouse { point, .. } | Event::Move(point, _) => {
+                    self.point = *point;
+                    session
+                        .overlay
+                        .move_to(*point, matches!(event, Event::Mouse { down: true, .. }));
+                }
+                _ => (),
+            }
+        }
+        let source = CGEventSource::new(if background.is_some() {
+            CGEventSourceStateID::Private
+        } else {
+            CGEventSourceStateID::HIDSystemState
+        })
+        .map_err(|_| "Cannot create event source")?;
         let e = match event {
             Event::Key(code, down) => {
                 let flag = match code {
@@ -371,10 +417,56 @@ impl Input for NativeInput {
         }
         .map_err(|_| "Cannot create input event")?;
         e.set_flags(self.flags);
-        e.post(CGEventTapLocation::HID);
-        if matches!(event, Event::Text(_)) {
-            e.set_type(CGEventType::KeyUp);
+        if let Some(session) = background {
+            let window = session
+                .window
+                .lock()
+                .unwrap()
+                .clone()
+                .ok_or("Missing target window")?;
+            let keyboard = matches!(event, Event::Key(..) | Event::Text(_));
+            if matches!(event, Event::Mouse { down: true, .. }) {
+                self.group = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .subsec_nanos() as i64;
+                // Copyright (c) 2025 Cua AI, Inc. MIT. Port of mouse.rs's
+                // post_mouse_moved_primer and click tracking intervals (background/NOTICE).
+                let source = CGEventSource::new(CGEventSourceStateID::Private)
+                    .map_err(|_| "Cannot create mouse primer source")?;
+                let primer = CGEvent::new_mouse_event(
+                    source,
+                    CGEventType::MouseMoved,
+                    CGPoint::new(self.point[0], self.point[1]),
+                    CGMouseButton::Left,
+                )
+                .map_err(|_| "Cannot create mouse primer")?;
+                primer.set_flags(self.flags);
+                primer.set_integer_value_field(7, 3);
+                super::background::post_event(
+                    session, &primer, false, self.point, window.id, self.group,
+                );
+                std::thread::sleep(std::time::Duration::from_millis(12));
+            }
+            if matches!(event, Event::Mouse { .. })
+                && !session.dragging.load(std::sync::atomic::Ordering::SeqCst)
+            {
+                e.set_integer_value_field(7, 3);
+            }
+            super::background::post_event(session, &e, keyboard, self.point, window.id, self.group);
+            if matches!(event, Event::Mouse { down: true, .. }) {
+                std::thread::sleep(std::time::Duration::from_millis(28));
+            }
+            if matches!(event, Event::Text(_)) {
+                e.set_type(CGEventType::KeyUp);
+                super::background::post_event(session, &e, true, self.point, window.id, self.group);
+            }
+        } else {
             e.post(CGEventTapLocation::HID);
+            if matches!(event, Event::Text(_)) {
+                e.set_type(CGEventType::KeyUp);
+                e.post(CGEventTapLocation::HID);
+            }
         }
         Ok(())
     }
@@ -399,7 +491,11 @@ extern "C" {
     );
     fn CGBitmapContextCreateImage(context: *const c_void) -> *const c_void;
 }
-unsafe fn thumbnail(image: *const c_void, width: u32, height: u32) -> Result<Vec<u8>, String> {
+pub(super) unsafe fn thumbnail(
+    image: *const c_void,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, String> {
     use core_graphics::geometry::{CGRect, CGSize};
     let h = (320. * height as f64 / width as f64).round().max(1.) as usize;
     let space = CGColorSpaceCreateDeviceRGB();

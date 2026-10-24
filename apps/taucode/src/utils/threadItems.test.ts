@@ -887,6 +887,11 @@ describe("threadItems", () => {
     }
   });
 
+  it("renders tiny-session compaction as an informational notice", () => {
+    const item = buildConversationItem({ type: "contextCompaction", id: "small", notice: "Nothing to compact yet" });
+    expect(item).toMatchObject({ title: "Nothing to compact yet", status: "completed", detail: "" });
+  });
+
   it("builds context compaction items from thread history", () => {
     const item = buildConversationItemFromThreadItem({
       type: "contextCompaction",

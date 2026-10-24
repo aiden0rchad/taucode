@@ -37,14 +37,7 @@ pub(crate) fn models(registry: &[ProviderEntry]) -> Value {
             ProviderAuth::None => "taucode-no-key".into(),
             ProviderAuth::ApiKey => format!("${}", key_env(&p.id)),
             ProviderAuth::Env { var } => format!("${var}"),
-            ProviderAuth::Command { command, args } => format!(
-                "!{}",
-                std::iter::once(command)
-                    .chain(args)
-                    .map(|s| shell_words::quote(s).into_owned())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ),
+            ProviderAuth::Command { .. } => format!("${}", key_env(&p.id)),
         };
         let mut entry = json!({"name":p.name,"apiKey":auth,"models":p.models.iter().filter(|m|m.enabled).map(|m| {
             let mut v = json!({"id":m.id,"name":m.display_name.as_ref().unwrap_or(&m.id)});
