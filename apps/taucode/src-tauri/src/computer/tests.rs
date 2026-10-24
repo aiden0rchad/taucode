@@ -267,6 +267,9 @@ fn stop_releases_keys_buttons_and_prevents_late_input() {
         .is_err());
 }
 struct Fake {
+    instructions: Vec<String>,
+    prepare_error: Option<String>,
+    ax_handled: bool,
     event_errors: std::cell::RefCell<std::collections::VecDeque<Option<String>>>,
     observation_errors: std::cell::RefCell<std::collections::VecDeque<Option<String>>>,
     native_front: std::cell::Cell<i32>,
@@ -446,6 +449,12 @@ impl Environment for Fake {
         if self.fail_prepare {
             return Err("prepare failed after activation".into());
         }
+        if let Some(error) = &self.prepare_error {
+            return Err(error.clone());
+        }
+        if self.ax_handled {
+            return Ok(runner::Preparation::Handled);
+        }
         Ok(
             if self.needs_foreground && matches!(action, Action::Click { .. }) {
                 runner::Preparation::NeedsForeground
@@ -470,9 +479,10 @@ impl Environment for Fake {
     }
     fn predict<'a>(
         &'a mut self,
-        _: &'a str,
+        instruction: &'a str,
         _: &'a Frame,
     ) -> BoxFuture<'a, Result<Prediction, String>> {
+        self.instructions.push(instruction.into());
         Box::pin(async { self.predictions.pop_front().ok_or("No fake action".into()) })
     }
     fn context(&self) -> Result<Context, String> {
@@ -519,6 +529,9 @@ impl Environment for Fake {
 }
 fn fake(actions: Vec<Value>) -> Fake {
     Fake {
+        instructions: vec![],
+        prepare_error: None,
+        ax_handled: false,
         event_errors: Default::default(),
         observation_errors: Default::default(),
         native_front: std::cell::Cell::new(10),
@@ -545,6 +558,135 @@ fn fake(actions: Vec<Value>) -> Fake {
         change_after_approval: false,
         approval_delay: Duration::ZERO,
     }
+}
+
+#[tokio::test]
+async fn recoverable_errors_have_caps_feedback_and_no_input() {
+    let denied = json!({"kind":"switch_app","app":"com.apple.Terminal"});
+    let done = json!({"kind":"done","summary":"done"});
+    for (actions, recovered, succeeds) in [
+        (vec![denied.clone(), done.clone()], 1, true),
+        (vec![denied.clone(); 5], 3, false),
+        (
+            (0..6)
+                .flat_map(|_| [denied.clone(), json!({"kind":"wait","seconds":0})])
+                .collect(),
+            6,
+            false,
+        ),
+    ] {
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let mut env = fake(actions);
+        let s = settings();
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "task", Instant::now()).await;
+        assert_eq!(result.is_ok(), succeeds, "{result:?}");
+        assert_eq!(
+            env.steps.iter().filter(|s| s["recovered"] == true).count(),
+            recovered
+        );
+        assert!(env.instructions[1].starts_with("Previous action was NOT executed:"));
+        assert!(env.instructions[1].contains("Choose a different approach."));
+        assert!(input.0.lock().unwrap().is_empty());
+        assert_eq!(env.approved, 0);
+    }
+}
+
+#[tokio::test]
+async fn recoverable_vs_fatal_preparation_errors() {
+    for (reason, recovered, predictions) in [
+        (
+            "Action not executed: AX action unsupported; no viable fallback",
+            true,
+            3,
+        ),
+        (
+            "Action not executed: Background hotkey menu disabled: File > New Folder",
+            true,
+            3,
+        ),
+        ("Target binding changed", false, 1),
+        ("System Settings pane inspection failed", false, 1),
+        (
+            "Input already started; Stale observation: changed",
+            false,
+            1,
+        ),
+        (
+            "AX action completion unknown after timeout; background fallback unavailable",
+            false,
+            1,
+        ),
+        ("Stopped", false, 1),
+        ("Declined", false, 1),
+        ("Timed out waiting for approval", false, 1),
+    ] {
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let mut env = fake(vec![json!({"kind":"wait","seconds":0}); 5]);
+        env.prepare_error = Some(reason.into());
+        let s = settings();
+        let error = runner::run(&mut env, &control, &s, &s.app_ids(), "task", Instant::now())
+            .await
+            .unwrap_err();
+        assert_eq!(error, reason);
+        assert_eq!(env.instructions.len(), predictions);
+        assert_eq!(env.steps[0]["recovered"] == true, recovered);
+        assert!(input.0.lock().unwrap().is_empty());
+        assert_eq!(env.approved, 0);
+    }
+}
+
+#[tokio::test]
+async fn unparseable_grounding_recovers_but_provider_errors_are_fatal() {
+    for (result, recovers) in [("unparseable", true), ("provider_error", false)] {
+        let mut env = fake(vec![
+            json!({"kind":"fail","reason":"grounding failed"}),
+            json!({"kind":"done","summary":"done"}),
+        ]);
+        env.predictions[0].grounding = vec![json!({"pixel_result":result})];
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let s = settings();
+        assert_eq!(
+            runner::run(&mut env, &control, &s, &s.app_ids(), "task", Instant::now())
+                .await
+                .is_ok(),
+            recovers
+        );
+        assert_eq!(env.steps[0]["recovered"] == true, recovers);
+        assert!(input.0.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn exhausted_stale_step_recovers_and_ax_menu_restores_focus() {
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let mut env = fake(vec![json!({"kind":"wait","seconds":0}); 3]);
+    env.predictions
+        .push_back(prediction(json!({"kind":"done","summary":"replanned"})));
+    *env.observation_errors.borrow_mut() =
+        vec![Some(format!("{}geometry changed", runner::STALE_OBSERVATION)); 3].into();
+    env.ax_handled = true;
+    env.activate_during_action = true;
+    let s = settings();
+    assert!(
+        runner::run(&mut env, &control, &s, &s.app_ids(), "task", Instant::now())
+            .await
+            .is_ok()
+    );
+    assert_eq!(env.steps[0]["recovered"], true);
+    assert_eq!(env.steps[0]["staleRetries"], 2);
+    assert!(env.instructions[3].starts_with("Previous action was NOT executed:"));
+    assert_eq!(env.native_front.get(), 10);
+    assert_eq!(env.restorations.get(), 1);
+    assert!(input.0.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -787,7 +929,10 @@ async fn fallback_requires_setting_and_fresh_approval_before_any_input() {
         let result =
             runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
         let allowed = enabled && approved && !changed;
-        assert_eq!(result.is_ok(), allowed);
+        assert_eq!(result.is_ok(), !enabled || allowed);
+        if !enabled {
+            assert_eq!(env.steps[0]["recovered"], true);
+        }
         assert_eq!(env.takeovers.get(), usize::from(allowed));
         assert_eq!(input.0.lock().unwrap().is_empty(), !allowed);
         assert_eq!(env.approved, usize::from(enabled));
@@ -1260,7 +1405,7 @@ async fn typing_policy_runs_before_events_and_rechecks_the_focused_field() {
     for (mode, access, changed, approvals, succeeds) in [
         (ConfirmTyping::Sensitive, Access::Full, false, 0, true),
         (ConfirmTyping::Always, Access::Full, false, 1, true),
-        (ConfirmTyping::Sensitive, Access::ReadOnly, false, 0, false),
+        (ConfirmTyping::Sensitive, Access::ReadOnly, false, 0, true),
         (ConfirmTyping::Sensitive, Access::Full, true, 0, false),
     ] {
         let mut env = fake(vec![
@@ -1291,7 +1436,11 @@ async fn typing_policy_runs_before_events_and_rechecks_the_focused_field() {
                 .iter()
                 .filter(|e| matches!(e, Event::Text(_)))
                 .count(),
-            if succeeds { 5 } else { 0 }
+            if succeeds && access != Access::ReadOnly {
+                5
+            } else {
+                0
+            }
         );
     }
 }

@@ -7,6 +7,28 @@ use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
 pub const STALE_OBSERVATION: &str = "Stale observation: ";
+pub const RECOVERABLE: &str = "Action not executed: ";
+
+#[derive(Default)]
+struct Recovery {
+    consecutive: usize,
+    total: usize,
+    previous: Option<String>,
+}
+impl Recovery {
+    fn record(&mut self, reason: &str) -> Result<(), String> {
+        self.consecutive += 1;
+        self.total += 1;
+        self.previous = Some(format!(
+            "Previous action was NOT executed: {reason}. Choose a different approach.\n\n"
+        ));
+        if self.consecutive >= 3 || self.total >= 6 {
+            Err(reason.into())
+        } else {
+            Ok(())
+        }
+    }
+}
 
 pub async fn settle<T: PartialEq, F: std::future::Future<Output = Result<T, String>>>(
     mut read: impl FnMut() -> F,
@@ -338,7 +360,27 @@ pub async fn run(
         let mut step = 0;
         let mut stale_retries = 0;
         let mut run_stale_retries = 0;
+        let mut recovery = Recovery::default();
         'steps: while step < settings.max_steps {
+            macro_rules! recover {
+                ($reason:expr) => {{
+                    let reason: String = $reason;
+                    control.checkpoint().await?;
+                    control.release();
+                    env.end_action();
+                    if let Some(mut entry) = pending.take() {
+                        entry[phase] = json!(phase_start.elapsed().as_millis() as u64);
+                        entry["recovered"] = json!(true);
+                        entry["error"] = json!(reason);
+                        entry["reason"] = json!(reason);
+                        env.progress(entry)?;
+                    }
+                    recovery.record(&reason)?;
+                    step += 1;
+                    stale_retries = 0;
+                    continue 'steps;
+                }};
+            }
             // Only pre-input checks may discard a prediction. Never replay partial input.
             macro_rules! observation {
                 ($result:expr) => {
@@ -358,6 +400,12 @@ pub async fn run(
                             env.end_action();
                             continue 'steps;
                         }
+                        Err(error)
+                            if error.starts_with(STALE_OBSERVATION)
+                                || error.starts_with(RECOVERABLE) =>
+                        {
+                            recover!(error)
+                        }
                         Err(error) => return Err(error),
                     }
                 };
@@ -376,6 +424,7 @@ pub async fn run(
                 .await
                 .map_err(|e| format!("Pre-flight capture: app={}, {e}", context.app))?;
             let scoped = format!("{instruction}\n\nHost policy: allowed application bundle IDs: {}. {}: {}. {} Never interact with taucode itself.", apps.join(", "), env.capture_description(), context.app, if settings.mode == "background" { "This run is bound to this app. Coordinates refer only to its captured window. Do not switch to another app." } else { "If taucode is frontmost, first use switch_applications with an allowed bundle ID." });
+            let scoped = format!("{}{scoped}", recovery.previous.as_deref().unwrap_or(""));
             phase = "predictMs";
             phase_start = Instant::now();
             pending = Some(
@@ -384,6 +433,14 @@ pub async fn run(
             let prediction = match control.until(env.predict(&scoped, &frame)).await {
                 Ok(prediction) => prediction,
                 Err(error) => {
+                    let diagnostics = env.grounding_diagnostics();
+                    if diagnostics
+                        .iter()
+                        .any(|d| d["pixel_result"] == "unparseable")
+                    {
+                        pending.as_mut().unwrap()["grounding"] = json!(diagnostics);
+                        recover!(error);
+                    }
                     let mut entry = pending.take().unwrap();
                     entry["predictMs"] = json!(phase_start.elapsed().as_millis() as u64);
                     entry["action"] = json!({"kind":"fail","reason":error});
@@ -410,6 +467,15 @@ pub async fn run(
             pending = Some(
                 json!({"step":step+1,"staleRetries":stale_retries,"thumbnail":frame.thumbnail,"action":action,"target":description,"reflection":prediction.reflection,"planText":prediction.plan_text,"grounding":prediction.grounding,"predictMs":predict_ms,"executeMs":0,"waitMs":0}),
             );
+            if let Action::Fail { reason } = &action {
+                if prediction
+                    .grounding
+                    .iter()
+                    .any(|d| d["pixel_result"] == "unparseable")
+                {
+                    recover!(reason.clone());
+                }
+            }
             if let Some((id, index)) = prediction.element_target()? {
                 pending.as_mut().unwrap()["action"]["snapshot_id"] = json!(id);
                 pending.as_mut().unwrap()["action"]["element_index"] = json!(index);
@@ -424,8 +490,8 @@ pub async fn run(
             };
             if let (Action::Open { app_or_file }, Some(app)) = (&action, &target) {
                 if app_or_file != app && access(app, settings) == Access::ReadOnly {
-                    return Err(
-                        "App has read-only access: open the app by bundle ID, not a file".into(),
+                    recover!(
+                        "App has read-only access: open the app by bundle ID, not a file".into()
                     );
                 }
             }
@@ -452,7 +518,7 @@ pub async fn run(
                     step,
                     start.elapsed(),
                 ) {
-                    Decision::Deny(reason) => return Err(reason),
+                    Decision::Deny(reason) => recover!(reason),
                     Decision::Confirm(reason) => {
                         let entry = pending.as_mut().unwrap();
                         entry["kind"] = json!("approval_wait");
@@ -492,7 +558,7 @@ pub async fn run(
                     step,
                     start.elapsed(),
                 ) {
-                    return Err(reason);
+                    recover!(reason);
                 }
                 break after;
             };
@@ -508,8 +574,8 @@ pub async fn run(
             let preparation = observation!(env.prepare(&action, control, &after));
             if preparation == Preparation::NeedsForeground {
                 if !settings.allow_foreground_fallback {
-                    return Err(
-                        "Background input unavailable; foreground fallback is disabled".into(),
+                    recover!(
+                        "Background input unavailable; foreground fallback is disabled".into()
                     );
                 }
                 let reason =
@@ -537,7 +603,7 @@ pub async fn run(
                     step,
                     start.elapsed(),
                 ) {
-                    return Err(reason);
+                    recover!(reason);
                 }
                 observation!(env.verify_target());
                 verify_policy_target(
@@ -618,6 +684,8 @@ pub async fn run(
                 continue;
             }
             outcome?;
+            recovery.consecutive = 0;
+            recovery.previous = None;
             control.until(env.settle()).await?;
             match action {
                 Action::Done { summary } => {

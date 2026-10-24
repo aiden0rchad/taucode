@@ -49,6 +49,25 @@ pub struct UserFocus {
 pub fn action_restoration(previous: Option<i32>, front: Option<i32>, target: i32) -> Option<i32> {
     previous.filter(|pid| *pid != target && front == Some(target))
 }
+fn restore_action(
+    previous: Option<i32>,
+    target: i32,
+    front: impl Fn() -> Option<i32>,
+    restore: impl Fn(i32),
+    wait: impl Fn(Duration),
+) {
+    if previous.is_none() || previous == Some(target) {
+        return;
+    }
+    for delayed in [false, true] {
+        if delayed {
+            wait(Duration::from_millis(300));
+        }
+        if let Some(pid) = action_restoration(previous, front(), target) {
+            restore(pid);
+        }
+    }
+}
 impl UserFocus {
     // Capture before any run UI is created or shown.
     pub fn capture() -> Self {
@@ -79,7 +98,6 @@ impl Guard {
         self.state.lock().unwrap().armed_until = Instant::now() + Duration::from_millis(250);
     }
     pub fn begin_action(&self) {
-        self.tick();
         *self.action_prior.lock().unwrap() = Some(UserFocus::capture());
         self.arm();
     }
@@ -87,15 +105,22 @@ impl Guard {
         let Some(prior) = self.action_prior.lock().unwrap().take() else {
             return;
         };
-        let state = self.state.lock().unwrap();
-        if let Some(pid) = action_restoration(prior.pid, front_pid(), state.target) {
-            let restore = State {
-                previous: pid,
-                window: prior.window,
-                ..*state
-            };
-            self.restore_locked(&restore, "postActionInvariant");
-        }
+        let target = self.state.lock().unwrap().target;
+        restore_action(
+            prior.pid,
+            target,
+            front_pid,
+            |pid| {
+                let state = self.state.lock().unwrap();
+                let restore = State {
+                    previous: pid,
+                    window: prior.window,
+                    ..*state
+                };
+                self.restore_locked(&restore, "postActionInvariant");
+            },
+            std::thread::sleep,
+        );
     }
     pub fn start(&self, session: Weak<Session>) {
         self.tick();
@@ -230,5 +255,39 @@ fn user_switched_recently() -> bool {
         [1, 3, 12]
             .iter()
             .any(|kind| CGEventSourceSecondsSinceLastEventType(1, *kind) < 1.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::{Cell, RefCell};
+
+    #[test]
+    fn ax_menu_restores_immediate_and_delayed_activation_but_respects_other_apps() {
+        for (before, immediate, delayed, expected) in [
+            (10, 20, 10, 1),
+            (10, 10, 20, 1),
+            (10, 20, 20, 2),
+            (10, 30, 30, 0),
+            (20, 20, 20, 0),
+        ] {
+            let front = Cell::new(immediate);
+            let records = RefCell::new(vec![]);
+            restore_action(
+                Some(before),
+                20,
+                || Some(front.get()),
+                |pid| {
+                    records.borrow_mut().push(pid);
+                    front.set(pid);
+                },
+                |duration| {
+                    assert_eq!(duration, Duration::from_millis(300));
+                    front.set(delayed);
+                },
+            );
+            assert_eq!(records.borrow().as_slice(), vec![10; expected]);
+        }
     }
 }

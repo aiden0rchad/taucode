@@ -199,6 +199,8 @@ class Worker(BaseModule):
         )
 
         generator_message += '\n' + obs.get('element_summary', '')
+        if instruction.startswith('Previous action was NOT executed:'):
+            generator_message = instruction.split('\n\n', 1)[0] + '\n\n' + generator_message
 
         # Finalize the generator message
         self.generator_agent.add_message(

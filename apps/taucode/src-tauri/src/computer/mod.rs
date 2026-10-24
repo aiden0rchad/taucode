@@ -581,8 +581,11 @@ impl runner::Environment for Live {
                             s.record_attempt(action);
                             runner::Preparation::Events
                         }
+                        _ if s.fallback_reason.lock().unwrap().as_deref().is_some_and(|r| r.contains("failed(-25204)")) => {
+                            return Err("AX action completion unknown after timeout; background fallback unavailable".into());
+                        }
                         _ if s.fallback_reason.lock().unwrap().as_deref().is_some_and(|r| r.starts_with("background_keyboard_")) => {
-                            return Err("Background keyboard delivery requires activation or lost its target focus; no input dispatched".into());
+                            return Err(format!("{}Background keyboard delivery requires activation or lost its target focus; no input dispatched", runner::RECOVERABLE));
                         }
                         _ => runner::Preparation::NeedsForeground,
                     },
@@ -758,6 +761,7 @@ fn compact_steps(steps: &Value) -> Vec<Value> {
                 "reflection",
                 "planText",
                 "error",
+                "recovered",
                 "kind",
                 "reason",
                 "path",

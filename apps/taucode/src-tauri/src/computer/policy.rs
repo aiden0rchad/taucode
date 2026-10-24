@@ -695,7 +695,12 @@ mod refinements {
     #[test]
     fn menu_clicks_obey_read_only_roots_risky_titles_and_pane_denylist() {
         let mut s = settings();
-        for title in ["File > Delete", "Account > Pay", "Message > Send"] {
+        for title in [
+            "File > Delete",
+            "Account > Pay",
+            "Message > Send",
+            "Context > Delete",
+        ] {
             confirmed(decision(
                 &click(),
                 &field("AXMenuItem", title),
@@ -720,6 +725,8 @@ mod refinements {
             "Edit > Copy",
             "TextEdit > About",
             "Next",
+            "Context > View > Next",
+            "Context > New Folder",
         ] {
             let d = decision(
                 &click(),

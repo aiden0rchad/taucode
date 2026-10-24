@@ -19,6 +19,9 @@ class PROCEDURAL_MEMORY:
 
         Only propose one of the listed GUI actions. Code execution, OCR, shell commands,
         and account sign-in are unavailable. The host enforces app policy and approvals.
+        An observation starting with "Previous action was NOT executed" means the action
+        was blocked or impossible in the background. Choose a different route: window
+        toolbar buttons, the Action/gear menu, or a context menu. Do not repeat it.
 
         Never assume a task is done based on appearances-always ensure the specific requested action has been performed and verify the modification. If you haven't executed any actions, the task is not complete.
 

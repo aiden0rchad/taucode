@@ -95,6 +95,7 @@ pub struct Session {
     ax_fallback: AtomicBool,
     snapshot: Mutex<ax_tree::Snapshot<ax_actions::Element>>,
     selected: Mutex<Option<(u64, usize)>>,
+    pressed: Mutex<Option<ax_actions::Element>>,
     delivery: Mutex<Option<delivery::Scope>>,
     observed: Mutex<Option<[u8; 32]>>,
     attempted: Mutex<Option<(Action, [u8; 32])>>,
@@ -154,6 +155,7 @@ impl Session {
             ax_fallback: AtomicBool::new(false),
             snapshot: Mutex::new(ax_tree::Snapshot::default()),
             selected: Mutex::new(None),
+            pressed: Mutex::new(None),
             delivery: Mutex::new(None),
             observed: Mutex::new(None),
             attempted: Mutex::new(None),
@@ -228,6 +230,10 @@ impl Session {
         *self.selected.lock().unwrap() = None;
         let mut snapshot = self.snapshot.lock().unwrap();
         snapshot.capture(self.pid, &window)?;
+        for (node, handle) in menus::open_elements(self.pid, self.pressed.lock().unwrap().as_ref())
+        {
+            snapshot.append_menu(node, handle);
+        }
         let menus = menus::read(self.pid);
         for item in menus.elements() {
             snapshot.append_menu(item.node(), item.handle.clone());
@@ -251,7 +257,12 @@ impl Session {
     pub fn snapshot_json(&self) -> serde_json::Value {
         let snapshot = self.snapshot.lock().unwrap();
         let size = self.window.lock().unwrap().as_ref().map(|w| w.size);
-        serde_json::json!({"snapshot_id":snapshot.id,"elements":snapshot.elements,"size":size,"status":snapshot.status,"walk_attempts":snapshot.attempts,"window_lookup":snapshot.lookup,"menus":self.menus.lock().unwrap().observation()})
+        let status = if snapshot.partial > 0 {
+            format!("{}; partial: {}", snapshot.status, snapshot.partial)
+        } else {
+            snapshot.status.into()
+        };
+        serde_json::json!({"snapshot_id":snapshot.id,"elements":snapshot.elements,"size":size,"status":status,"partial":snapshot.partial,"walk_attempts":snapshot.attempts,"window_lookup":snapshot.lookup,"menus":self.menus.lock().unwrap().observation()})
     }
     pub fn select_element(
         &self,
@@ -309,6 +320,15 @@ impl Session {
             let item = result.as_ref().ok().copied();
             if !keys.is_empty() {
                 *self.menu_resolution.lock().unwrap() = result.err();
+                if let Some(error) = self
+                    .menu_resolution
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .and_then(|d| d.background_error(self.events_available(action)))
+                {
+                    return Err(error);
+                }
             }
             let target = item.map(menus::Item::target);
             *self.resolved_menu.lock().unwrap() = item.map(|i| menus::Item {
@@ -338,9 +358,10 @@ impl Session {
             .transpose()?;
         let mut target = ax_actions::policy_target(self.pid, Some(window.id), action, element)?;
         if let Some((id, index)) = selected {
-            let (node, _) = snapshot.resolve(id, index)?;
+            let (node, element) = snapshot.resolve(id, index)?;
             if node.role == "AXMenuItem" {
-                target.label = node.label.clone();
+                target.role = "AXMenuItem".into();
+                target.label = menus::path(element).ok_or("AX menu path unavailable")?;
             }
         }
         Ok(target)
@@ -394,6 +415,9 @@ impl Session {
                 window.id,
                 ax_actions::Element::alive,
             )?;
+            if matches!(action, Action::Click { .. }) {
+                *self.pressed.lock().unwrap() = Some(element.clone());
+            }
             if node.role == "AXMenuItem" {
                 *self.path.lock().unwrap() = Some("ax-menu");
                 *self.menu_title.lock().unwrap() = Some(node.label.clone());
@@ -452,7 +476,10 @@ impl Session {
                 }
             }
         } else {
-            ax_actions::try_action(self.pid, window.id, action)?
+            if matches!(action, Action::Click { .. }) {
+                *self.pressed.lock().unwrap() = ax_actions::target(self.pid, action_point(action));
+            }
+            ax_actions::try_action(self.pid, window.id, action, &mut reason)?
         };
         self.ax_fallback.store(!handled, Ordering::SeqCst);
         if !handled && reason.is_none() {
@@ -494,8 +521,11 @@ impl Session {
             .unwrap()
             .get_or_insert_with(|| "action_requires_pixel_events".into());
         if !self.events_available(action) {
-            *self.fallback_reason.lock().unwrap() =
-                Some("background_keyboard_requires_activation".into());
+            let mut reason = self.fallback_reason.lock().unwrap();
+            *reason = Some(format!(
+                "background_keyboard_requires_activation; {}",
+                reason.as_deref().unwrap_or_default()
+            ));
             return false;
         }
         // A fresh AX failure still gets its one requested event attempt, even
@@ -527,8 +557,12 @@ impl Session {
         if self.events_available(action) {
             true
         } else {
-            *self.fallback_reason.lock().unwrap() =
-                Some("background_keyboard_focus_changed".into());
+            let mut reason = self.fallback_reason.lock().unwrap();
+            *reason = Some(format!(
+                "background_keyboard_focus_changed; {}",
+                reason.as_deref().unwrap_or_default()
+            ));
+            drop(reason);
             self.end_delivery(false);
             false
         }

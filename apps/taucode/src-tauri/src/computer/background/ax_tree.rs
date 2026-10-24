@@ -49,6 +49,7 @@ pub struct Snapshot<H> {
     pub status: &'static str,
     pub lookup: serde_json::Value,
     pub attempts: usize,
+    pub partial: usize,
     pub binding: Option<(i32, u32)>,
     handles: Vec<H>,
 }
@@ -60,6 +61,7 @@ impl<H> Default for Snapshot<H> {
             status: "missing_window",
             lookup: serde_json::Value::Null,
             attempts: 0,
+            partial: 0,
             binding: None,
             handles: vec![],
         }
@@ -144,6 +146,7 @@ impl<H> Snapshot<H> {
         self.binding = None;
         self.elements.clear();
         self.handles.clear();
+        self.partial = 0;
         self.status = if root.is_none() {
             "missing_window"
         } else {
@@ -158,16 +161,27 @@ impl<H> Snapshot<H> {
             let Some((handle, parent, depth)) = pending.pop() else {
                 break;
             };
-            let mut node = provider.read(&handle);
+            let (mut node, skips) =
+                super::ax_actions::snapshot_read(depth == 0, || provider.read(&handle));
+            self.partial += skips;
+            if node.role.is_empty() && skips > 0 {
+                continue;
+            }
+            if skips > 0 {
+                node.value.clear();
+            }
             let index = self.elements.len();
             node.index = index;
             node.parent_index = parent;
             node.depth = depth;
             if depth < 25 && provider.now() < deadline {
                 let remaining = cap.saturating_sub(index + 1 + pending.len());
+                let (children, skips) = super::ax_actions::snapshot_read(depth == 0, || {
+                    provider.children(&handle, remaining)
+                });
+                self.partial += skips;
                 pending.extend(
-                    provider
-                        .children(&handle, remaining)
+                    children
                         .into_iter()
                         .take(remaining)
                         .rev()
@@ -198,7 +212,9 @@ impl Snapshot<Element> {
     pub fn capture(&mut self, pid: i32, window: &Window) -> Result<(), String> {
         let result = super::ax_actions::retry_walk(
             || {
-                let (root, lookup) = super::ax_actions::window_element(pid, window.id);
+                let ((root, lookup), skips) = super::ax_actions::snapshot_read(false, || {
+                    super::ax_actions::window_element(pid, window.id)
+                });
                 self.replace(
                     &Native(window),
                     root,
@@ -206,6 +222,7 @@ impl Snapshot<Element> {
                     SNAPSHOT_BUDGET,
                 );
                 self.lookup = lookup;
+                self.partial += skips;
                 super::ax_actions::check_walk()?;
                 self.binding = Some((pid, window.id));
                 Ok(())
@@ -235,7 +252,11 @@ impl Provider for Native<'_> {
             let role = e.text("AXRole").unwrap_or_default();
             let secure = secure_field(&role, e.text("AXSubrole").as_deref());
             // Most nodes have a label before AXHelp/AXIdentifier; avoid extra RPCs.
-            let label = label(|attribute| e.text(attribute));
+            let label = if role == "AXMenuItem" {
+                super::menus::path(e).unwrap_or_default()
+            } else {
+                label(|attribute| e.text(attribute))
+            };
             let actions = e.actions();
             let value_settable = actions.is_empty() && e.settable("AXValue");
             Node {

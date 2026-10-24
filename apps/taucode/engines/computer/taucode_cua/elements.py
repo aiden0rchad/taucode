@@ -36,12 +36,13 @@ def grounding_prompt(description, elements):
 
 
 def parse_element(response, elements):
-    response = response.strip()
-    if response == 'none':
+    response = re.sub(r'[*`_]', '', response).strip().rstrip('.,;:!?').strip()
+    if response.lower() == 'none':
         return None
-    if not re.fullmatch(r'0|[1-9][0-9]*', response) or len(response) > 10:
+    tokens = re.findall(r'[+-]?[0-9]+', response)
+    if len(tokens) != 1 or len(tokens[0]) > 10:
         raise ValueError('Expected one element index or none')
-    index = int(response)
+    index = int(tokens[0])
     if not any(e['index'] == index for e in elements):
         raise ValueError('Element index outside snapshot')
     return index

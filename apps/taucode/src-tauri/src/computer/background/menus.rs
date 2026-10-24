@@ -12,6 +12,14 @@ pub struct Diagnostic {
     pub reason: &'static str,
     pub candidates: Vec<String>,
 }
+impl Diagnostic {
+    pub fn background_error(&self, events_available: bool) -> Option<String> {
+        (self.reason == "disabled" || !events_available).then(|| format!(
+            "{}Background hotkey menu {}: {}. Use window-level controls (toolbar buttons, the Action/gear menu, or a context menu)",
+            super::super::runner::RECOVERABLE, self.reason, self.candidates.join(", ")
+        ))
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 struct Combo {
@@ -311,7 +319,9 @@ pub fn path(element: &Element) -> Option<String> {
     let mut labels = vec![];
     let mut current = Some(element.clone());
     for _ in 0..26 {
-        let e = current?;
+        let Some(e) = current else {
+            break;
+        };
         let role = e.text("AXRole")?;
         if role == "AXMenuBar" {
             labels.reverse();
@@ -325,7 +335,56 @@ pub fn path(element: &Element) -> Option<String> {
         }
         current = e.attr("AXParent");
     }
-    None
+    labels.reverse();
+    (!labels.is_empty()).then(|| format!("Context > {}", labels.join(" > ")))
+}
+// Open popup/context menus live outside the captured window's AX subtree.
+pub fn open_elements(pid: i32, pressed: Option<&Element>) -> Vec<(super::ax_tree::Node, Element)> {
+    let mut roots = Element::app(pid)
+        .map(|app| app.children("AXChildren", 128))
+        .unwrap_or_default();
+    if let Some(element) = pressed {
+        roots.extend(element.children("AXChildren", 128));
+    }
+    open_menu_elements(&Native, roots)
+}
+fn open_menu_elements<P: Provider>(
+    provider: &P,
+    roots: Vec<P::Handle>,
+) -> Vec<(super::ax_tree::Node, P::Handle)> {
+    let mut result = vec![];
+    let deadline = provider.now() + Duration::from_millis(200);
+    for root in roots {
+        if result.len() >= MAX_MENU_ELEMENTS || provider.now() >= deadline {
+            break;
+        }
+        if provider.read(&root).role != "AXMenu" {
+            continue;
+        }
+        result.push((
+            super::ax_tree::Node {
+                role: "AXMenu".into(),
+                label: "Context".into(),
+                ..Default::default()
+            },
+            root.clone(),
+        ));
+        let inventory = walk(
+            provider,
+            root,
+            MAX_MENU_ELEMENTS,
+            deadline.saturating_duration_since(provider.now()),
+        );
+        for item in inventory.items {
+            if result.len() >= MAX_MENU_ELEMENTS {
+                return result;
+            }
+            let mut node = item.node();
+            node.label = format!("Context > {}", item.path);
+            result.push((node, item.handle));
+        }
+    }
+    result
 }
 pub fn read(pid: i32) -> Inventory<Element> {
     let Some(app) = Element::app(pid) else {
@@ -355,6 +414,46 @@ mod tests {
     }
     fn keys(keys: &[&str]) -> Vec<String> {
         keys.iter().map(|s| s.to_string()).collect()
+    }
+    #[test]
+    fn open_menu_roots_include_containers_and_items_before_menubar_entries() {
+        let fake = Fake(vec![
+            (
+                Metadata {
+                    role: "AXMenu".into(),
+                    ..Default::default()
+                },
+                vec![1],
+            ),
+            (
+                Metadata {
+                    role: "AXMenuItem".into(),
+                    title: "New Folder".into(),
+                    enabled: true,
+                    ..Default::default()
+                },
+                vec![],
+            ),
+            (
+                Metadata {
+                    role: "AXWindow".into(),
+                    ..Default::default()
+                },
+                vec![1],
+            ),
+        ]);
+        let entries = open_menu_elements(&fake, vec![2, 0]);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0.role, "AXMenu");
+        assert_eq!(entries[1].0.label, "Context > New Folder");
+        assert_eq!(entries[1].0.actions, ["AXPress"]);
+        let mut snapshot = super::super::ax_tree::Snapshot::default();
+        snapshot.id = 1;
+        snapshot.binding = Some((42, 3));
+        for (node, handle) in entries {
+            snapshot.append_menu(node, handle);
+        }
+        assert_eq!(*snapshot.resolve_bound(1, 1, 42, 3, |_| true).unwrap().1, 1);
     }
     #[test]
     fn large_application_menu_cannot_starve_file_commands() {
@@ -467,6 +566,17 @@ mod tests {
         let failure = inv.resolve(&chord).err().unwrap();
         assert_eq!(failure.reason, "disabled");
         assert_eq!(failure.candidates, ["File > New Folder"]);
+        for events in [false, true] {
+            let reason = failure.background_error(events).unwrap();
+            assert!(reason.contains("File > New Folder"));
+            assert!(reason.contains("Action/gear"));
+        }
+        let unresolved = Diagnostic {
+            reason: "no_match",
+            candidates: vec![],
+        };
+        assert!(unresolved.background_error(false).is_some());
+        assert!(unresolved.background_error(true).is_none());
         inv.items[0].metadata.enabled = true;
         for character in ["N", "n"] {
             inv.items[0].metadata.character = character.into();

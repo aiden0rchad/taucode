@@ -57,12 +57,31 @@ fn string(s: &NSString) -> Ref {
     (s as *const NSString).cast()
 }
 thread_local! {
-    // Optional AX attributes may suppress errors. A walk must still discard any
-    // partial evidence on a transient, including errors in nested label reads.
+    // Pane inspection discards partial evidence. Element snapshots isolate node
+    // reads below and only propagate an invalid window root to the retry loop.
     static WALK_ERROR: std::cell::RefCell<Option<Option<String>>> = const { std::cell::RefCell::new(None) };
+    static SNAPSHOT_READ: std::cell::Cell<Option<(bool, usize)>> = const { std::cell::Cell::new(None) };
+}
+pub(super) fn snapshot_read<T>(root: bool, read: impl FnOnce() -> T) -> (T, usize) {
+    let prior = SNAPSHOT_READ.with(|slot| slot.replace(Some((root, 0))));
+    let value = read();
+    let skips = SNAPSHOT_READ.with(|slot| slot.replace(prior).unwrap().1);
+    (value, skips)
 }
 fn observe_read(name: &str, status: i32) -> i32 {
     if matches!(status, -25202 | -25204) {
+        let partial = SNAPSHOT_READ.with(|slot| {
+            if let Some((root, skips)) = slot.get() {
+                if !root || status != -25202 {
+                    slot.set(Some((root, skips + 1)));
+                    return true;
+                }
+            }
+            false
+        });
+        if partial {
+            return status;
+        }
         WALK_ERROR.with(|slot| {
             if let Some(error) = slot.borrow_mut().as_mut() {
                 error.get_or_insert_with(|| format!("{name}: ax_error({status})"));
@@ -132,11 +151,19 @@ impl Element {
     }
     pub(super) fn press(&self) -> Result<(), String> {
         if self.text("AXEnabled").as_deref() != Some("1") {
-            return Err("AX menu item is disabled or unavailable".into());
+            return Err(format!(
+                "{}AX menu item is disabled or unavailable",
+                super::super::runner::RECOVERABLE
+            ));
         }
         let status = self.apply("AXPress", None);
         if status == 0 {
             Ok(())
+        } else if matches!(status, -25205 | -25206) {
+            Err(format!(
+                "{}AXPress menu unsupported ({status}); no pixel fallback",
+                super::super::runner::RECOVERABLE
+            ))
         } else {
             Err(format!("AXPress menu: ax_error({status}); not retried"))
         }
@@ -347,7 +374,7 @@ impl Element {
         action_result(attribute, self.apply(attribute, Some(text)), reason)
     }
 }
-fn target(pid: i32, point: Option<[f64; 2]>) -> Option<Element> {
+pub(super) fn target(pid: i32, point: Option<[f64; 2]>) -> Option<Element> {
     let app = Element::app(pid)?;
     let element = if let Some(p) = point {
         let mut element = std::ptr::null();
@@ -832,7 +859,12 @@ pub fn restore_window(pid: i32, id: u32) {
     }
 }
 
-pub fn try_action(pid: i32, window: u32, action: &Action) -> Result<bool, String> {
+pub fn try_action(
+    pid: i32,
+    window: u32,
+    action: &Action,
+    reason: &mut Option<String>,
+) -> Result<bool, String> {
     if super::choose_path(action, true, false, false) != super::Path::Ax {
         return Ok(false);
     }
@@ -896,7 +928,7 @@ pub fn try_action(pid: i32, window: u32, action: &Action) -> Result<bool, String
         }
         _ => return Ok(false),
     };
-    action_status(status)
+    action_result("AXAction", status, reason)
 }
 
 pub fn action_status(status: i32) -> Result<bool, String> {
@@ -1314,13 +1346,17 @@ mod element_tests {
     }
 
     #[test]
-    fn snapshot_restart_discards_partial_nodes_and_handles() {
-        struct TransientProvider(std::cell::Cell<usize>);
+    fn snapshot_skips_nonroot_transients_and_restarts_only_invalid_root() {
+        struct TransientProvider {
+            reads: std::cell::Cell<usize>,
+            index: usize,
+            status: i32,
+        }
         impl Provider for TransientProvider {
             type Handle = usize;
             fn read(&self, index: &usize) -> Node {
-                if *index == 1 && self.0.replace(1) == 0 {
-                    let _ = metadata_read::<()>("AXRole", |_| Err(-25202));
+                if *index == self.index && self.reads.replace(1) == 0 {
+                    let _ = metadata_read::<()>("AXActions", |_| Err(self.status));
                 }
                 Node {
                     role: "AXButton".into(),
@@ -1335,20 +1371,32 @@ mod element_tests {
                 }
             }
         }
-        let provider = TransientProvider(std::cell::Cell::new(0));
-        let mut snapshot = Snapshot::default();
-        let (_, attempts) = retry_walk(
-            || {
-                snapshot.replace(&provider, Some(0), 10, SNAPSHOT_BUDGET);
-                check_walk()
-            },
-            |_| {},
-        )
-        .unwrap();
-        assert_eq!(attempts, 2);
-        assert_eq!(snapshot.elements.len(), 3);
-        assert!(snapshot.resolve(1, 0).is_err());
-        assert_eq!(*snapshot.resolve(snapshot.id, 2).unwrap().1, 2);
+        for (index, status, expected_attempts, partial) in [
+            (1, -25202, 1, 1),
+            (1, -25204, 1, 1),
+            (0, -25202, 2, 0),
+            (0, -25204, 1, 1),
+        ] {
+            let provider = TransientProvider {
+                reads: std::cell::Cell::new(0),
+                index,
+                status,
+            };
+            let mut snapshot = Snapshot::default();
+            let (_, attempts) = retry_walk(
+                || {
+                    snapshot.replace(&provider, Some(0), 10, SNAPSHOT_BUDGET);
+                    check_walk()
+                },
+                |_| {},
+            )
+            .unwrap();
+            assert_eq!(attempts, expected_attempts);
+            assert_eq!(snapshot.partial, partial);
+            assert_eq!(snapshot.elements.len(), 3);
+            assert_eq!(snapshot.resolve(1, 0).is_err(), expected_attempts > 1);
+            assert_eq!(*snapshot.resolve(snapshot.id, 2).unwrap().1, 2);
+        }
     }
 
     #[test]
