@@ -32,6 +32,7 @@ mod rules;
 mod settings;
 mod shared;
 mod state;
+mod chats;
 mod storage;
 mod tailscale;
 #[cfg(desktop)]
@@ -204,6 +205,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
+            chats::chat_request,
+            chats::read_chat_attachment,
+            chats::set_window_mode,
             providers::engine_runtime,
             computer_commands::computer_request,
             computer_commands::computer_request_permissions,

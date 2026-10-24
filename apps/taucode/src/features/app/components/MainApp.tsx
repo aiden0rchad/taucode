@@ -1,4 +1,5 @@
 import { Checkpoints } from "@/features/checkpoints/Checkpoints";
+import { useModeSettings } from "@/features/chat/ModeShell";
 import { AgentsContext, agentThreadDetails } from "@/features/agents/agents";
 import { useSideChats, sideChatQuote } from "@/features/sidechats/useSideChats";
 import { SideChatPane, SideChatSplit } from "@/features/sidechats/SideChatPane";
@@ -124,6 +125,7 @@ export default function MainApp() {
     clearDebugEntries,
     shouldReduceTransparency,
   } = useAppBootstrapOrchestration();
+  useModeSettings(appSettings);
   const {
     threadListSortKey,
     setThreadListSortKey,

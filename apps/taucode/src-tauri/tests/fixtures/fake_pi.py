@@ -20,6 +20,17 @@ if args.session_dir:
     assert not (pathlib.Path(os.environ["PI_CODING_AGENT_DIR"]) / "auth.json").exists()
     assert "keychain-secret-canary" not in " ".join(sys.argv)
     assert os.environ["TAUCODE_PROVIDER_FIRST_KEY"] == "keychain-secret-canary"
+    if os.environ.get("TAUCODE_CHAT") == "1":
+        assert "--no-tools" in sys.argv
+        assert "--no-context-files" in sys.argv
+        assert "--system-prompt" in sys.argv
+        assert any(arg.endswith("taucode-gate.ts") for arg in sys.argv)
+        assert not any(arg.endswith("taucode-subagents.ts") for arg in sys.argv)
+        if os.environ.get("TAUCODE_CHAT_WEB") != "1":
+            assert "builtin:mcp" not in sys.argv
+            assert json.loads((pathlib.Path(os.environ["PI_CODING_AGENT_DIR"]) / "mcp.json").read_text())["mcpServers"] == {}
+        assert pathlib.Path.cwd() == pathlib.Path(header["cwd"])
+        session.with_suffix(".spawn").write_text(json.dumps({"args": sys.argv, "cwd": str(pathlib.Path.cwd())}))
 
 
 def record(request):

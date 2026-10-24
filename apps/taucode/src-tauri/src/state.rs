@@ -30,6 +30,7 @@ impl Default for TcpDaemonRuntime {
 }
 
 pub(crate) struct AppState {
+    pub(crate) chats: crate::shared::chats::Chats,
     pub(crate) browser: Arc<crate::shared::browser::Browser>,
     pub(crate) computer: Arc<crate::shared::computer::Computer>,
     pub(crate) browser_streams: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
@@ -58,6 +59,7 @@ impl AppState {
         let app_settings = read_settings(&settings_path).unwrap_or_default();
         Self {
             browser: crate::shared::browser::Browser::new(data_dir.clone()),
+            chats: crate::shared::chats::Chats::new(data_dir.clone(), crate::event_sink::TauriEventSink::new(app.clone())),
             computer: crate::shared::computer::Computer::new(data_dir.clone()),
             browser_streams: Mutex::new(HashMap::new()),
             codegraph: crate::shared::codegraph_core::Codegraph::new(data_dir),

@@ -10,6 +10,56 @@ fn fixture(name: &str) -> String {
     )
     .unwrap()
 }
+
+#[tokio::test]
+async fn chat_profile_is_isolated_and_forks_models_and_last_user_without_changing_parent() {
+    let dir = temp();
+    let mut engine = PiEngine::chat(dir.clone(), Arc::new(|_, _| {}));
+    engine.fake = true;
+    engine.keys = Arc::new(Keys);
+    let providers: Vec<ProviderEntry> = ["first", "second"].iter().map(|id| serde_json::from_value(json!({"id":id,"name":id,"kind":"ollama","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"fake","enabled":true}]})).unwrap()).collect();
+    engine.configure("chats", providers.clone(), AgentPolicy::default()).await;
+    let started = engine.request("chats", "thread/start", json!({"model":"first/fake","cwd":"/must-not-use"})).await.unwrap();
+    let id = started["result"]["thread"]["id"].as_str().unwrap();
+    let file = engine.directory("chats").unwrap().join(format!("{id}.jsonl"));
+    assert!(file.starts_with(dir.join("chats")));
+    assert!(!dir.join("pi/sessions").exists());
+    let spawn: Value = serde_json::from_slice(&std::fs::read(file.with_extension("spawn")).unwrap()).unwrap();
+    assert_eq!(spawn["cwd"], json!(dir.join("chats/scratch").join(id)));
+    assert!(spawn["args"].as_array().unwrap().iter().any(|arg| arg == "--no-tools"));
+    assert_eq!(std::fs::read_dir(dir.join("chats/scratch").join(id)).unwrap().count(), 0);
+    #[cfg(unix)] {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(dir.join("chats/scratch").join(id)).unwrap().permissions().mode() & 0o777, 0o700);
+    }
+    engine.sessions.lock().await[id].process.as_ref().unwrap().shutdown().await.unwrap();
+    use std::io::Write;
+    let mut output = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
+    for entry in [
+        json!({"type":"model_change","id":"model","parentId":null,"provider":"taucode-first","modelId":"fake"}),
+        json!({"type":"message","id":"u1","parentId":"model","message":{"role":"user","timestamp":1,"content":"First"}}),
+        json!({"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","timestamp":2,"content":[{"type":"text","text":"Answer"}]}}),
+        json!({"type":"message","id":"u2","parentId":"a1","message":{"role":"user","timestamp":3,"content":"Second"}}),
+        json!({"type":"message","id":"a2","parentId":"u2","message":{"role":"assistant","timestamp":4,"content":[{"type":"text","text":"Last answer"}]}}),
+    ] { writeln!(output, "{entry}").unwrap(); }
+    drop(output);
+    let original = std::fs::read(&file).unwrap();
+    let fork = engine.request("chats", "thread/fork", json!({"threadId":id,"model":"second/fake","beforeUserItemId":format!("{id}:user:3")})).await.unwrap();
+    let child = fork["result"]["thread"]["id"].as_str().unwrap();
+    let child_file = engine.directory("chats").unwrap().join(format!("{child}.jsonl"));
+    let (thread, history) = read_session(&child_file, &providers).unwrap();
+    assert_eq!(thread["modelProvider"], "second");
+    assert_eq!(thread["forkedFromId"], id);
+    assert_eq!(history.turns.len(), 1);
+    assert!(!json!(history.turns).to_string().contains("Second"));
+    assert_ne!(fork["result"]["thread"]["cwd"], started["result"]["thread"]["cwd"]);
+    assert_eq!(std::fs::read(&file).unwrap(), original);
+    let listed = engine.request("chats", "thread/list", json!({})).await.unwrap();
+    assert_eq!(listed["result"]["data"].as_array().unwrap().iter().find(|t| t["id"] == child).unwrap()["modelProvider"], "second");
+    engine.request("chats", "thread/resume", json!({"threadId":child})).await.unwrap();
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
 fn replay(name: &str) -> (Translator, Vec<Value>) {
     let mut translator = Translator::new("recorded", "/tmp/taucode-fixture");
     let mut events = vec![];
@@ -853,6 +903,21 @@ async fn real_pi_offline_startup_preserves_isolation_and_session_identity() {
         .join("pi/sessions/workspace")
         .join(format!("{id}.jsonl"))
         .exists());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn real_pi_chat_starts_offline_with_only_the_gate() {
+    let dir = temp();
+    let engine = PiEngine::chat(dir.clone(), Arc::new(|_, _| {}));
+    let provider: ProviderEntry = serde_json::from_value(json!({"id":"local","name":"Offline","kind":"ollama","enabled":true,"auth":{"type":"none"},"models":[{"id":"taucode-offline-test","enabled":true}]})).unwrap();
+    engine.configure("chats", vec![provider], AgentPolicy::default()).await;
+    let response = engine.request("chats", "thread/start", json!({})).await.unwrap();
+    let id = response["result"]["thread"]["id"].as_str().unwrap();
+    let process = engine.sessions.lock().await[id].process.clone().unwrap();
+    assert_eq!(*process.extensions.lock().await, std::collections::HashSet::from(["taucode-gate".to_owned()]));
+    assert!(dir.join("chats/scratch").join(id).is_dir());
+    engine.shutdown().await.unwrap();
     std::fs::remove_dir_all(dir).unwrap();
 }
 

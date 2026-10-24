@@ -77,6 +77,8 @@ pub(crate) async fn update_app_settings_core(
     let _ = codex_config::write_unified_exec_enabled(settings.unified_exec_enabled);
 
     let _ = codex_config::write_personality(settings.personality.as_str());
+    let mut current = app_settings.lock().await;
+    settings.window_modes = current.window_modes.clone();
     write_settings(settings_path, &settings)?;
     if !matches!(settings.backend_mode, crate::types::BackendMode::Remote) {
         let home = settings_path
@@ -93,7 +95,6 @@ pub(crate) async fn update_app_settings_core(
             &settings,
         )?;
     }
-    let mut current = app_settings.lock().await;
     *current = settings.clone();
     drop(current);
     if !matches!(settings.backend_mode, crate::types::BackendMode::Remote) {

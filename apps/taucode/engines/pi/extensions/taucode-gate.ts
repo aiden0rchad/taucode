@@ -7,6 +7,7 @@ import { connectorDecision, type Connector } from "./lib/connectors.ts";
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => { ctx.ui.setStatus("taucode-gate", "ready"); });
   pi.on("tool_call", async (event, ctx) => {
+    if (process.env.TAUCODE_CHAT === "1" && !(process.env.TAUCODE_CHAT_WEB === "1" && ["mcp__taucode_browser__browser_navigate", "mcp__taucode_browser__browser_snapshot", "mcp__taucode_browser__browser_take_screenshot"].includes(event.toolName))) return { block: true, reason: "Tools are disabled in Chat mode" };
     if (!["bash", "write", "edit"].includes(event.toolName) && !event.toolName.startsWith("mcp__")) return;
     const home = process.env.PI_CODING_AGENT_DIR!;
     const session = process.env.TAUCODE_SESSION_KEY;

@@ -295,7 +295,10 @@ export type McpServerEntry = {
 };
 export type McpConnectionResult = { ok: boolean; latencyMs: number; tools?: { name: string; description?: string }[]; error?: string };
 
+export type AppMode = "code" | "chat" | "work";
 export type AppSettings = {
+  windowModes?: Record<string, AppMode>;
+  chatDefaultModel?: ModelRef | null;
   computer?: import("@/features/computer/computer").ComputerSettings;
   browser?: BrowserSettings;
   mcpServers?: McpServerEntry[];
