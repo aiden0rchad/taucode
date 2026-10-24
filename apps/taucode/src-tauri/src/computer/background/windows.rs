@@ -156,12 +156,14 @@ pub fn validate(expected: &Window, pid: i32) -> Result<bool, String> {
                 msg_send![object, objectForKey:&*NSString::from_str(key)]
             };
             let owner = get(&*dict, "kCGWindowOwnerPID");
+            let id = get(&*dict, "kCGWindowNumber");
             let bounds = get(&*dict, "kCGWindowBounds");
             let onscreen = get(&*dict, "kCGWindowIsOnscreen");
-            if owner.is_null() || bounds.is_null() {
+            if owner.is_null() || bounds.is_null() || id.is_null() {
                 continue;
             }
             let owner: i32 = msg_send![owner, intValue];
+            let id: u32 = msg_send![id, unsignedIntValue];
             let onscreen = !onscreen.is_null() && msg_send![onscreen, boolValue];
             let values: Option<Vec<f64>> = ["X", "Y", "Width", "Height"]
                 .iter()
@@ -174,25 +176,14 @@ pub fn validate(expected: &Window, pid: i32) -> Result<bool, String> {
                     }
                 })
                 .collect();
-            if owner == pid
-                && values.as_deref()
-                    == Some(&[
-                        expected.origin[0],
-                        expected.origin[1],
-                        expected.size[0],
-                        expected.size[1],
-                    ])
-            {
-                if !onscreen && super::ax_actions::minimized(pid, expected.id)? {
-                    return Err(format!(
-                        "Target window is minimized; pid={pid}, window={}",
-                        expected.id
-                    ));
-                }
-                return Ok(onscreen);
+            validate_observation(expected, pid, id, owner, values.as_deref(), onscreen)?;
+            if !onscreen && super::ax_actions::minimized(pid, expected.id)? {
+                return Err(format!(
+                    "Target window is minimized; pid={pid}, window={}",
+                    expected.id
+                ));
             }
-            return Err(format!("Window validation: window={}, owner before={pid} after={owner}, bounds before={:?} after={values:?}, on-screen={onscreen}; action cancelled",
-                expected.id, [expected.origin[0], expected.origin[1], expected.size[0], expected.size[1]]));
+            return Ok(onscreen);
         }
     }
     Err(format!(
@@ -201,9 +192,98 @@ pub fn validate(expected: &Window, pid: i32) -> Result<bool, String> {
     ))
 }
 
+fn validate_observation(
+    expected: &Window,
+    pid: i32,
+    id: u32,
+    owner: i32,
+    values: Option<&[f64]>,
+    on_screen: bool,
+) -> Result<(), String> {
+    let before = [
+        expected.origin[0],
+        expected.origin[1],
+        expected.size[0],
+        expected.size[1],
+    ];
+    let valid_bounds = values
+        .is_some_and(|v| v.len() == 4 && v.iter().all(|n| n.is_finite()) && v[2] > 0. && v[3] > 0.);
+    let unchanged = values.is_some_and(|v| {
+        if !valid_bounds {
+            return false;
+        }
+        let edges = |v: &[f64]| [v[0], v[1], v[0] + v[2], v[1] + v[3]];
+        v == before
+            || (on_screen
+                && edges(v)
+                    .iter()
+                    .zip(edges(&before))
+                    .all(|(a, b)| (a - b).abs() <= 4.))
+    });
+    if owner == pid && id == expected.id && unchanged {
+        return Ok(());
+    }
+    let diagnostic = format!("Window validation: window={} after={id}, owner before={pid} after={owner}, bounds before={before:?} after={values:?}, on-screen={on_screen}; action cancelled", expected.id);
+    // Missing/invalid geometry and ownership changes are never retryable.
+    Err(if owner == pid && valid_bounds && on_screen {
+        format!("{}{diagnostic}", super::super::runner::STALE_OBSERVATION)
+    } else {
+        diagnostic
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn geometry_tolerates_four_points_per_edge_and_rejects_identity_changes() {
+        let window = Window {
+            id: 7,
+            title: String::new(),
+            origin: [10., 20.],
+            size: [100., 80.],
+            on_screen: true,
+        };
+        for bounds in [
+            [10., 20., 100., 80.],
+            [14., 16., 100., 80.],
+            [6., 24., 108., 72.],
+        ] {
+            assert_eq!(
+                validate_observation(&window, 42, 7, 42, Some(&bounds), true),
+                Ok(())
+            );
+        }
+        for (id, bounds) in [
+            (7, [14.01, 20., 100., 80.]),
+            (7, [14., 20., 101., 80.]),
+            (8, [10., 20., 100., 80.]),
+        ] {
+            assert!(
+                validate_observation(&window, 42, id, 42, Some(&bounds), true)
+                    .unwrap_err()
+                    .starts_with(super::super::super::runner::STALE_OBSERVATION)
+            );
+        }
+        for (owner, bounds, visible) in [
+            (43, Some([10., 20., 100., 80.]), true),
+            (42, None, true),
+            (42, Some([f64::NAN, 20., 100., 80.]), true),
+            (42, Some([14., 20., 100., 80.]), false),
+        ] {
+            assert!(!validate_observation(
+                &window,
+                42,
+                7,
+                owner,
+                bounds.as_ref().map(|v| v.as_slice()),
+                visible
+            )
+            .unwrap_err()
+            .starts_with(super::super::super::runner::STALE_OBSERVATION));
+        }
+    }
 
     #[test]
     fn windowless_launch_reopens_once_polls_and_stops_at_five_seconds() {

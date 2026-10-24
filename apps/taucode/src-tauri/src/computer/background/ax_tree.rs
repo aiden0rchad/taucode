@@ -48,6 +48,7 @@ pub struct Snapshot<H> {
     pub elements: Vec<Node>,
     pub status: &'static str,
     pub lookup: serde_json::Value,
+    pub attempts: usize,
     pub binding: Option<(i32, u32)>,
     handles: Vec<H>,
 }
@@ -58,6 +59,7 @@ impl<H> Default for Snapshot<H> {
             elements: vec![],
             status: "missing_window",
             lookup: serde_json::Value::Null,
+            attempts: 0,
             binding: None,
             handles: vec![],
         }
@@ -150,6 +152,9 @@ impl<H> Snapshot<H> {
         let deadline = provider.now() + budget;
         let mut pending: Vec<_> = root.into_iter().map(|h| (h, None, 0)).collect();
         while self.elements.len() < cap && provider.now() < deadline {
+            if super::ax_actions::check_walk().is_err() {
+                break;
+            }
             let Some((handle, parent, depth)) = pending.pop() else {
                 break;
             };
@@ -189,6 +194,39 @@ impl<H> Snapshot<H> {
 }
 
 pub struct Native<'a>(pub &'a Window);
+impl Snapshot<Element> {
+    pub fn capture(&mut self, pid: i32, window: &Window) -> Result<(), String> {
+        let result = super::ax_actions::retry_walk(
+            || {
+                let (root, lookup) = super::ax_actions::window_element(pid, window.id);
+                self.replace(
+                    &Native(window),
+                    root,
+                    MAX_ELEMENTS - super::menus::MAX_MENU_ELEMENTS,
+                    SNAPSHOT_BUDGET,
+                );
+                self.lookup = lookup;
+                super::ax_actions::check_walk()?;
+                self.binding = Some((pid, window.id));
+                Ok(())
+            },
+            std::thread::sleep,
+        );
+        match result {
+            Ok(((), attempts)) => {
+                self.attempts = attempts;
+                Ok(())
+            }
+            Err(error) => {
+                self.elements.clear();
+                self.handles.clear();
+                self.binding = None;
+                self.status = "ax_read_error";
+                Err(error)
+            }
+        }
+    }
+}
 impl Provider for Native<'_> {
     type Handle = Element;
     fn read(&self, e: &Element) -> Node {

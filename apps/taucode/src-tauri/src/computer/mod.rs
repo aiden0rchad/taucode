@@ -537,7 +537,15 @@ impl runner::Environment for Live {
         if let Action::Scroll { clicks, .. } = action {
             let mut handled = false;
             for _ in 0..clicks.unsigned_abs().max(1) {
-                let next = control.guarded(context, || s.context(), || s.try_ax(action))?;
+                let next = control
+                    .guarded(context, || s.context(), || s.try_ax(action))
+                    .map_err(|error| {
+                        if handled {
+                            format!("AX scroll interrupted after partial delivery: {error}")
+                        } else {
+                            error
+                        }
+                    })?;
                 if !next {
                     if handled {
                         return Err("AX scroll interrupted after partial delivery".into());
@@ -596,6 +604,28 @@ impl runner::Environment for Live {
             s.end_foreground();
             s.guard.end_action();
         }
+    }
+    fn settle(&self) -> crate::shared::providers::BoxFuture<'_, Result<(), String>> {
+        Box::pin(async {
+            if let Some(s) = &self.session {
+                let path = *s.path.lock().unwrap();
+                if matches!(path, Some("ax-select" | "ax-element" | "ax-menu")) {
+                    let id = s.window.lock().unwrap().as_ref().map(|w| w.id);
+                    if let Some(id) = id {
+                        let pid = s.pid;
+                        runner::settle(|| async move {
+                            tokio::task::spawn_blocking(move || {
+                                background::ax_actions::window_state(pid, id)
+                            })
+                            .await
+                            .map_err(|e| e.to_string())?
+                        })
+                        .await;
+                    }
+                }
+            }
+            Ok(())
+        })
     }
 
     fn target(&self, app: &str) -> Result<String, String> {

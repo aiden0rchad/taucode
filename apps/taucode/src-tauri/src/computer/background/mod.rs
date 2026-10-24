@@ -226,16 +226,8 @@ impl Session {
         *self.resolved_menu.lock().unwrap() = None;
         *self.observed.lock().unwrap() = Some(Sha256::digest(frame.png.as_bytes()).into());
         *self.selected.lock().unwrap() = None;
-        let (root, lookup) = ax_actions::window_element(self.pid, window.id);
         let mut snapshot = self.snapshot.lock().unwrap();
-        snapshot.replace(
-            &ax_tree::Native(&window),
-            root,
-            ax_tree::MAX_ELEMENTS - menus::MAX_MENU_ELEMENTS,
-            ax_tree::SNAPSHOT_BUDGET,
-        );
-        snapshot.lookup = lookup;
-        snapshot.binding = Some((self.pid, window.id));
+        snapshot.capture(self.pid, &window)?;
         let menus = menus::read(self.pid);
         for item in menus.elements() {
             snapshot.append_menu(item.node(), item.handle.clone());
@@ -259,7 +251,7 @@ impl Session {
     pub fn snapshot_json(&self) -> serde_json::Value {
         let snapshot = self.snapshot.lock().unwrap();
         let size = self.window.lock().unwrap().as_ref().map(|w| w.size);
-        serde_json::json!({"snapshot_id":snapshot.id,"elements":snapshot.elements,"size":size,"status":snapshot.status,"window_lookup":snapshot.lookup,"menus":self.menus.lock().unwrap().observation()})
+        serde_json::json!({"snapshot_id":snapshot.id,"elements":snapshot.elements,"size":size,"status":snapshot.status,"walk_attempts":snapshot.attempts,"window_lookup":snapshot.lookup,"menus":self.menus.lock().unwrap().observation()})
     }
     pub fn select_element(
         &self,
@@ -354,10 +346,10 @@ impl Session {
         Ok(target)
     }
     pub fn verify_element(&self) -> Result<(), String> {
+        let window = self.window()?;
         let Some((id, index)) = *self.selected.lock().unwrap() else {
             return Ok(());
         };
-        let window = self.window()?;
         let snapshot = self.snapshot.lock().unwrap();
         let (prior, element) =
             snapshot.resolve_bound(id, index, self.pid, window.id, ax_actions::Element::alive)?;

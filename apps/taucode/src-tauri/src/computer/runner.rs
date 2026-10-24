@@ -6,6 +6,25 @@ use crate::shared::providers::BoxFuture;
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
+pub const STALE_OBSERVATION: &str = "Stale observation: ";
+
+pub async fn settle<T: PartialEq, F: std::future::Future<Output = Result<T, String>>>(
+    mut read: impl FnMut() -> F,
+) {
+    let _ = tokio::time::timeout(Duration::from_secs(1), async {
+        let mut previous = None;
+        loop {
+            let current = read().await.ok();
+            if current.is_some() && current == previous {
+                break;
+            }
+            previous = current;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await;
+}
+
 pub struct Frame {
     pub png: String,
     pub thumbnail: String,
@@ -52,6 +71,9 @@ pub trait Environment {
     }
     fn begin_action(&self) {}
     fn end_action(&self) {}
+    fn settle(&self) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
     fn capture_description(&self) -> String {
         "Current frontmost application".into()
     }
@@ -72,19 +94,6 @@ pub trait Environment {
     }
     fn open(&self, app: &str, target: &str) -> Result<(), String>;
     fn progress(&mut self, step: Value) -> Result<(), String>;
-}
-fn post(
-    env: &impl Environment,
-    control: &Control,
-    c: &Context,
-    epoch: u64,
-    event: Event,
-) -> Result<(), String> {
-    if control.epoch() != epoch {
-        return Err("Action interrupted by Pause".into());
-    }
-    let current = env.event_context(&event)?;
-    control.post(event, c, || Ok(current))
 }
 fn verify_app(check: &str, before: &Context, after: &Context) -> Result<(), String> {
     if before.app != after.app {
@@ -115,6 +124,15 @@ async fn execute(
     grounded: bool,
 ) -> Result<(), String> {
     let epoch = control.epoch();
+    let input_started = std::sync::atomic::AtomicBool::new(false);
+    let post = |event: Event| {
+        if control.epoch() != epoch {
+            return Err("Action interrupted by Pause".into());
+        }
+        let current = env.event_context(&event)?;
+        input_started.store(true, std::sync::atomic::Ordering::Relaxed);
+        control.post(event, c, || Ok(current))
+    };
     let verify_typing = || -> Result<(), String> {
         if matches!(action, Action::Type { .. }) {
             env.verify_target()?;
@@ -128,39 +146,21 @@ async fn execute(
         if down {
             verify_typing()?;
         }
-        post(
-            env,
-            control,
-            c,
-            epoch,
-            Event::Key(keycode(name).ok_or("Unknown key")?, down),
-        )
+        post(Event::Key(keycode(name).ok_or("Unknown key")?, down))
     };
     let click = |point, button, clicks| -> Result<(), String> {
-        post(
-            env,
-            control,
-            c,
-            epoch,
-            Event::Mouse {
-                point,
-                button,
-                down: true,
-                clicks,
-            },
-        )?;
-        post(
-            env,
-            control,
-            c,
-            epoch,
-            Event::Mouse {
-                point,
-                button,
-                down: false,
-                clicks,
-            },
-        )
+        post(Event::Mouse {
+            point,
+            button,
+            down: true,
+            clicks,
+        })?;
+        post(Event::Mouse {
+            point,
+            button,
+            down: false,
+            clicks,
+        })
     };
     let result = async {
         match action {
@@ -209,7 +209,7 @@ async fn execute(
                     tokio::task::yield_now().await;
                     control.checkpoint().await?;
                     verify_typing()?;
-                    post(env, control, c, epoch, Event::Text(ch.to_string()))?;
+                    post(Event::Text(ch.to_string()))?;
                 }
                 if *enter {
                     key("enter", true)?;
@@ -222,8 +222,8 @@ async fn execute(
                 clicks,
                 shift,
             } => {
-                post(env, control, c, epoch, Event::Move([*x, *y], false))?;
-                post(env, control, c, epoch, Event::Scroll(*clicks, *shift))?;
+                post(Event::Move([*x, *y], false))?;
+                post(Event::Scroll(*clicks, *shift))?;
             }
             Action::Drag {
                 from,
@@ -233,48 +233,30 @@ async fn execute(
                 for k in hold_keys {
                     key(k, true)?;
                 }
-                post(
-                    env,
-                    control,
-                    c,
-                    epoch,
-                    Event::Mouse {
-                        point: *from,
-                        button: 0,
-                        down: true,
-                        clicks: 1,
-                    },
-                )?;
+                post(Event::Mouse {
+                    point: *from,
+                    button: 0,
+                    down: true,
+                    clicks: 1,
+                })?;
                 for n in 1..=20 {
                     control.checkpoint().await?;
                     let f = n as f64 / 20.;
-                    post(
-                        env,
-                        control,
-                        c,
-                        epoch,
-                        Event::Move(
-                            [
-                                from[0] + (to[0] - from[0]) * f,
-                                from[1] + (to[1] - from[1]) * f,
-                            ],
-                            true,
-                        ),
-                    )?;
+                    post(Event::Move(
+                        [
+                            from[0] + (to[0] - from[0]) * f,
+                            from[1] + (to[1] - from[1]) * f,
+                        ],
+                        true,
+                    ))?;
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
-                post(
-                    env,
-                    control,
-                    c,
-                    epoch,
-                    Event::Mouse {
-                        point: *to,
-                        button: 0,
-                        down: false,
-                        clicks: 1,
-                    },
-                )?;
+                post(Event::Mouse {
+                    point: *to,
+                    button: 0,
+                    down: false,
+                    clicks: 1,
+                })?;
             }
             Action::Hotkey { keys } => {
                 for k in keys {
@@ -331,7 +313,15 @@ async fn execute(
     }
     .await;
     control.release();
-    result
+    result.map_err(|error: String| {
+        if input_started.load(std::sync::atomic::Ordering::Relaxed)
+            && error.starts_with(STALE_OBSERVATION)
+        {
+            format!("Input already started; {error}")
+        } else {
+            error
+        }
+    })
 }
 pub async fn run(
     env: &mut impl Environment,
@@ -345,7 +335,33 @@ pub async fn run(
     let mut phase = "predictMs";
     let mut phase_start = Instant::now();
     let work = async {
-        for step in 0..settings.max_steps {
+        let mut step = 0;
+        let mut stale_retries = 0;
+        let mut run_stale_retries = 0;
+        'steps: while step < settings.max_steps {
+            // Only pre-input checks may discard a prediction. Never replay partial input.
+            macro_rules! observation {
+                ($result:expr) => {
+                    match $result {
+                        Ok(value) => value,
+                        Err(error)
+                            if error.starts_with(STALE_OBSERVATION)
+                                && stale_retries < 2
+                                && run_stale_retries < 6 =>
+                        {
+                            stale_retries += 1;
+                            run_stale_retries += 1;
+                            if let Some(entry) = pending.as_mut() {
+                                entry["staleRetries"] = json!(stale_retries);
+                            }
+                            control.release();
+                            env.end_action();
+                            continue 'steps;
+                        }
+                        Err(error) => return Err(error),
+                    }
+                };
+            }
             control.checkpoint().await?;
             let context = env
                 .context()
@@ -363,7 +379,7 @@ pub async fn run(
             phase = "predictMs";
             phase_start = Instant::now();
             pending = Some(
-                json!({"step":step+1,"thumbnail":frame.thumbnail,"action":{"kind":"predict"},"reflection":"","predictMs":0,"executeMs":0,"waitMs":0}),
+                json!({"step":step+1,"staleRetries":stale_retries,"thumbnail":frame.thumbnail,"action":{"kind":"predict"},"reflection":"","predictMs":0,"executeMs":0,"waitMs":0}),
             );
             let prediction = match control.until(env.predict(&scoped, &frame)).await {
                 Ok(prediction) => prediction,
@@ -382,7 +398,8 @@ pub async fn run(
             let mut action = prediction
                 .validated(frame.display)
                 .map_err(|e| env.planner_error(e))?;
-            let (element_label, secure) = env.ground_target(&prediction, &mut action)?;
+            observation!(env.verify_target());
+            let (element_label, secure) = observation!(env.ground_target(&prediction, &mut action));
             let description = format!(
                 "{} {}",
                 prediction.action["target"].as_str().unwrap_or(""),
@@ -391,7 +408,7 @@ pub async fn run(
             .trim()
             .to_owned();
             pending = Some(
-                json!({"step":step+1,"thumbnail":frame.thumbnail,"action":action,"target":description,"reflection":prediction.reflection,"planText":prediction.plan_text,"grounding":prediction.grounding,"predictMs":predict_ms,"executeMs":0,"waitMs":0}),
+                json!({"step":step+1,"staleRetries":stale_retries,"thumbnail":frame.thumbnail,"action":action,"target":description,"reflection":prediction.reflection,"planText":prediction.plan_text,"grounding":prediction.grounding,"predictMs":predict_ms,"executeMs":0,"waitMs":0}),
             );
             if let Some((id, index)) = prediction.element_target()? {
                 pending.as_mut().unwrap()["action"]["snapshot_id"] = json!(id);
@@ -422,8 +439,8 @@ pub async fn run(
                 secure: current.secure || secure,
                 ..current.clone()
             };
-            env.verify_target()?;
-            let policy_target = env.policy_target(&action)?;
+            observation!(env.verify_target());
+            let policy_target = observation!(env.policy_target(&action));
             let after = loop {
                 match decide(
                     &policy_action,
@@ -458,7 +475,7 @@ pub async fn run(
                 verify_policy_target(
                     "AX policy target changed after approval",
                     &policy_target,
-                    &env.policy_target(&action)?,
+                    &observation!(env.policy_target(&action)),
                 )?;
                 // A new fail-closed sample adds a confirmation, never a focus cancellation.
                 if after.secure && !policy_context.secure && matches!(action, Action::Type { .. }) {
@@ -486,9 +503,9 @@ pub async fn run(
                 "executeMs"
             };
             phase_start = Instant::now();
-            env.verify_target()?;
+            observation!(env.verify_target());
             env.begin_action();
-            let preparation = env.prepare(&action, control, &after)?;
+            let preparation = observation!(env.prepare(&action, control, &after));
             if preparation == Preparation::NeedsForeground {
                 if !settings.allow_foreground_fallback {
                     return Err(
@@ -522,13 +539,13 @@ pub async fn run(
                 ) {
                     return Err(reason);
                 }
-                env.verify_target()?;
+                observation!(env.verify_target());
                 verify_policy_target(
                     "AX policy target changed after fallback approval",
                     &policy_target,
-                    &env.policy_target(&action)?,
+                    &observation!(env.policy_target(&action)),
                 )?;
-                env.begin_foreground(control, &after)?;
+                observation!(env.begin_foreground(control, &after));
                 entry["waitMs"] = json!(
                     entry["waitMs"].as_u64().unwrap_or(0)
                         + phase_start.elapsed().as_millis() as u64
@@ -549,7 +566,7 @@ pub async fn run(
                 verify_policy_target(
                     "AX policy target changed before input",
                     &policy_target,
-                    &env.policy_target(&action)?,
+                    &observation!(env.policy_target(&action)),
                 )?;
             }
             let outcome = if preparation == Preparation::Handled {
@@ -567,6 +584,16 @@ pub async fn run(
                 .await
             };
             env.end_action();
+            let outcome = if outcome
+                .as_ref()
+                .err()
+                .is_some_and(|e| e.starts_with(STALE_OBSERVATION))
+            {
+                observation!(outcome);
+                Ok(())
+            } else {
+                outcome
+            };
             let outcome = outcome.and_then(|()| {
                 if let Action::Fail { reason } = &action {
                     Err(env.planner_error(reason.clone()))
@@ -580,6 +607,8 @@ pub async fn run(
             );
             entry["error"] = json!(outcome.as_ref().err());
             env.progress(entry)?;
+            step += 1;
+            stale_retries = 0;
             if outcome
                 .as_ref()
                 .err()
@@ -589,6 +618,7 @@ pub async fn run(
                 continue;
             }
             outcome?;
+            control.until(env.settle()).await?;
             match action {
                 Action::Done { summary } => {
                     let last = control.until(env.capture()).await?;

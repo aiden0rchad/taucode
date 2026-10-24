@@ -267,6 +267,8 @@ fn stop_releases_keys_buttons_and_prevents_late_input() {
         .is_err());
 }
 struct Fake {
+    event_errors: std::cell::RefCell<std::collections::VecDeque<Option<String>>>,
+    observation_errors: std::cell::RefCell<std::collections::VecDeque<Option<String>>>,
     native_front: std::cell::Cell<i32>,
     prior_front: std::cell::Cell<Option<i32>>,
     activate_during_action: bool,
@@ -385,6 +387,12 @@ fn stop_releases_target_input_before_overlay_cleanup_and_rejects_late_work() {
         .is_err());
 }
 impl Environment for Fake {
+    fn event_context(&self, _: &Event) -> Result<Context, String> {
+        if let Some(Some(error)) = self.event_errors.borrow_mut().pop_front() {
+            return Err(error);
+        }
+        self.context()
+    }
     fn begin_action(&self) {
         self.prior_front.set(Some(self.native_front.get()));
     }
@@ -417,6 +425,9 @@ impl Environment for Fake {
         Ok((self.element_label.clone(), self.element_secure))
     }
     fn verify_target(&self) -> Result<(), String> {
+        if let Some(Some(error)) = self.observation_errors.borrow_mut().pop_front() {
+            return Err(error);
+        }
         if self.target_changes && self.approved > 0 {
             Err("AX target changed".into())
         } else {
@@ -508,6 +519,8 @@ impl Environment for Fake {
 }
 fn fake(actions: Vec<Value>) -> Fake {
     Fake {
+        event_errors: Default::default(),
+        observation_errors: Default::default(),
         native_front: std::cell::Cell::new(10),
         prior_front: std::cell::Cell::new(None),
         activate_during_action: false,
@@ -531,6 +544,189 @@ fn fake(actions: Vec<Value>) -> Fake {
         focus: context(),
         change_after_approval: false,
         approval_delay: Duration::ZERO,
+    }
+}
+
+#[tokio::test]
+async fn stale_before_first_event_replans_but_partial_input_is_never_replayed() {
+    for partial in [false, true] {
+        let input = FakeInput::default();
+        let events = input.0.clone();
+        let control = Control::new(input);
+        control.start();
+        let mut env = fake(vec![
+            json!({"kind":"hotkey","keys":["escape"]}),
+            json!({"kind":"done","summary":"fresh"}),
+        ]);
+        let mut errors = env.event_errors.borrow_mut();
+        if partial {
+            errors.push_back(None);
+        }
+        errors.push_back(Some(format!(
+            "{}Window validation: drift",
+            runner::STALE_OBSERVATION
+        )));
+        drop(errors);
+        let settings = settings();
+        let result = runner::run(
+            &mut env,
+            &control,
+            &settings,
+            &settings.app_ids(),
+            "test",
+            Instant::now(),
+        )
+        .await;
+        assert_eq!(result.is_err(), partial);
+        assert_eq!(env.steps[0]["staleRetries"], u64::from(!partial));
+        if partial {
+            assert!(result.unwrap_err().contains("Input already started"));
+            assert_eq!(env.predictions.len(), 1);
+            assert_eq!(
+                *events.lock().unwrap(),
+                [Event::Key(53, true), Event::Key(53, false)]
+            );
+        } else {
+            assert!(env.predictions.is_empty());
+            assert!(events.lock().unwrap().is_empty());
+        }
+    }
+}
+
+#[tokio::test]
+async fn stale_observations_replan_without_consuming_steps_and_enforce_both_caps() {
+    let stale = || {
+        Some(format!(
+            "{}Window validation: geometry changed; action cancelled",
+            runner::STALE_OBSERVATION
+        ))
+    };
+    for (errors, retries, succeeds) in [
+        (vec![stale()], vec![1], true),
+        (vec![stale(), stale()], vec![2], true),
+        (vec![stale(), stale(), stale()], vec![2], false),
+        // Each successful step has three pre-input validation calls.
+        (
+            vec![vec![stale(), stale(), None, None, None]; 3]
+                .concat()
+                .into_iter()
+                .chain([stale()])
+                .collect(),
+            vec![2, 2, 2, 0],
+            false,
+        ),
+        (
+            vec![Some(
+                "Window validation: owner before=42 after=43; action cancelled".into(),
+            )],
+            vec![0],
+            false,
+        ),
+        (
+            vec![Some(
+                "Window validation: complete matching entries=0; action cancelled".into(),
+            )],
+            vec![0],
+            false,
+        ),
+    ] {
+        let input = FakeInput::default();
+        let events = input.0.clone();
+        let control = Control::new(input);
+        control.start();
+        let mut env = fake(vec![json!({"kind":"wait","seconds":0}); 20]);
+        for index in 0..2 {
+            env.predictions[index] = prediction(
+                json!({"kind":"click","x":100,"y":100,"button":"left","clicks":1,"hold_keys":[]}),
+            );
+        }
+        if succeeds {
+            env.predictions[retries[0] as usize] =
+                prediction(json!({"kind":"done","summary":"fresh"}));
+        }
+        *env.observation_errors.borrow_mut() = errors.into();
+        let mut settings = settings();
+        settings.max_steps = retries.len() as u32;
+        let result = runner::run(
+            &mut env,
+            &control,
+            &settings,
+            &settings.app_ids(),
+            "test",
+            Instant::now(),
+        )
+        .await;
+        assert_eq!(result.is_ok(), succeeds, "{result:?}");
+        assert_eq!(
+            env.steps
+                .iter()
+                .map(|step| step["staleRetries"].as_u64().unwrap())
+                .collect::<Vec<_>>(),
+            retries
+        );
+        let predictions = 20 - env.predictions.len();
+        assert_eq!(
+            predictions,
+            retries.iter().sum::<u64>() as usize + retries.len()
+        );
+        assert_eq!(env.captures, predictions + usize::from(succeeds));
+        assert!(
+            events.lock().unwrap().is_empty(),
+            "discarded predictions must not dispatch input"
+        );
+    }
+}
+
+#[tokio::test]
+async fn ax_settle_requires_consecutive_equal_reads_and_bounds_slow_reads() {
+    use std::cell::Cell;
+    for (readings, expected) in [
+        (vec![Ok(("General", 2)), Ok(("General", 2))], 2),
+        (
+            vec![
+                Ok(("General", 2)),
+                Ok(("About", 2)),
+                Ok(("About", 3)),
+                Ok(("About", 3)),
+            ],
+            4,
+        ),
+        (
+            vec![
+                Ok(("About", 3)),
+                Err("transient"),
+                Ok(("About", 3)),
+                Ok(("About", 3)),
+            ],
+            4,
+        ),
+    ] {
+        let mut readings = readings.into_iter();
+        let calls = Cell::new(0);
+        runner::settle(|| {
+            calls.set(calls.get() + 1);
+            std::future::ready(readings.next().unwrap().map_err(str::to_owned))
+        })
+        .await;
+        assert_eq!(calls.get(), expected);
+    }
+    for slow in [false, true] {
+        let calls = Cell::new(0);
+        let began = Instant::now();
+        runner::settle(|| {
+            calls.set(calls.get() + 1);
+            let value = calls.get();
+            async move {
+                if slow {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+                Ok(value)
+            }
+        })
+        .await;
+        assert!(began.elapsed() >= Duration::from_secs(1));
+        assert!(began.elapsed() < Duration::from_millis(1300));
+        assert!(calls.get() <= 10);
     }
 }
 

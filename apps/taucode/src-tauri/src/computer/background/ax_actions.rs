@@ -16,6 +16,7 @@ extern "C" {
     fn AXUIElementCreateApplication(pid: i32) -> Ref;
     fn AXUIElementSetMessagingTimeout(element: Ref, seconds: f32) -> i32;
     fn AXUIElementCopyAttributeValue(element: Ref, attribute: Ref, value: *mut Ref) -> i32;
+    fn AXUIElementGetAttributeValueCount(element: Ref, attribute: Ref, count: *mut isize) -> i32;
     fn AXUIElementCopyElementAtPosition(element: Ref, x: f32, y: f32, value: *mut Ref) -> i32;
     fn AXUIElementGetPid(element: Ref, pid: *mut i32) -> i32;
     fn AXUIElementCopyActionNames(element: Ref, value: *mut Ref) -> i32;
@@ -55,13 +56,75 @@ impl Drop for Element {
 fn string(s: &NSString) -> Ref {
     (s as *const NSString).cast()
 }
+thread_local! {
+    // Optional AX attributes may suppress errors. A walk must still discard any
+    // partial evidence on a transient, including errors in nested label reads.
+    static WALK_ERROR: std::cell::RefCell<Option<Option<String>>> = const { std::cell::RefCell::new(None) };
+}
+fn observe_read(name: &str, status: i32) -> i32 {
+    if matches!(status, -25202 | -25204) {
+        WALK_ERROR.with(|slot| {
+            if let Some(error) = slot.borrow_mut().as_mut() {
+                error.get_or_insert_with(|| format!("{name}: ax_error({status})"));
+            }
+        });
+    }
+    status
+}
+pub(super) fn check_walk() -> Result<(), String> {
+    WALK_ERROR.with(
+        |slot| match slot.borrow().as_ref().and_then(|e| e.clone()) {
+            Some(error) => Err(error),
+            None => Ok(()),
+        },
+    )
+}
+pub(super) fn retry_walk<T>(
+    mut walk: impl FnMut() -> Result<T, String>,
+    mut wait: impl FnMut(std::time::Duration),
+) -> Result<(T, usize), String> {
+    struct Restore(Option<Option<String>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            WALK_ERROR.with(|slot| *slot.borrow_mut() = self.0.take());
+        }
+    }
+    for attempt in 1..=3 {
+        let prior = WALK_ERROR.with(|slot| slot.replace(Some(None)));
+        let restore = Restore(prior);
+        let result = walk();
+        let transient = check_walk();
+        drop(restore);
+        let result = match (result, transient) {
+            (Err(error), Err(_))
+                if error.contains("ax_error(-25202)") || error.contains("ax_error(-25204)") =>
+            {
+                Err(error)
+            }
+            (_, Err(error)) => Err(error),
+            (result, _) => result,
+        };
+        match result {
+            Ok(value) => return Ok((value, attempt)),
+            Err(error) => {
+                if attempt == 3
+                    || !(error.contains("ax_error(-25202)") || error.contains("ax_error(-25204)"))
+                {
+                    return Err(format!("{error}; walk_attempts={attempt}"));
+                }
+                wait(std::time::Duration::from_millis(150));
+            }
+        }
+    }
+    unreachable!()
+}
 // Only reads use this helper. Mutations must never be retried after a timeout.
 fn metadata_read<T>(name: &str, mut read: impl FnMut(f32) -> Result<T, i32>) -> Result<T, String> {
     let result = match read(0.05) {
-        Err(-25204) => read(0.25), // kAXErrorCannotComplete
+        Err(-25204) if !WALK_ERROR.with(|slot| slot.borrow().is_some()) => read(0.25),
         result => result,
     };
-    result.map_err(|status| format!("{name}: ax_error({status})"))
+    result.map_err(|status| format!("{name}: ax_error({})", observe_read(name, status)))
 }
 impl Element {
     pub(super) fn alive(&self) -> bool {
@@ -147,8 +210,14 @@ impl Element {
     pub(super) fn settable(&self, name: &str) -> bool {
         let mut value = 0;
         unsafe {
-            AXUIElementIsAttributeSettable(self.0, string(&NSString::from_str(name)), &mut value)
-                == 0
+            observe_read(
+                name,
+                AXUIElementIsAttributeSettable(
+                    self.0,
+                    string(&NSString::from_str(name)),
+                    &mut value,
+                ),
+            ) == 0
                 && value != 0
         }
     }
@@ -213,10 +282,14 @@ impl Element {
     }
     pub(super) fn actions(&self) -> Vec<String> {
         let mut ptr = std::ptr::null();
-        if unsafe { AXUIElementCopyActionNames(self.0, &mut ptr) } != 0 {
+        let status = observe_read("AXActions", unsafe {
+            AXUIElementCopyActionNames(self.0, &mut ptr)
+        });
+        let array = Self::owned_value(ptr);
+        if status != 0 {
             return vec![];
         }
-        let Some(array) = Self::owned_value(ptr) else {
+        let Some(array) = array else {
             return vec![];
         };
         unsafe {
@@ -505,6 +578,32 @@ fn pane_root<H>(mut read: impl FnMut(&str) -> Result<Option<H>, String>) -> Resu
     ))
 }
 pub fn pane_info(pid: i32, window: Option<u32>) -> Result<super::super::policy::Target, String> {
+    retry_walk(|| pane_info_once(pid, window), std::thread::sleep).map(|(info, _)| info)
+}
+pub fn window_state(pid: i32, id: u32) -> Result<(String, isize), String> {
+    let (root, lookup) = window_element(pid, id);
+    let root = root.ok_or_else(|| format!("AX settle: {lookup}"))?;
+    let title = root.text_result("AXTitle")?;
+    let count = metadata_read("AXChildren count", |seconds| {
+        root.with_timeout(seconds, || {
+            let mut count = 0;
+            let status = unsafe {
+                AXUIElementGetAttributeValueCount(
+                    root.0,
+                    string(&NSString::from_str("AXChildren")),
+                    &mut count,
+                )
+            };
+            if status == 0 {
+                Ok(count)
+            } else {
+                Err(status)
+            }
+        })
+    })?;
+    Ok((title, count))
+}
+fn pane_info_once(pid: i32, window: Option<u32>) -> Result<super::super::policy::Target, String> {
     let root = if let Some(id) = window {
         let (root, lookup) = window_element(pid, id);
         root.ok_or_else(|| {
@@ -532,6 +631,7 @@ pub fn pane_info(pid: i32, window: Option<u32>) -> Result<super::super::policy::
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
     let mut pending = vec![(root, 0)];
     for _ in 0..512 {
+        check_walk()?;
         let Some((e, depth)) = pending.pop() else {
             break;
         };
@@ -560,6 +660,7 @@ pub fn pane_info(pid: i32, window: Option<u32>) -> Result<super::super::policy::
                 .map(|child| (child, depth + 1)),
         );
     }
+    check_walk()?;
     if !pending.is_empty() {
         return Err(format!("System Settings read-only access: pane inspection limit reached; pid={pid}, window={window:?}, pending={}, limit=512", pending.len()));
     }
@@ -1158,6 +1259,97 @@ mod element_tests {
     use super::super::ax_tree::{Node, Provider, Snapshot, SNAPSHOT_BUDGET};
     use super::*;
     use std::{cell::RefCell, rc::Rc};
+
+    #[test]
+    fn walk_transients_restart_even_when_optional_reads_suppress_errors() {
+        use super::super::super::policy::{check_pane, Target, SYSTEM_SETTINGS};
+        for status in [-25202, -25204] {
+            for failures in [1, 3] {
+                let mut calls = 0;
+                let mut waits = vec![];
+                let result = retry_walk(
+                    || {
+                        calls += 1;
+                        // Match pane inspection's optional child/label reads.
+                        let _ = metadata_read("AXChildren", |_| {
+                            if calls <= failures {
+                                Err(status)
+                            } else {
+                                Ok(())
+                            }
+                        })
+                        .ok();
+                        Ok(Target {
+                            window_title: "About".into(),
+                            ..Target::default()
+                        })
+                    },
+                    |wait| waits.push(wait),
+                );
+                assert_eq!(calls, (failures + 1).min(3));
+                assert_eq!(
+                    waits,
+                    vec![std::time::Duration::from_millis(150); calls - 1]
+                );
+                if failures == 1 {
+                    let (pane, attempts) = result.unwrap();
+                    assert_eq!(attempts, 2);
+                    assert!(check_pane(SYSTEM_SETTINGS, &pane).is_ok());
+                } else {
+                    let error = result
+                        .and_then(|(pane, _)| check_pane(SYSTEM_SETTINGS, &pane))
+                        .unwrap_err();
+                    assert!(error.contains(&format!("AXChildren: ax_error({status})")));
+                    assert!(error.contains("walk_attempts=3"));
+                }
+                assert!(WALK_ERROR.with(|slot| slot.borrow().is_none()));
+            }
+        }
+        let error = retry_walk::<()>(
+            || Err("Pane role: denied".into()),
+            |_| panic!("permanent errors must not retry"),
+        )
+        .unwrap_err();
+        assert_eq!(error, "Pane role: denied; walk_attempts=1");
+    }
+
+    #[test]
+    fn snapshot_restart_discards_partial_nodes_and_handles() {
+        struct TransientProvider(std::cell::Cell<usize>);
+        impl Provider for TransientProvider {
+            type Handle = usize;
+            fn read(&self, index: &usize) -> Node {
+                if *index == 1 && self.0.replace(1) == 0 {
+                    let _ = metadata_read::<()>("AXRole", |_| Err(-25202));
+                }
+                Node {
+                    role: "AXButton".into(),
+                    ..Node::default()
+                }
+            }
+            fn children(&self, index: &usize, _: usize) -> Vec<usize> {
+                if *index == 0 {
+                    vec![1, 2]
+                } else {
+                    vec![]
+                }
+            }
+        }
+        let provider = TransientProvider(std::cell::Cell::new(0));
+        let mut snapshot = Snapshot::default();
+        let (_, attempts) = retry_walk(
+            || {
+                snapshot.replace(&provider, Some(0), 10, SNAPSHOT_BUDGET);
+                check_walk()
+            },
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(attempts, 2);
+        assert_eq!(snapshot.elements.len(), 3);
+        assert!(snapshot.resolve(1, 0).is_err());
+        assert_eq!(*snapshot.resolve(snapshot.id, 2).unwrap().1, 2);
+    }
 
     #[test]
     fn metadata_timeout_retries_once_and_preserves_error_code() {
