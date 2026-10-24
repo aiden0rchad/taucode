@@ -20,18 +20,18 @@
 }
 
 .approval-toast-title {
-  font-size: var(--font-small);
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .approval-toast-workspace {
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-faint);
 }
 
 .approval-toast-method {
-  font-size: var(--font-small);
+  font-size: 12px;
   font-weight: 600;
   margin-bottom: 8px;
   overflow-wrap: anywhere;
@@ -50,14 +50,14 @@
 }
 
 .approval-toast-detail-label {
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
 .approval-toast-detail-value {
-  font-size: var(--font-small);
+  font-size: 12px;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -67,7 +67,7 @@
 }
 
 .approval-toast-detail-empty {
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-muted);
 }
 

@@ -13,7 +13,7 @@
   background: transparent;
   color: var(--ds-text-strong);
   padding: 14px 16px;
-  font-size: var(--font-ui);
+  font-size: 14px;
 }
 
 .branch-switcher-modal-input::placeholder {
@@ -31,7 +31,7 @@
   padding: 16px;
   text-align: center;
   color: var(--ds-text-faint);
-  font-size: var(--font-ui);
+  font-size: 13px;
 }
 
 .branch-switcher-modal-item {
@@ -43,7 +43,7 @@
   border: none;
   background: transparent;
   color: var(--ds-text-strong);
-  font-size: var(--font-ui);
+  font-size: 13px;
   text-align: left;
   border-radius: 6px;
   cursor: pointer;
@@ -71,7 +71,7 @@
 }
 
 .branch-switcher-modal-item-current {
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--ds-text-faint);
   background: var(--surface-secondary);
   padding: 2px 6px;
@@ -79,9 +79,9 @@
 }
 
 .branch-switcher-modal-item-worktree {
-  font-size: var(--font-small);
-  color: var(--accent);
-  background: var(--bg-surface-raised);
+  font-size: 11px;
+  color: #7dd3fc;
+  background: rgba(125, 211, 252, 0.15);
   padding: 2px 6px;
   border-radius: 4px;
 }

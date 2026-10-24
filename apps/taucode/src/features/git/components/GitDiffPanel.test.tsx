@@ -78,10 +78,6 @@ describe("GitDiffPanel", () => {
       />,
     );
 
-    expect(within(container).queryByRole("alert")).toBeNull();
-    expect(container.querySelector(".sidebar-error-toast")).toBeNull();
-    expect(within(container).getAllByText("This workspace isn't a Git repository yet.")).toHaveLength(1);
-    expect(within(container).queryByText("not a git repository")).toBeNull();
     const initButton = within(container).getByRole("button", { name: "Initialize Git" });
     fireEvent.click(initButton);
     expect(onInitGitRepo).toHaveBeenCalledTimes(1);

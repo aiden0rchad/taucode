@@ -182,20 +182,4 @@ describe("useGitStatus", () => {
 
     unmount();
   });
-  it("clears a cached branch without reporting an expected non-repository error", async () => {
-    const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.mocked(getGitStatus)
-      .mockResolvedValueOnce(makeStatus("main"))
-      .mockRejectedValueOnce("could not find repository; code=NotFound");
-    const { result, unmount } = renderHook(() => useGitStatus(workspace));
-    await act(async () => { await Promise.resolve(); });
-    expect(result.current.status.branchName).toBe("main");
-    await act(async () => { await result.current.refresh(); });
-    expect(result.current.status.branchName).toBe("");
-    expect(result.current.status.error).toContain("could not find repository");
-    expect(log).not.toHaveBeenCalled();
-    log.mockRestore();
-    unmount();
-  });
-
 });

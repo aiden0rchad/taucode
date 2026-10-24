@@ -17,18 +17,18 @@
 }
 
 .update-toast-title {
-  font-size: var(--font-small);
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .update-toast-version {
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-faint);
 }
 
 .update-toast-body {
-  font-size: var(--font-ui);
+  font-size: 13px;
   margin-bottom: 10px;
 }
 
@@ -48,11 +48,11 @@
 .update-toast-progress-fill {
   display: block;
   height: 100%;
-  background: var(--bg-surface);
+  background: linear-gradient(90deg, #4fb8ff, #3be082);
 }
 
 .update-toast-progress-meta {
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-muted);
 }
 
@@ -96,13 +96,13 @@
 .update-toast-notes h5,
 .update-toast-notes h6 {
   margin: 0 0 6px;
-  font-size: var(--font-ui);
+  font-size: 13px;
   line-height: 1.35;
 }
 
 .update-toast-notes p {
   margin: 0 0 8px;
-  font-size: var(--font-small);
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -110,7 +110,7 @@
 .update-toast-notes ol {
   margin: 0 0 8px;
   padding-left: 18px;
-  font-size: var(--font-small);
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -124,7 +124,7 @@
 
 .update-toast-notes code {
   font-family: var(--code-font-family);
-  font-size: var(--font-small);
+  font-size: 11px;
   border-radius: 4px;
   background: var(--surface-card-strong);
   padding: 0 4px;

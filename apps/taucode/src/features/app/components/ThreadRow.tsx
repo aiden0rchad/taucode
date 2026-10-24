@@ -1,9 +1,34 @@
-import { ListRow } from "@/features/design-system/components/Primitives";
 import { useRunningAgents } from "@/features/agents/agents";
 import type { CSSProperties, MouseEvent } from "react";
 
 import type { ThreadSummary } from "../../../types";
 import { getThreadStatusClass, type ThreadStatusById } from "../../../utils/threadStatus";
+
+function hashString(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function getSubagentPillToneStyle(
+  workspaceId: string,
+  nickname: string | null | undefined,
+  role: string | null | undefined,
+  threadId: string,
+) {
+  const identity = [workspaceId, nickname ?? role ?? threadId].join(":");
+  const hash = hashString(identity);
+  const hue = hash % 360;
+  const saturation = 68 + (hash % 12);
+  const accent = 52 + ((hash >> 3) % 10);
+  return {
+    "--thread-subagent-pill-hue": `${hue}`,
+    "--thread-subagent-pill-saturation": `${saturation}%`,
+    "--thread-subagent-pill-accent": `${accent}%`,
+  } as CSSProperties;
+}
 
 function formatSubagentRoleLabel(role: string | null | undefined) {
   const normalized = (role ?? "").trim();
@@ -104,6 +129,14 @@ export function ThreadRow({
     thread.subagentNickname && thread.subagentRole
       ? formatSubagentRoleLabel(thread.subagentRole)
       : null;
+  const subagentPillStyle = subagentLabel
+    ? getSubagentPillToneStyle(
+        workspaceId,
+        thread.subagentNickname,
+        thread.subagentRole,
+        thread.id,
+      )
+    : undefined;
   const effectiveWorkspaceLabel = depth > 0 ? null : workspaceLabel;
   const contextLabel = badge ?? modelBadge;
   const canPin = depth === 0;
@@ -114,7 +147,7 @@ export function ThreadRow({
   );
 
   return (
-    <ListRow active={workspaceId === activeWorkspaceId && thread.id === activeThreadId}
+    <div
       className={`thread-row ${
         workspaceId === activeWorkspaceId && thread.id === activeThreadId
           ? "active"
@@ -152,6 +185,7 @@ export function ThreadRow({
               <span
                 className="thread-subagent-pill"
                 title={subagentTitle ?? undefined}
+                style={subagentPillStyle}
               >
                 {subagentLabel}
               </span>
@@ -195,6 +229,6 @@ export function ThreadRow({
           relativeTime && <span className="thread-time">{relativeTime}</span>
         )}
       </div>
-    </ListRow>
+    </div>
   );
 }

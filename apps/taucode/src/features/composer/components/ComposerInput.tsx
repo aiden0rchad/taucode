@@ -23,13 +23,7 @@ import { useComposerInputLayout } from "../hooks/useComposerInputLayout";
 import { useComposerMobileActions } from "../hooks/useComposerMobileActions";
 import type { ReviewPromptState, ReviewPromptStep } from "../../threads/hooks/useReviewPrompt";
 
-export function composerPlaceholder(engine?: string) {
-  const name = engine === "codex" ? "Codex" : engine === "claude" ? "Claude Code" : "taucode";
-  return `Ask ${name} to do something…`;
-}
-
 type ComposerInputProps = {
-  engine?: string;
   text: string;
   disabled: boolean;
   sendLabel: string;
@@ -88,7 +82,6 @@ type ComposerInputProps = {
 };
 
 export function ComposerInput({
-  engine,
   text,
   disabled,
   sendLabel,
@@ -283,7 +276,7 @@ export function ComposerInput({
             placeholder={
               disabled
                 ? "Review in progress. Chat will re-enable when it completes."
-                : composerPlaceholder(engine)
+                : "Ask Codex to do something..."
             }
             value={text}
             onChange={handleTextareaChange}

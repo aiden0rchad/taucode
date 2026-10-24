@@ -6,7 +6,7 @@
 .ds-toast-card {
   background: var(--ds-toast-bg);
   border: 1px solid var(--ds-toast-border);
-  box-shadow: none;
+  box-shadow: var(--ds-toast-shadow);
   border-radius: 12px;
   padding: 12px;
   pointer-events: auto;
@@ -40,7 +40,7 @@
 
 .ds-toast-error {
   font-family: var(--code-font-family);
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-muted);
   white-space: pre-wrap;
   max-height: 120px;

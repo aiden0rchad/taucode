@@ -4,8 +4,8 @@
 .checkpoint-mode { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
 .checkpoint-list article, .checkpoint-file { padding: 12px 0; border-bottom: 1px solid var(--border-subtle); }
 .checkpoint-file label { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
-.checkpoint-file label span { margin-left: auto; color: var(--text-muted); font-size: var(--font-small); }
-.checkpoint-file pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: var(--font-small); }
-.checkpoint-deletion { color: var(--text-danger, #e65b65); font-size: var(--font-ui); margin: 6px 0; }
+.checkpoint-file label span { margin-left: auto; color: var(--text-muted); font-size: 12px; }
+.checkpoint-file pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 12px; }
+.checkpoint-deletion { color: var(--text-danger, #e65b65); font-size: 13px; margin: 6px 0; }
 .checkpoint-banner { bottom: 24px; left: 50%; right: auto; transform: translateX(-50%); }
 .checkpoint-actions { margin-top: 20px; }

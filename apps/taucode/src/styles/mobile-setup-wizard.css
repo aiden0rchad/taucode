@@ -3,7 +3,13 @@
 }
 
 .mobile-setup-wizard-overlay .ds-modal-backdrop {
-  background: var(--bg-surface-raised);
+  background: rgba(6, 10, 16, 0.78);
+  backdrop-filter: blur(14px) saturate(1.15);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+}
+
+.app.reduced-transparency .mobile-setup-wizard-overlay .ds-modal-backdrop {
+  background: rgba(8, 12, 18, 0.92);
 }
 
 .mobile-setup-wizard-card {
@@ -11,8 +17,11 @@
   border-radius: 20px;
   overflow: hidden;
   border: 1px solid var(--border-strong);
-  box-shadow: none;
-  background: var(--bg-surface);
+  box-shadow: 0 28px 64px rgba(0, 0, 0, 0.55);
+  background:
+    radial-gradient(120% 120% at 100% 0%, rgba(46, 170, 220, 0.24), transparent 46%),
+    linear-gradient(170deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+    var(--surface-context-core);
 }
 
 .mobile-setup-wizard-header {
@@ -41,11 +50,11 @@
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-surface-raised);
+  border: 1px solid rgba(46, 170, 220, 0.35);
+  background: rgba(46, 170, 220, 0.14);
   color: var(--text-strong);
   padding: 4px 10px;
-  font-size: var(--font-small);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -53,7 +62,7 @@
 
 .mobile-setup-wizard-title {
   margin: 10px 0 6px;
-  font-size: var(--font-title);
+  font-size: 22px;
   line-height: 1.2;
   color: var(--text-strong);
 }
@@ -61,7 +70,7 @@
 .mobile-setup-wizard-subtitle {
   margin: 0;
   color: var(--text-subtle);
-  font-size: var(--font-ui);
+  font-size: 13px;
   line-height: 1.45;
 }
 
@@ -72,7 +81,7 @@
 }
 
 .mobile-setup-wizard-label {
-  font-size: var(--font-small);
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -83,13 +92,13 @@
   background: var(--surface-control);
   color: var(--text-strong);
   padding: 10px 11px;
-  font-size: var(--font-ui);
+  font-size: 13px;
 }
 
 .mobile-setup-wizard-input:focus {
   outline: none;
   border-color: var(--border-strong);
-  box-shadow: none;
+  box-shadow: 0 0 0 3px rgba(46, 170, 220, 0.14);
 }
 
 .mobile-setup-wizard-action {
@@ -101,22 +110,22 @@
 
 .mobile-setup-wizard-status {
   border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-surface-raised);
+  border: 1px solid rgba(116, 198, 157, 0.4);
+  background: rgba(116, 198, 157, 0.12);
   color: var(--text-strong);
   padding: 9px 10px;
-  font-size: var(--font-small);
+  font-size: 12px;
   line-height: 1.4;
 }
 
 .mobile-setup-wizard-status-error {
-  border-color: var(--border);
-  background: var(--bg-surface-raised);
-  color: var(--danger);
+  border-color: rgba(255, 105, 105, 0.45);
+  background: rgba(255, 105, 105, 0.12);
+  color: #ffc1c1;
 }
 
 .mobile-setup-wizard-hint {
   color: var(--text-subtle);
-  font-size: var(--font-small);
+  font-size: 11px;
   line-height: 1.45;
 }

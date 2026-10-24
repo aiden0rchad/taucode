@@ -1,4 +1,30 @@
+@import "./themes.css";
 
+.app.reduced-transparency {
+  --surface-sidebar: rgba(18, 18, 18, 0.92);
+  --surface-sidebar-opaque: rgb(18, 18, 18);
+  --surface-topbar: rgba(10, 14, 20, 0.94);
+  --surface-right-panel: rgba(9, 12, 20, 0.92);
+  --surface-composer: rgba(10, 14, 20, 0.94);
+  --surface-messages: rgba(8, 10, 16, 0.94);
+  --surface-card: rgba(30, 32, 40, 0.94);
+  --surface-card-strong: rgba(38, 40, 48, 0.96);
+  --surface-card-muted: rgba(24, 26, 34, 0.9);
+  --surface-item: rgba(28, 30, 38, 0.88);
+  --surface-control: rgba(40, 44, 55, 0.7);
+  --surface-control-hover: rgba(54, 60, 72, 0.8);
+  --surface-control-disabled: rgba(40, 44, 55, 0.5);
+  --surface-hover: rgba(46, 50, 62, 0.7);
+  --surface-active: rgba(100, 200, 255, 0.18);
+  --surface-approval: rgba(12, 16, 26, 0.92);
+  --surface-debug: rgba(12, 16, 26, 0.92);
+  --surface-command: rgba(12, 14, 20, 0.95);
+  --surface-diff-card: rgba(14, 18, 28, 0.9);
+  --surface-bubble: rgba(42, 46, 58, 0.9);
+  --surface-bubble-user: rgba(77, 153, 255, 0.55);
+  --surface-context-core: rgba(16, 20, 30, 0.96);
+  --surface-popover: rgba(16, 20, 30, 0.995);
+}
 
 * {
   box-sizing: border-box;
@@ -7,7 +33,7 @@
 html,
 body {
   margin: 0;
-  background: var(--bg-app);
+  background: transparent;
   overflow: hidden;
   width: 100%;
   height: 100%;
@@ -25,35 +51,35 @@ body {
   width: 100vw;
   display: grid;
   grid-template-columns: var(--sidebar-width, 280px) 1fr;
-  background: var(--bg-app);
+  background: transparent;
   border-radius: 0;
   overflow: hidden;
   position: relative;
   --main-topbar-height: 44px;
   /* Shared Codex Monitor chrome language */
-  --cm-surface-row: var(--surface-card);
-  --cm-surface-panel-soft: var(--surface-card);
-  --cm-surface-panel: var(--surface-card);
-  --cm-surface-panel-strong: var(--surface-card);
-  --cm-surface-panel-elevated: var(--surface-card);
-  --cm-surface-panel-quiet: var(--surface-card);
-  --cm-surface-panel-loud: var(--surface-card);
-  --cm-surface-panel-hover: var(--surface-card);
-  --cm-surface-panel-solid: var(--surface-card);
-  --cm-surface-panel-active: var(--surface-active);
-  --cm-surface-command-panel: var(--surface-command);
+  --cm-surface-row: color-mix(in srgb, var(--surface-card) 44%, transparent);
+  --cm-surface-panel-soft: color-mix(in srgb, var(--surface-card) 56%, transparent);
+  --cm-surface-panel: color-mix(in srgb, var(--surface-card) 64%, transparent);
+  --cm-surface-panel-strong: color-mix(in srgb, var(--surface-card) 72%, transparent);
+  --cm-surface-panel-elevated: color-mix(in srgb, var(--surface-card) 78%, transparent);
+  --cm-surface-panel-quiet: color-mix(in srgb, var(--surface-card) 80%, transparent);
+  --cm-surface-panel-loud: color-mix(in srgb, var(--surface-card) 84%, transparent);
+  --cm-surface-panel-hover: color-mix(in srgb, var(--surface-card) 90%, transparent);
+  --cm-surface-panel-solid: color-mix(in srgb, var(--surface-card) 92%, transparent);
+  --cm-surface-panel-active: color-mix(in srgb, var(--surface-active) 96%, transparent);
+  --cm-surface-command-panel: color-mix(in srgb, var(--surface-command) 94%, transparent);
   --cm-surface-topbar: color-mix(in srgb, var(--surface-topbar) 86%, var(--surface-card) 14%);
   --cm-surface-composer: color-mix(in srgb, var(--surface-composer) 98%, var(--surface-card) 2%);
-  --cm-border-soft: var(--border-subtle);
-  --cm-border-default: var(--border-subtle);
-  --cm-border-strong: var(--border-subtle);
-  --cm-border-emphasis: var(--border-subtle);
-  --cm-border-elevated: var(--border-subtle);
-  --cm-border-heavy: var(--border-subtle);
-  --cm-border-hover: var(--border-subtle);
-  --cm-border-contrast: var(--border-subtle);
-  --cm-border-accent: var(--border-accent);
-  --cm-border-accent-strong: var(--border-accent);
+  --cm-border-soft: color-mix(in srgb, var(--border-subtle) 72%, transparent);
+  --cm-border-default: color-mix(in srgb, var(--border-subtle) 78%, transparent);
+  --cm-border-strong: color-mix(in srgb, var(--border-subtle) 82%, transparent);
+  --cm-border-emphasis: color-mix(in srgb, var(--border-subtle) 84%, transparent);
+  --cm-border-elevated: color-mix(in srgb, var(--border-subtle) 86%, transparent);
+  --cm-border-heavy: color-mix(in srgb, var(--border-subtle) 88%, transparent);
+  --cm-border-hover: color-mix(in srgb, var(--border-subtle) 92%, transparent);
+  --cm-border-contrast: color-mix(in srgb, var(--border-subtle) 100%, transparent);
+  --cm-border-accent: color-mix(in srgb, var(--border-accent) 36%, transparent);
+  --cm-border-accent-strong: color-mix(in srgb, var(--border-accent) 46%, transparent);
   transition: grid-template-columns 220ms ease;
   font-family: var(--ui-font-family);
 }
@@ -133,7 +159,7 @@ body {
   border: none;
   border-radius: 0;
   padding: 0;
-  background: var(--bg-app);
+  background: transparent;
   color: var(--text-muted);
   display: inline-flex;
   align-items: center;
@@ -176,8 +202,8 @@ button.window-caption-control:focus-visible,
 
 .window-caption-control-close:hover,
 .window-caption-control-close:focus-visible {
-  background: var(--danger);
-  color: var(--accent-text);
+  background: #e81123;
+  color: #fff;
 }
 
 .sidebar-resizer {

@@ -4,7 +4,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const NEVER_DRAG_TARGET_SELECTOR = [
   "button",
-  "summary",
   "a",
   '[role="button"]',
   '[role="link"]',

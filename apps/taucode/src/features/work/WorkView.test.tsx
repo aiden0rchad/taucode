@@ -16,7 +16,7 @@ vi.mock("@services/events", () => ({
   subscribeImportsChanged: (listener: () => void) => { events.importsChanged = listener; return () => {}; },
 }));
 vi.mock("@services/dragDrop", () => ({ subscribeWindowDragDrop: () => () => {} }));
-vi.mock("@/features/chat/ModeShell", () => ({ useModeContext: () => ({ openSettings: vi.fn() }), ModeSwitcher: () => <nav>Code Chat Work</nav> }));
+vi.mock("@/features/chat/ModeShell", () => ({ ModeSwitcher: () => <nav>Code Chat Work</nav> }));
 vi.mock("@/features/checkpoints/Checkpoints", () => ({ Checkpoints: () => null, RewindAction: () => <button>Rewind…</button> }));
 vi.mock("@/features/messages/components/Markdown", () => ({ Markdown: ({ value }: { value: string }) => <p>{value}</p> }));
 const settings = { providers: [{ id: "local", name: "Local", enabled: true, models: [{ id: "test", enabled: true }] }] } as AppSettings;
@@ -25,7 +25,6 @@ function task(id: string, status: WorkTask["status"]): WorkTask {
   return { id, spaceId: "space", threadId: id, title: id, brief: "Make a brief", attachments: [], model: "local/test", accessMode: "ask", status, plan: [], outputs: [], pending: [], error: null };
 }
 beforeEach(() => {
-  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   state = { spaces: [{ id: "space", kind: "work", name: "Research", path: "/synthetic", readOnlyFolders: [] }], tasks: [], concurrency: 2 };
   vi.mocked(workRequest).mockImplementation(async (action, params) => {
     if (action === "list") return structuredClone(state);
@@ -42,13 +41,6 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Work mode", () => {
-  it("uses the shared shell, header Browser and Settings footer", async () => {
-    const { container } = render(<WorkView settings={settings} />);
-    expect(container.querySelector(".app-shell .mode-switcher, .app-shell nav")).toBeTruthy();
-    expect(container.querySelector(".shell-footer")?.contains(screen.getByRole("button", { name: "Open settings" }))).toBe(true);
-    expect(container.querySelector("header")?.contains(screen.getByRole("button", { name: "Browser" }))).toBe(true);
-    expect(container.querySelector(".browser-toggle")).toBeNull();
-  });
   it("shows imported transcripts and copies, continues in Work, and refreshes after undo", async () => {
     const imported = { ...task("Cowork report", "done"), importId: "synthetic-import", outputs: ["outputs/report.pdf", "uploads/notes.txt"] };
     state.tasks = [imported];

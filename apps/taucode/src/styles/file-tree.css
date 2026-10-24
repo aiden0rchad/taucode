@@ -3,7 +3,7 @@
 }
 
 .file-tree-count {
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-faint);
 }
 
@@ -51,7 +51,7 @@
 }
 
 .file-tree-empty {
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-faint);
 }
 
@@ -65,7 +65,12 @@
 .file-tree-skeleton-row {
   height: 8px;
   border-radius: 999px;
-  background: var(--bg-surface);
+  background: linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0.04) 8%,
+    rgba(255, 255, 255, 0.18) 18%,
+    rgba(255, 255, 255, 0.04) 33%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }
@@ -80,7 +85,7 @@
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-emphasis);
-  font-size: var(--font-small);
+  font-size: 11px;
   text-align: left;
   width: 100%;
 }
@@ -191,7 +196,7 @@
   border-top: 8px solid transparent;
   border-bottom: 8px solid transparent;
   border-left: 8px solid var(--surface-popover);
-  filter: drop-shadow(0 2px 4px var(--text-muted));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
 }
 
 .file-preview-header {
@@ -209,7 +214,7 @@
 }
 
 .file-preview-path {
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-strong);
   white-space: nowrap;
   overflow: hidden;
@@ -217,7 +222,7 @@
 }
 
 .file-preview-warning {
-  font-size: var(--font-small);
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-faint);
@@ -228,7 +233,7 @@
 }
 
 .file-preview-status {
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-faint);
 }
 
@@ -264,7 +269,7 @@
   max-height: 58vh;
   object-fit: contain;
   border-radius: 8px;
-  box-shadow: none;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
 }
 
 .file-preview-toolbar {
@@ -272,7 +277,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-faint);
 }
 
@@ -287,7 +292,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: var(--font-small);
+  font-size: 10px;
   color: var(--text-fainter);
 }
 
@@ -306,7 +311,7 @@
   align-items: center;
   padding: 6px 12px;
   min-height: 30px;
-  font-size: var(--font-small);
+  font-size: 12px;
   line-height: 1.2;
   border-radius: 10px;
 }
@@ -315,12 +320,12 @@
   background: var(--surface-active);
   color: var(--text-strong);
   border: 1px solid var(--border-accent);
-  box-shadow: none;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25);
 }
 
 .file-preview-action--add:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: none;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
 }
 
 .file-preview-lines {
@@ -363,7 +368,7 @@
 }
 
 .file-preview-line:not(.is-selected):hover {
-  background: var(--surface-active);
+  background: color-mix(in srgb, var(--surface-active) 45%, transparent);
   transform: none;
   box-shadow: none;
 }
@@ -377,21 +382,21 @@
 }
 
 .file-preview-line.is-selected {
-  background: var(--surface-active);
+  background: color-mix(in srgb, var(--surface-active) 65%, transparent);
   border-color: transparent;
-  box-shadow: none;
+  box-shadow: inset 3px 0 0 var(--border-accent);
 }
 
 .file-preview-line.is-selected.is-start {
-  box-shadow: none;
+  box-shadow: inset 3px 0 0 var(--border-accent);
 }
 
 .file-preview-line.is-selected.is-end {
-  box-shadow: none;
+  box-shadow: inset 3px 0 0 var(--border-accent);
 }
 
 .file-preview-line.is-selected.is-start.is-end {
-  box-shadow: none;
+  box-shadow: inset 3px 0 0 var(--border-accent);
 }
 
 .file-preview-line-number {
@@ -410,11 +415,11 @@
 .file-preview-line-text .token.prolog,
 .file-preview-line-text .token.doctype,
 .file-preview-line-text .token.cdata {
-  color: var(--text-muted);
+  color: rgba(150, 170, 200, 0.75);
 }
 
 .file-preview-line-text .token.punctuation {
-  color: var(--text-muted);
+  color: rgba(200, 210, 220, 0.85);
 }
 
 .file-preview-line-text .token.property,
@@ -422,12 +427,12 @@
 .file-preview-line-text .token.constant,
 .file-preview-line-text .token.symbol,
 .file-preview-line-text .token.deleted {
-  color: var(--danger);
+  color: #ff7b72;
 }
 
 .file-preview-line-text .token.boolean,
 .file-preview-line-text .token.number {
-  color: var(--warning);
+  color: #f2cc60;
 }
 
 .file-preview-line-text .token.selector,
@@ -436,23 +441,23 @@
 .file-preview-line-text .token.char,
 .file-preview-line-text .token.builtin,
 .file-preview-line-text .token.inserted {
-  color: var(--success);
+  color: #7ee787;
 }
 
 .file-preview-line-text .token.operator,
 .file-preview-line-text .token.entity,
 .file-preview-line-text .token.url,
 .file-preview-line-text .token.variable {
-  color: var(--text-muted);
+  color: rgba(200, 210, 220, 0.9);
 }
 
 .file-preview-line-text .token.atrule,
 .file-preview-line-text .token.attr-value,
 .file-preview-line-text .token.keyword {
-  color: var(--accent);
+  color: #8bd5ff;
 }
 
 .file-preview-line-text .token.function,
 .file-preview-line-text .token.class-name {
-  color: var(--accent);
+  color: #d2a8ff;
 }

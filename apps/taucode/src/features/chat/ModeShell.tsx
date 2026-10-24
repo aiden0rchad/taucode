@@ -7,12 +7,9 @@ import { useThemePreference } from "@/features/layout/hooks/useThemePreference";
 import { WorkView } from "@/features/work/WorkView";
 import { ChatView } from "./ChatView";
 import "./chat.css";
-import { BrowserDock } from "@/features/browser/BrowserDock";
 
 const modes: AppMode[] = ["code", "chat", "work"];
-const ModeContext = createContext<{ mode: AppMode; select: (mode: AppMode) => void; updateSettings: (settings: AppSettings) => void; openSettings: () => void } | null>(null);
-
-export function useModeContext() { return useContext(ModeContext); }
+const ModeContext = createContext<{ mode: AppMode; select: (mode: AppMode) => void; updateSettings: (settings: AppSettings) => void } | null>(null);
 
 export function ModeSwitcher() {
   const context = useContext(ModeContext);
@@ -34,18 +31,13 @@ export function modeShortcut(event: KeyboardEvent, settings: AppSettings): AppMo
   return modes[Number(event.key) - 1];
 }
 
-export function ModeShell({ children, renderSettings }: { children: ReactNode; renderSettings?: (onClose: () => void) => ReactNode }) {
+export function ModeShell({ children }: { children: ReactNode }) {
   const label = useWindowLabel();
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  useEffect(() => { localStorage.removeItem("reduceTransparency"); }, []);
   const [mode, setMode] = useState<AppMode>("code");
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   useThemePreference(settings?.theme ?? "system");
-  useEffect(() => {
-    if (settings?.uiFontFamily) document.documentElement.style.setProperty("--ui-font-family", settings.uiFontFamily);
-  }, [settings?.uiFontFamily]);
   useEffect(() => {
     let cancelled = false;
     void getAppSettings().then(value => {
@@ -71,13 +63,10 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
     return () => window.removeEventListener("keydown", keydown);
   }, [settings]);
   if (!loaded) return null;
-  return <ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings, openSettings: () => setSettingsOpen(true) }}>
+  return <ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings }}>
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
-    {mode !== "code" && settingsOpen && renderSettings?.(() => setSettingsOpen(false))}
-    <BrowserDock searchUrl={settings?.browser?.searchUrl}>
     {mode === "code" && children}
     {mode === "chat" && settings && <ChatView settings={settings} />}
     {mode === "work" && settings && <WorkView settings={settings} />}
-    </BrowserDock>
   </ModeContext.Provider>;
 }

@@ -27,11 +27,11 @@
   top: 0;
   height: 1px;
   background: var(--border-strong);
-  opacity: 1;
+  opacity: 0.4;
 }
 
 .debug-panel-resizer:hover::after {
-  opacity: 1;
+  opacity: 0.9;
 }
 
 .debug-header {
@@ -39,7 +39,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 6px 20px;
-  font-size: var(--font-small);
+  font-size: 12px;
   gap: 12px;
 }
 
@@ -65,7 +65,7 @@
 }
 
 .debug-empty {
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-faint);
 }
 
@@ -78,7 +78,7 @@
 .debug-meta {
   display: flex;
   gap: 10px;
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-muted);
   align-items: center;
 }
@@ -86,25 +86,25 @@
 .debug-source {
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: var(--font-small);
+  font-size: 10px;
   padding: 2px 6px;
   border-radius: 999px;
   background: var(--surface-control);
 }
 
 .debug-source.error {
-  background: var(--bg-surface-raised);
-  color: var(--danger);
+  background: rgba(255, 107, 107, 0.2);
+  color: #ff9b9b;
 }
 
 .debug-source.stderr {
-  background: var(--bg-surface-raised);
-  color: var(--warning);
+  background: rgba(255, 196, 96, 0.2);
+  color: #ffcf80;
 }
 
 .debug-payload {
   margin: 0;
-  font-size: var(--font-small);
+  font-size: 11px;
   line-height: 1.4;
   color: var(--text-stronger);
   white-space: pre-wrap;

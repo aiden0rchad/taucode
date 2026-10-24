@@ -588,7 +588,6 @@ function buildPrimarySurface({
     mainHeaderProps: activeWorkspace
       ? {
           engine,
-          threadTitle: threadsByWorkspace[activeWorkspace.id]?.find(thread => thread.id === activeThreadId)?.name,
           workspace: activeWorkspace,
           parentName: worktreeState.activeParentWorkspace?.name ?? null,
           worktreeLabel: worktreeState.worktreeLabel,
@@ -600,7 +599,7 @@ function buildPrimarySurface({
           openAppIconById,
           selectedOpenAppId: appSettings.selectedOpenAppId,
           onSelectOpenAppId: handleSelectOpenAppId,
-          branchName: gitState.gitStatus.branchName,
+          branchName: gitState.gitStatus.branchName || "unknown",
           branches: gitState.branches,
           onCheckoutBranch: gitState.handleCheckoutBranch,
           onCreateBranch: gitState.handleCreateBranch,
@@ -727,7 +726,7 @@ function buildGitSurface({
       onApplyWorktreeChanges: worktreeState.isWorktreeWorkspace
         ? gitState.handleApplyWorktreeChanges
         : undefined,
-      branchName: gitState.gitStatus.branchName,
+      branchName: gitState.gitStatus.branchName || "unknown",
       totalAdditions: gitState.gitStatus.totalAdditions,
       totalDeletions: gitState.gitStatus.totalDeletions,
       fileStatus: gitState.fileStatus,

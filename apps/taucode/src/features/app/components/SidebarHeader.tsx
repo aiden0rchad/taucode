@@ -18,7 +18,6 @@ import {
 import { useMenuController } from "../hooks/useMenuController";
 
 type SidebarHeaderProps = {
-  primaryAction?: import("react").ReactNode;
   onSelectHome: () => void;
   onAddWorkspace: () => void;
   onToggleSearch: () => void;
@@ -33,7 +32,6 @@ type SidebarHeaderProps = {
 };
 
 export function SidebarHeader({
-  primaryAction,
   onSelectHome,
   onAddWorkspace,
   onToggleSearch,
@@ -125,7 +123,7 @@ export function SidebarHeader({
   };
 
   return (
-    <><ModeSwitcher />{primaryAction}
+    <><ModeSwitcher />
     <div className="sidebar-header">
       <div className="sidebar-header-title">
         <div className="sidebar-title-group">

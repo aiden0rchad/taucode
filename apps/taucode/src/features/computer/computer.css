@@ -1,6 +1,6 @@
 .computer-run ol { padding-left: 24px; }
 .computer-run li { margin: 8px 0; }
 .computer-run img { max-width: 100%; border-radius: 6px; }
-.computer-run pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--font-small); }
+.computer-run pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .computer-settings label { display: grid; gap: 6px; margin: 12px 0; }
 .computer-settings textarea { min-height: 72px; }

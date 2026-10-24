@@ -26,6 +26,7 @@ describe("SettingsDisplaySection", () => {
             systemNotificationsEnabled: true,
           } as unknown) as AppSettings
         }
+        reduceTransparency={false}
         scaleShortcutTitle=""
         scaleShortcutText=""
         scaleDraft="100%"
@@ -33,6 +34,7 @@ describe("SettingsDisplaySection", () => {
         codeFontDraft=""
         codeFontSizeDraft={11}
         onUpdateAppSettings={onUpdateAppSettings}
+        onToggleTransparency={vi.fn()}
         onSetScaleDraft={vi.fn() as any}
         onCommitScale={vi.fn(async () => {})}
         onResetScale={vi.fn(async () => {})}
@@ -78,6 +80,7 @@ describe("SettingsDisplaySection", () => {
             systemNotificationsEnabled: true,
           } as unknown) as AppSettings
         }
+        reduceTransparency={false}
         scaleShortcutTitle=""
         scaleShortcutText=""
         scaleDraft="100%"
@@ -85,6 +88,7 @@ describe("SettingsDisplaySection", () => {
         codeFontDraft=""
         codeFontSizeDraft={11}
         onUpdateAppSettings={onUpdateAppSettings}
+        onToggleTransparency={vi.fn()}
         onSetScaleDraft={vi.fn() as any}
         onCommitScale={vi.fn(async () => {})}
         onResetScale={vi.fn(async () => {})}
@@ -129,6 +133,7 @@ describe("SettingsDisplaySection", () => {
             systemNotificationsEnabled: true,
           } as unknown) as AppSettings
         }
+        reduceTransparency={false}
         scaleShortcutTitle=""
         scaleShortcutText=""
         scaleDraft="100%"
@@ -136,6 +141,7 @@ describe("SettingsDisplaySection", () => {
         codeFontDraft=""
         codeFontSizeDraft={11}
         onUpdateAppSettings={onUpdateAppSettings}
+        onToggleTransparency={vi.fn()}
         onSetScaleDraft={vi.fn() as any}
         onCommitScale={vi.fn(async () => {})}
         onResetScale={vi.fn(async () => {})}
@@ -186,6 +192,7 @@ describe("SettingsDisplaySection", () => {
             systemNotificationsEnabled: true,
           } as unknown) as AppSettings
         }
+        reduceTransparency={false}
         scaleShortcutTitle=""
         scaleShortcutText=""
         scaleDraft="100%"
@@ -193,6 +200,7 @@ describe("SettingsDisplaySection", () => {
         codeFontDraft=""
         codeFontSizeDraft={11}
         onUpdateAppSettings={onUpdateAppSettings}
+        onToggleTransparency={vi.fn()}
         onSetScaleDraft={vi.fn() as any}
         onCommitScale={vi.fn(async () => {})}
         onResetScale={vi.fn(async () => {})}
@@ -234,6 +242,7 @@ describe("SettingsDisplaySection", () => {
             systemNotificationsEnabled: true,
           } as unknown) as AppSettings
         }
+        reduceTransparency={false}
         scaleShortcutTitle=""
         scaleShortcutText=""
         scaleDraft="100%"
@@ -241,6 +250,7 @@ describe("SettingsDisplaySection", () => {
         codeFontDraft=""
         codeFontSizeDraft={11}
         onUpdateAppSettings={onUpdateAppSettings}
+        onToggleTransparency={vi.fn()}
         onSetScaleDraft={vi.fn() as any}
         onCommitScale={vi.fn(async () => {})}
         onResetScale={vi.fn(async () => {})}
@@ -292,6 +302,7 @@ describe("SettingsDisplaySection", () => {
             systemNotificationsEnabled: true,
           } as unknown) as AppSettings
         }
+        reduceTransparency={false}
         scaleShortcutTitle=""
         scaleShortcutText=""
         scaleDraft="100%"
@@ -299,6 +310,7 @@ describe("SettingsDisplaySection", () => {
         codeFontDraft=""
         codeFontSizeDraft={11}
         onUpdateAppSettings={onUpdateAppSettings}
+        onToggleTransparency={vi.fn()}
         onSetScaleDraft={vi.fn() as any}
         onCommitScale={vi.fn(async () => {})}
         onResetScale={vi.fn(async () => {})}

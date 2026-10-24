@@ -56,7 +56,7 @@ export function TabletLayout({
         {approvalToastsNode}
         {updateToastNode}
         {errorToastsNode}
-        {showHome && <><MainTopbar leftNode={<strong>Home</strong>} actionsNode={topbarActionsNode} />{homeNode}</>}
+        {showHome && homeNode}
         {showWorkspace && (
           <>
             <MainTopbar

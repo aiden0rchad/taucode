@@ -1,4 +1,3 @@
-import { Card } from "@/features/design-system/components/Primitives";
 import { formatRelativeTime } from "../../../utils/time";
 import {
   getWorkspaceHomeThreadState,
@@ -97,7 +96,7 @@ export function WorkspaceHomeHistory({
               const hasInstances = run.instances.length > 0;
 
               return (
-                <Card className="workspace-home-run-card" key={run.id}>
+                <div className="workspace-home-run-card" key={run.id}>
                   <div className="workspace-home-run-header">
                     <div>
                       <div className="workspace-home-run-title">{run.title}</div>
@@ -147,7 +146,7 @@ export function WorkspaceHomeHistory({
                       </span>
                     </div>
                   )}
-                </Card>
+                </div>
               );
             })}
           </div>
@@ -164,7 +163,7 @@ export function WorkspaceHomeHistory({
           </div>
         ) : (
           <div className="workspace-home-run-grid">
-            <Card className="workspace-home-run-card">
+            <div className="workspace-home-run-card">
               <div className="workspace-home-run-header">
                 <div>
                   <div className="workspace-home-run-title">Agents activity</div>
@@ -186,7 +185,7 @@ export function WorkspaceHomeHistory({
                 threadStatusById={threadStatusById}
                 onSelectInstance={onSelectInstance}
               />
-            </Card>
+            </div>
           </div>
         )}
       </div>

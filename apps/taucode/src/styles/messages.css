@@ -44,13 +44,13 @@
 
 .messages-loading-label {
   color: var(--text-muted);
-  font-size: var(--font-small);
+  font-size: 12px;
   letter-spacing: 0.02em;
 }
 
 .thinking {
   padding: 0;
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-fainter);
   margin-bottom: 0;
 }
@@ -63,7 +63,7 @@
   padding: 8px 12px;
   margin: 0;
   color: var(--text-muted);
-  font-size: var(--font-small);
+  font-size: 11px;
   letter-spacing: 0.01em;
   border-radius: 999px;
   border: 1px solid var(--cm-border-strong);
@@ -74,7 +74,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 2px solid var(--border);
+  border: 2px solid rgba(255, 255, 255, 0.2);
   border-top-color: var(--text-stronger);
   animation: working-spin var(--ds-spinner-dur) linear infinite;
 }
@@ -89,7 +89,18 @@
 
 
 .working-text {
-  color: var(--text-muted);
+  position: relative;
+  color: transparent;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.3),
+    rgba(255, 255, 255, 0.95),
+    rgba(255, 255, 255, 0.3)
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: working-shimmer 2.2s ease-in-out infinite;
 }
 
 :root[data-theme="light"] .working-text {
@@ -110,7 +121,7 @@
   gap: 12px;
   margin: 2px 0 4px;
   color: var(--text-muted);
-  font-size: var(--font-small);
+  font-size: 11px;
   text-transform: none;
   letter-spacing: 0.02em;
 }
@@ -118,7 +129,7 @@
 .turn-complete-line {
   flex: 1;
   height: 1px;
-  background: var(--bg-surface);
+  background: linear-gradient(90deg, transparent, var(--cm-border-heavy));
 }
 
 .turn-complete-label {
@@ -159,15 +170,16 @@
   border-radius: 18px;
   border: 1px solid var(--cm-border-emphasis);
   background: var(--cm-surface-panel-soft);
-  font-size: var(--font-ui);
+  font-size: 14px;
   line-height: 1.55;
   overflow-wrap: anywhere;
   word-break: break-word;
-  box-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   transition:
     background-color 0.18s ease,
     border-color 0.18s ease,
-    box-shadow 0.18s ease;
+    box-shadow 0.18s ease,
+    backdrop-filter 0.18s ease;
 }
 
 .message-bubble {
@@ -242,28 +254,32 @@
 .message-copy-icon-copy {
   opacity: 1;
   transform: scale(1);
+  filter: blur(0);
 }
 
 .message-copy-icon-check {
   opacity: 0;
   transform: scale(0.82);
+  filter: blur(2px);
   transition-delay: 60ms;
 }
 
 .message-copy-button.is-copied .message-copy-icon-copy {
   opacity: 0;
   transform: scale(0.82);
+  filter: blur(2px);
 }
 
 .message-copy-button.is-copied .message-copy-icon-check {
   opacity: 1;
   transform: scale(1);
+  filter: blur(0);
 }
 
 .message.user .bubble {
   max-width: min(72%, 560px);
   background: var(--cm-surface-panel-active);
-  border-color: var(--border-accent);
+  border-color: color-mix(in srgb, var(--border-accent) 28%, transparent);
 }
 
 .message.assistant .bubble {
@@ -272,7 +288,7 @@
   padding: 16px 18px;
   background: var(--cm-surface-panel-strong);
   border-radius: 18px;
-  box-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .message-image-grid {
@@ -304,7 +320,7 @@
   aspect-ratio: 1 / 1;
   cursor: zoom-in;
   display: block;
-  box-shadow: none;
+  box-shadow: none !important;
   transform: none !important;
 }
 
@@ -317,7 +333,7 @@
 
 .message-image-thumb:hover {
   transform: none !important;
-  box-shadow: none;
+  box-shadow: none !important;
   outline: 1px solid var(--border-accent);
   outline-offset: 0;
 }
@@ -327,7 +343,7 @@
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: var(--bg-surface-raised);
+  background: rgba(10, 12, 16, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -345,7 +361,7 @@
   max-width: 90vw;
   max-height: 90vh;
   border-radius: 16px;
-  box-shadow: none;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
 }
 
 .message-image-lightbox-close {
@@ -379,11 +395,12 @@
   margin-bottom: 0;
   background: var(--cm-surface-panel);
   color: var(--text-stronger);
-  box-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   transition:
     background-color 0.18s ease,
     border-color 0.18s ease,
-    box-shadow 0.18s ease;
+    box-shadow 0.18s ease,
+    backdrop-filter 0.18s ease;
 }
 
 .item-card.review {
@@ -396,7 +413,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: var(--font-small);
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -405,7 +422,7 @@
 }
 
 .review-badge {
-  font-size: var(--font-small);
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: 2px 6px;
@@ -431,7 +448,7 @@
   justify-content: space-between;
   gap: 8px;
   align-items: center;
-  font-size: var(--font-small);
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -443,7 +460,7 @@
 }
 
 .item-chevron {
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-faint);
   transition: transform 0.2s ease;
 }
@@ -458,14 +475,14 @@
 }
 
 .item-title {
-  font-size: var(--font-small);
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .item-subtitle {
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-faint);
   white-space: nowrap;
   overflow: hidden;
@@ -474,7 +491,7 @@
 }
 
 .item-status {
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-subtle);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -485,7 +502,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-muted);
   min-width: 0;
 }
@@ -495,11 +512,13 @@
   border-radius: 16px;
   padding: 12px 14px;
   margin: 0;
-  background: var(--cm-surface-panel-soft);
+  background: color-mix(in srgb, var(--cm-surface-panel-soft) 88%, transparent);
   display: flex;
   position: relative;
   min-width: 0;
-  box-shadow: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.018),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.006);
 }
 
 .tool-inline.tool-inline-row,
@@ -523,7 +542,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-stronger);
   min-width: 0;
 }
@@ -562,7 +581,7 @@
   height: 8px;
   border-radius: 999px;
   background: var(--status-unknown);
-  box-shadow: none;
+  box-shadow: 0 0 0 1px var(--border-subtle);
   flex: 0 0 auto;
   margin-top: 2px;
 }
@@ -663,14 +682,14 @@
 
 .tool-inline-status {
   margin-left: auto;
-  font-size: var(--font-small);
+  font-size: 10px;
   color: var(--text-subtle);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
 .tool-inline-detail {
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-muted);
   white-space: pre-wrap;
 }
@@ -688,7 +707,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-stronger);
 }
 
@@ -708,7 +727,7 @@
   flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
-  font-size: var(--font-small);
+  font-size: 12px;
 }
 
 .explore-inline-kind {
@@ -727,7 +746,7 @@
 
 .explore-inline-detail {
   color: var(--text-faint);
-  font-size: var(--font-small);
+  font-size: 11px;
   min-width: 0;
   flex: 1 1 auto;
   overflow-wrap: anywhere;
@@ -749,7 +768,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: var(--font-small);
+  font-size: 12px;
 }
 
 .user-input-inline-question {
@@ -767,14 +786,14 @@
 
 .user-input-inline-answer {
   color: var(--text-muted);
-  font-size: var(--font-small);
+  font-size: 11px;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
 .user-input-inline-empty-answer {
   color: var(--text-faint);
-  font-size: var(--font-small);
+  font-size: 11px;
 }
 
 .tool-inline-clamp {
@@ -801,18 +820,18 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-quiet);
 }
 
 .tool-inline-change-kind {
-  font-size: var(--font-small);
+  font-size: 10px;
   letter-spacing: 0.08em;
   color: var(--text-subtle);
 }
 
 .tool-inline-change-path {
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-stronger);
 }
 
@@ -820,7 +839,7 @@
   background: var(--surface-command);
   border-radius: 8px;
   padding: 8px;
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-quiet);
 }
 
@@ -830,7 +849,7 @@
 }
 
 .tool-inline-action {
-  font-size: var(--font-small);
+  font-size: 11px;
   line-height: 1.2;
   padding: 4px 8px;
 }
@@ -890,7 +909,7 @@
   padding: 0;
   cursor: pointer;
   text-align: left;
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-muted);
   letter-spacing: 0.02em;
 }
@@ -927,7 +946,10 @@
 .item-card:hover,
 .item-card:focus-within {
   border-color: var(--cm-border-default);
-  box-shadow: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 10px 28px rgba(7, 12, 34, 0.12);
+  backdrop-filter: saturate(1.08) brightness(1.05);
 }
 
 .message.assistant .bubble:hover,
@@ -955,7 +977,7 @@
 
 .tool-group-body .tool-inline-summary {
   gap: 8px;
-  font-size: var(--font-small);
+  font-size: 11px;
 }
 
 .tool-group-body .tool-inline-icon,
@@ -966,7 +988,7 @@
 
 .tool-group-body .tool-inline-command {
   padding: 1px 6px;
-  font-size: var(--font-small);
+  font-size: 10px;
   line-height: 1.2;
   border-radius: 6px;
 }
@@ -974,7 +996,7 @@
 .tool-group-body .tool-inline-detail,
 .tool-group-body .explore-inline-item,
 .tool-group-body .user-input-inline-entry {
-  font-size: var(--font-small);
+  font-size: 10px;
   line-height: 1.35;
 }
 
@@ -984,7 +1006,7 @@
 }
 
 .reasoning-inline-detail {
-  font-size: var(--font-small);
+  font-size: 12px;
   line-height: 1.55;
   color: var(--text-muted);
 }
@@ -1025,7 +1047,7 @@
 }
 
 .tool-label {
-  font-size: var(--font-small);
+  font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-fainter);
@@ -1035,7 +1057,7 @@
   background: var(--surface-command);
   border-radius: 8px;
   padding: 8px;
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-stronger);
   margin: 0;
   max-width: 100%;
@@ -1044,7 +1066,7 @@
 }
 
 .tool-cwd {
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-muted);
   word-break: break-all;
 }
@@ -1059,18 +1081,18 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-quiet);
 }
 
 .file-change-kind {
-  font-size: var(--font-small);
+  font-size: 10px;
   letter-spacing: 0.08em;
   color: var(--text-subtle);
 }
 
 .file-change-path {
-  font-size: var(--font-small);
+  font-size: 12px;
   color: var(--text-stronger);
 }
 
@@ -1078,7 +1100,7 @@
   background: var(--surface-command);
   border-radius: 8px;
   padding: 8px;
-  font-size: var(--font-small);
+  font-size: 11px;
   color: var(--text-quiet);
   margin: 0;
   max-width: 100%;
@@ -1088,7 +1110,7 @@
 .markdown {
   white-space: normal;
   overflow-wrap: anywhere;
-  font-size: var(--font-ui);
+  font-size: 13px;
   line-height: 1.5;
   color: var(--text-stronger);
 }
@@ -1114,7 +1136,7 @@
 
 .message .markdown :not(pre) > code {
   color: var(--text-stronger);
-  background: var(--surface-command);
+  background: color-mix(in srgb, var(--surface-command) 82%, transparent);
   border: 1px solid var(--border-subtle);
   padding: 1px 5px;
   border-radius: 6px;
@@ -1129,7 +1151,7 @@
   padding: 2px 7px;
   border-radius: 8px;
   border: 1px solid var(--border-subtle);
-  background: var(--surface-command);
+  background: color-mix(in srgb, var(--surface-command) 82%, transparent);
   color: var(--message-link-color);
   text-decoration: none;
   vertical-align: baseline;
@@ -1155,7 +1177,7 @@
   padding: 0 5px;
   border-radius: 999px;
   border: 1px solid var(--border-subtle);
-  background: var(--surface-control);
+  background: color-mix(in srgb, var(--surface-control) 78%, transparent);
   color: var(--text-muted);
   font-size: 0.64em;
   line-height: 1.35;
@@ -1178,7 +1200,7 @@
   border-radius: 10px;
   background: var(--surface-command);
   overflow: hidden;
-  box-shadow: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   margin: 8px 0;
   width: 100%;
   max-width: 100%;
@@ -1192,7 +1214,7 @@
   padding: 4px 8px;
   background: var(--surface-control);
   border-bottom: 1px solid var(--border-strong);
-  font-size: var(--font-small);
+  font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -1206,7 +1228,7 @@
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: 2px 8px;
-  font-size: var(--font-small);
+  font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-stronger);
@@ -1249,7 +1271,7 @@
   font-size: var(--code-font-size, 11px);
   font-weight: var(--code-font-weight, 400);
   line-height: var(--code-line-height, 1.28);
-  box-shadow: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .message .markdown-codeblock-single code {
@@ -1282,8 +1304,8 @@
   overflow-x: auto;
   border: 1px solid var(--border-strong);
   border-radius: 14px;
-  background: var(--surface-card-strong);
-  box-shadow: none;
+  background: color-mix(in srgb, var(--surface-card-strong) 92%, transparent);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
 }
 
 .markdown .markdown-table {
@@ -1307,9 +1329,9 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--surface-control);
+  background: color-mix(in srgb, var(--surface-control) 90%, transparent);
   border-bottom: 1px solid var(--border-strong);
-  font-size: var(--font-small);
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1317,7 +1339,7 @@
 }
 
 .markdown .markdown-table tbody td {
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 88%, transparent);
 }
 
 .markdown .markdown-table tbody tr:first-child td {
@@ -1325,7 +1347,7 @@
 }
 
 .markdown .markdown-table tbody tr:hover td {
-  background: var(--surface-control-hover);
+  background: color-mix(in srgb, var(--surface-control-hover) 36%, transparent);
 }
 
 .message .markdown .markdown-table td:first-child {
@@ -1415,7 +1437,7 @@
   margin: 0;
   padding: 6px 10px;
   border-left: 2px solid var(--border-accent-soft);
-  background: var(--surface-card-strong);
+  background: color-mix(in srgb, var(--surface-card-strong) 65%, transparent);
   border-radius: 6px;
   color: var(--text-muted);
 }

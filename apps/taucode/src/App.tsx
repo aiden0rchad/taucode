@@ -42,7 +42,6 @@ import "./styles/compact-tablet.css";
 import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import MainApp from "@app/components/MainApp";
 import { ModeShell } from "@/features/chat/ModeShell";
-import "./styles/shell.css";
 import { ComputerApprovals } from "@/features/computer/ComputerApprovals";
 
 const AboutView = lazy(() =>
@@ -62,5 +61,5 @@ export default function App() {
     );
   }
 
-  return <><ModeShell renderSettings={onClose => <MainApp settingsOnly onSettingsClose={onClose} />}><MainApp /></ModeShell><ComputerApprovals /></>;
+  return <><ModeShell><MainApp /></ModeShell><ComputerApprovals /></>;
 }

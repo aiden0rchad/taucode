@@ -1,4 +1,5 @@
 import { useThemePreference } from "../../layout/hooks/useThemePreference";
+import { useTransparencyPreference } from "../../layout/hooks/useTransparencyPreference";
 import { useUiScaleShortcuts } from "../../layout/hooks/useUiScaleShortcuts";
 import { useAppSettings } from "../../settings/hooks/useAppSettings";
 import { runCodexUpdate } from "../../../services/tauri";
@@ -13,6 +14,8 @@ export function useAppSettingsController() {
   } = useAppSettings();
 
   useThemePreference(appSettings.theme);
+  const { reduceTransparency, setReduceTransparency } =
+    useTransparencyPreference();
 
   const {
     uiScale,
@@ -34,6 +37,8 @@ export function useAppSettingsController() {
     codexUpdate: (codexBin: string | null, codexArgs: string | null) =>
       runCodexUpdate(codexBin, codexArgs),
     appSettingsLoading,
+    reduceTransparency,
+    setReduceTransparency,
     uiScale,
     scaleShortcutTitle,
     scaleShortcutText,

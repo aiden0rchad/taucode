@@ -11,7 +11,7 @@ let nativeDrop: (event: { payload: { type: string; paths: string[] } }) => void;
 vi.mock("@services/dragDrop", () => ({ subscribeWindowDragDrop: (callback: typeof nativeDrop) => { nativeDrop = callback; return () => {}; } }));
 vi.mock("@services/events", () => ({ subscribeAppServerEvents: (callback: typeof listener) => { listener = callback; return () => {}; } }));
 vi.mock("@services/tauri", () => ({ chatRequest: vi.fn(), exportMarkdownFile: vi.fn().mockResolvedValue(null), getAppSettings: vi.fn(), updateAppSettings: vi.fn(), readChatAttachment: vi.fn() }));
-vi.mock("./ModeShell", () => ({ useModeContext: () => ({ openSettings: vi.fn() }), ModeSwitcher: () => <nav aria-label="App mode" />, useModeSettings: () => undefined }));
+vi.mock("./ModeShell", () => ({ ModeSwitcher: () => <nav aria-label="App mode" />, useModeSettings: () => undefined }));
 const settings = { providers: [{ id: "p", name: "Local", enabled: true, models: [{ id: "one", enabled: true }, { id: "two", enabled: true, supportsImages: false }] }], agentPolicy: { defaultModel: { providerId: "p", modelId: "one" } }, mcpServers: [] } as unknown as AppSettings;
 let rows: Chat[];
 const thread = (id: string) => ({ id, model: "one", modelProvider: "p", turns: [{ id: "turn", items: [
@@ -19,7 +19,6 @@ const thread = (id: string) => ({ id, model: "one", modelProvider: "p", turns: [
   { id: "assistant", type: "agentMessage", text: "Original answer" },
 ] }] });
 beforeEach(() => {
-  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   rows = [{ id: "chat", model: "one", modelProvider: "p", createdAt: 1, updatedAt: Date.now() / 1000, chat: { title: "My conversation", pinned: false, deletedAt: null } }];
   vi.mocked(chatRequest).mockImplementation(async (action, params = {}) => {
     if (action === "list") return rows;
@@ -41,13 +40,6 @@ async function open() {
   await waitFor(() => expect(screen.getByRole("button", { name: "Regenerate last answer" })).not.toHaveProperty("disabled", true));
 }
 describe("Chat UI", () => {
-  it("uses the shared shell, header Browser and Settings footer", async () => {
-    const { container } = render(<ChatView settings={settings} />);
-    expect(container.querySelector(".app-shell .mode-switcher, .app-shell nav")).toBeTruthy();
-    expect(container.querySelector(".shell-footer")?.contains(screen.getByRole("button", { name: "Open settings" }))).toBe(true);
-    expect(container.querySelector("header")?.contains(screen.getByRole("button", { name: "Browser" }))).toBe(true);
-    expect(container.querySelector(".browser-toggle")).toBeNull();
-  });
   it("inlines native Tauri drops before sending, without giving paths to the model", async () => {
     vi.mocked(readChatAttachment).mockResolvedValue({ name: "native.txt", text: "Dropped text" });
     render(<ChatView settings={settings} />); await open();

@@ -1,4 +1,3 @@
-import { AppShell } from "./AppShell";
 import { lazy, Suspense, type CSSProperties, type ComponentProps, type RefObject } from "react";
 import { AppLayout } from "@app/components/AppLayout";
 import { AppModals } from "@app/components/AppModals";
@@ -53,7 +52,7 @@ export function MainAppShell({
   mobileSetupWizardProps,
 }: MainAppShellProps) {
   return (
-    <AppShell className={`${appClassName}${isResizing ? " is-resizing" : ""}`} style={appStyle} ref={appRef}>
+    <div className={`${appClassName}${isResizing ? " is-resizing" : ""}`} style={appStyle} ref={appRef}>
       <div className="drag-strip" id="titlebar" />
       <TitlebarExpandControls {...sidebarToggleProps} />
       <WindowCaptionControls />
@@ -65,6 +64,6 @@ export function MainAppShell({
       <AppLayout {...appLayoutProps} />
       <AppModals {...appModalsProps} />
       {showMobileSetupWizard ? <MobileServerSetupWizard {...mobileSetupWizardProps} /> : null}
-    </AppShell>
+    </div>
   );
 }
