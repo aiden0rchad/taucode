@@ -83,6 +83,27 @@ pub fn select(content: &SCShareableContent, pid: i32) -> Result<SCWindow, String
     .map_err(|e| format!("Window selection: pid={pid}, {e}"))?;
     Ok(windows[index].clone())
 }
+// Retry only an empty target list. Minimized windows and unreadable AX state
+// remain immediate failures. The injected clock keeps launch-race tests fast.
+pub fn retry_empty<T>(
+    mut select: impl FnMut() -> Result<T, String>,
+    mut now: impl FnMut() -> std::time::Instant,
+    mut wait: impl FnMut(std::time::Duration),
+) -> Result<T, String> {
+    let deadline = now() + std::time::Duration::from_secs(3);
+    loop {
+        let result = select();
+        if !result
+            .as_ref()
+            .err()
+            .is_some_and(|e| e.contains("Target has no window; listed=0,"))
+            || now() >= deadline
+        {
+            return result;
+        }
+        wait(std::time::Duration::from_millis(200).min(deadline.saturating_duration_since(now())));
+    }
+}
 // Input is front to back. On-screen windows cannot be minimized; query AX only
 // for the fallback candidates, failing closed if their state cannot be read.
 fn select_index(
@@ -177,6 +198,54 @@ pub fn validate(expected: &Window, pid: i32) -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn launch_retry_waits_only_for_empty_list_and_stops_at_three_seconds() {
+        use std::{
+            cell::Cell,
+            time::{Duration, Instant},
+        };
+        for arrives in [Some(3), None] {
+            let clock = Cell::new(Instant::now());
+            let start = clock.get();
+            let calls = Cell::new(0);
+            let result = retry_empty(
+                || {
+                    calls.set(calls.get() + 1);
+                    if arrives == Some(calls.get()) {
+                        Ok(7)
+                    } else {
+                        Err("Target has no window; listed=0, on-screen=0, minimized=0".into())
+                    }
+                },
+                || clock.get(),
+                |duration| {
+                    assert!(duration <= Duration::from_millis(200));
+                    clock.set(clock.get() + duration);
+                },
+            );
+            if arrives.is_some() {
+                assert_eq!(result, Ok(7));
+                assert_eq!(calls.get(), 3);
+            } else {
+                assert!(result.is_err());
+                assert_eq!(calls.get(), 16);
+                assert_eq!(clock.get() - start, Duration::from_secs(3));
+            }
+        }
+        for error in [
+            "Target window is minimized; listed=1",
+            "Target process exited",
+            "SCK window list unavailable",
+        ] {
+            let result: Result<(), _> = retry_empty(
+                || Err(error.into()),
+                Instant::now,
+                |_| panic!("must not retry"),
+            );
+            assert_eq!(result.unwrap_err(), error);
+        }
+    }
 
     #[test]
     fn selection_prefers_visible_then_non_minimized_in_front_to_back_order() {

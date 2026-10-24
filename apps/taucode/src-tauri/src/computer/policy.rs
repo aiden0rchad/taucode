@@ -256,6 +256,7 @@ pub struct Target {
     pub secure: bool,
     pub window_title: String,
     pub selected_rows: String,
+    pub resolved_hotkey: bool,
 }
 pub const SYSTEM_SETTINGS: &str = "com.apple.systempreferences";
 pub fn access(app: &str, s: &Settings) -> Access {
@@ -336,6 +337,16 @@ fn safe_hotkey(keys: &[String]) -> bool {
             | [125]
             | [126]
     )
+}
+fn risky_hotkey(keys: &[String]) -> bool {
+    let codes: Vec<_> = keys.iter().filter_map(|k| keycode(k)).collect();
+    codes.contains(&55)
+        && codes
+            .iter()
+            .any(|k| matches!(k, 1 | 12 | 13 | 48 | 51 | 53 | 117))
+}
+fn return_key(keys: &[String]) -> bool {
+    keys.len() == 1 && keycode(&keys[0]) == Some(36)
 }
 #[derive(Debug, PartialEq)]
 pub enum Decision {
@@ -457,22 +468,47 @@ pub fn decide(
         if sensitive_field(&target_info.label) {
             return Decision::Confirm("Typing or keyboard action in a sensitive field");
         }
+        if c.secure || target_info.secure {
+            return Decision::Confirm("Typing or keyboard action in a secure field");
+        }
+        if let Action::Hotkey { keys } = a {
+            if risky_hotkey(keys) {
+                return Decision::Confirm("Potentially unsafe keyboard shortcut");
+            }
+            if target_info.resolved_hotkey && target_info.role == "AXMenuItem" {
+                return if risky_target(&target_info.label) {
+                    Decision::Confirm("Potential submit, send, purchase or destructive menu item")
+                } else {
+                    Decision::Allow
+                };
+            }
+        }
+        let allow_return = s.confirm_typing == ConfirmTyping::RiskyOnly
+            && !c.secure
+            && !target_info.secure
+            && matches!(
+                target_info.role.as_str(),
+                "AXTextField" | "AXTextArea" | "AXComboBox"
+            );
         let safe = match a {
             Action::Type { enter, text, .. } => {
-                !enter
-                    && !text.contains(['\r', '\n'])
+                (allow_return || (!enter && !text.contains(['\r', '\n'])))
                     && matches!(
                         target_info.role.as_str(),
                         "AXTextField" | "AXTextArea" | "AXComboBox"
                     )
             }
-            Action::Hotkey { keys } => safe_hotkey(keys) && !target_info.secure && !c.secure,
+            Action::Hotkey { keys } => {
+                (safe_hotkey(keys) || (allow_return && return_key(keys)))
+                    && !target_info.secure
+                    && !c.secure
+            }
             Action::HoldAndPress { hold, press } => {
                 !press.is_empty()
                     && press.iter().all(|key| {
                         let mut keys = hold.clone();
                         keys.push(key.clone());
-                        safe_hotkey(&keys)
+                        safe_hotkey(&keys) || (allow_return && return_key(&keys))
                     })
                     && !target_info.secure
                     && !c.secure
@@ -649,6 +685,157 @@ mod refinements {
     }
     fn confirmed(d: Decision) {
         assert!(matches!(d, Decision::Confirm(_)), "{d:?}");
+    }
+
+    #[test]
+    fn resolved_hotkeys_use_menu_policy_with_risky_shortcut_precedence() {
+        let mut s = settings();
+        let ordinary = Target {
+            resolved_hotkey: true,
+            ..field("AXMenuItem", "File > New Folder")
+        };
+        let action = Action::Hotkey {
+            keys: keys(&["cmd", "shift", "n"]),
+        };
+        confirmed(decide(
+            &action,
+            "New Folder",
+            &Context {
+                app: "com.apple.TextEdit".into(),
+                secure: true,
+            },
+            &ordinary,
+            &s,
+            &s.app_ids(),
+            0,
+            Duration::ZERO,
+        ));
+        assert_eq!(
+            decision(&action, &ordinary, &s, "com.apple.TextEdit"),
+            Decision::Allow
+        );
+        // A focused menu item alone is not evidence that this shortcut resolved.
+        confirmed(decision(
+            &action,
+            &field("AXMenuItem", "File > New Folder"),
+            &s,
+            "com.apple.TextEdit",
+        ));
+        confirmed(decision(
+            &action,
+            &field("AXTextArea", "Document"),
+            &s,
+            "com.apple.TextEdit",
+        ));
+        for label in ["File > Delete", "Send > Message", "Account > Pay"] {
+            confirmed(decision(
+                &action,
+                &Target {
+                    resolved_hotkey: true,
+                    ..field("AXMenuItem", label)
+                },
+                &s,
+                "com.apple.TextEdit",
+            ));
+        }
+        for chord in [
+            &["cmd", "q"][..],
+            &["cmd", "w"],
+            &["cmd", "backspace"],
+            &["cmd", "shift", "delete"],
+            &["cmd", "s"],
+            &["ctrl", "cmd", "q"],
+        ] {
+            confirmed(decision(
+                &Action::Hotkey { keys: keys(chord) },
+                &ordinary,
+                &s,
+                "com.apple.TextEdit",
+            ));
+        }
+        s.confirm_typing = ConfirmTyping::Always;
+        confirmed(decision(&action, &ordinary, &s, "com.apple.TextEdit"));
+        s.confirm_typing = ConfirmTyping::Sensitive;
+        s.allowed_apps[0].access = Access::ReadOnly;
+        denied(decision(&action, &ordinary, &s, "com.apple.TextEdit"));
+        denied(decision(&action, &ordinary, &s, SYSTEM_SETTINGS));
+    }
+
+    #[test]
+    fn risky_only_return_decision_table() {
+        let mut s = settings();
+        s.confirm_typing = ConfirmTyping::RiskyOnly;
+        assert_eq!(
+            serde_json::to_value(&s).unwrap()["confirmTyping"],
+            "risky-only"
+        );
+        assert_eq!(
+            serde_json::from_value::<Settings>(serde_json::json!({"confirmTyping":"risky-only"}))
+                .unwrap()
+                .confirm_typing,
+            ConfirmTyping::RiskyOnly
+        );
+        for role in [
+            "AXTextField",
+            "AXTextArea",
+            "AXComboBox",
+            "AXButton",
+            "AXSecureTextField",
+            "",
+        ] {
+            for sensitive in [false, true] {
+                for secure in [false, true] {
+                    let target = Target {
+                        secure,
+                        ..field(role, if sensitive { "Password" } else { "Document" })
+                    };
+                    for action in [
+                        typing(true),
+                        Action::Hotkey {
+                            keys: keys(&["return"]),
+                        },
+                        Action::Hotkey {
+                            keys: keys(&["enter"]),
+                        },
+                        Action::HoldAndPress {
+                            hold: vec![],
+                            press: keys(&["return"]),
+                        },
+                    ] {
+                        let result = decision(&action, &target, &s, "com.apple.TextEdit");
+                        if !secure
+                            && !sensitive
+                            && matches!(role, "AXTextField" | "AXTextArea" | "AXComboBox")
+                        {
+                            assert_eq!(result, Decision::Allow, "{role}");
+                        } else {
+                            confirmed(result);
+                        }
+                    }
+                }
+            }
+        }
+        confirmed(decision(
+            &Action::Hotkey {
+                keys: keys(&["cmd", "w"]),
+            },
+            &field("AXTextArea", "Document"),
+            &s,
+            "com.apple.TextEdit",
+        ));
+        confirmed(decision(
+            &click(),
+            &field("AXButton", "Send"),
+            &s,
+            "com.apple.TextEdit",
+        ));
+        s.allowed_apps[0].access = Access::ReadOnly;
+        denied(decision(
+            &typing(true),
+            &field("AXTextArea", "Document"),
+            &s,
+            "com.apple.TextEdit",
+        ));
     }
     fn denied(d: Decision) {
         assert!(

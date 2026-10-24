@@ -50,6 +50,7 @@ pub trait Environment {
     fn begin_foreground(&self, _: &Control, _: &Context) -> Result<(), String> {
         Err("Foreground fallback unavailable".into())
     }
+    fn begin_action(&self) {}
     fn end_action(&self) {}
     fn capture_description(&self) -> String {
         "Current frontmost application".into()
@@ -486,6 +487,7 @@ pub async fn run(
             };
             phase_start = Instant::now();
             env.verify_target()?;
+            env.begin_action();
             let preparation = env.prepare(&action, control, &after)?;
             if preparation == Preparation::NeedsForeground {
                 if !settings.allow_foreground_fallback {
@@ -618,6 +620,7 @@ pub async fn run(
     })
     .and_then(|r| r);
     control.stop();
+    env.end_action();
     if let (Err(error), Some(mut entry)) = (&result, pending) {
         entry[phase] = json!(phase_start.elapsed().as_millis() as u64);
         entry["error"] = json!(error);

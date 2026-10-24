@@ -341,7 +341,7 @@ impl Computer {
             });
             self.persist(&id)?;
             let mut result = result.unwrap_or_else(|error| json!({"summary":error,"error":error}));
-            result["computerRun"] = json!({"id":id,"stored":true,"steps":[],"summary":result["summary"],"error":result.get("error"),"instruction":instruction});
+            result["computerRun"] = json!({"id":id,"stored":true,"steps":compact_steps(&self.state.borrow()["steps"]),"summary":result["summary"],"error":result.get("error"),"instruction":instruction});
             Ok(result)
         }
     }
@@ -573,6 +573,9 @@ impl runner::Environment for Live {
                             s.record_attempt(action);
                             runner::Preparation::Events
                         }
+                        _ if s.fallback_reason.lock().unwrap().as_deref().is_some_and(|r| r.starts_with("background_keyboard_")) => {
+                            return Err("Background keyboard delivery requires activation or lost its target focus; no input dispatched".into());
+                        }
                         _ => runner::Preparation::NeedsForeground,
                     },
                 )
@@ -583,9 +586,15 @@ impl runner::Environment for Live {
         let s = self.session.as_ref().ok_or("No background target")?;
         control.guarded(context, || s.context(), || s.begin_foreground())
     }
+    fn begin_action(&self) {
+        if let Some(s) = &self.session {
+            s.guard.begin_action();
+        }
+    }
     fn end_action(&self) {
         if let Some(s) = &self.session {
             s.end_foreground();
+            s.guard.end_action();
         }
     }
 
@@ -598,6 +607,8 @@ impl runner::Environment for Live {
             if matches!(event, control::Event::Key(..) | control::Event::Text(_))
                 && !s.events_available(&Action::Hotkey { keys: vec![] })
             {
+                *s.fallback_reason.lock().unwrap() =
+                    Some("background_keyboard_focus_changed".into());
                 return Err("Target window no longer has the app's keyboard focus".into());
             }
             if s.foreground.load(std::sync::atomic::Ordering::SeqCst) {
@@ -679,6 +690,7 @@ impl runner::Environment for Live {
         if let Some(s) = &self.session {
             step["path"] = json!(*s.path.lock().unwrap());
             step["executionFallbackReason"] = json!(*s.fallback_reason.lock().unwrap());
+            step["menuTitle"] = json!(*s.menu_title.lock().unwrap());
             step["window"] = json!(*s.window.lock().unwrap());
             step["focusRestorations"] = json!(*s.guard.restorations.lock().unwrap());
         } else {
@@ -700,3 +712,43 @@ impl runner::Environment for Live {
     }
 }
 pub use transport::{ipc, mcp_cli};
+
+fn compact_steps(steps: &Value) -> Vec<Value> {
+    steps
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|step| {
+            let mut compact = serde_json::Map::new();
+            for key in [
+                "step",
+                "action",
+                "target",
+                "reflection",
+                "planText",
+                "error",
+                "kind",
+                "reason",
+                "path",
+                "menuTitle",
+                "executionFallbackReason",
+                "predictMs",
+                "executeMs",
+                "waitMs",
+                "focusRestorations",
+                "foregroundApproval",
+            ] {
+                if let Some(value) = step.get(key) {
+                    compact.insert(key.into(), value.clone());
+                }
+            }
+            if let Some(text) = compact.get("planText").and_then(Value::as_str) {
+                compact.insert(
+                    "planText".into(),
+                    json!(text.chars().take(1024).collect::<String>()),
+                );
+            }
+            Value::Object(compact)
+        })
+        .collect()
+}

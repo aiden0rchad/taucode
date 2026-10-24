@@ -10,6 +10,24 @@ use std::{
     time::{Duration, Instant},
 };
 #[test]
+fn mcp_steps_keep_planner_actions_and_diagnostics_without_images_or_ax_values() {
+    let steps = json!([{"step":1,"action":{"kind":"type","text":"planner text"},"thumbnail":"image","planText":"界".repeat(1500),"path":"ax-menu","menuTitle":"File > New","grounding":[{"value":"private AX text"}],"executeMs":13,"focusRestorations":[{"pid":7}],"error":null}, {"step":2,"action":{"kind":"fail"},"error":"failed"}]);
+    let compact = super::compact_steps(&steps);
+    assert_eq!(compact.len(), 2);
+    assert_eq!(compact[0]["action"], steps[0]["action"]);
+    assert_eq!(
+        compact[0]["planText"].as_str().unwrap().chars().count(),
+        1024
+    );
+    for key in ["thumbnail", "grounding"] {
+        assert!(compact[0].get(key).is_none());
+    }
+    for key in ["path", "menuTitle", "executeMs", "focusRestorations"] {
+        assert_eq!(compact[0][key], steps[0][key]);
+    }
+    assert_eq!(compact[1]["error"], "failed");
+}
+#[test]
 fn permission_requests_map_each_status_without_short_circuiting() {
     struct FakePermissions {
         screen: bool,
@@ -249,6 +267,11 @@ fn stop_releases_keys_buttons_and_prevents_late_input() {
         .is_err());
 }
 struct Fake {
+    native_front: std::cell::Cell<i32>,
+    prior_front: std::cell::Cell<Option<i32>>,
+    activate_during_action: bool,
+    fail_prepare: bool,
+    restorations: std::cell::Cell<usize>,
     policy_evidence: Target,
     policy_reads: std::cell::Cell<usize>,
     policy_change: Option<(usize, Target)>,
@@ -362,6 +385,19 @@ fn stop_releases_target_input_before_overlay_cleanup_and_rejects_late_work() {
         .is_err());
 }
 impl Environment for Fake {
+    fn begin_action(&self) {
+        self.prior_front.set(Some(self.native_front.get()));
+    }
+    fn end_action(&self) {
+        if let Some(pid) = super::background::action_restoration(
+            self.prior_front.take(),
+            Some(self.native_front.get()),
+            20,
+        ) {
+            self.native_front.set(pid);
+            self.restorations.set(self.restorations.get() + 1);
+        }
+    }
     fn policy_target(&self, action: &Action) -> Result<Target, String> {
         self.policy_reads.set(self.policy_reads.get() + 1);
         if let Some((after, target)) = &self.policy_change {
@@ -393,6 +429,12 @@ impl Environment for Fake {
         _: &Control,
         _: &Context,
     ) -> Result<runner::Preparation, String> {
+        if self.activate_during_action {
+            self.native_front.set(20);
+        }
+        if self.fail_prepare {
+            return Err("prepare failed after activation".into());
+        }
         Ok(
             if self.needs_foreground && matches!(action, Action::Click { .. }) {
                 runner::Preparation::NeedsForeground
@@ -466,6 +508,11 @@ impl Environment for Fake {
 }
 fn fake(actions: Vec<Value>) -> Fake {
     Fake {
+        native_front: std::cell::Cell::new(10),
+        prior_front: std::cell::Cell::new(None),
+        activate_during_action: false,
+        fail_prepare: false,
+        restorations: std::cell::Cell::new(0),
         policy_evidence: Target::default(),
         policy_reads: std::cell::Cell::new(0),
         policy_change: None,
@@ -485,6 +532,38 @@ fn fake(actions: Vec<Value>) -> Fake {
         change_after_approval: false,
         approval_delay: Duration::ZERO,
     }
+}
+
+#[tokio::test]
+async fn post_action_restores_frontmost_with_fake_environment_even_on_prepare_failure() {
+    for fails in [false, true] {
+        let mut env = fake(vec![json!({"kind":"done","summary":"done"})]);
+        env.activate_during_action = true;
+        env.fail_prepare = fails;
+        let control = Control::new(FakeInput::default());
+        control.start();
+        let settings = settings();
+        let result = runner::run(
+            &mut env,
+            &control,
+            &settings,
+            &settings.app_ids(),
+            "test",
+            Instant::now(),
+        )
+        .await;
+        assert_eq!(result.is_err(), fails);
+        assert_eq!(env.native_front.get(), 10);
+        assert_eq!(env.restorations.get(), 1);
+    }
+    assert_eq!(
+        super::background::action_restoration(Some(10), Some(30), 20),
+        None
+    );
+    assert_eq!(
+        super::background::action_restoration(Some(20), Some(20), 20),
+        None
+    );
 }
 #[tokio::test]
 async fn fallback_requires_setting_and_fresh_approval_before_any_input() {

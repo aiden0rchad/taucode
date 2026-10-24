@@ -79,7 +79,7 @@ fn execution_table_uses_fake_ax_and_posting() {
             Action::Hotkey {
                 keys: vec!["enter".into()],
             },
-            false,
+            true,
         ),
         (
             Action::Drag {

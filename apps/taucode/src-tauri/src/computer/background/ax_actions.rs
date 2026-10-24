@@ -61,6 +61,20 @@ fn metadata_read<T>(name: &str, mut read: impl FnMut(f32) -> Result<T, i32>) -> 
     result.map_err(|status| format!("{name}: ax_error({status})"))
 }
 impl Element {
+    pub(super) fn alive(&self) -> bool {
+        self.text("AXRole").is_some_and(|role| !role.is_empty())
+    }
+    pub(super) fn press(&self) -> Result<(), String> {
+        if self.text("AXEnabled").as_deref() != Some("1") {
+            return Err("AX menu item is disabled or unavailable".into());
+        }
+        let status = self.apply("AXPress", None);
+        if status == 0 {
+            Ok(())
+        } else {
+            Err(format!("AXPress menu: ax_error({status}); not retried"))
+        }
+    }
     fn owned(ptr: Ref) -> Option<Self> {
         if ptr.is_null() {
             None
@@ -428,7 +442,9 @@ pub fn policy_target(
     let insertion = element.and_then(|e| window.and_then(|w| focused_insertion(pid, w, e, action)));
     let effective = insertion.as_ref().or(element);
     if let (Some(e), Some(id)) = (effective, window) {
-        if !e.belongs_to(pid, id) {
+        // Selected proxies have already passed the current snapshot binding
+        // and liveness checks. Only hit-tests/focused substitutes need this link.
+        if (selected.is_none() || insertion.is_some()) && !e.belongs_to(pid, id) {
             return Err("AX policy target left the captured window".into());
         }
     }

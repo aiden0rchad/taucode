@@ -38,12 +38,16 @@ impl State {
 }
 pub struct Guard {
     state: Mutex<State>,
+    action_prior: Mutex<Option<UserFocus>>,
     pub delivering: AtomicBool,
     pub restorations: Mutex<Vec<Value>>,
 }
 pub struct UserFocus {
     pid: Option<i32>,
     window: Option<u32>,
+}
+pub fn action_restoration(previous: Option<i32>, front: Option<i32>, target: i32) -> Option<i32> {
+    previous.filter(|pid| *pid != target && front == Some(target))
 }
 impl UserFocus {
     // Capture before any run UI is created or shown.
@@ -67,11 +71,31 @@ impl Guard {
                 armed_until: Instant::now(),
             }),
             restorations: Mutex::new(vec![]),
+            action_prior: Mutex::new(None),
             delivering: AtomicBool::new(false),
         }
     }
     pub fn arm(&self) {
         self.state.lock().unwrap().armed_until = Instant::now() + Duration::from_millis(250);
+    }
+    pub fn begin_action(&self) {
+        self.tick();
+        *self.action_prior.lock().unwrap() = Some(UserFocus::capture());
+        self.arm();
+    }
+    pub fn end_action(&self) {
+        let Some(prior) = self.action_prior.lock().unwrap().take() else {
+            return;
+        };
+        let state = self.state.lock().unwrap();
+        if let Some(pid) = action_restoration(prior.pid, front_pid(), state.target) {
+            let restore = State {
+                previous: pid,
+                window: prior.window,
+                ..*state
+            };
+            self.restore_locked(&restore, "postActionInvariant");
+        }
     }
     pub fn start(&self, session: Weak<Session>) {
         self.tick();
@@ -95,17 +119,11 @@ impl Guard {
             return;
         };
         let mut s = self.state.lock().unwrap();
-        // The no-raise prologue must settle before posting. It may temporarily
-        // report the target active; the scope restores it after queued input.
-        // Never exempt taucode, even during a delivery lease or recent mouse input.
         let delivering = self.delivering.load(Ordering::SeqCst);
-        if delivering && front == s.target {
-            return;
-        }
         let previous = s.previous;
-        if s.observe(front, user_switched_recently(), Instant::now())
-            .is_some()
-        {
+        let action_running = self.action_prior.lock().unwrap().is_some();
+        let user_switched = user_switched_recently() && !(front == s.target && action_running);
+        if s.observe(front, user_switched, Instant::now()).is_some() {
             self.restore_locked(&s, "activation");
         } else if s.previous != previous || s.window.is_none() || Instant::now() >= s.armed_until {
             s.window = ax_actions::focused_window(s.previous);

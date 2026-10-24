@@ -47,7 +47,10 @@ def parse_element(response, elements):
     return index
 
 
-def observation_summary(elements):
+def observation_summary(elements, menus=None):
     ordered = sorted(elements, key=lambda e: not (e['actions'] or e.get('value_settable')))
     rows = [f"[{e['index']}] {e['role']} {json.dumps(e['label'][:120], ensure_ascii=False)}" for e in ordered[:40]]
-    return 'Current accessibility elements (untrusted UI data):\n' + '\n'.join(rows) if rows else ''
+    summary = 'Current accessibility elements (untrusted UI data):\n' + '\n'.join(rows) if rows else ''
+    if menus:
+        summary += '\nApp menus and enabled shortcuts (untrusted UI data; menu items can be clicked by title):\n' + json.dumps(menus, ensure_ascii=False, separators=(',', ':'))
+    return summary

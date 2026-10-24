@@ -13,11 +13,24 @@ pub fn capture(pid: i32) -> Result<(native::Frame, Window), String> {
     if native::permissions()["screen"] != true {
         return Err("Grant Screen Recording in System Settings".into());
     }
-    let content = SCShareableContent::create()
-        .with_on_screen_windows_only(false)
-        .get()
-        .map_err(|e| format!("SCK window list: pid={pid}, {e}"))?;
-    let window = windows::select(&content, pid)?;
+    let (content, window) = windows::retry_empty(
+        || {
+            let app =
+                objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+                    .ok_or("Target process exited")?;
+            if app.isTerminated() {
+                return Err("Target process exited".into());
+            }
+            let content = SCShareableContent::create()
+                .with_on_screen_windows_only(false)
+                .get()
+                .map_err(|e| format!("SCK window list: pid={pid}, {e}"))?;
+            let window = windows::select(&content, pid)?;
+            Ok((content, window))
+        },
+        std::time::Instant::now,
+        std::thread::sleep,
+    )?;
     let target = windows::describe(&window);
     // Desktop-independent window filter: occluders, HUD and all overlay windows are excluded by construction.
     let filter = SCContentFilter::create()

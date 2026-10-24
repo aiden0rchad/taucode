@@ -1703,6 +1703,8 @@ pub(crate) enum ConfirmTyping {
     Always,
     #[default]
     Sensitive,
+    #[serde(rename = "risky-only")]
+    RiskyOnly,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", from = "ComputerAllowedAppInput")]

@@ -11,6 +11,15 @@ vi.mock("@services/tauri", () => ({ computerRequest: vi.fn(), computerRequestPer
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const step = { step: 1, thumbnail: "aGVsbG8=", action: { kind: "click" }, reflection: "Found button" };
 describe("computer use", () => {
+  it("persists risky-only typing with a Return warning", async () => {
+    vi.mocked(computerRequest).mockResolvedValue({ steps: [] });
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(<SettingsComputerSection appSettings={{ computer: defaultComputerSettings } as AppSettings} onUpdateAppSettings={save} />);
+    fireEvent.change(screen.getByLabelText("Typing confirmation"), { target: { value: "risky-only" } });
+    expect(screen.getByRole("alert").textContent).toContain("Return can submit or send in some apps");
+    fireEvent.click(screen.getByText("Save Computer Use"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ computer: expect.objectContaining({ confirmTyping: "risky-only" }) })));
+  });
   it("persists typing confirmation and app access, migrating strings and locking System Settings", async () => {
     vi.mocked(computerRequest).mockResolvedValue({ steps: [] });
     const save = vi.fn().mockResolvedValue(undefined);

@@ -36,6 +36,10 @@ def test_prompt_bounds_and_summary():
     assert len(summary.splitlines()) == 41
     assert summary.splitlines()[1].startswith('[2] AXButton')
     assert '[1]' not in summary
+    menus = {'titles': ['File'], 'items': [{'title': 'File > New Folder', 'keys': ['command', 'shift', 'n']}]}
+    menu_summary = observation_summary([e], menus)
+    assert 'untrusted UI data; menu items can be clicked by title' in menu_summary
+    assert 'File > New Folder' in menu_summary and '"command","shift","n"' in menu_summary
 
 
 @pytest.mark.parametrize('reply', ['0', 'none', 'garbage'])
