@@ -427,6 +427,21 @@ Each milestone ends with a demo and its exit criteria passing.
 - ACP engine adapter with Claude Code as the first ACP engine; cross-engine handoff;
   role routing for side chats and subagents; codegraph symbol mentions, blast radius,
   affected tests.
+- **Wave 1** (in progress 2026-10-23, parallel worktrees `m4a` / `m4b` / `m4c`):
+  - `docs/specs/m4a-agents-tree-and-side-chats.md`
+  - `m4b-checkpoints-rewind.md`
+  - `m4c-acp-claude-engine.md`: `@agentclientprotocol/claude-agent-acp@0.89.1`,
+    `--hide-claude-auth`, isolated `CLAUDE_CONFIG_DIR`, API keys from the registry only
+- **Wave 2** (user request 2026-10-23):
+  - `m4d-simple-chat.md`: Chat mode, a plain chatbot with no project; Code · Chat · Work
+    mode switcher
+  - `m4e-import-claude-codex.md`: import projects, threads, Cowork tasks, MCP servers
+    and chats from Codex desktop/CLI, Claude desktop (Code tab and Cowork), and the
+    claude.ai / ChatGPT exports. Read-only, idempotent, never reads credentials.
+  - `m4f-work-mode.md`: Cowork-style Work mode, with folder spaces, a task queue,
+    plan/outputs panes, document skills (pinned `engines/work` uv lock), and
+    approval-before-overwrite.
+  - Order: m4d, then m4e ‖ m4f.
 
 **M5 — Ship (2 weeks)**
 - Signing + notarization with bundled Python, permission onboarding, auto-update
