@@ -427,6 +427,11 @@ pub fn decide(
                             | "AXDisclosureTriangle"
                             | "AXStaticText"
                     )
+                    && (target_info.role != "AXMenuItem"
+                        || matches!(
+                            target_info.label.split(" > ").next(),
+                            Some("View" | "Go" | "Window" | "Help")
+                        ))
                     && !risky_target(description)
                     && !risky_target(&target_info.label)
             }
@@ -685,6 +690,62 @@ mod refinements {
     }
     fn confirmed(d: Decision) {
         assert!(matches!(d, Decision::Confirm(_)), "{d:?}");
+    }
+
+    #[test]
+    fn menu_clicks_obey_read_only_roots_risky_titles_and_pane_denylist() {
+        let mut s = settings();
+        for title in ["File > Delete", "Account > Pay", "Message > Send"] {
+            confirmed(decision(
+                &click(),
+                &field("AXMenuItem", title),
+                &s,
+                "com.apple.TextEdit",
+            ));
+        }
+        s.allowed_apps[0].access = Access::ReadOnly;
+        for menu in ["View", "Go", "Window", "Help"] {
+            assert_eq!(
+                decision(
+                    &click(),
+                    &field("AXMenuItem", &format!("{menu} > Next")),
+                    &s,
+                    "com.apple.TextEdit"
+                ),
+                Decision::Allow
+            );
+        }
+        for title in [
+            "File > New Folder",
+            "Edit > Copy",
+            "TextEdit > About",
+            "Next",
+        ] {
+            let d = decision(
+                &click(),
+                &field("AXMenuItem", title),
+                &s,
+                "com.apple.TextEdit",
+            );
+            assert!(matches!(d, Decision::Deny(reason) if reason.contains("read-only")));
+        }
+        for role in ["AXRow", "AXOutlineRow", "AXMenuItem"] {
+            let label = if role == "AXMenuItem" {
+                "View > General"
+            } else {
+                "General"
+            };
+            assert_eq!(
+                decision(&click(), &field(role, label), &s, SYSTEM_SETTINGS),
+                Decision::Allow
+            );
+            denied(decision(
+                &click(),
+                &field(role, "Privacy & Security"),
+                &s,
+                SYSTEM_SETTINGS,
+            ));
+        }
     }
 
     #[test]
@@ -1041,7 +1102,19 @@ mod refinements {
             "AXStaticText",
         ] {
             assert_eq!(
-                decision(&click(), &field(role, "General"), &s, "com.apple.TextEdit"),
+                decision(
+                    &click(),
+                    &field(
+                        role,
+                        if role == "AXMenuItem" {
+                            "View > General"
+                        } else {
+                            "General"
+                        }
+                    ),
+                    &s,
+                    "com.apple.TextEdit"
+                ),
                 Decision::Allow,
                 "{role}"
             );

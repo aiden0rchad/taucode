@@ -35,6 +35,9 @@ extern "C" {
     fn CFRelease(value: Ref);
     fn CFArrayGetCount(value: Ref) -> isize;
     fn CFArrayGetValueAtIndex(value: Ref, index: isize) -> Ref;
+    fn CFArrayCreate(allocator: Ref, values: *const Ref, count: isize, callbacks: Ref) -> Ref;
+    fn CFEqual(a: Ref, b: Ref) -> bool;
+    static kCFBooleanTrue: Ref;
 }
 pub struct Element(Ref);
 // Retained AX proxies are thread-safe CF objects; access is serialized by the session mutex.
@@ -109,7 +112,7 @@ impl Element {
     pub(super) fn attr(&self, name: &str) -> Option<Self> {
         self.attr_result(name).ok()
     }
-    fn attr_result(&self, name: &str) -> Result<Self, String> {
+    pub(super) fn attr_result(&self, name: &str) -> Result<Self, String> {
         metadata_read(name, |seconds| {
             self.with_timeout(seconds, || {
                 let mut result = std::ptr::null();
@@ -252,16 +255,15 @@ impl Element {
         self.text("AXEnabled").as_deref() != Some("0")
     }
     pub(super) fn belongs_to(&self, pid: i32, window: u32) -> bool {
-        let mut owner = 0;
-        unsafe {
-            AXUIElementSetMessagingTimeout(self.0, 0.005);
-        }
-        (unsafe { AXUIElementGetPid(self.0, &mut owner) == 0 })
-            && owner == pid
+        self.owner() == Some(pid)
             && self
                 .window_id()
                 .or_else(|| self.attr("AXWindow").and_then(|w| w.window_id()))
                 == Some(window)
+    }
+    fn owner(&self) -> Option<i32> {
+        let mut pid = 0;
+        (unsafe { AXUIElementGetPid(self.0, &mut pid) } == 0).then_some(pid)
     }
     pub(super) fn set_text(
         &self,
@@ -344,6 +346,149 @@ fn row_label(row: &Element) -> String {
         }
     }
     labels.join(" ")
+}
+// Selection is shared by routing and policy so the row label is checked before writes.
+trait RowElement: Clone {
+    fn role(&self) -> String;
+    fn parent(&self) -> Option<Self>;
+    fn select(&self, container: Option<&Self>) -> Result<bool, String>;
+}
+fn row_target<E: RowElement>(element: &E, action: &Action) -> Option<(E, Option<E>)> {
+    if !matches!(action, Action::Click { button, clicks: 1, hold_keys, .. }
+        if button == "left" && hold_keys.is_empty())
+    {
+        return None;
+    }
+    let mut current = element.clone();
+    for depth in 0..=4 {
+        match current.role().as_str() {
+            "AXRow" | "AXOutlineRow" => {
+                let row = current;
+                let mut parent = row.parent();
+                for _ in 0..4 {
+                    let Some(container) = parent else {
+                        break;
+                    };
+                    if matches!(
+                        container.role().as_str(),
+                        "AXOutline" | "AXTable" | "AXList"
+                    ) {
+                        return Some((row, Some(container)));
+                    }
+                    parent = container.parent();
+                }
+                return (depth == 0).then_some((row, None));
+            }
+            // A control within a row keeps its own behavior and policy.
+            "AXButton"
+            | "AXLink"
+            | "AXMenuItem"
+            | "AXCheckBox"
+            | "AXSwitch"
+            | "AXRadioButton"
+            | "AXSlider"
+            | "AXIncrementor"
+            | "AXPopUpButton"
+            | "AXComboBox"
+            | "AXTextField"
+            | "AXTextArea"
+            | "AXDisclosureTriangle" => return None,
+            _ => current = current.parent()?,
+        }
+    }
+    None
+}
+fn selection_result(status: i32, verify: impl FnOnce() -> bool) -> Result<bool, String> {
+    match status {
+        0 if verify() => Ok(true),
+        0 => Err("AX row selection verification failed; not retried".into()),
+        -25205 | -25212 => Ok(false), // Unsupported attribute / not settable.
+        _ => Err(format!("AX row selection failed ({status}); not retried")),
+    }
+}
+impl RowElement for Element {
+    fn role(&self) -> String {
+        self.text("AXRole").unwrap_or_default()
+    }
+    fn parent(&self) -> Option<Self> {
+        self.attr("AXParent")
+    }
+    fn select(&self, container: Option<&Self>) -> Result<bool, String> {
+        let settable = |e: &Element, name: &str| -> Result<bool, String> {
+            let mut value = 0;
+            let status = unsafe {
+                AXUIElementIsAttributeSettable(e.0, string(&NSString::from_str(name)), &mut value)
+            };
+            match status {
+                0 => Ok(value != 0),
+                -25205 | -25212 => Ok(false),
+                _ => Err(format!("AX row selection {name} probe failed ({status})")),
+            }
+        };
+        if settable(self, "AXSelected")? {
+            let status = self.with_timeout(0.05, || unsafe {
+                AXUIElementSetAttributeValue(
+                    self.0,
+                    string(&NSString::from_str("AXSelected")),
+                    kCFBooleanTrue,
+                )
+            });
+            if selection_result(status, || self.text("AXSelected").as_deref() == Some("1"))? {
+                return Ok(true);
+            }
+        }
+        let Some(container) = container else {
+            return Ok(false);
+        };
+        if !settable(container, "AXSelectedRows")? {
+            return Ok(false);
+        }
+        let rows = Element::owned_value(unsafe {
+            CFArrayCreate(std::ptr::null(), &self.0, 1, std::ptr::null())
+        })
+        .ok_or("Cannot allocate AXSelectedRows")?;
+        let status = container.with_timeout(0.05, || unsafe {
+            AXUIElementSetAttributeValue(
+                container.0,
+                string(&NSString::from_str("AXSelectedRows")),
+                rows.0,
+            )
+        });
+        selection_result(status, || {
+            container
+                .children("AXSelectedRows", 256)
+                .iter()
+                .any(|e| unsafe { CFEqual(e.0, self.0) })
+        })
+    }
+}
+pub(super) fn select_row(element: &Element, action: &Action) -> Result<bool, String> {
+    select_row_with(element, action)
+}
+fn select_row_with(element: &impl RowElement, action: &Action) -> Result<bool, String> {
+    match row_target(element, action) {
+        Some((row, container)) => row.select(container.as_ref()),
+        None => Ok(false),
+    }
+}
+pub(super) fn elementless_keyboard(action: &Action, selected: bool) -> bool {
+    !selected
+        && matches!(
+            action,
+            Action::Hotkey { .. }
+                | Action::HoldAndPress { .. }
+                | Action::Type {
+                    x: None,
+                    y: None,
+                    ..
+                }
+        )
+}
+fn focused_owner(pid: i32, owner: Option<i32>, readable: bool) -> Result<(), String> {
+    if owner != Some(pid) || !readable {
+        return Err("AX focused policy target belongs to another pid or cannot be read".into());
+    }
+    Ok(())
 }
 fn pane_root<H>(mut read: impl FnMut(&str) -> Result<Option<H>, String>) -> Result<H, String> {
     let mut observed = vec![];
@@ -437,14 +582,30 @@ pub fn policy_target(
     action: &Action,
     selected: Option<&Element>,
 ) -> Result<super::super::policy::Target, String> {
+    let keyboard = elementless_keyboard(action, selected.is_some());
     let hit = target(pid, action_point(action));
     let element = selected.or(hit.as_ref());
+    if keyboard {
+        focused_owner(
+            pid,
+            element.and_then(Element::owner),
+            element.is_some_and(Element::alive),
+        )?;
+    }
+    let window = if keyboard {
+        element.and_then(|e| {
+            e.window_id()
+                .or_else(|| e.attr("AXWindow").and_then(|w| w.window_id()))
+        })
+    } else {
+        window
+    };
     let insertion = element.and_then(|e| window.and_then(|w| focused_insertion(pid, w, e, action)));
     let effective = insertion.as_ref().or(element);
     if let (Some(e), Some(id)) = (effective, window) {
         // Selected proxies have already passed the current snapshot binding
         // and liveness checks. Only hit-tests/focused substitutes need this link.
-        if (selected.is_none() || insertion.is_some()) && !e.belongs_to(pid, id) {
+        if !keyboard && (selected.is_none() || insertion.is_some()) && !e.belongs_to(pid, id) {
             return Err("AX policy target left the captured window".into());
         }
     }
@@ -490,11 +651,18 @@ pub fn policy_target(
             info.label.push_str(&format!(" {}", row_label(e)));
         }
     }
+    if let Some((row, _)) = effective.and_then(|e| row_target(e, action)) {
+        info.role = row.role();
+        info.label = row_label(&row);
+    }
     let app = objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
         .and_then(|a| a.bundleIdentifier())
         .ok_or("Target application unavailable")?
         .to_string();
     if app.eq_ignore_ascii_case(super::super::policy::SYSTEM_SETTINGS) {
+        if keyboard && window.is_none() {
+            return Err("System Settings read-only access: focused window unavailable".into());
+        }
         let mut pane = pane_info(pid, window)?;
         if window.is_none() {
             if let Some(id) = element.and_then(|e| {
@@ -512,6 +680,18 @@ pub fn policy_target(
         info.selected_rows = pane.selected_rows;
     }
     Ok(info)
+}
+pub(super) fn focused_policy_window(pid: i32) -> Option<u32> {
+    let e = target(pid, None)?;
+    focused_owner(pid, e.owner(), e.alive()).ok()?;
+    e.window_id()
+        .or_else(|| e.attr("AXWindow").and_then(|w| w.window_id()))
+}
+pub(super) fn window_count(pid: i32) -> Result<usize, String> {
+    Element::app(pid)
+        .ok_or("Target application unavailable")?
+        .children_result("AXWindows", 128)
+        .map(|windows| windows.len())
 }
 pub fn focused_window(pid: i32) -> Option<u32> {
     Element::app(pid)?.attr("AXFocusedWindow")?.window_id()
@@ -844,6 +1024,137 @@ fn element_route<'a>(
 
 #[cfg(test)]
 mod element_tests {
+    #[test]
+    fn rows_and_descendants_select_but_controls_press() {
+        #[derive(Clone)]
+        struct Row {
+            roles: &'static [&'static str],
+            writes: std::rc::Rc<std::cell::Cell<usize>>,
+            status: i32,
+            verified: bool,
+        }
+        impl RowElement for Row {
+            fn role(&self) -> String {
+                self.roles[0].into()
+            }
+            fn parent(&self) -> Option<Self> {
+                (self.roles.len() > 1).then(|| Self {
+                    roles: &self.roles[1..],
+                    ..self.clone()
+                })
+            }
+            fn select(&self, container: Option<&Self>) -> Result<bool, String> {
+                if let Some(container) = container {
+                    assert!(matches!(
+                        container.role().as_str(),
+                        "AXOutline" | "AXTable" | "AXList"
+                    ));
+                }
+                self.writes.set(self.writes.get() + 1);
+                selection_result(self.status, || self.verified)
+            }
+        }
+        let click = Action::Click {
+            x: 0.,
+            y: 0.,
+            button: "left".into(),
+            clicks: 1,
+            hold_keys: vec![],
+        };
+        for (roles, selects) in [
+            (&["AXRow", "AXOutline"][..], true),
+            (&["AXRow"][..], true),
+            (
+                &["AXStaticText", "AXCell", "AXOutlineRow", "AXList"][..],
+                true,
+            ),
+            (
+                &[
+                    "AXStaticText",
+                    "AXGroup",
+                    "AXGroup",
+                    "AXCell",
+                    "AXRow",
+                    "AXTable",
+                ][..],
+                true,
+            ),
+            (
+                &[
+                    "AXStaticText",
+                    "AXGroup",
+                    "AXGroup",
+                    "AXGroup",
+                    "AXCell",
+                    "AXRow",
+                    "AXTable",
+                ][..],
+                false,
+            ),
+            (&["AXButton", "AXRow", "AXOutline"][..], false),
+            (
+                &["AXStaticText", "AXCheckBox", "AXRow", "AXOutline"][..],
+                false,
+            ),
+        ] {
+            let row = Row {
+                roles,
+                writes: Default::default(),
+                status: 0,
+                verified: true,
+            };
+            assert_eq!(select_row_with(&row, &click).unwrap(), selects);
+            assert_eq!(row.writes.get(), usize::from(selects));
+            if roles[0] == "AXButton" {
+                assert_eq!(element_route(&click, &[], false, false), Some("AXPress"));
+            }
+        }
+        let row = Row {
+            roles: &["AXRow", "AXOutline"],
+            writes: Default::default(),
+            status: 0,
+            verified: false,
+        };
+        assert!(select_row_with(&row, &click)
+            .unwrap_err()
+            .contains("verification failed"));
+        assert_eq!(row.writes.get(), 1);
+        for status in [-25205, -25212] {
+            assert!(!selection_result(status, || panic!("unsupported must not verify")).unwrap());
+        }
+        assert!(selection_result(-25204, || true)
+            .unwrap_err()
+            .contains("not retried"));
+    }
+
+    #[test]
+    fn elementless_focus_allows_same_pid_panels_and_fails_closed() {
+        for action in [
+            Action::Hotkey {
+                keys: vec!["escape".into()],
+            },
+            Action::HoldAndPress {
+                hold: vec![],
+                press: vec!["escape".into()],
+            },
+            Action::Type {
+                text: "hello".into(),
+                x: None,
+                y: None,
+                overwrite: false,
+                enter: false,
+            },
+        ] {
+            assert!(elementless_keyboard(&action, false));
+            assert!(!elementless_keyboard(&action, true));
+        }
+        // Focus ownership is independent of the captured window (e.g. a sheet).
+        assert!(focused_owner(42, Some(42), true).is_ok());
+        for (owner, readable) in [(Some(43), true), (None, true), (Some(42), false)] {
+            assert!(focused_owner(42, owner, readable).is_err());
+        }
+    }
+
     use super::super::ax_tree::{Node, Provider, Snapshot, SNAPSHOT_BUDGET};
     use super::*;
     use std::{cell::RefCell, rc::Rc};

@@ -13,7 +13,7 @@ pub fn capture(pid: i32) -> Result<(native::Frame, Window), String> {
     if native::permissions()["screen"] != true {
         return Err("Grant Screen Recording in System Settings".into());
     }
-    let (content, window) = windows::retry_empty(
+    let (content, window) = windows::retry_windowless(
         || {
             let app =
                 objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
@@ -27,6 +27,22 @@ pub fn capture(pid: i32) -> Result<(native::Frame, Window), String> {
                 .map_err(|e| format!("SCK window list: pid={pid}, {e}"))?;
             let window = windows::select(&content, pid)?;
             Ok((content, window))
+        },
+        || {
+            if super::ax_actions::window_count(pid)? != 0 {
+                return Ok(());
+            }
+            let app =
+                objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+                    .ok_or("Target process exited")?;
+            let url = app
+                .bundleURL()
+                .ok_or("Target application URL unavailable")?;
+            let config = objc2_app_kit::NSWorkspaceOpenConfiguration::configuration();
+            config.setActivates(false);
+            objc2_app_kit::NSWorkspace::sharedWorkspace()
+                .openApplicationAtURL_configuration_completionHandler(&url, &config, None);
+            Ok(())
         },
         std::time::Instant::now,
         std::thread::sleep,

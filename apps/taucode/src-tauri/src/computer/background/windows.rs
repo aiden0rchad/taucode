@@ -83,23 +83,29 @@ pub fn select(content: &SCShareableContent, pid: i32) -> Result<SCWindow, String
     .map_err(|e| format!("Window selection: pid={pid}, {e}"))?;
     Ok(windows[index].clone())
 }
-// Retry only an empty target list. Minimized windows and unreadable AX state
-// remain immediate failures. The injected clock keeps launch-race tests fast.
-pub fn retry_empty<T>(
+// Retry missing usable windows; reopen once only when AXWindows is readable and empty.
+// Minimized windows remain failures. Injected time keeps launch tests deterministic.
+pub fn retry_windowless<T>(
     mut select: impl FnMut() -> Result<T, String>,
+    mut reopen: impl FnMut() -> Result<(), String>,
     mut now: impl FnMut() -> std::time::Instant,
     mut wait: impl FnMut(std::time::Duration),
 ) -> Result<T, String> {
-    let deadline = now() + std::time::Duration::from_secs(3);
+    let deadline = now() + std::time::Duration::from_secs(5);
+    let mut reopened = false;
     loop {
         let result = select();
         if !result
             .as_ref()
             .err()
-            .is_some_and(|e| e.contains("Target has no window; listed=0,"))
+            .is_some_and(|e| e.contains("Target has no window;"))
             || now() >= deadline
         {
             return result;
+        }
+        if !reopened {
+            reopen()?;
+            reopened = true;
         }
         wait(std::time::Duration::from_millis(200).min(deadline.saturating_duration_since(now())));
     }
@@ -200,7 +206,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn launch_retry_waits_only_for_empty_list_and_stops_at_three_seconds() {
+    fn windowless_launch_reopens_once_polls_and_stops_at_five_seconds() {
         use std::{
             cell::Cell,
             time::{Duration, Instant},
@@ -209,14 +215,22 @@ mod tests {
             let clock = Cell::new(Instant::now());
             let start = clock.get();
             let calls = Cell::new(0);
-            let result = retry_empty(
+            let reopens = Cell::new(0);
+            let result = retry_windowless(
                 || {
                     calls.set(calls.get() + 1);
                     if arrives == Some(calls.get()) {
                         Ok(7)
                     } else {
-                        Err("Target has no window; listed=0, on-screen=0, minimized=0".into())
+                        Err(
+                            "Target has no window; listed=14, on-screen=0, minimized=0, unknown=14"
+                                .into(),
+                        )
                     }
+                },
+                || {
+                    reopens.set(reopens.get() + 1);
+                    Ok(())
                 },
                 || clock.get(),
                 |duration| {
@@ -224,13 +238,14 @@ mod tests {
                     clock.set(clock.get() + duration);
                 },
             );
+            assert_eq!(reopens.get(), 1);
             if arrives.is_some() {
                 assert_eq!(result, Ok(7));
                 assert_eq!(calls.get(), 3);
             } else {
                 assert!(result.is_err());
-                assert_eq!(calls.get(), 16);
-                assert_eq!(clock.get() - start, Duration::from_secs(3));
+                assert_eq!(calls.get(), 26);
+                assert_eq!(clock.get() - start, Duration::from_secs(5));
             }
         }
         for error in [
@@ -238,8 +253,9 @@ mod tests {
             "Target process exited",
             "SCK window list unavailable",
         ] {
-            let result: Result<(), _> = retry_empty(
+            let result: Result<(), _> = retry_windowless(
                 || Err(error.into()),
+                || panic!("must not reopen"),
                 Instant::now,
                 |_| panic!("must not retry"),
             );

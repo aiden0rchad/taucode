@@ -179,3 +179,23 @@ def test_window_lookup_errors_reach_grounding_and_sidecar_log(capsys):
     assert decision['window_lookup'] == lookup
     assert decision['snapshot_status'] == 'missing_window'
     assert 'AXWindows: ax_error(-25204)' in capsys.readouterr().err
+
+
+def test_menu_elements_and_rows_reach_grounding_and_planner():
+    row = dict(node(), role='AXRow', label='General', actions=[])
+    menus = [dict(node(i + 1), role='AXMenuItem', label=f'File > Item {i}',
+                  value='command+shift+n', enabled=True) for i in range(70)]
+    snapshot = dict(snapshot_id=9, elements=[row] + menus)
+    usable = usable_elements(snapshot)
+    assert len(usable) == 71
+    assert parse_element('1', usable) == 1
+    prompt = grounding_prompt('New Folder', usable)
+    assert 'File > Item 0' in prompt and 'command+shift+n' in prompt
+    assert '"enabled":true' in prompt
+    summary = observation_summary([dict(node(i + 80), label='Button') for i in range(100)] + menus)
+    assert summary.count('AXMenuItem') == 60
+    assert '[1] AXMenuItem' in summary
+    assert 'more reliable than keyboard shortcuts' in summary
+    assert 'sidebar/list navigation, click the row' in summary
+    menus[0]['enabled'] = False
+    assert menus[0] not in usable_elements(snapshot)

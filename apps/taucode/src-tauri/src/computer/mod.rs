@@ -691,6 +691,7 @@ impl runner::Environment for Live {
             step["path"] = json!(*s.path.lock().unwrap());
             step["executionFallbackReason"] = json!(*s.fallback_reason.lock().unwrap());
             step["menuTitle"] = json!(*s.menu_title.lock().unwrap());
+            step["menuResolution"] = json!(*s.menu_resolution.lock().unwrap());
             step["window"] = json!(*s.window.lock().unwrap());
             step["focusRestorations"] = json!(*s.guard.restorations.lock().unwrap());
         } else {

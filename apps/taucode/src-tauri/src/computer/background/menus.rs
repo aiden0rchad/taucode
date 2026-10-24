@@ -5,6 +5,14 @@ use super::super::policy::{keycode, Target};
 use super::ax_actions::Element;
 use std::time::{Duration, Instant};
 
+pub const MAX_MENU_ELEMENTS: usize = 60;
+
+#[derive(Debug, serde::Serialize, PartialEq)]
+pub struct Diagnostic {
+    pub reason: &'static str,
+    pub candidates: Vec<String>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct Combo {
     character: String,
@@ -123,6 +131,16 @@ pub struct Item<H> {
     pub metadata: Metadata,
 }
 impl<H> Item<H> {
+    pub fn node(&self) -> super::ax_tree::Node {
+        super::ax_tree::Node {
+            role: "AXMenuItem".into(),
+            label: self.path.clone(),
+            value: self.metadata.shortcut().unwrap_or_default().join("+"),
+            actions: vec!["AXPress".into()],
+            enabled: self.metadata.enabled,
+            ..Default::default()
+        }
+    }
     pub fn target(&self) -> Target {
         Target {
             role: "AXMenuItem".into(),
@@ -136,6 +154,7 @@ pub struct Inventory<H> {
     pub titles: Vec<String>,
     pub items: Vec<Item<H>>,
     complete: bool,
+    available: bool,
 }
 impl<H> Default for Inventory<H> {
     fn default() -> Self {
@@ -143,24 +162,51 @@ impl<H> Default for Inventory<H> {
             titles: vec![],
             items: vec![],
             complete: false,
+            available: false,
         }
     }
 }
 impl<H> Inventory<H> {
-    pub fn resolve(&self, keys: &[String]) -> Option<&Item<H>> {
+    pub fn resolve(&self, keys: &[String]) -> Result<&Item<H>, Diagnostic> {
+        let fail = |reason, candidates| Diagnostic { reason, candidates };
         if !self.complete {
-            return None;
+            return Err(fail(
+                if self.available {
+                    "timeout"
+                } else {
+                    "menubar_unavailable"
+                },
+                vec![],
+            ));
         }
-        let combo = Combo::parse(keys)?;
-        let mut matches = self
+        let combo = Combo::parse(keys).ok_or_else(|| fail("no_match", vec![]))?;
+        let matches: Vec<_> = self
             .items
             .iter()
-            .filter(|i| i.metadata.enabled && combo.matches(&i.metadata));
-        let item = matches.next()?;
-        matches.next().is_none().then_some(item)
+            .filter(|i| combo.matches(&i.metadata))
+            .collect();
+        let enabled: Vec<_> = matches.iter().filter(|i| i.metadata.enabled).collect();
+        match enabled.as_slice() {
+            [item] => Ok(item),
+            [] if matches.is_empty() => Err(fail("no_match", vec![])),
+            [] => Err(fail(
+                "disabled",
+                matches.iter().map(|i| i.path.clone()).collect(),
+            )),
+            _ => Err(fail(
+                "ambiguous",
+                enabled.iter().map(|i| i.path.clone()).collect(),
+            )),
+        }
+    }
+    pub fn elements(&self) -> impl Iterator<Item = &Item<H>> {
+        self.items
+            .iter()
+            .filter(|i| i.metadata.enabled)
+            .take(MAX_MENU_ELEMENTS)
     }
     pub fn observation(&self) -> serde_json::Value {
-        serde_json::json!({"titles":self.titles,"complete":self.complete,"items":self.items.iter().filter(|i| i.metadata.enabled).take(40).map(|i| {
+        serde_json::json!({"titles":self.titles,"complete":self.complete,"items":self.elements().map(|i| {
             serde_json::json!({"title":i.path.chars().take(256).collect::<String>(),"keys":i.metadata.shortcut()})
         }).collect::<Vec<_>>()})
     }
@@ -175,11 +221,12 @@ fn walk<P: Provider>(
     let deadline = provider.now() + budget;
     let mut inventory = Inventory {
         complete: true,
+        available: true,
         ..Default::default()
     };
-    let mut pending = vec![(root, Vec::<String>::new(), 0)];
+    let mut pending = std::collections::VecDeque::from([(root, Vec::<String>::new(), 0)]);
     let mut visited = 0;
-    while let Some((handle, mut path, depth)) = pending.pop() {
+    while let Some((handle, mut path, depth)) = pending.pop_front() {
         if visited >= cap || provider.now() >= deadline || depth > 25 {
             inventory.complete = false;
             break;
@@ -199,7 +246,7 @@ fn walk<P: Provider>(
         if !meta.title.is_empty() && meta.role != "AXMenu" {
             path.push(meta.title.clone());
         }
-        if meta.role == "AXMenuItem" && meta.shortcut().is_some() {
+        if meta.role == "AXMenuItem" && !meta.title.is_empty() {
             inventory.items.push(Item {
                 handle: handle.clone(),
                 path: path.join(" > "),
@@ -207,7 +254,15 @@ fn walk<P: Provider>(
             });
         }
         let remaining = cap.saturating_sub(visited + pending.len());
-        let children = provider.children(&handle, remaining + 1);
+        let mut children = provider.children(&handle, remaining + 1);
+        if depth == 0 {
+            // File commands must precede large application/Services submenus.
+            children.sort_by_cached_key(|h| match provider.read(h).title.as_str() {
+                "File" => 0,
+                "View" | "Go" | "Window" | "Help" => 1,
+                _ => 2,
+            });
+        }
         if children.len() > remaining {
             inventory.complete = false;
         }
@@ -215,7 +270,6 @@ fn walk<P: Provider>(
             children
                 .into_iter()
                 .take(remaining)
-                .rev()
                 .map(|h| (h, path.clone(), depth + 1)),
         );
     }
@@ -253,11 +307,37 @@ impl Provider for Native {
         e.children("AXChildren", limit)
     }
 }
+pub fn path(element: &Element) -> Option<String> {
+    let mut labels = vec![];
+    let mut current = Some(element.clone());
+    for _ in 0..26 {
+        let e = current?;
+        let role = e.text("AXRole")?;
+        if role == "AXMenuBar" {
+            labels.reverse();
+            return Some(labels.join(" > "));
+        }
+        if matches!(role.as_str(), "AXMenuBarItem" | "AXMenuItem") {
+            let title = e.text("AXTitle")?;
+            if !title.is_empty() {
+                labels.push(title);
+            }
+        }
+        current = e.attr("AXParent");
+    }
+    None
+}
 pub fn read(pid: i32) -> Inventory<Element> {
-    Element::app(pid)
-        .and_then(|app| app.attr("AXMenuBar"))
-        .map(|bar| walk(&Native, bar, 2000, Duration::from_secs(1)))
-        .unwrap_or_default()
+    let Some(app) = Element::app(pid) else {
+        return Inventory::default();
+    };
+    match app.attr_result("AXMenuBar") {
+        Ok(bar) => walk(&Native, bar, 2000, Duration::from_secs(1)),
+        Err(error) => Inventory {
+            available: error.contains("ax_error(-25204)"),
+            ..Default::default()
+        },
+    }
 }
 
 #[cfg(test)]
@@ -276,6 +356,135 @@ mod tests {
     fn keys(keys: &[&str]) -> Vec<String> {
         keys.iter().map(|s| s.to_string()).collect()
     }
+    #[test]
+    fn large_application_menu_cannot_starve_file_commands() {
+        let meta = |role: &str, title: &str| Metadata {
+            role: role.into(),
+            title: title.into(),
+            enabled: true,
+            ..Default::default()
+        };
+        let mut fake = Fake(vec![
+            (meta("AXMenuBar", ""), vec![1, 2]),
+            (meta("AXMenuBarItem", "Finder"), vec![3]),
+            (meta("AXMenuBarItem", "File"), vec![4]),
+            (meta("AXMenu", ""), (6..2006).collect()),
+            (meta("AXMenu", ""), vec![5]),
+            (
+                Metadata {
+                    character: "N".into(),
+                    modifiers: Some(1),
+                    ..meta("AXMenuItem", "New Folder")
+                },
+                vec![],
+            ),
+        ]);
+        fake.0
+            .extend((6..2006).map(|_| (meta("AXMenuItem", "Service"), vec![])));
+        let bounded = walk(&fake, 0, 100, Duration::from_secs(1));
+        assert!(bounded.items.iter().any(|i| i.path == "File > New Folder"));
+        assert_eq!(
+            bounded
+                .resolve(&keys(&["cmd", "shift", "n"]))
+                .err()
+                .unwrap()
+                .reason,
+            "timeout"
+        );
+        let complete = walk(&fake, 0, 3000, Duration::from_secs(1));
+        assert_eq!(
+            complete
+                .resolve(&keys(&["cmd", "shift", "n"]))
+                .unwrap()
+                .path,
+            "File > New Folder"
+        );
+        assert_eq!(
+            walk(&fake, 0, 3000, Duration::ZERO)
+                .resolve(&keys(&["cmd", "n"]))
+                .err()
+                .unwrap()
+                .reason,
+            "timeout"
+        );
+    }
+
+    #[test]
+    fn enabled_menu_elements_include_shortcutless_items_with_cap_and_snapshot_binding() {
+        let inv = Inventory {
+            titles: vec!["File".into()],
+            complete: true,
+            available: true,
+            items: (0..100)
+                .map(|n| Item {
+                    handle: n,
+                    path: format!("File > Item {n}"),
+                    metadata: Metadata {
+                        title: format!("Item {n}"),
+                        enabled: n != 0,
+                        ..Default::default()
+                    },
+                })
+                .collect(),
+        };
+        assert_eq!(inv.elements().count(), MAX_MENU_ELEMENTS);
+        let mut snapshot = super::super::ax_tree::Snapshot::default();
+        snapshot.id = 7;
+        snapshot.binding = Some((42, 3));
+        for item in inv.elements() {
+            snapshot.append_menu(item.node(), item.handle);
+        }
+        let (node, _) = snapshot.resolve_bound(7, 0, 42, 3, |_| true).unwrap();
+        assert_eq!(node.label, "File > Item 1");
+        assert_eq!(node.role, "AXMenuItem");
+        assert_eq!(node.actions, ["AXPress"]);
+        assert!(node.enabled);
+        assert_eq!(node.value, "");
+        assert!(snapshot.resolve(6, 0).is_err());
+    }
+    #[test]
+    fn diagnostic_reasons_and_shift_shortcut_are_explicit() {
+        let mut inv: Inventory<usize> = Inventory::default();
+        let chord = keys(&["command", "shift", "n"]);
+        assert_eq!(
+            inv.resolve(&chord).err().unwrap().reason,
+            "menubar_unavailable"
+        );
+        inv.available = true;
+        assert_eq!(inv.resolve(&chord).err().unwrap().reason, "timeout");
+        inv.complete = true;
+        assert_eq!(inv.resolve(&chord).err().unwrap().reason, "no_match");
+        inv.items.push(Item {
+            handle: 0,
+            path: "File > New Folder".into(),
+            metadata: Metadata {
+                title: "New Folder".into(),
+                character: "N".into(),
+                modifiers: Some(1),
+                ..Default::default()
+            },
+        });
+        let failure = inv.resolve(&chord).err().unwrap();
+        assert_eq!(failure.reason, "disabled");
+        assert_eq!(failure.candidates, ["File > New Folder"]);
+        inv.items[0].metadata.enabled = true;
+        for character in ["N", "n"] {
+            inv.items[0].metadata.character = character.into();
+            assert_eq!(inv.resolve(&chord).unwrap().path, "File > New Folder");
+        }
+        inv.items.push(Item {
+            handle: 1,
+            path: "Other > New Folder".into(),
+            metadata: inv.items[0].metadata.clone(),
+        });
+        let failure = inv.resolve(&chord).err().unwrap();
+        assert_eq!(failure.reason, "ambiguous");
+        assert_eq!(
+            failure.candidates,
+            ["File > New Folder", "Other > New Folder"]
+        );
+    }
+
     #[test]
     fn fake_tree_matches_char_modifiers_virtual_keys_and_rejects_ambiguity() {
         let item = Metadata {
@@ -338,21 +547,21 @@ mod tests {
             &["ctrl", "shift", "n"],
             &["cmd", "n", "q"],
         ] {
-            assert!(inv.resolve(&keys(chord)).is_none());
+            assert!(inv.resolve(&keys(chord)).is_err());
         }
-        assert!(inv.resolve(&keys(&["return"])).is_some());
-        assert!(inv.resolve(&keys(&["shift", "return"])).is_none());
+        assert!(inv.resolve(&keys(&["return"])).is_ok());
+        assert!(inv.resolve(&keys(&["shift", "return"])).is_err());
         fake.0[3].0.enabled = false;
-        assert!(scan(&fake).resolve(&keys(&["cmd", "shift", "n"])).is_none());
+        assert!(scan(&fake).resolve(&keys(&["cmd", "shift", "n"])).is_err());
         fake.0[3].0.enabled = true;
         fake.0.push((item, vec![]));
         fake.0[2].1.push(5);
-        assert!(scan(&fake).resolve(&keys(&["cmd", "shift", "n"])).is_none());
+        assert!(scan(&fake).resolve(&keys(&["cmd", "shift", "n"])).is_err());
         assert!(walk(&fake, 0, 4, Duration::from_secs(1))
             .resolve(&keys(&["cmd", "shift", "n"]))
-            .is_none());
+            .is_err());
         assert!(walk(&fake, 0, 20, Duration::ZERO)
             .resolve(&keys(&["return"]))
-            .is_none());
+            .is_err());
     }
 }

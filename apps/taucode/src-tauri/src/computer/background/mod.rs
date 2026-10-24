@@ -89,6 +89,7 @@ pub struct Session {
     pub path: Mutex<Option<&'static str>>,
     pub fallback_reason: Mutex<Option<String>>,
     pub menu_title: Mutex<Option<String>>,
+    pub menu_resolution: Mutex<Option<menus::Diagnostic>>,
     menus: Mutex<menus::Inventory<ax_actions::Element>>,
     resolved_menu: Mutex<Option<menus::Item<ax_actions::Element>>>,
     ax_fallback: AtomicBool,
@@ -147,6 +148,7 @@ impl Session {
             path: Mutex::new(None),
             fallback_reason: Mutex::new(None),
             menu_title: Mutex::new(None),
+            menu_resolution: Mutex::new(None),
             menus: Mutex::new(menus::Inventory::default()),
             resolved_menu: Mutex::new(None),
             ax_fallback: AtomicBool::new(false),
@@ -220,6 +222,7 @@ impl Session {
         *self.fallback_reason.lock().unwrap() = None;
         *self.path.lock().unwrap() = None;
         *self.menu_title.lock().unwrap() = None;
+        *self.menu_resolution.lock().unwrap() = None;
         *self.resolved_menu.lock().unwrap() = None;
         *self.observed.lock().unwrap() = Some(Sha256::digest(frame.png.as_bytes()).into());
         *self.selected.lock().unwrap() = None;
@@ -228,17 +231,14 @@ impl Session {
         snapshot.replace(
             &ax_tree::Native(&window),
             root,
-            ax_tree::MAX_ELEMENTS - 40,
+            ax_tree::MAX_ELEMENTS - menus::MAX_MENU_ELEMENTS,
             ax_tree::SNAPSHOT_BUDGET,
         );
         snapshot.lookup = lookup;
         snapshot.binding = Some((self.pid, window.id));
         let menus = menus::read(self.pid);
-        for item in menus.items.iter().filter(|i| i.metadata.enabled).take(40) {
-            snapshot.append_menu(
-                ax_tree::Native(&window).read(&item.handle),
-                item.handle.clone(),
-            );
+        for item in menus.elements() {
+            snapshot.append_menu(item.node(), item.handle.clone());
         }
         *self.menus.lock().unwrap() = menus;
         *self.window.lock().unwrap() = Some(window);
@@ -313,7 +313,11 @@ impl Session {
             } else {
                 menus::read(self.pid)
             };
-            let item = inventory.resolve(keys);
+            let result = inventory.resolve(keys);
+            let item = result.as_ref().ok().copied();
+            if !keys.is_empty() {
+                *self.menu_resolution.lock().unwrap() = result.err();
+            }
             let target = item.map(menus::Item::target);
             *self.resolved_menu.lock().unwrap() = item.map(|i| menus::Item {
                 handle: i.handle.clone(),
@@ -340,7 +344,14 @@ impl Session {
                     .map(|(_, e)| e)
             })
             .transpose()?;
-        ax_actions::policy_target(self.pid, Some(window.id), action, element)
+        let mut target = ax_actions::policy_target(self.pid, Some(window.id), action, element)?;
+        if let Some((id, index)) = selected {
+            let (node, _) = snapshot.resolve(id, index)?;
+            if node.role == "AXMenuItem" {
+                target.label = node.label.clone();
+            }
+        }
+        Ok(target)
     }
     pub fn verify_element(&self) -> Result<(), String> {
         let Some((id, index)) = *self.selected.lock().unwrap() else {
@@ -350,7 +361,11 @@ impl Session {
         let snapshot = self.snapshot.lock().unwrap();
         let (prior, element) =
             snapshot.resolve_bound(id, index, self.pid, window.id, ax_actions::Element::alive)?;
-        let current = ax_tree::Native(&window).read(element);
+        let mut current = ax_tree::Native(&window).read(element);
+        if prior.role == "AXMenuItem" {
+            current.label =
+                menus::path(element).ok_or("AX menu path unavailable; capture again")?;
+        }
         if prior.role != current.role
             || prior.label != current.label
             || prior.secure != current.secure
@@ -391,6 +406,14 @@ impl Session {
                 *self.path.lock().unwrap() = Some("ax-menu");
                 *self.menu_title.lock().unwrap() = Some(node.label.clone());
                 element.press()?;
+                return Ok(true);
+            }
+            let selected_row = ax_actions::select_row(element, action).map_err(|error| {
+                *self.path.lock().unwrap() = Some("ax-select");
+                error
+            })?;
+            if selected_row {
+                *self.path.lock().unwrap() = Some("ax-select");
                 return Ok(true);
             }
             if let Action::Scroll {
@@ -460,6 +483,9 @@ impl Session {
         Ok(handled)
     }
     pub fn events_available(&self, action: &Action) -> bool {
+        if ax_actions::elementless_keyboard(action, self.selected.lock().unwrap().is_some()) {
+            return ax_actions::focused_policy_window(self.pid).is_some();
+        }
         !matches!(
             action,
             Action::Type { .. } | Action::Hotkey { .. } | Action::HoldAndPress { .. }
@@ -488,7 +514,6 @@ impl Session {
         let Some(window) = self.window.lock().unwrap().clone() else {
             return false;
         };
-        self.guard.delivering.store(true, Ordering::SeqCst);
         let keyboard = match action {
             Action::Type { .. } | Action::Hotkey { .. } | Action::HoldAndPress { .. } => true,
             Action::Click { hold_keys, .. } | Action::Drag { hold_keys, .. } => {
@@ -496,8 +521,17 @@ impl Session {
             }
             _ => false,
         };
-        *self.delivery.lock().unwrap() =
-            Some(delivery::Scope::enter(self, self.pid, window.id, keyboard));
+        let id =
+            if ax_actions::elementless_keyboard(action, self.selected.lock().unwrap().is_some()) {
+                let Some(id) = ax_actions::focused_policy_window(self.pid) else {
+                    return false;
+                };
+                id
+            } else {
+                window.id
+            };
+        self.guard.delivering.store(true, Ordering::SeqCst);
+        *self.delivery.lock().unwrap() = Some(delivery::Scope::enter(self, self.pid, id, keyboard));
         if self.events_available(action) {
             true
         } else {
