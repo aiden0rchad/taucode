@@ -21,11 +21,13 @@ pub struct Scope {
     window: u32,
     prior: Option<i32>,
     prior_key: Option<u32>,
+    baseline_key_pid: Option<i32>,
     theft: Option<i32>,
 }
 impl Scope {
     pub fn enter(f: &impl Focus, pid: i32, window: u32, keyboard: bool) -> Self {
         let prior = f.front();
+        let baseline_key_pid = f.key_pid();
         let prior_key = prior.and_then(|pid| f.key_window(pid));
         // AppKit focus records can activate Notes even without raising a window.
         // Route to an existing target key window; never prime or activate it.
@@ -35,6 +37,7 @@ impl Scope {
             window,
             prior,
             prior_key,
+            baseline_key_pid,
             theft,
         }
     }
@@ -58,7 +61,9 @@ impl Scope {
         if reactivated {
             f.activate(prior, settle);
         }
-        let key_moved = reactivated || f.key_pid().is_some_and(|pid| pid != prior);
+        let key_moved = reactivated
+            || f.key_pid()
+                .is_some_and(|pid| Some(pid) != self.baseline_key_pid && pid != prior);
         // Respect a real switch to a third app; do not disturb an unchanged key window.
         if key_moved && f.front() == Some(prior) {
             f.restore(prior, self.prior_key, self.pid, self.window);
@@ -74,10 +79,12 @@ impl Focus for Session {
         skylight::key_window_of_pid(pid)
     }
     fn steal(&self, window: u32) -> Option<i32> {
-        skylight::steal_window_key_focus(window)
+        let id = skylight::steal_window_key_focus(window)?;
+        self.guard.track_theft(id);
+        Some(id)
     }
     fn release(&self, id: i32) {
-        skylight::release_key_focus(id);
+        self.guard.release_theft(id, &focus_guard::Workspace);
     }
     fn wait(&self, ms: u64) {
         std::thread::sleep(Duration::from_millis(ms));
@@ -97,8 +104,11 @@ impl Focus for Session {
         skylight::key_focus_pid()
     }
     fn restore(&self, prior: i32, key: Option<u32>, pid: i32, window: u32) {
+        let key_pid = self.key_pid();
+        let front = self.front();
         if skylight::restore_focus_after_without_raise(prior, key, pid, window) {
-            self.guard.record(prior, key, "backgroundKeyWindow");
+            self.guard
+                .record(prior, key, "backgroundKeyWindow", key_pid, front);
         }
     }
 }
@@ -193,6 +203,20 @@ mod tests {
             .unwrap()
             .iter()
             .any(|s| s.starts_with("activate:")));
+    }
+    #[test]
+    fn persistent_helper_key_focus_needs_no_restoration() {
+        for keyboard in [false, true] {
+            let f = Fake::new();
+            f.key.store(30, Ordering::SeqCst);
+            Scope::enter(&*f, 20, 200, keyboard).finish(&*f, true);
+            assert!(!f
+                .log
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|entry| entry.starts_with("activate:") || entry.starts_with("restore:")));
+        }
     }
     struct ScopedInput {
         f: Arc<Fake>,

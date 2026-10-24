@@ -12,12 +12,18 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Clone, Copy)]
 pub struct State {
     pub previous: i32,
     pub window: Option<u32>,
     pub target: i32,
     pub host: i32,
     pub armed_until: Instant,
+    pub baseline_key: Option<i32>,
+    pub action_start: Instant,
+    pub action_active: bool,
+    pub key_attempted: bool,
+    pub last_key_restore: Option<Instant>,
 }
 impl State {
     // Respect real user app switches; suppress target activation or action-caused helper activation.
@@ -39,12 +45,14 @@ impl State {
 pub struct Guard {
     state: Mutex<State>,
     action_prior: Mutex<Option<UserFocus>>,
+    thefts: Mutex<Vec<i32>>,
     pub delivering: AtomicBool,
     pub restorations: Mutex<Vec<Value>>,
 }
 pub struct UserFocus {
-    pid: Option<i32>,
-    window: Option<u32>,
+    pub(super) pid: Option<i32>,
+    pub(super) window: Option<u32>,
+    pub(super) key_pid: Option<i32>,
 }
 pub fn action_restoration(previous: Option<i32>, front: Option<i32>, target: i32) -> Option<i32> {
     previous.filter(|pid| *pid != target && front == Some(target))
@@ -75,6 +83,7 @@ impl UserFocus {
         Self {
             pid,
             window: pid.and_then(skylight::key_window_of_pid),
+            key_pid: skylight::key_focus_pid(),
         }
     }
 }
@@ -88,8 +97,14 @@ impl Guard {
                 host: std::process::id() as i32,
                 window: prior.window,
                 armed_until: Instant::now(),
+                baseline_key: prior.key_pid,
+                action_start: Instant::now(),
+                action_active: false,
+                key_attempted: false,
+                last_key_restore: None,
             }),
             restorations: Mutex::new(vec![]),
+            thefts: Mutex::new(vec![]),
             action_prior: Mutex::new(None),
             delivering: AtomicBool::new(false),
         }
@@ -98,8 +113,20 @@ impl Guard {
         self.state.lock().unwrap().armed_until = Instant::now() + Duration::from_millis(250);
     }
     pub fn begin_action(&self) {
-        *self.action_prior.lock().unwrap() = Some(UserFocus::capture());
-        self.arm();
+        self.begin_action_with(UserFocus::capture(), Instant::now());
+    }
+    pub(super) fn begin_action_with(&self, prior: UserFocus, now: Instant) {
+        let mut s = self.state.lock().unwrap();
+        if let Some(pid) = prior.pid.filter(|pid| *pid != s.target && *pid != s.host) {
+            s.previous = pid;
+            s.window = prior.window;
+        }
+        s.baseline_key = prior.key_pid;
+        s.action_start = now;
+        s.action_active = true;
+        s.key_attempted = false;
+        s.armed_until = now + Duration::from_millis(250);
+        *self.action_prior.lock().unwrap() = Some(prior);
     }
     pub fn end_action(&self) {
         let Some(prior) = self.action_prior.lock().unwrap().take() else {
@@ -117,10 +144,11 @@ impl Guard {
                     window: prior.window,
                     ..*state
                 };
-                self.restore_locked(&restore, "postActionInvariant");
+                self.restore_locked(&restore, "postActionInvariant", &Workspace, Instant::now());
             },
             std::thread::sleep,
         );
+        self.state.lock().unwrap().action_active = false;
     }
     pub fn start(&self, session: Weak<Session>) {
         self.tick();
@@ -140,62 +168,149 @@ impl Guard {
         });
     }
     fn tick(&self) {
-        let Some(front) = front_pid() else {
-            return;
-        };
+        self.tick_with(&Workspace, Instant::now());
+    }
+    pub(super) fn tick_with(&self, f: &impl Focus, now: Instant) {
+        let Some(front) = f.front() else { return };
         let mut s = self.state.lock().unwrap();
-        let delivering = self.delivering.load(Ordering::SeqCst);
+        let key = f.key_pid();
         let previous = s.previous;
+        let user_switched = f.user_switched();
         let action_running = self.action_prior.lock().unwrap().is_some();
-        let user_switched = user_switched_recently() && !(front == s.target && action_running);
-        if s.observe(front, user_switched, Instant::now()).is_some() {
-            self.restore_locked(&s, "activation");
-        } else if s.previous != previous || s.window.is_none() || Instant::now() >= s.armed_until {
-            s.window = ax_actions::focused_window(s.previous);
+        let activation_is_user_switch = user_switched && !(front == s.target && action_running);
+        if s.observe(front, activation_is_user_switch, now).is_some() {
+            self.restore_locked(&s, "activation", f, now);
+        } else if s.previous != previous {
+            s.baseline_key = key;
+            s.window = f.window(s.previous);
+        } else if s.window.is_none() || now >= s.armed_until {
+            s.window = f.window(s.previous);
         }
-        // A non-activating menu can take key focus without an activation notification.
-        if !delivering
-            && skylight::key_focus_pid().is_some_and(|pid| {
-                pid != s.previous
-                    && (pid == s.target || pid == s.host || Instant::now() < s.armed_until)
-            })
-            && !user_switched_recently()
+        // An unchanged helper PID is the user's state, even while armed.
+        let taken = key.is_some_and(|pid| {
+            Some(pid) != s.baseline_key
+                && pid != s.previous
+                && (pid == s.target
+                    || pid == s.host
+                    || s.baseline_key.is_some() && s.action_active && now > s.action_start)
+        });
+        if taken
+            && !user_switched
+            && !self.delivering.load(Ordering::SeqCst)
+            && !s.key_attempted
+            && s.last_key_restore
+                .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(1))
         {
-            if let Some(own) = skylight::steal_key_focus() {
-                skylight::release_key_focus(own);
-                if release_newest_theft_below(own, skylight::release_key_focus).is_some() {
-                    self.restore_locked(&s, "keyFocus");
-                }
+            s.key_attempted = true;
+            s.last_key_restore = Some(now);
+            // Never probe neighbouring IDs: they can belong to unrelated apps.
+            self.thefts.lock().unwrap().retain(|id| !f.release(*id));
+            let destination = s.baseline_key.unwrap_or(s.previous);
+            let window = if destination == s.previous {
+                s.window
+            } else {
+                f.window(destination)
+            };
+            if f.key_pid() != Some(destination) {
+                f.restore_key(destination, window, key.unwrap());
+            }
+            self.record_locked(
+                &s,
+                s.previous,
+                s.window,
+                "keyFocus",
+                key,
+                Some(front),
+                f,
+                now,
+            );
+            if f.key_pid() == key {
+                self.record_locked(
+                    &s,
+                    s.previous,
+                    s.window,
+                    "keyFocusUnresolved",
+                    key,
+                    f.front(),
+                    f,
+                    now,
+                );
+            }
+        }
+    }
+    pub fn track_theft(&self, id: i32) {
+        self.thefts.lock().unwrap().push(id);
+    }
+    pub(super) fn release_theft(&self, id: i32, f: &impl Focus) {
+        let mut thefts = self.thefts.lock().unwrap();
+        if let Some(index) = thefts.iter().position(|owned| *owned == id) {
+            if f.release(id) {
+                thefts.remove(index);
             }
         }
     }
     pub fn restore(&self) {
-        self.restore_locked(&self.state.lock().unwrap(), "foregroundFallback");
+        self.restore_locked(
+            &self.state.lock().unwrap(),
+            "foregroundFallback",
+            &Workspace,
+            Instant::now(),
+        );
     }
     pub fn restore_pid(&self, pid: i32, reason: &str) {
         let s = self.state.lock().unwrap();
         // A real user switch supersedes a scope's snapshot.
         if s.previous == pid {
-            self.restore_locked(&s, reason);
+            self.restore_locked(&s, reason, &Workspace, Instant::now());
         }
     }
-    pub fn record(&self, pid: i32, window: Option<u32>, reason: &str) {
-        self.restorations
-            .lock()
-            .unwrap()
-            .push(json!({"pid":pid,"windowId":window,"reason":reason}));
+    pub fn record(
+        &self,
+        pid: i32,
+        window: Option<u32>,
+        reason: &str,
+        key: Option<i32>,
+        front: Option<i32>,
+    ) {
+        self.record_locked(
+            &self.state.lock().unwrap(),
+            pid,
+            window,
+            reason,
+            key,
+            front,
+            &Workspace,
+            Instant::now(),
+        );
     }
-    fn restore_locked(&self, s: &State, reason: &str) {
-        if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(s.previous)
-        {
-            #[allow(deprecated)]
-            if app.activateWithOptions(NSApplicationActivationOptions(0)) {
-                if let Some(window) = s.window {
-                    ax_actions::restore_window(s.previous, window);
-                }
-                self.record(s.previous, s.window, reason);
-            }
+    #[allow(clippy::too_many_arguments)]
+    fn record_locked(
+        &self,
+        s: &State,
+        pid: i32,
+        window: Option<u32>,
+        reason: &str,
+        key: Option<i32>,
+        front: Option<i32>,
+        f: &impl Focus,
+        now: Instant,
+    ) {
+        self.restorations.lock().unwrap().push(json!({
+            "pid":pid, "windowId":window, "reason":reason,
+            "keyPid":key, "keyBundle":key.and_then(|pid| f.bundle(pid)),
+            "frontPid":front, "baselineKeyPid":s.baseline_key,
+            "ms_since_action_start":now.saturating_duration_since(s.action_start).as_millis() as u64
+        }));
+    }
+    fn restore_locked(&self, s: &State, reason: &str, f: &impl Focus, now: Instant) {
+        let front = f.front();
+        let key = f.key_pid();
+        if front != Some(s.previous) && f.activate(s.previous, s.window) {
+            self.record_locked(s, s.previous, s.window, reason, key, front, f, now);
         }
+    }
+    pub fn drain_restorations(&self) -> Vec<Value> {
+        std::mem::take(&mut *self.restorations.lock().unwrap())
     }
 }
 
@@ -240,10 +355,56 @@ pub(super) fn front_pid() -> Option<i32> {
         .or_else(skylight::front_process_pid)
 }
 
-pub fn release_newest_theft_below(own: i32, mut release: impl FnMut(i32) -> i32) -> Option<i32> {
-    (1..=4)
-        .map(|back| own.wrapping_sub(back))
-        .find(|&id| id != 0 && release(id) == 0)
+pub(super) trait Focus {
+    fn front(&self) -> Option<i32>;
+    fn key_pid(&self) -> Option<i32>;
+    fn user_switched(&self) -> bool;
+    fn window(&self, pid: i32) -> Option<u32>;
+    fn activate(&self, pid: i32, window: Option<u32>) -> bool;
+    fn restore_key(&self, pid: i32, window: Option<u32>, from: i32);
+    fn release(&self, id: i32) -> bool;
+    fn bundle(&self, pid: i32) -> Option<String>;
+}
+pub(super) struct Workspace;
+impl Focus for Workspace {
+    fn front(&self) -> Option<i32> {
+        front_pid()
+    }
+    fn key_pid(&self) -> Option<i32> {
+        skylight::key_focus_pid()
+    }
+    fn user_switched(&self) -> bool {
+        user_switched_recently()
+    }
+    fn window(&self, pid: i32) -> Option<u32> {
+        skylight::key_window_of_pid(pid)
+    }
+    fn activate(&self, pid: i32, window: Option<u32>) -> bool {
+        let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) else {
+            return false;
+        };
+        #[allow(deprecated)]
+        let activated = app.activateWithOptions(NSApplicationActivationOptions(0));
+        if activated {
+            if let Some(window) = window {
+                ax_actions::restore_window(pid, window);
+            }
+        }
+        activated
+    }
+    fn restore_key(&self, pid: i32, window: Option<u32>, from: i32) {
+        // HUD panels may have no layer-zero window; PSN lookup falls back to PID.
+        let from_window = skylight::key_window_of_pid(from).unwrap_or(0);
+        skylight::restore_focus_after_without_raise(pid, window, from, from_window);
+    }
+    fn release(&self, id: i32) -> bool {
+        skylight::release_key_focus(id) == 0
+    }
+    fn bundle(&self, pid: i32) -> Option<String> {
+        NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+            .and_then(|app| app.bundleIdentifier())
+            .map(|id| id.to_string())
+    }
 }
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {

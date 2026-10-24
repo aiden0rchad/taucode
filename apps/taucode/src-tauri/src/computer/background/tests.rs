@@ -3,7 +3,7 @@ use super::super::policy::{
 };
 use super::*;
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     time::{Duration, Instant},
 };
 
@@ -234,6 +234,11 @@ fn focus_guard_fake_workspace_preserves_user_switches() {
         host: 99,
         window: Some(100),
         armed_until: now + Duration::from_millis(250),
+        baseline_key: Some(10),
+        action_start: now,
+        action_active: true,
+        key_attempted: false,
+        last_key_restore: None,
     };
     assert_eq!(s.observe(10, false, now), None);
     assert_eq!(s.observe(20, false, now), Some(10));
@@ -244,19 +249,6 @@ fn focus_guard_fake_workspace_preserves_user_switches() {
     assert_eq!(s.observe(50, false, now + Duration::from_secs(1)), None);
     assert_eq!(s.observe(99, true, now + Duration::from_secs(2)), Some(50));
     assert_eq!(s.previous, 50); // taucode is theft even outside the armed interval
-    let mut tried = vec![];
-    assert_eq!(
-        focus_guard::release_newest_theft_below(8, |id| {
-            tried.push(id);
-            if id == 6 {
-                0
-            } else {
-                1010
-            }
-        }),
-        Some(6)
-    );
-    assert_eq!(tried, [7, 6]);
 }
 
 #[test]
@@ -336,4 +328,191 @@ fn overlay_geometry_and_capture_flags_are_noninteractive() {
     assert_eq!(overlay::SHARING_TYPE, 0);
     assert_eq!(overlay::NONACTIVATING_PANEL, 128);
     assert!(overlay::IGNORE_MOUSE);
+}
+
+struct FocusWorkspace {
+    front: Cell<i32>,
+    key: Cell<i32>,
+    switched: Cell<bool>,
+    effective: bool,
+    activations: Cell<usize>,
+    releases: RefCell<Vec<i32>>,
+    focus_records: Cell<usize>,
+}
+impl FocusWorkspace {
+    fn new(key: i32, effective: bool) -> Self {
+        Self {
+            front: Cell::new(10),
+            key: Cell::new(key),
+            switched: Cell::new(false),
+            effective,
+            activations: Cell::new(0),
+            releases: RefCell::new(vec![]),
+            focus_records: Cell::new(0),
+        }
+    }
+    fn prior(&self) -> UserFocus {
+        UserFocus {
+            pid: Some(self.front.get()),
+            window: Some(100),
+            key_pid: Some(self.key.get()),
+        }
+    }
+}
+impl focus_guard::Focus for FocusWorkspace {
+    fn front(&self) -> Option<i32> {
+        Some(self.front.get())
+    }
+    fn key_pid(&self) -> Option<i32> {
+        Some(self.key.get())
+    }
+    fn user_switched(&self) -> bool {
+        self.switched.get()
+    }
+    fn window(&self, pid: i32) -> Option<u32> {
+        Some(pid as u32 * 10)
+    }
+    fn activate(&self, pid: i32, _: Option<u32>) -> bool {
+        self.activations.set(self.activations.get() + 1);
+        self.front.set(pid);
+        true
+    }
+    fn restore_key(&self, pid: i32, _: Option<u32>, _: i32) {
+        self.focus_records.set(self.focus_records.get() + 1);
+        if self.effective {
+            self.key.set(pid);
+        }
+    }
+    fn release(&self, id: i32) -> bool {
+        self.releases.borrow_mut().push(id);
+        true
+    }
+    fn bundle(&self, pid: i32) -> Option<String> {
+        Some(format!("app.{pid}"))
+    }
+}
+
+#[test]
+fn focus_guard_ignores_unchanged_helper_target_and_host_baselines() {
+    for key in [30, 20, std::process::id() as i32] {
+        let f = FocusWorkspace::new(key, false);
+        let guard = focus_guard::Guard::new(20, f.prior());
+        let now = Instant::now();
+        guard.tick_with(&f, now);
+        for action in 0..3 {
+            let start = now + Duration::from_secs(action);
+            guard.begin_action_with(f.prior(), start);
+            guard.arm();
+            for tick in 1..30 {
+                guard.tick_with(&f, start + Duration::from_millis(tick * 10));
+            }
+        }
+        assert!(guard.drain_restorations().is_empty());
+        assert_eq!(f.activations.get(), 0);
+        assert_eq!(f.focus_records.get(), 0);
+        assert!(f.releases.borrow().is_empty());
+    }
+}
+
+#[test]
+fn focus_guard_arm_alone_does_not_attribute_foreign_key_changes() {
+    let f = FocusWorkspace::new(30, true);
+    let guard = focus_guard::Guard::new(20, f.prior());
+    guard.arm();
+    f.key.set(40);
+    guard.tick_with(&f, Instant::now());
+    assert!(guard.drain_restorations().is_empty());
+    assert_eq!(f.activations.get(), 0);
+    assert_eq!(f.focus_records.get(), 0);
+}
+
+#[test]
+fn focus_guard_restores_changed_key_once_and_records_unresolved_once() {
+    for key in [20, std::process::id() as i32, 40] {
+        for effective in [true, false] {
+            let f = FocusWorkspace::new(30, effective);
+            let guard = focus_guard::Guard::new(20, f.prior());
+            let now = Instant::now();
+            guard.begin_action_with(f.prior(), now);
+            f.key.set(key);
+            for tick in 1..200 {
+                guard.tick_with(&f, now + Duration::from_millis(tick * 10));
+            }
+            let records = guard.drain_restorations();
+            assert_eq!(records.len(), if effective { 1 } else { 2 });
+            assert_eq!(records[0]["reason"], "keyFocus");
+            assert_eq!(records[0]["keyPid"], key);
+            assert_eq!(records[0]["keyBundle"], format!("app.{key}"));
+            assert_eq!(records[0]["frontPid"], 10);
+            assert_eq!(records[0]["baselineKeyPid"], 30);
+            assert_eq!(records[0]["ms_since_action_start"], 10);
+            if !effective {
+                assert_eq!(records[1]["reason"], "keyFocusUnresolved");
+            }
+            assert_eq!(f.activations.get(), 0);
+            assert_eq!(f.focus_records.get(), 1);
+            assert!(guard.drain_restorations().is_empty());
+        }
+    }
+}
+
+#[test]
+fn focus_guard_debounces_across_actions_and_drains_each_step() {
+    let f = FocusWorkspace::new(10, true);
+    let guard = focus_guard::Guard::new(20, f.prior());
+    let now = Instant::now();
+    guard.begin_action_with(f.prior(), now);
+    f.key.set(20);
+    guard.tick_with(&f, now + Duration::from_millis(10));
+    assert_eq!(guard.drain_restorations().len(), 1);
+    guard.begin_action_with(f.prior(), now + Duration::from_millis(20));
+    f.key.set(20);
+    guard.tick_with(&f, now + Duration::from_millis(30));
+    assert!(guard.drain_restorations().is_empty());
+    guard.tick_with(&f, now + Duration::from_millis(1010));
+    let second = guard.drain_restorations();
+    assert_eq!(second.len(), 1);
+    assert_eq!(second[0]["ms_since_action_start"], 990);
+    assert_eq!(f.activations.get(), 0);
+}
+
+#[test]
+fn focus_guard_releases_only_session_thefts() {
+    let f = FocusWorkspace::new(10, true);
+    let guard = focus_guard::Guard::new(20, f.prior());
+    guard.track_theft(8);
+    guard.release_theft(7, &f);
+    assert!(f.releases.borrow().is_empty());
+    guard.release_theft(8, &f);
+    guard.release_theft(8, &f);
+    assert_eq!(*f.releases.borrow(), [8]);
+    guard.track_theft(12);
+    let now = Instant::now();
+    guard.begin_action_with(f.prior(), now);
+    f.key.set(20);
+    guard.tick_with(&f, now + Duration::from_millis(10));
+    assert_eq!(*f.releases.borrow(), [8, 12]);
+}
+
+#[test]
+fn focus_guard_workspace_restores_activation_but_respects_user_switch() {
+    let f = FocusWorkspace::new(10, true);
+    let guard = focus_guard::Guard::new(20, f.prior());
+    let now = Instant::now();
+    guard.begin_action_with(f.prior(), now);
+    f.front.set(20);
+    guard.tick_with(&f, now + Duration::from_millis(10));
+    guard.tick_with(&f, now + Duration::from_millis(20));
+    assert_eq!(f.activations.get(), 1);
+    assert_eq!(guard.drain_restorations()[0]["reason"], "activation");
+    f.front.set(40);
+    f.key.set(41);
+    f.switched.set(true);
+    guard.tick_with(&f, now + Duration::from_millis(30));
+    f.switched.set(false);
+    guard.tick_with(&f, now + Duration::from_secs(2));
+    assert_eq!(f.front.get(), 40);
+    assert_eq!(f.activations.get(), 1);
+    assert_eq!(f.focus_records.get(), 0);
+    assert!(guard.drain_restorations().is_empty());
 }

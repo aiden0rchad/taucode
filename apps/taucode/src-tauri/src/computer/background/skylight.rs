@@ -316,19 +316,6 @@ pub fn key_focus_pid() -> Option<pid_t> {
     Some(pid)
 }
 
-/// Steal key focus for this process's own connection and return the theft id.
-///
-/// WindowServer numbers thefts from one session-wide counter, so the id tells
-/// the caller which id the next theft will get. AppKit uses the same call,
-/// with the same options, when it opens a menu in an app that is not active.
-pub fn steal_key_focus() -> Option<i32> {
-    let steal = steal_key_focus_fn()?;
-    let cid = main_connection_id()?;
-    let mut id = 0i32;
-    let err = unsafe { steal(cid, 0xC80, &mut id) };
-    (err == 0 && id != 0).then_some(id)
-}
-
 /// Release a key-focus theft by id, whichever connection made it.
 /// Returns the CGError (0 on success; 1010 when no such theft is live).
 pub fn release_key_focus(theft_id: i32) -> i32 {
