@@ -1,3 +1,4 @@
+import { Checkpoints } from "@/features/checkpoints/Checkpoints";
 import { modelKey } from "@/features/settings/registry";
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import successSoundUrl from "@/assets/success-notification.mp3";
@@ -1844,5 +1845,9 @@ export default function MainApp() {
     },
   });
 
-  return <BrowserDock searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><MainAppShell {...mainAppShellProps} /></BrowserDock>;
+  return <><Checkpoints running={threadStatusById} onChanged={async (workspace, thread, text) => {
+    await refreshThread(workspace, thread);
+    if (text !== undefined) composerWorkspaceState.restoreDraftForThread(thread, text);
+    if (text !== undefined && workspace === activeWorkspaceId && thread === activeThreadId) setPrefillDraft({ id: `rewind-${Date.now()}`, text, createdAt: Date.now() });
+  }} /><BrowserDock searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><MainAppShell {...mainAppShellProps} /></BrowserDock></>;
 }

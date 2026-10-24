@@ -1212,3 +1212,7 @@ export const providerSetApiKey = (id: string, key: string) => invoke<void>("prov
 export const providerHasApiKey = (id: string) => invoke<boolean>("provider_has_api_key", { id });
 export const providerDeleteApiKey = (id: string) => invoke<void>("provider_delete_api_key", { id });
 export const providerTestAndFetch = (id: string) => invoke<{ ok: boolean; latencyMs: number; models: import("../types").ProviderModel[]; error?: string }>("provider_test_and_fetch", { id });
+
+export function checkpointRequest(workspaceId: string, params: Record<string, unknown>): Promise<import("@/types").CheckpointResponse> {
+  return invoke("checkpoint_request", { workspaceId, params });
+}

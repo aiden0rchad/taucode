@@ -1,5 +1,6 @@
 mod codegraph;
 mod codegraph_commands;
+mod checkpoint_commands;
 mod connectors;
 mod providers;
 #[cfg(desktop)]
@@ -209,6 +210,7 @@ pub fn run() {
             browser_commands::browser_request,
             browser_commands::browser_subscribe,
             browser_commands::browser_unsubscribe,
+            checkpoint_commands::checkpoint_request,
             codegraph_commands::codegraph_status,
             codegraph_commands::codegraph_rebuild,
             providers::provider_set_api_key,

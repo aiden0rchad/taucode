@@ -149,6 +149,9 @@ pub(super) async fn handle_rpc_request(
     params: Value,
     client_version: String,
 ) -> Result<Value, String> {
+    if method == "checkpoint_request" {
+        return shared::checkpoints::request(&state.sessions, parse_string(&params, "workspaceId")?, params["params"].clone()).await;
+    }
     if method == "engine_runtime" {
         match params["action"].as_str() {
             Some("prepare") => { shared::engine_runtime::prepare(&state.data_dir, params["engine"].as_str().ok_or("Missing engine")?, None).await?; }

@@ -380,3 +380,13 @@ export function subscribeCodegraphStatus(onStatus: (workspaceId: string, status:
     }
   });
 }
+
+export type CheckpointOpen = { workspaceId: string; threadId: string; userItemId?: string };
+const checkpointOpenListeners = new Set<(request: CheckpointOpen) => void>();
+export function openCheckpoints(request: CheckpointOpen) {
+  checkpointOpenListeners.forEach((listener) => listener(request));
+}
+export function subscribeCheckpointOpen(listener: (request: CheckpointOpen) => void) {
+  checkpointOpenListeners.add(listener);
+  return () => { checkpointOpenListeners.delete(listener); };
+}

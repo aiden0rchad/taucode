@@ -29,3 +29,5 @@ pub(crate) mod pi;
 
 #[cfg(unix)]
 pub(crate) mod local_socket;
+
+pub(crate) mod checkpoints;
