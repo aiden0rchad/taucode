@@ -34,6 +34,7 @@ mod shared;
 mod state;
 mod chats;
 mod work;
+mod import_commands;
 mod storage;
 mod tailscale;
 #[cfg(desktop)]
@@ -210,6 +211,7 @@ pub fn run() {
             work::work_attachment,
             work::work_output,
             chats::chat_request,
+            import_commands::import_request,
             chats::read_chat_attachment,
             chats::set_window_mode,
             providers::engine_runtime,

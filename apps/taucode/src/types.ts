@@ -788,3 +788,17 @@ export type WorkTask = {
   plan: TurnPlanStep[]; outputs: string[]; pending: WorkRequest[]; error: string | null;
 };
 export type WorkState = { spaces: WorkSpace[]; tasks: WorkTask[]; concurrency: number };
+export type ImportEntry = {
+  key: string; source: string; id: string; kind: string; title: string; project: string; cwd: string;
+  archived: boolean; missingCwd: boolean; needsSecrets: boolean; warning: string | null;
+};
+export type ImportDetection = { entries: ImportEntry[]; warnings: string[] };
+export type ImportLog = {
+  id: string; created: { key: string; title: string; kind: string; threadId: string; workspaceId: string | null }[];
+  skipped: string[]; warnings: string[]; cancelled: boolean; undone: boolean;
+};
+export type ImportProgress = { running: boolean; completed: number; total: number; phase?: string };
+export type ImportedTranscript = {
+  title: string; source: string; kind: string; cwd: string; readOnly: boolean; warning: string | null;
+  messages: { role: string; text: string }[]; raw: unknown[] | null; attachments: string[];
+};

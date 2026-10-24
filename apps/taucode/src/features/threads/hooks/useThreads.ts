@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import * as Sentry from "@sentry/react";
+import { subscribeImportsChanged } from "@services/events";
 import type {
   CollabAgentRef,
   CustomPromptOption,
@@ -550,6 +551,10 @@ export function useThreads({
     onSubagentThreadDetected,
     onThreadCodexMetadataDetected,
   });
+
+  useEffect(() => subscribeImportsChanged(() => {
+    if (activeWorkspace?.connected) void listThreadsForWorkspace(activeWorkspace);
+  }), [activeWorkspace, listThreadsForWorkspace]);
 
   const ensureWorkspaceRuntimeCodexArgsBestEffort = useCallback(
     async (workspaceId: string, threadId: string | null, phase: string) => {

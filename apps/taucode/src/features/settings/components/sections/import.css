@@ -1,0 +1,14 @@
+.import-settings { max-width: 900px; }
+.chat-work .chat-placeholder:has(.import-settings) { display: block; text-align: left; overflow: auto; padding: 24px; }
+.import-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 16px; }
+.import-source { border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px; margin-block: 10px; }
+.import-source summary { cursor: pointer; overflow-wrap: anywhere; }
+.import-project { margin: 10px 0 0 12px; }
+.import-entry { display: flex; align-items: start; gap: 8px; padding: 7px 0; }
+.import-entry small { display: block; color: var(--text-muted); overflow-wrap: anywhere; }
+.import-history-link { display: block; margin-block: 8px; text-align: left; }
+.import-transcript { border-top: 1px solid var(--border-subtle); margin-top: 20px; padding-top: 12px; }
+.import-transcript p, .import-transcript pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.import-transcript pre { max-height: 400px; overflow: auto; }
+.import-settings progress { display: block; width: 100%; margin-block: 10px; }
+@media (max-width: 600px) { .import-project { margin-left: 4px; } }

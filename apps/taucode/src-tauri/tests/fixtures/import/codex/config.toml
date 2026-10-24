@@ -1,0 +1,11 @@
+[mcp_servers.docs]
+command = "fixture-server"
+args = ["--stdio"]
+[mcp_servers.docs.env]
+API_KEY = "never-copy-this-secret"
+[mcp_servers.web]
+url = "https://example.invalid/mcp"
+[mcp_servers.web.http_headers]
+Authorization = "never-copy-this-header"
+[mcp_servers.mcp-oauth-private]
+command = "do-not-import"

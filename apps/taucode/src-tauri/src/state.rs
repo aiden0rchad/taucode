@@ -31,6 +31,7 @@ impl Default for TcpDaemonRuntime {
 
 pub(crate) struct AppState {
     pub(crate) work: Arc<crate::shared::work::Work>,
+    pub(crate) imports: Arc<crate::shared::imports::Imports>,
     pub(crate) chats: crate::shared::chats::Chats,
     pub(crate) browser: Arc<crate::shared::browser::Browser>,
     pub(crate) computer: Arc<crate::shared::computer::Computer>,
@@ -59,6 +60,7 @@ impl AppState {
         let workspaces = read_workspaces(&storage_path).unwrap_or_default();
         let app_settings = read_settings(&settings_path).unwrap_or_default();
         Self {
+            imports: crate::shared::imports::Imports::new(data_dir.clone()),
             browser: crate::shared::browser::Browser::new(data_dir.clone()),
             work: crate::shared::work::Work::new(data_dir.clone(), crate::event_sink::TauriEventSink::new(app.clone())),
             chats: crate::shared::chats::Chats::new(data_dir.clone(), crate::event_sink::TauriEventSink::new(app.clone())),

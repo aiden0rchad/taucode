@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { subscribeImportsChanged } from "@services/events";
 import type {
   AppSettings,
   DebugEntry,
@@ -100,6 +101,7 @@ export function useWorkspaces(options: UseWorkspacesOptions = {}): UseWorkspaces
 
   useEffect(() => {
     void refreshWorkspaces();
+    return subscribeImportsChanged(() => { void refreshWorkspaces(); });
   }, [refreshWorkspaces]);
 
   useEffect(() => {
