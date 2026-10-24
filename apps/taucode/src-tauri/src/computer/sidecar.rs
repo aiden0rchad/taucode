@@ -15,6 +15,59 @@ use tokio::{
     process::{Child, ChildStdin, ChildStdout, Command},
 };
 
+fn parse_element_reply(reply: &str, elements: &Value) -> Result<Option<u64>, ()> {
+    let clean: String = reply
+        .chars()
+        .filter(|c| !matches!(c, '*' | '`' | '_'))
+        .collect();
+    let clean = clean
+        .trim()
+        .trim_end_matches(['.', ',', ';', ':', '!', '?'])
+        .trim();
+    if clean.eq_ignore_ascii_case("none") {
+        return Ok(None);
+    }
+    let mut tokens = clean
+        .split(|c: char| !c.is_ascii_digit() && c != '-' && c != '+')
+        .filter(|s| !s.is_empty());
+    let token = tokens.next().ok_or(())?;
+    if token.len() > 10 || tokens.next().is_some() {
+        return Err(());
+    }
+    let index: u64 = token.parse().map_err(|_| ())?;
+    if index >= 250
+        || !elements
+            .as_array()
+            .is_some_and(|items| items.iter().any(|e| e["index"] == index))
+    {
+        return Err(());
+    }
+    Ok(Some(index))
+}
+
+fn normalize_element_reply(prediction: &mut Prediction, snapshot: &Value) {
+    // A malformed index must never erase evidence of a changed target binding.
+    if prediction.action["snapshot_id"] != snapshot["snapshot_id"] {
+        return;
+    }
+    let Some(raw) = prediction.action.get("element_index") else {
+        return;
+    };
+    let reply = raw
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| raw.to_string());
+    match parse_element_reply(&reply, &snapshot["elements"]) {
+        Ok(Some(index)) => prediction.action["element_index"] = json!(index),
+        result => {
+            let action = prediction.action.as_object_mut().unwrap();
+            action.remove("element_index");
+            action.remove("snapshot_id");
+            prediction.grounding.push(json!({"model_result":if result.is_err() {"unparseable"} else {"none"},"raw_reply":reply,"pixel_fallback_reason":"invalid_element_reply"}));
+        }
+    }
+}
+
 pub async fn configuration(
     settings: &AppSettings,
     model: &ModelRef,
@@ -351,14 +404,16 @@ impl Sidecar {
         size: [u32; 2],
         snapshot: Value,
     ) -> Result<Prediction, String> {
-        serde_json::from_value(
+        let mut prediction: Prediction = serde_json::from_value(
             self.call(
                 "predict",
                 json!({"instruction":instruction,"screenshot_png_b64":png,"screen_size":size,"ax_snapshot":snapshot}),
             )
             .await?,
         )
-        .map_err(|_| self.with_log("Invalid structured prediction".into()))
+        .map_err(|_| self.with_log("Invalid structured prediction".into()))?;
+        normalize_element_reply(&mut prediction, &snapshot);
+        Ok(prediction)
     }
 }
 impl Drop for Sidecar {
@@ -387,6 +442,59 @@ fn response_result(response: Value, id: u64) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn lenient_element_reply_table_and_pixel_fallback() {
+        let snapshot = json!({"snapshot_id":1,"elements":[{"index":42}]});
+        for (reply, expected) in [
+            ("**42**", Ok(Some(42))),
+            ("`42`", Ok(Some(42))),
+            ("42.", Ok(Some(42))),
+            ("Index: 42", Ok(Some(42))),
+            ("Element 42", Ok(Some(42))),
+            (" _NoNe_! ", Ok(None)),
+            ("42 or 43", Err(())),
+            ("43", Err(())),
+            ("-42", Err(())),
+            ("42.0", Err(())),
+            ("garbage", Err(())),
+        ] {
+            assert_eq!(
+                parse_element_reply(reply, &snapshot["elements"]),
+                expected,
+                "{reply}"
+            );
+            let mut prediction = Prediction {
+                action: json!({"element_index":reply,"snapshot_id":1,"x":10,"y":20}),
+                reflection: String::new(),
+                plan_text: String::new(),
+                grounding: vec![],
+            };
+            normalize_element_reply(&mut prediction, &snapshot);
+            if expected == Ok(Some(42)) {
+                assert_eq!(prediction.action["element_index"], 42);
+            } else {
+                assert!(prediction.action.get("snapshot_id").is_none());
+                assert_eq!(prediction.action["x"], 10);
+                assert_eq!(
+                    prediction.grounding[0]["model_result"],
+                    if expected.is_err() {
+                        "unparseable"
+                    } else {
+                        "none"
+                    }
+                );
+            }
+        }
+        let mut changed = Prediction {
+            action: json!({"snapshot_id":2,"element_index":"garbage"}),
+            reflection: String::new(),
+            plan_text: String::new(),
+            grounding: vec![],
+        };
+        normalize_element_reply(&mut changed, &snapshot);
+        assert_eq!(changed.action["snapshot_id"], 2);
+        assert!(changed.element_target().is_err());
+    }
     #[test]
     fn logs_rotate_keep_two_backups_and_redact_split_credentials() {
         let data = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());

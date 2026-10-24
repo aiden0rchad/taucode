@@ -28,6 +28,7 @@ pub struct Overlay {
     app: tauri::AppHandle,
     enabled: bool,
     active: Arc<AtomicBool>,
+    visible: Arc<AtomicBool>,
     motion: Arc<Mutex<Option<Motion>>>,
 }
 struct Panel {
@@ -62,18 +63,21 @@ impl Overlay {
             app,
             enabled,
             active: Arc::new(AtomicBool::new(true)),
+            visible: Arc::new(AtomicBool::new(false)),
             motion: Arc::new(Mutex::new(None)),
         };
         if enabled {
             let active = this.active.clone();
             let motion = this.motion.clone();
+            let visible = this.visible.clone();
             let app = this.app.clone();
             std::thread::spawn(move || {
                 while active.load(Ordering::SeqCst) {
                     let active = active.clone();
                     let motion = motion.clone();
+                    let visible = visible.clone();
                     let _ = app.run_on_main_thread(move || {
-                        if !active.load(Ordering::SeqCst) {
+                        if !active.load(Ordering::SeqCst) || !visible.load(Ordering::SeqCst) {
                             return;
                         }
                         if let Some(m) = motion.lock().unwrap().as_ref() {
@@ -98,7 +102,10 @@ impl Overlay {
         this
     }
     pub fn move_to(&self, point: [f64; 2], click: bool) {
-        if !self.enabled || !self.active.load(Ordering::SeqCst) {
+        if !self.enabled
+            || !self.active.load(Ordering::SeqCst)
+            || !self.visible.load(Ordering::SeqCst)
+        {
             return;
         }
         let mut motion = self.motion.lock().unwrap();
@@ -114,6 +121,26 @@ impl Overlay {
             to: point,
             began: Instant::now(),
             click,
+        });
+    }
+    // Cursor visibility is independent of the HUD and the session lifetime.
+    pub fn set_visible(&self, visible: bool) {
+        if self.visible.swap(visible, Ordering::SeqCst) == visible || visible {
+            return;
+        }
+        *self.motion.lock().unwrap() = None;
+        let visible = self.visible.clone();
+        let _ = self.app.run_on_main_thread(move || {
+            if !visible.load(Ordering::SeqCst) {
+                PANELS.with(|panels| {
+                    for panel in panels.borrow().iter() {
+                        unsafe {
+                            let _: () =
+                                msg_send![&*panel.window, orderOut: std::ptr::null::<AnyObject>()];
+                        }
+                    }
+                });
+            }
         });
     }
     pub fn hide(&self) {

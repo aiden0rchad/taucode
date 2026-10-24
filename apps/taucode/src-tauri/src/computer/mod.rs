@@ -147,7 +147,7 @@ impl Computer {
                         && !app_allowed(
                             &current.app,
                             &settings.computer,
-                            &settings.computer.allowed_apps,
+                            &settings.computer.app_ids(),
                         )
                     {
                         return Err("Screenshot blocked by app policy".into());
@@ -158,10 +158,10 @@ impl Computer {
                 {
                     let allowed: Vec<_> = settings
                         .computer
-                        .allowed_apps
+                        .app_ids()
                         .iter()
                         .filter(|a| {
-                            app_allowed(a, &settings.computer, &settings.computer.allowed_apps)
+                            app_allowed(a, &settings.computer, &settings.computer.app_ids())
                         })
                         .cloned()
                         .collect();
@@ -234,7 +234,7 @@ impl Computer {
                 limits.max_steps = n as u32;
             }
             let apps: Vec<String> = match p.get("apps") {
-                None => limits.allowed_apps.clone(),
+                None => limits.app_ids(),
                 Some(v) => {
                     serde_json::from_value(v.clone()).map_err(|_| "Expected app bundle IDs")?
                 }
@@ -341,7 +341,7 @@ impl Computer {
             });
             self.persist(&id)?;
             let mut result = result.unwrap_or_else(|error| json!({"summary":error,"error":error}));
-            result["computerRun"] = json!({"id":id,"stored":true,"steps":[],"summary":result["summary"],"error":result.get("error"),"instruction":instruction});
+            result["computerRun"] = json!({"id":id,"stored":true,"steps":compact_steps(&self.state.borrow()["steps"]),"summary":result["summary"],"error":result.get("error"),"instruction":instruction});
             Ok(result)
         }
     }
@@ -471,6 +471,17 @@ impl runner::Environment for Live {
             None => Err("Element snapshots unavailable".into()),
         }
     }
+    fn policy_target(&self, action: &Action) -> Result<policy::Target, String> {
+        match &self.session {
+            Some(s) => s.policy_target(action),
+            None => {
+                let front = objc2_app_kit::NSWorkspace::sharedWorkspace()
+                    .frontmostApplication()
+                    .ok_or("Cannot identify frontmost app")?;
+                background::ax_actions::policy_target(front.processIdentifier(), None, action, None)
+            }
+        }
+    }
     fn verify_target(&self) -> Result<(), String> {
         self.session.as_ref().map_or(Ok(()), |s| s.verify_element())
     }
@@ -526,7 +537,15 @@ impl runner::Environment for Live {
         if let Action::Scroll { clicks, .. } = action {
             let mut handled = false;
             for _ in 0..clicks.unsigned_abs().max(1) {
-                let next = control.guarded(context, || s.context(), || s.try_ax(action))?;
+                let next = control
+                    .guarded(context, || s.context(), || s.try_ax(action))
+                    .map_err(|error| {
+                        if handled {
+                            format!("AX scroll interrupted after partial delivery: {error}")
+                        } else {
+                            error
+                        }
+                    })?;
                 if !next {
                     if handled {
                         return Err("AX scroll interrupted after partial delivery".into());
@@ -562,6 +581,12 @@ impl runner::Environment for Live {
                             s.record_attempt(action);
                             runner::Preparation::Events
                         }
+                        _ if s.fallback_reason.lock().unwrap().as_deref().is_some_and(|r| r.contains("failed(-25204)")) => {
+                            return Err("AX action completion unknown after timeout; background fallback unavailable".into());
+                        }
+                        _ if s.fallback_reason.lock().unwrap().as_deref().is_some_and(|r| r.starts_with("background_keyboard_")) => {
+                            return Err(format!("{}Background keyboard delivery requires activation or lost its target focus; no input dispatched", runner::RECOVERABLE));
+                        }
                         _ => runner::Preparation::NeedsForeground,
                     },
                 )
@@ -572,10 +597,38 @@ impl runner::Environment for Live {
         let s = self.session.as_ref().ok_or("No background target")?;
         control.guarded(context, || s.context(), || s.begin_foreground())
     }
+    fn begin_action(&self) {
+        if let Some(s) = &self.session {
+            s.guard.begin_action();
+        }
+    }
     fn end_action(&self) {
         if let Some(s) = &self.session {
             s.end_foreground();
+            s.guard.end_action();
         }
+    }
+    fn settle(&self) -> crate::shared::providers::BoxFuture<'_, Result<(), String>> {
+        Box::pin(async {
+            if let Some(s) = &self.session {
+                let path = *s.path.lock().unwrap();
+                if matches!(path, Some("ax-select" | "ax-element" | "ax-menu")) {
+                    let id = s.window.lock().unwrap().as_ref().map(|w| w.id);
+                    if let Some(id) = id {
+                        let pid = s.pid;
+                        runner::settle(|| async move {
+                            tokio::task::spawn_blocking(move || {
+                                background::ax_actions::window_state(pid, id)
+                            })
+                            .await
+                            .map_err(|e| e.to_string())?
+                        })
+                        .await;
+                    }
+                }
+            }
+            Ok(())
+        })
     }
 
     fn target(&self, app: &str) -> Result<String, String> {
@@ -587,6 +640,8 @@ impl runner::Environment for Live {
             if matches!(event, control::Event::Key(..) | control::Event::Text(_))
                 && !s.events_available(&Action::Hotkey { keys: vec![] })
             {
+                *s.fallback_reason.lock().unwrap() =
+                    Some("background_keyboard_focus_changed".into());
                 return Err("Target window no longer has the app's keyboard focus".into());
             }
             if s.foreground.load(std::sync::atomic::Ordering::SeqCst) {
@@ -668,6 +723,8 @@ impl runner::Environment for Live {
         if let Some(s) = &self.session {
             step["path"] = json!(*s.path.lock().unwrap());
             step["executionFallbackReason"] = json!(*s.fallback_reason.lock().unwrap());
+            step["menuTitle"] = json!(*s.menu_title.lock().unwrap());
+            step["menuResolution"] = json!(*s.menu_resolution.lock().unwrap());
             step["window"] = json!(*s.window.lock().unwrap());
             step["focusRestorations"] = json!(*s.guard.restorations.lock().unwrap());
         } else {
@@ -689,3 +746,44 @@ impl runner::Environment for Live {
     }
 }
 pub use transport::{ipc, mcp_cli};
+
+fn compact_steps(steps: &Value) -> Vec<Value> {
+    steps
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|step| {
+            let mut compact = serde_json::Map::new();
+            for key in [
+                "step",
+                "action",
+                "target",
+                "reflection",
+                "planText",
+                "error",
+                "recovered",
+                "kind",
+                "reason",
+                "path",
+                "menuTitle",
+                "executionFallbackReason",
+                "predictMs",
+                "executeMs",
+                "waitMs",
+                "focusRestorations",
+                "foregroundApproval",
+            ] {
+                if let Some(value) = step.get(key) {
+                    compact.insert(key.into(), value.clone());
+                }
+            }
+            if let Some(text) = compact.get("planText").and_then(Value::as_str) {
+                compact.insert(
+                    "planText".into(),
+                    json!(text.chars().take(1024).collect::<String>()),
+                );
+            }
+            Value::Object(compact)
+        })
+        .collect()
+}

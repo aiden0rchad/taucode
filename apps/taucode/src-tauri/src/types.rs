@@ -1690,6 +1690,59 @@ impl Default for BrowserSettings {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ComputerAccess {
+    #[default]
+    Full,
+    ReadOnly,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum ConfirmTyping {
+    Always,
+    #[default]
+    Sensitive,
+    #[serde(rename = "risky-only")]
+    RiskyOnly,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", from = "ComputerAllowedAppInput")]
+pub(crate) struct ComputerAllowedApp {
+    pub bundle_id: String,
+    pub access: ComputerAccess,
+}
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ComputerAllowedAppInput {
+    Legacy(String),
+    Entry {
+        #[serde(rename = "bundleId")]
+        bundle_id: String,
+        access: ComputerAccess,
+    },
+}
+impl From<ComputerAllowedAppInput> for ComputerAllowedApp {
+    fn from(value: ComputerAllowedAppInput) -> Self {
+        let (bundle_id, access) = match value {
+            ComputerAllowedAppInput::Legacy(id) => (id, ComputerAccess::Full),
+            ComputerAllowedAppInput::Entry { bundle_id, access } => (bundle_id, access),
+        };
+        Self {
+            access: if bundle_id.eq_ignore_ascii_case("com.apple.systempreferences") {
+                ComputerAccess::ReadOnly
+            } else {
+                access
+            },
+            bundle_id,
+        }
+    }
+}
+impl From<&str> for ComputerAllowedApp {
+    fn from(id: &str) -> Self {
+        ComputerAllowedAppInput::Legacy(id.into()).into()
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct ComputerSettings {
@@ -1702,11 +1755,20 @@ pub(crate) struct ComputerSettings {
     pub grounding_mode: String,
     pub grounding_width: u32,
     pub grounding_height: u32,
-    pub allowed_apps: Vec<String>,
+    pub allowed_apps: Vec<ComputerAllowedApp>,
+    pub confirm_typing: ConfirmTyping,
     pub denied_apps: Vec<String>,
     pub max_steps: u32,
     pub max_seconds: u64,
     pub shortcut: String,
+}
+impl ComputerSettings {
+    pub fn app_ids(&self) -> Vec<String> {
+        self.allowed_apps
+            .iter()
+            .map(|a| a.bundle_id.clone())
+            .collect()
+    }
 }
 impl Default for ComputerSettings {
     fn default() -> Self {
@@ -1721,6 +1783,7 @@ impl Default for ComputerSettings {
             grounding_width: 1920,
             grounding_height: 1080,
             allowed_apps: vec![],
+            confirm_typing: ConfirmTyping::Sensitive,
             denied_apps: vec![],
             max_steps: 30,
             max_seconds: 300,

@@ -16,6 +16,7 @@ extern "C" {
     fn AXUIElementCreateApplication(pid: i32) -> Ref;
     fn AXUIElementSetMessagingTimeout(element: Ref, seconds: f32) -> i32;
     fn AXUIElementCopyAttributeValue(element: Ref, attribute: Ref, value: *mut Ref) -> i32;
+    fn AXUIElementGetAttributeValueCount(element: Ref, attribute: Ref, count: *mut isize) -> i32;
     fn AXUIElementCopyElementAtPosition(element: Ref, x: f32, y: f32, value: *mut Ref) -> i32;
     fn AXUIElementGetPid(element: Ref, pid: *mut i32) -> i32;
     fn AXUIElementCopyActionNames(element: Ref, value: *mut Ref) -> i32;
@@ -35,6 +36,9 @@ extern "C" {
     fn CFRelease(value: Ref);
     fn CFArrayGetCount(value: Ref) -> isize;
     fn CFArrayGetValueAtIndex(value: Ref, index: isize) -> Ref;
+    fn CFArrayCreate(allocator: Ref, values: *const Ref, count: isize, callbacks: Ref) -> Ref;
+    fn CFEqual(a: Ref, b: Ref) -> bool;
+    static kCFBooleanTrue: Ref;
 }
 pub struct Element(Ref);
 // Retained AX proxies are thread-safe CF objects; access is serialized by the session mutex.
@@ -52,7 +56,118 @@ impl Drop for Element {
 fn string(s: &NSString) -> Ref {
     (s as *const NSString).cast()
 }
+thread_local! {
+    // Pane inspection discards partial evidence. Element snapshots isolate node
+    // reads below and only propagate an invalid window root to the retry loop.
+    static WALK_ERROR: std::cell::RefCell<Option<Option<String>>> = const { std::cell::RefCell::new(None) };
+    static SNAPSHOT_READ: std::cell::Cell<Option<(bool, usize)>> = const { std::cell::Cell::new(None) };
+}
+pub(super) fn snapshot_read<T>(root: bool, read: impl FnOnce() -> T) -> (T, usize) {
+    let prior = SNAPSHOT_READ.with(|slot| slot.replace(Some((root, 0))));
+    let value = read();
+    let skips = SNAPSHOT_READ.with(|slot| slot.replace(prior).unwrap().1);
+    (value, skips)
+}
+fn observe_read(name: &str, status: i32) -> i32 {
+    if matches!(status, -25202 | -25204) {
+        let partial = SNAPSHOT_READ.with(|slot| {
+            if let Some((root, skips)) = slot.get() {
+                if !root || status != -25202 {
+                    slot.set(Some((root, skips + 1)));
+                    return true;
+                }
+            }
+            false
+        });
+        if partial {
+            return status;
+        }
+        WALK_ERROR.with(|slot| {
+            if let Some(error) = slot.borrow_mut().as_mut() {
+                error.get_or_insert_with(|| format!("{name}: ax_error({status})"));
+            }
+        });
+    }
+    status
+}
+pub(super) fn check_walk() -> Result<(), String> {
+    WALK_ERROR.with(
+        |slot| match slot.borrow().as_ref().and_then(|e| e.clone()) {
+            Some(error) => Err(error),
+            None => Ok(()),
+        },
+    )
+}
+pub(super) fn retry_walk<T>(
+    mut walk: impl FnMut() -> Result<T, String>,
+    mut wait: impl FnMut(std::time::Duration),
+) -> Result<(T, usize), String> {
+    struct Restore(Option<Option<String>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            WALK_ERROR.with(|slot| *slot.borrow_mut() = self.0.take());
+        }
+    }
+    for attempt in 1..=3 {
+        let prior = WALK_ERROR.with(|slot| slot.replace(Some(None)));
+        let restore = Restore(prior);
+        let result = walk();
+        let transient = check_walk();
+        drop(restore);
+        let result = match (result, transient) {
+            (Err(error), Err(_))
+                if error.contains("ax_error(-25202)") || error.contains("ax_error(-25204)") =>
+            {
+                Err(error)
+            }
+            (_, Err(error)) => Err(error),
+            (result, _) => result,
+        };
+        match result {
+            Ok(value) => return Ok((value, attempt)),
+            Err(error) => {
+                if attempt == 3
+                    || !(error.contains("ax_error(-25202)") || error.contains("ax_error(-25204)"))
+                {
+                    return Err(format!("{error}; walk_attempts={attempt}"));
+                }
+                wait(std::time::Duration::from_millis(150));
+            }
+        }
+    }
+    unreachable!()
+}
+// Only reads use this helper. Mutations must never be retried after a timeout.
+fn metadata_read<T>(name: &str, mut read: impl FnMut(f32) -> Result<T, i32>) -> Result<T, String> {
+    let result = match read(0.05) {
+        Err(-25204) if !WALK_ERROR.with(|slot| slot.borrow().is_some()) => read(0.25),
+        result => result,
+    };
+    result.map_err(|status| format!("{name}: ax_error({})", observe_read(name, status)))
+}
 impl Element {
+    pub(super) fn alive(&self) -> bool {
+        self.text("AXRole").is_some_and(|role| !role.is_empty())
+    }
+    pub(super) fn press(&self) -> Result<(), String> {
+        if self.text("AXEnabled").as_deref() != Some("1") {
+            return Err(format!(
+                "{}AX menu item is disabled or unavailable",
+                super::super::runner::RECOVERABLE
+            ));
+        }
+        let status = self.apply("AXPress", None);
+        if status == 0 {
+            Ok(())
+        } else if matches!(status, -25205 | -25206) {
+            Err(format!(
+                "{}AXPress menu unsupported ({status}); no pixel fallback",
+                super::super::runner::RECOVERABLE
+            ))
+        } else {
+            Err(format!("AXPress menu: ax_error({status}); not retried"))
+        }
+    }
     fn owned(ptr: Ref) -> Option<Self> {
         if ptr.is_null() {
             None
@@ -87,16 +202,26 @@ impl Element {
     pub(super) fn attr(&self, name: &str) -> Option<Self> {
         self.attr_result(name).ok()
     }
-    fn attr_result(&self, name: &str) -> Result<Self, String> {
-        let mut result = std::ptr::null();
-        let status = unsafe {
-            AXUIElementCopyAttributeValue(self.0, string(&NSString::from_str(name)), &mut result)
-        };
-        if status == 0 {
-            Self::owned_value(result).ok_or_else(|| format!("{name}: null attribute"))
-        } else {
-            Err(format!("{name}: ax_error({status})"))
-        }
+    pub(super) fn attr_result(&self, name: &str) -> Result<Self, String> {
+        metadata_read(name, |seconds| {
+            self.with_timeout(seconds, || {
+                let mut result = std::ptr::null();
+                let status = unsafe {
+                    AXUIElementCopyAttributeValue(
+                        self.0,
+                        string(&NSString::from_str(name)),
+                        &mut result,
+                    )
+                };
+                let value = Self::owned_value(result);
+                if status == 0 {
+                    Ok(value)
+                } else {
+                    Err(status)
+                }
+            })
+        })?
+        .ok_or_else(|| format!("{name}: null attribute; ax_error(0)"))
     }
     // Attribute results may be strings/arrays/AXValues, not AXUIElements.
     fn owned_value(ptr: Ref) -> Option<Self> {
@@ -112,8 +237,14 @@ impl Element {
     pub(super) fn settable(&self, name: &str) -> bool {
         let mut value = 0;
         unsafe {
-            AXUIElementIsAttributeSettable(self.0, string(&NSString::from_str(name)), &mut value)
-                == 0
+            observe_read(
+                name,
+                AXUIElementIsAttributeSettable(
+                    self.0,
+                    string(&NSString::from_str(name)),
+                    &mut value,
+                ),
+            ) == 0
                 && value != 0
         }
     }
@@ -121,28 +252,42 @@ impl Element {
         self.window_id_result().ok()
     }
     fn window_id_result(&self) -> Result<u32, String> {
-        let mut id = 0;
-        let status = unsafe { _AXUIElementGetWindow(self.0, &mut id) };
-        if status == 0 && id != 0 {
+        let id = metadata_read("_AXUIElementGetWindow", |seconds| {
+            self.with_timeout(seconds, || {
+                let mut id = 0;
+                let status = unsafe { _AXUIElementGetWindow(self.0, &mut id) };
+                if status == 0 {
+                    Ok(id)
+                } else {
+                    Err(status)
+                }
+            })
+        })?;
+        if id != 0 {
             Ok(id)
         } else {
-            Err(format!(
-                "_AXUIElementGetWindow: ax_error({status}), id={id}"
-            ))
+            Err("_AXUIElementGetWindow: ax_error(0), id=0".into())
         }
     }
     pub(super) fn text(&self, name: &str) -> Option<String> {
-        let value = self.attr(name)?;
+        self.text_result(name).ok()
+    }
+    fn text_result(&self, name: &str) -> Result<String, String> {
+        let value = self.attr_result(name)?;
         unsafe {
             let kind = CFGetTypeID(value.0);
             if kind != CFStringGetTypeID()
                 && kind != CFNumberGetTypeID()
                 && kind != CFBooleanGetTypeID()
             {
-                return None;
+                return Err(format!(
+                    "{name}: unexpected attribute type={kind}; ax_error(0)"
+                ));
             }
             let text: *const NSString = msg_send![value.0 as *const AnyObject, description];
-            text.as_ref().map(|s| s.to_string())
+            text.as_ref()
+                .map(|s| s.to_string())
+                .ok_or_else(|| format!("{name}: null text; ax_error(0)"))
         }
     }
     pub(super) fn children(&self, name: &str, limit: usize) -> Vec<Self> {
@@ -164,10 +309,14 @@ impl Element {
     }
     pub(super) fn actions(&self) -> Vec<String> {
         let mut ptr = std::ptr::null();
-        if unsafe { AXUIElementCopyActionNames(self.0, &mut ptr) } != 0 {
+        let status = observe_read("AXActions", unsafe {
+            AXUIElementCopyActionNames(self.0, &mut ptr)
+        });
+        let array = Self::owned_value(ptr);
+        if status != 0 {
             return vec![];
         }
-        let Some(array) = Self::owned_value(ptr) else {
+        let Some(array) = array else {
             return vec![];
         };
         unsafe {
@@ -206,16 +355,15 @@ impl Element {
         self.text("AXEnabled").as_deref() != Some("0")
     }
     pub(super) fn belongs_to(&self, pid: i32, window: u32) -> bool {
-        let mut owner = 0;
-        unsafe {
-            AXUIElementSetMessagingTimeout(self.0, 0.005);
-        }
-        (unsafe { AXUIElementGetPid(self.0, &mut owner) == 0 })
-            && owner == pid
+        self.owner() == Some(pid)
             && self
                 .window_id()
                 .or_else(|| self.attr("AXWindow").and_then(|w| w.window_id()))
                 == Some(window)
+    }
+    fn owner(&self) -> Option<i32> {
+        let mut pid = 0;
+        (unsafe { AXUIElementGetPid(self.0, &mut pid) } == 0).then_some(pid)
     }
     pub(super) fn set_text(
         &self,
@@ -226,7 +374,7 @@ impl Element {
         action_result(attribute, self.apply(attribute, Some(text)), reason)
     }
 }
-fn target(pid: i32, point: Option<[f64; 2]>) -> Option<Element> {
+pub(super) fn target(pid: i32, point: Option<[f64; 2]>) -> Option<Element> {
     let app = Element::app(pid)?;
     let element = if let Some(p) = point {
         let mut element = std::ptr::null();
@@ -250,12 +398,442 @@ fn target(pid: i32, point: Option<[f64; 2]>) -> Option<Element> {
     Some(element)
 }
 pub fn secure(pid: i32) -> bool {
-    target(pid, None)
-        .and_then(|e| e.attr("AXSubrole"))
-        .is_none_or(|s| s.equals("AXSecureTextField"))
+    target(pid, None).is_none_or(|e| {
+        let role = e.text("AXRole").unwrap_or_default();
+        role.is_empty()
+            || super::super::policy::secure_field(&role, &e.text("AXSubrole").unwrap_or_default())
+    })
+}
+fn field_info(mut read: impl FnMut(&str) -> Option<String>) -> super::super::policy::Target {
+    let role = read("AXRole").unwrap_or_default();
+    let static_label = if role == "AXStaticText" {
+        read("AXValue").unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let mut info = super::super::policy::Target {
+        secure: role.is_empty()
+            || super::super::policy::secure_field(&role, &read("AXSubrole").unwrap_or_default()),
+        role,
+        label: [
+            "AXTitle",
+            "AXDescription",
+            "AXHelp",
+            "AXIdentifier",
+            "AXPlaceholderValue",
+        ]
+        .iter()
+        .filter_map(|a| read(a))
+        .collect::<Vec<_>>()
+        .join(" "),
+        ..Default::default()
+    };
+    info.label.push_str(&format!(" {static_label}"));
+    info.label = info.label.trim().to_owned();
+    info
+}
+// Inspect only AX metadata, never field values.
+fn row_label(row: &Element) -> String {
+    let mut labels = vec![field_info(|a| row.text(a)).label];
+    let mut pending = row.children("AXChildren", 32);
+    for _ in 0..64 {
+        let Some(e) = pending.pop() else {
+            break;
+        };
+        labels.push(field_info(|a| e.text(a)).label);
+        if pending.len() < 64 {
+            pending.extend(e.children("AXChildren", 16));
+        }
+    }
+    labels.join(" ")
+}
+// Selection is shared by routing and policy so the row label is checked before writes.
+trait RowElement: Clone {
+    fn role(&self) -> String;
+    fn parent(&self) -> Option<Self>;
+    fn select(&self, container: Option<&Self>) -> Result<bool, String>;
+}
+fn row_target<E: RowElement>(element: &E, action: &Action) -> Option<(E, Option<E>)> {
+    if !matches!(action, Action::Click { button, clicks: 1, hold_keys, .. }
+        if button == "left" && hold_keys.is_empty())
+    {
+        return None;
+    }
+    let mut current = element.clone();
+    for depth in 0..=4 {
+        match current.role().as_str() {
+            "AXRow" | "AXOutlineRow" => {
+                let row = current;
+                let mut parent = row.parent();
+                for _ in 0..4 {
+                    let Some(container) = parent else {
+                        break;
+                    };
+                    if matches!(
+                        container.role().as_str(),
+                        "AXOutline" | "AXTable" | "AXList"
+                    ) {
+                        return Some((row, Some(container)));
+                    }
+                    parent = container.parent();
+                }
+                return (depth == 0).then_some((row, None));
+            }
+            // A control within a row keeps its own behavior and policy.
+            "AXButton"
+            | "AXLink"
+            | "AXMenuItem"
+            | "AXCheckBox"
+            | "AXSwitch"
+            | "AXRadioButton"
+            | "AXSlider"
+            | "AXIncrementor"
+            | "AXPopUpButton"
+            | "AXComboBox"
+            | "AXTextField"
+            | "AXTextArea"
+            | "AXDisclosureTriangle" => return None,
+            _ => current = current.parent()?,
+        }
+    }
+    None
+}
+fn selection_result(status: i32, verify: impl FnOnce() -> bool) -> Result<bool, String> {
+    match status {
+        0 if verify() => Ok(true),
+        0 => Err("AX row selection verification failed; not retried".into()),
+        -25205 | -25212 => Ok(false), // Unsupported attribute / not settable.
+        _ => Err(format!("AX row selection failed ({status}); not retried")),
+    }
+}
+impl RowElement for Element {
+    fn role(&self) -> String {
+        self.text("AXRole").unwrap_or_default()
+    }
+    fn parent(&self) -> Option<Self> {
+        self.attr("AXParent")
+    }
+    fn select(&self, container: Option<&Self>) -> Result<bool, String> {
+        let settable = |e: &Element, name: &str| -> Result<bool, String> {
+            let mut value = 0;
+            let status = unsafe {
+                AXUIElementIsAttributeSettable(e.0, string(&NSString::from_str(name)), &mut value)
+            };
+            match status {
+                0 => Ok(value != 0),
+                -25205 | -25212 => Ok(false),
+                _ => Err(format!("AX row selection {name} probe failed ({status})")),
+            }
+        };
+        if settable(self, "AXSelected")? {
+            let status = self.with_timeout(0.05, || unsafe {
+                AXUIElementSetAttributeValue(
+                    self.0,
+                    string(&NSString::from_str("AXSelected")),
+                    kCFBooleanTrue,
+                )
+            });
+            if selection_result(status, || self.text("AXSelected").as_deref() == Some("1"))? {
+                return Ok(true);
+            }
+        }
+        let Some(container) = container else {
+            return Ok(false);
+        };
+        if !settable(container, "AXSelectedRows")? {
+            return Ok(false);
+        }
+        let rows = Element::owned_value(unsafe {
+            CFArrayCreate(std::ptr::null(), &self.0, 1, std::ptr::null())
+        })
+        .ok_or("Cannot allocate AXSelectedRows")?;
+        let status = container.with_timeout(0.05, || unsafe {
+            AXUIElementSetAttributeValue(
+                container.0,
+                string(&NSString::from_str("AXSelectedRows")),
+                rows.0,
+            )
+        });
+        selection_result(status, || {
+            container
+                .children("AXSelectedRows", 256)
+                .iter()
+                .any(|e| unsafe { CFEqual(e.0, self.0) })
+        })
+    }
+}
+pub(super) fn select_row(element: &Element, action: &Action) -> Result<bool, String> {
+    select_row_with(element, action)
+}
+fn select_row_with(element: &impl RowElement, action: &Action) -> Result<bool, String> {
+    match row_target(element, action) {
+        Some((row, container)) => row.select(container.as_ref()),
+        None => Ok(false),
+    }
+}
+pub(super) fn elementless_keyboard(action: &Action, selected: bool) -> bool {
+    !selected
+        && matches!(
+            action,
+            Action::Hotkey { .. }
+                | Action::HoldAndPress { .. }
+                | Action::Type {
+                    x: None,
+                    y: None,
+                    ..
+                }
+        )
+}
+fn focused_owner(pid: i32, owner: Option<i32>, readable: bool) -> Result<(), String> {
+    if owner != Some(pid) || !readable {
+        return Err("AX focused policy target belongs to another pid or cannot be read".into());
+    }
+    Ok(())
+}
+fn pane_root<H>(mut read: impl FnMut(&str) -> Result<Option<H>, String>) -> Result<H, String> {
+    let mut observed = vec![];
+    for attribute in ["AXFocusedWindow", "AXMainWindow", "AXWindows"] {
+        match read(attribute) {
+            Ok(Some(root)) => return Ok(root),
+            Ok(None) => observed.push(format!("{attribute}=none")),
+            Err(error) => observed.push(error),
+        }
+    }
+    Err(format!(
+        "System Settings read-only access: cannot inspect current pane; {}",
+        observed.join(", ")
+    ))
+}
+pub fn pane_info(pid: i32, window: Option<u32>) -> Result<super::super::policy::Target, String> {
+    retry_walk(|| pane_info_once(pid, window), std::thread::sleep).map(|(info, _)| info)
+}
+pub fn window_state(pid: i32, id: u32) -> Result<(String, isize), String> {
+    let (root, lookup) = window_element(pid, id);
+    let root = root.ok_or_else(|| format!("AX settle: {lookup}"))?;
+    let title = root.text_result("AXTitle")?;
+    let count = metadata_read("AXChildren count", |seconds| {
+        root.with_timeout(seconds, || {
+            let mut count = 0;
+            let status = unsafe {
+                AXUIElementGetAttributeValueCount(
+                    root.0,
+                    string(&NSString::from_str("AXChildren")),
+                    &mut count,
+                )
+            };
+            if status == 0 {
+                Ok(count)
+            } else {
+                Err(status)
+            }
+        })
+    })?;
+    Ok((title, count))
+}
+fn pane_info_once(pid: i32, window: Option<u32>) -> Result<super::super::policy::Target, String> {
+    let root = if let Some(id) = window {
+        let (root, lookup) = window_element(pid, id);
+        root.ok_or_else(|| {
+            format!("System Settings read-only access: cannot inspect current pane; {lookup}")
+        })?
+    } else {
+        let app = Element::app(pid)
+            .ok_or_else(|| format!("Pane root: pid={pid}, AXUIElementCreateApplication=null"))?;
+        pane_root(|attribute| {
+            if attribute == "AXWindows" {
+                app.children_result(attribute, 1)
+                    .map(|windows| windows.into_iter().next())
+            } else {
+                app.attr_result(attribute).map(Some)
+            }
+        })
+        .map_err(|e| format!("{e}; pid={pid}"))?
+    };
+    let mut info = super::super::policy::Target {
+        window_title: root
+            .text_result("AXTitle")
+            .map_err(|e| format!("Pane title: pid={pid}, window={window:?}, {e}"))?,
+        ..Default::default()
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    let mut pending = vec![(root, 0)];
+    for _ in 0..512 {
+        check_walk()?;
+        let Some((e, depth)) = pending.pop() else {
+            break;
+        };
+        if std::time::Instant::now() >= deadline || depth > 25 {
+            return Err(format!("System Settings read-only access: incomplete pane inspection; pid={pid}, window={window:?}, depth={depth}, pending={}, budget=1s", pending.len()));
+        }
+        let role = e
+            .text_result("AXRole")
+            .map_err(|e| format!("Pane role: pid={pid}, window={window:?}, depth={depth}, {e}"))?;
+        if role == "AXSheet" {
+            info.window_title
+                .push_str(&format!(" {}", field_info(|a| e.text(a)).label));
+        }
+        if matches!(role.as_str(), "AXRow" | "AXOutlineRow" | "AXCell")
+            && e.text("AXSelected").as_deref() == Some("1")
+        {
+            info.selected_rows.push_str(&format!(" {}", row_label(&e)));
+        }
+        for row in e.children("AXSelectedRows", 32) {
+            info.selected_rows
+                .push_str(&format!(" {}", row_label(&row)));
+        }
+        pending.extend(
+            e.children("AXChildren", 512)
+                .into_iter()
+                .map(|child| (child, depth + 1)),
+        );
+    }
+    check_walk()?;
+    if !pending.is_empty() {
+        return Err(format!("System Settings read-only access: pane inspection limit reached; pid={pid}, window={window:?}, pending={}, limit=512", pending.len()));
+    }
+    if matches!(info.window_title.trim(), "" | "System Settings")
+        && info.selected_rows.trim().is_empty()
+    {
+        return Err(format!("System Settings read-only access: cannot identify current pane; pid={pid}, window={window:?}, title=empty_or_generic, selected_rows=empty"));
+    }
+    Ok(info)
+}
+pub fn check_pane(pid: i32, bundle: &str, window: Option<u32>) -> Result<(), String> {
+    if bundle.eq_ignore_ascii_case(super::super::policy::SYSTEM_SETTINGS) {
+        super::super::policy::check_pane(bundle, &pane_info(pid, window)?)?;
+    }
+    Ok(())
+}
+pub fn policy_target(
+    pid: i32,
+    window: Option<u32>,
+    action: &Action,
+    selected: Option<&Element>,
+) -> Result<super::super::policy::Target, String> {
+    let keyboard = elementless_keyboard(action, selected.is_some());
+    let hit = target(pid, action_point(action));
+    let element = selected.or(hit.as_ref());
+    if keyboard {
+        focused_owner(
+            pid,
+            element.and_then(Element::owner),
+            element.is_some_and(Element::alive),
+        )?;
+    }
+    let window = if keyboard {
+        element.and_then(|e| {
+            e.window_id()
+                .or_else(|| e.attr("AXWindow").and_then(|w| w.window_id()))
+        })
+    } else {
+        window
+    };
+    let insertion = element.and_then(|e| window.and_then(|w| focused_insertion(pid, w, e, action)));
+    let effective = insertion.as_ref().or(element);
+    if let (Some(e), Some(id)) = (effective, window) {
+        // Selected proxies have already passed the current snapshot binding
+        // and liveness checks. Only hit-tests/focused substitutes need this link.
+        if !keyboard && (selected.is_none() || insertion.is_some()) && !e.belongs_to(pid, id) {
+            return Err("AX policy target left the captured window".into());
+        }
+    }
+    let mut info = effective
+        .map(|e| field_info(|a| e.text(a)))
+        .unwrap_or_default();
+    // A static-text child of a setting control must inherit the control's restriction.
+    if matches!(action, Action::Click { .. }) {
+        let mut parent = effective.and_then(|e| e.attr("AXParent"));
+        for _ in 0..8 {
+            let Some(e) = parent else {
+                break;
+            };
+            let role = e.text("AXRole").unwrap_or_default();
+            if matches!(
+                role.as_str(),
+                "AXCheckBox"
+                    | "AXSwitch"
+                    | "AXRadioButton"
+                    | "AXSlider"
+                    | "AXIncrementor"
+                    | "AXPopUpButton"
+                    | "AXComboBox"
+                    | "AXTextField"
+                    | "AXTextArea"
+            ) {
+                info.role = role.clone();
+            }
+            if matches!(role.as_str(), "AXRow" | "AXOutlineRow" | "AXCell") {
+                info.label.push_str(&format!(" {}", row_label(&e)));
+                break;
+            }
+            if role == "AXWindow" {
+                break;
+            }
+            info.label
+                .push_str(&format!(" {}", field_info(|a| e.text(a)).label));
+            parent = e.attr("AXParent");
+        }
+        if let Some(e) =
+            effective.filter(|_| matches!(info.role.as_str(), "AXRow" | "AXOutlineRow" | "AXCell"))
+        {
+            info.label.push_str(&format!(" {}", row_label(e)));
+        }
+    }
+    if let Some((row, _)) = effective.and_then(|e| row_target(e, action)) {
+        info.role = row.role();
+        info.label = row_label(&row);
+    }
+    let app = objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+        .and_then(|a| a.bundleIdentifier())
+        .ok_or("Target application unavailable")?
+        .to_string();
+    if app.eq_ignore_ascii_case(super::super::policy::SYSTEM_SETTINGS) {
+        if keyboard && window.is_none() {
+            return Err("System Settings read-only access: focused window unavailable".into());
+        }
+        let mut pane = pane_info(pid, window)?;
+        if window.is_none() {
+            if let Some(id) = element.and_then(|e| {
+                e.window_id()
+                    .or_else(|| e.attr("AXWindow").and_then(|w| w.window_id()))
+            }) {
+                let pointed = pane_info(pid, Some(id))?;
+                pane.window_title
+                    .push_str(&format!(" {}", pointed.window_title));
+                pane.selected_rows
+                    .push_str(&format!(" {}", pointed.selected_rows));
+            }
+        }
+        info.window_title = pane.window_title;
+        info.selected_rows = pane.selected_rows;
+    }
+    Ok(info)
+}
+pub(super) fn focused_policy_window(pid: i32) -> Option<u32> {
+    let e = target(pid, None)?;
+    focused_owner(pid, e.owner(), e.alive()).ok()?;
+    e.window_id()
+        .or_else(|| e.attr("AXWindow").and_then(|w| w.window_id()))
+}
+pub(super) fn window_count(pid: i32) -> Result<usize, String> {
+    Element::app(pid)
+        .ok_or("Target application unavailable")?
+        .children_result("AXWindows", 128)
+        .map(|windows| windows.len())
 }
 pub fn focused_window(pid: i32) -> Option<u32> {
     Element::app(pid)?.attr("AXFocusedWindow")?.window_id()
+}
+pub(super) fn minimized(pid: i32, id: u32) -> Result<bool, String> {
+    let (window, lookup) = window_element(pid, id);
+    let window = window.ok_or_else(|| format!("Window minimized check: {lookup}"))?;
+    match window.text_result("AXMinimized")?.as_str() {
+        "1" => Ok(true),
+        "0" => Ok(false),
+        _ => Err(format!(
+            "Window minimized check: pid={pid}, window={id}, AXMinimized=invalid"
+        )),
+    }
 }
 
 pub fn restore_window(pid: i32, id: u32) {
@@ -281,7 +859,12 @@ pub fn restore_window(pid: i32, id: u32) {
     }
 }
 
-pub fn try_action(pid: i32, window: u32, action: &Action) -> Result<bool, String> {
+pub fn try_action(
+    pid: i32,
+    window: u32,
+    action: &Action,
+    reason: &mut Option<String>,
+) -> Result<bool, String> {
     if super::choose_path(action, true, false, false) != super::Path::Ax {
         return Ok(false);
     }
@@ -345,7 +928,7 @@ pub fn try_action(pid: i32, window: u32, action: &Action) -> Result<bool, String
         }
         _ => return Ok(false),
     };
-    action_status(status)
+    action_result("AXAction", status, reason)
 }
 
 pub fn action_status(status: i32) -> Result<bool, String> {
@@ -574,10 +1157,358 @@ fn element_route<'a>(
 
 #[cfg(test)]
 mod element_tests {
+    #[test]
+    fn rows_and_descendants_select_but_controls_press() {
+        #[derive(Clone)]
+        struct Row {
+            roles: &'static [&'static str],
+            writes: std::rc::Rc<std::cell::Cell<usize>>,
+            status: i32,
+            verified: bool,
+        }
+        impl RowElement for Row {
+            fn role(&self) -> String {
+                self.roles[0].into()
+            }
+            fn parent(&self) -> Option<Self> {
+                (self.roles.len() > 1).then(|| Self {
+                    roles: &self.roles[1..],
+                    ..self.clone()
+                })
+            }
+            fn select(&self, container: Option<&Self>) -> Result<bool, String> {
+                if let Some(container) = container {
+                    assert!(matches!(
+                        container.role().as_str(),
+                        "AXOutline" | "AXTable" | "AXList"
+                    ));
+                }
+                self.writes.set(self.writes.get() + 1);
+                selection_result(self.status, || self.verified)
+            }
+        }
+        let click = Action::Click {
+            x: 0.,
+            y: 0.,
+            button: "left".into(),
+            clicks: 1,
+            hold_keys: vec![],
+        };
+        for (roles, selects) in [
+            (&["AXRow", "AXOutline"][..], true),
+            (&["AXRow"][..], true),
+            (
+                &["AXStaticText", "AXCell", "AXOutlineRow", "AXList"][..],
+                true,
+            ),
+            (
+                &[
+                    "AXStaticText",
+                    "AXGroup",
+                    "AXGroup",
+                    "AXCell",
+                    "AXRow",
+                    "AXTable",
+                ][..],
+                true,
+            ),
+            (
+                &[
+                    "AXStaticText",
+                    "AXGroup",
+                    "AXGroup",
+                    "AXGroup",
+                    "AXCell",
+                    "AXRow",
+                    "AXTable",
+                ][..],
+                false,
+            ),
+            (&["AXButton", "AXRow", "AXOutline"][..], false),
+            (
+                &["AXStaticText", "AXCheckBox", "AXRow", "AXOutline"][..],
+                false,
+            ),
+        ] {
+            let row = Row {
+                roles,
+                writes: Default::default(),
+                status: 0,
+                verified: true,
+            };
+            assert_eq!(select_row_with(&row, &click).unwrap(), selects);
+            assert_eq!(row.writes.get(), usize::from(selects));
+            if roles[0] == "AXButton" {
+                assert_eq!(element_route(&click, &[], false, false), Some("AXPress"));
+            }
+        }
+        let row = Row {
+            roles: &["AXRow", "AXOutline"],
+            writes: Default::default(),
+            status: 0,
+            verified: false,
+        };
+        assert!(select_row_with(&row, &click)
+            .unwrap_err()
+            .contains("verification failed"));
+        assert_eq!(row.writes.get(), 1);
+        for status in [-25205, -25212] {
+            assert!(!selection_result(status, || panic!("unsupported must not verify")).unwrap());
+        }
+        assert!(selection_result(-25204, || true)
+            .unwrap_err()
+            .contains("not retried"));
+    }
+
+    #[test]
+    fn elementless_focus_allows_same_pid_panels_and_fails_closed() {
+        for action in [
+            Action::Hotkey {
+                keys: vec!["escape".into()],
+            },
+            Action::HoldAndPress {
+                hold: vec![],
+                press: vec!["escape".into()],
+            },
+            Action::Type {
+                text: "hello".into(),
+                x: None,
+                y: None,
+                overwrite: false,
+                enter: false,
+            },
+        ] {
+            assert!(elementless_keyboard(&action, false));
+            assert!(!elementless_keyboard(&action, true));
+        }
+        // Focus ownership is independent of the captured window (e.g. a sheet).
+        assert!(focused_owner(42, Some(42), true).is_ok());
+        for (owner, readable) in [(Some(43), true), (None, true), (Some(42), false)] {
+            assert!(focused_owner(42, owner, readable).is_err());
+        }
+    }
+
     use super::super::ax_tree::{Node, Provider, Snapshot, SNAPSHOT_BUDGET};
     use super::*;
     use std::{cell::RefCell, rc::Rc};
 
+    #[test]
+    fn walk_transients_restart_even_when_optional_reads_suppress_errors() {
+        use super::super::super::policy::{check_pane, Target, SYSTEM_SETTINGS};
+        for status in [-25202, -25204] {
+            for failures in [1, 3] {
+                let mut calls = 0;
+                let mut waits = vec![];
+                let result = retry_walk(
+                    || {
+                        calls += 1;
+                        // Match pane inspection's optional child/label reads.
+                        let _ = metadata_read("AXChildren", |_| {
+                            if calls <= failures {
+                                Err(status)
+                            } else {
+                                Ok(())
+                            }
+                        })
+                        .ok();
+                        Ok(Target {
+                            window_title: "About".into(),
+                            ..Target::default()
+                        })
+                    },
+                    |wait| waits.push(wait),
+                );
+                assert_eq!(calls, (failures + 1).min(3));
+                assert_eq!(
+                    waits,
+                    vec![std::time::Duration::from_millis(150); calls - 1]
+                );
+                if failures == 1 {
+                    let (pane, attempts) = result.unwrap();
+                    assert_eq!(attempts, 2);
+                    assert!(check_pane(SYSTEM_SETTINGS, &pane).is_ok());
+                } else {
+                    let error = result
+                        .and_then(|(pane, _)| check_pane(SYSTEM_SETTINGS, &pane))
+                        .unwrap_err();
+                    assert!(error.contains(&format!("AXChildren: ax_error({status})")));
+                    assert!(error.contains("walk_attempts=3"));
+                }
+                assert!(WALK_ERROR.with(|slot| slot.borrow().is_none()));
+            }
+        }
+        let error = retry_walk::<()>(
+            || Err("Pane role: denied".into()),
+            |_| panic!("permanent errors must not retry"),
+        )
+        .unwrap_err();
+        assert_eq!(error, "Pane role: denied; walk_attempts=1");
+    }
+
+    #[test]
+    fn snapshot_skips_nonroot_transients_and_restarts_only_invalid_root() {
+        struct TransientProvider {
+            reads: std::cell::Cell<usize>,
+            index: usize,
+            status: i32,
+        }
+        impl Provider for TransientProvider {
+            type Handle = usize;
+            fn read(&self, index: &usize) -> Node {
+                if *index == self.index && self.reads.replace(1) == 0 {
+                    let _ = metadata_read::<()>("AXActions", |_| Err(self.status));
+                }
+                Node {
+                    role: "AXButton".into(),
+                    ..Node::default()
+                }
+            }
+            fn children(&self, index: &usize, _: usize) -> Vec<usize> {
+                if *index == 0 {
+                    vec![1, 2]
+                } else {
+                    vec![]
+                }
+            }
+        }
+        for (index, status, expected_attempts, partial) in [
+            (1, -25202, 1, 1),
+            (1, -25204, 1, 1),
+            (0, -25202, 2, 0),
+            (0, -25204, 1, 1),
+        ] {
+            let provider = TransientProvider {
+                reads: std::cell::Cell::new(0),
+                index,
+                status,
+            };
+            let mut snapshot = Snapshot::default();
+            let (_, attempts) = retry_walk(
+                || {
+                    snapshot.replace(&provider, Some(0), 10, SNAPSHOT_BUDGET);
+                    check_walk()
+                },
+                |_| {},
+            )
+            .unwrap();
+            assert_eq!(attempts, expected_attempts);
+            assert_eq!(snapshot.partial, partial);
+            assert_eq!(snapshot.elements.len(), 3);
+            assert_eq!(snapshot.resolve(1, 0).is_err(), expected_attempts > 1);
+            assert_eq!(*snapshot.resolve(snapshot.id, 2).unwrap().1, 2);
+        }
+    }
+
+    #[test]
+    fn metadata_timeout_retries_once_and_preserves_error_code() {
+        for statuses in [vec![-25204, 0], vec![-25204, -25204], vec![-25202], vec![0]] {
+            let mut calls = vec![];
+            let mut statuses = statuses.into_iter();
+            let result = metadata_read("AXRole", |timeout| {
+                calls.push(timeout);
+                let status = statuses.next().expect("no extra retry");
+                if status == 0 {
+                    Ok("AXTextField")
+                } else {
+                    Err(status)
+                }
+            });
+            assert_eq!(calls[0], 0.05);
+            if calls.len() == 2 {
+                assert_eq!(calls[1], 0.25);
+            }
+            let info = field_info(|attribute| {
+                if attribute == "AXRole" {
+                    result.as_ref().ok().map(|role| role.to_string())
+                } else {
+                    None
+                }
+            });
+            assert_eq!(info.secure, result.is_err());
+            match result {
+                Ok(role) => assert_eq!(role, "AXTextField"),
+                Err(error) => {
+                    assert!(
+                        error == "AXRole: ax_error(-25204)" || error == "AXRole: ax_error(-25202)"
+                    );
+                }
+            }
+            assert!(statuses.next().is_none());
+        }
+    }
+
+    #[test]
+    fn pane_root_uses_focused_main_then_first_window_and_fails_closed() {
+        for available in 0..=3 {
+            let mut calls = vec![];
+            let result = pane_root(|attribute| {
+                calls.push(attribute.to_owned());
+                if calls.len() == available + 1 {
+                    Ok(Some(73))
+                } else {
+                    Ok(None)
+                }
+            });
+            assert_eq!(
+                calls,
+                ["AXFocusedWindow", "AXMainWindow", "AXWindows"][..(available + 1).min(3)]
+            );
+            if available < 3 {
+                assert_eq!(result, Ok(73));
+            } else {
+                assert!(result.unwrap_err().contains("cannot inspect current pane"));
+            }
+        }
+        let error = pane_root::<u32>(|a| Err(format!("{a}: ax_error(-25204)"))).unwrap_err();
+        assert!(error.contains("AXFocusedWindow: ax_error(-25204)"));
+        assert!(error.contains("AXMainWindow: ax_error(-25204)"));
+        assert!(error.contains("AXWindows: ax_error(-25204)"));
+        assert_eq!(
+            pane_root(|attribute| {
+                if attribute == "AXFocusedWindow" {
+                    Err("AXFocusedWindow: ax_error(-25204)".into())
+                } else {
+                    Ok(Some(73))
+                }
+            }),
+            Ok(73)
+        );
+    }
+
+    #[test]
+    fn policy_metadata_includes_placeholder_and_identifier_even_with_a_benign_title() {
+        for sensitive_attribute in [
+            "AXDescription",
+            "AXHelp",
+            "AXIdentifier",
+            "AXPlaceholderValue",
+        ] {
+            let target = field_info(|attribute| match attribute {
+                "AXRole" => Some("AXTextField".into()),
+                "AXTitle" => Some("Document".into()),
+                a if a == sensitive_attribute => Some("PIN".into()),
+                "AXValue" => panic!("must never read editable field values"),
+                _ => None,
+            });
+            assert!(target.label.contains("Document"));
+            assert!(target.label.contains("PIN"));
+            assert!(!target.secure);
+        }
+        assert!(
+            field_info(|a| match a {
+                "AXRole" => Some("AXTextField".into()),
+                "AXSubrole" => Some("AXSecureEntry".into()),
+                _ => None,
+            })
+            .secure
+        );
+        let row = field_info(|a| match a {
+            "AXRole" => Some("AXStaticText".into()),
+            "AXValue" => Some("Privacy & Security".into()),
+            _ => None,
+        });
+        assert_eq!(row.label, "Privacy & Security");
+    }
     struct FakeElement {
         token: usize,
         advertised: Vec<String>,

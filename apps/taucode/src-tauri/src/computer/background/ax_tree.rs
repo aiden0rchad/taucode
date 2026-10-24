@@ -9,7 +9,7 @@ pub const MAX_ELEMENTS: usize = 250;
 pub const SNAPSHOT_BUDGET: Duration = Duration::from_secs(1);
 
 fn secure_field(role: &str, subrole: Option<&str>) -> bool {
-    role == "AXSecureTextField" || subrole == Some("AXSecureTextField")
+    super::super::policy::secure_field(role, subrole.unwrap_or_default())
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq)]
@@ -48,6 +48,9 @@ pub struct Snapshot<H> {
     pub elements: Vec<Node>,
     pub status: &'static str,
     pub lookup: serde_json::Value,
+    pub attempts: usize,
+    pub partial: usize,
+    pub binding: Option<(i32, u32)>,
     handles: Vec<H>,
 }
 impl<H> Default for Snapshot<H> {
@@ -57,11 +60,47 @@ impl<H> Default for Snapshot<H> {
             elements: vec![],
             status: "missing_window",
             lookup: serde_json::Value::Null,
+            attempts: 0,
+            partial: 0,
+            binding: None,
             handles: vec![],
         }
     }
 }
 impl<H> Snapshot<H> {
+    pub fn resolve_bound(
+        &self,
+        id: u64,
+        index: usize,
+        pid: i32,
+        window: u32,
+        alive: impl FnOnce(&H) -> bool,
+    ) -> Result<(&Node, &H), String> {
+        let result = self.resolve(id, index)?;
+        if self.binding.map(|b| b.0) != Some(pid) {
+            return Err("AX element binding check: snapshot pid mismatch".into());
+        }
+        if self.binding.map(|b| b.1) != Some(window) {
+            return Err("AX element binding check: snapshot window mismatch".into());
+        }
+        if !alive(result.1) {
+            return Err("AX element binding check: dead element (AXRole unavailable)".into());
+        }
+        // Reached from this window's root (or its bound app menu bar) in this
+        // snapshot. Hosted views may have no usable AXParent/AXWindow chain.
+        Ok(result)
+    }
+    pub fn append_menu(&mut self, mut node: Node, handle: H) {
+        if self.elements.len() >= MAX_ELEMENTS {
+            return;
+        }
+        node.index = self.elements.len();
+        // A menu command has no window coordinates; this anchor is only for
+        // the grounding protocol. Selected menu items may never fall to pixels.
+        node.frame = Some([0., 0., 1., 1.]);
+        self.elements.push(node);
+        self.handles.push(handle);
+    }
     // tools/scroll.rs: native AXTextArea's scroll-area buttons, forward then reverse.
     pub fn scroll_button(&self, index: usize, reverse: bool) -> Option<usize> {
         let node = self.elements.get(index)?;
@@ -104,8 +143,10 @@ impl<H> Snapshot<H> {
     ) {
         self.id = self.id.checked_add(1).expect("AX snapshot id exhausted");
         self.lookup = serde_json::Value::Null;
+        self.binding = None;
         self.elements.clear();
         self.handles.clear();
+        self.partial = 0;
         self.status = if root.is_none() {
             "missing_window"
         } else {
@@ -114,19 +155,33 @@ impl<H> Snapshot<H> {
         let deadline = provider.now() + budget;
         let mut pending: Vec<_> = root.into_iter().map(|h| (h, None, 0)).collect();
         while self.elements.len() < cap && provider.now() < deadline {
+            if super::ax_actions::check_walk().is_err() {
+                break;
+            }
             let Some((handle, parent, depth)) = pending.pop() else {
                 break;
             };
-            let mut node = provider.read(&handle);
+            let (mut node, skips) =
+                super::ax_actions::snapshot_read(depth == 0, || provider.read(&handle));
+            self.partial += skips;
+            if node.role.is_empty() && skips > 0 {
+                continue;
+            }
+            if skips > 0 {
+                node.value.clear();
+            }
             let index = self.elements.len();
             node.index = index;
             node.parent_index = parent;
             node.depth = depth;
             if depth < 25 && provider.now() < deadline {
                 let remaining = cap.saturating_sub(index + 1 + pending.len());
+                let (children, skips) = super::ax_actions::snapshot_read(depth == 0, || {
+                    provider.children(&handle, remaining)
+                });
+                self.partial += skips;
                 pending.extend(
-                    provider
-                        .children(&handle, remaining)
+                    children
                         .into_iter()
                         .take(remaining)
                         .rev()
@@ -153,6 +208,42 @@ impl<H> Snapshot<H> {
 }
 
 pub struct Native<'a>(pub &'a Window);
+impl Snapshot<Element> {
+    pub fn capture(&mut self, pid: i32, window: &Window) -> Result<(), String> {
+        let result = super::ax_actions::retry_walk(
+            || {
+                let ((root, lookup), skips) = super::ax_actions::snapshot_read(false, || {
+                    super::ax_actions::window_element(pid, window.id)
+                });
+                self.replace(
+                    &Native(window),
+                    root,
+                    MAX_ELEMENTS - super::menus::MAX_MENU_ELEMENTS,
+                    SNAPSHOT_BUDGET,
+                );
+                self.lookup = lookup;
+                self.partial += skips;
+                super::ax_actions::check_walk()?;
+                self.binding = Some((pid, window.id));
+                Ok(())
+            },
+            std::thread::sleep,
+        );
+        match result {
+            Ok(((), attempts)) => {
+                self.attempts = attempts;
+                Ok(())
+            }
+            Err(error) => {
+                self.elements.clear();
+                self.handles.clear();
+                self.binding = None;
+                self.status = "ax_read_error";
+                Err(error)
+            }
+        }
+    }
+}
 impl Provider for Native<'_> {
     type Handle = Element;
     fn read(&self, e: &Element) -> Node {
@@ -161,7 +252,11 @@ impl Provider for Native<'_> {
             let role = e.text("AXRole").unwrap_or_default();
             let secure = secure_field(&role, e.text("AXSubrole").as_deref());
             // Most nodes have a label before AXHelp/AXIdentifier; avoid extra RPCs.
-            let label = label(|attribute| e.text(attribute));
+            let label = if role == "AXMenuItem" {
+                super::menus::path(e).unwrap_or_default()
+            } else {
+                label(|attribute| e.text(attribute))
+            };
             let actions = e.actions();
             let value_settable = actions.is_empty() && e.settable("AXValue");
             Node {
@@ -291,6 +386,37 @@ mod tests {
         assert!(s.resolve(old, 0).is_err());
         s.replace(&Fake(Duration::ZERO), None, 100, Duration::ZERO);
         assert!(s.elements.is_empty());
+    }
+
+    #[test]
+    fn walked_membership_ignores_missing_parent_links_but_requires_live_binding() {
+        let mut snapshot = Snapshot::default();
+        snapshot.replace(&Fake(Duration::ZERO), Some(0), 5, Duration::from_secs(1));
+        snapshot.binding = Some((42, 7));
+        let id = snapshot.id;
+        // No ancestor AX lookup is needed: index 4 was reached from window 7.
+        assert!(snapshot.resolve_bound(id, 4, 42, 7, |_| true).is_ok());
+        for (pid, window, live, reason) in [
+            (43, 7, true, "pid mismatch"),
+            (42, 8, true, "window mismatch"),
+            (42, 7, false, "AXRole unavailable"),
+        ] {
+            assert!(snapshot
+                .resolve_bound(id, 4, pid, window, |_| live)
+                .unwrap_err()
+                .contains(reason));
+        }
+        assert!(snapshot
+            .resolve_bound(id + 1, 4, 42, 7, |_| true)
+            .unwrap_err()
+            .contains("Stale AX snapshot"));
+        assert!(snapshot
+            .resolve_bound(id, 99, 42, 7, |_| true)
+            .unwrap_err()
+            .contains("Unknown AX element"));
+        snapshot.replace(&Fake(Duration::ZERO), Some(0), 5, Duration::from_secs(1));
+        snapshot.binding = Some((42, 7));
+        assert!(snapshot.resolve_bound(id, 4, 42, 7, |_| true).is_err());
     }
     #[test]
     fn label_precedence() {

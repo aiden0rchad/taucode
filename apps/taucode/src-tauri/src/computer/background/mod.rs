@@ -1,13 +1,14 @@
 // Copyright (c) 2025 Cua AI, Inc.
 // SPDX-License-Identifier: MIT
 // Background routing adapted from input/mouse.rs and input/keyboard.rs; see NOTICE.
-mod ax_actions;
+pub(super) mod ax_actions;
 mod ax_tree;
 use ax_tree::Provider;
 mod bezier;
 mod capture;
 mod delivery;
 mod focus_guard;
+mod menus;
 mod overlay;
 pub(super) mod skylight;
 mod windows;
@@ -21,6 +22,8 @@ use std::sync::{
     Arc, Mutex,
 };
 
+#[cfg(test)]
+pub use focus_guard::action_restoration;
 pub use focus_guard::UserFocus;
 pub use windows::Window;
 
@@ -39,7 +42,7 @@ pub fn choose_path(
     events_available: bool,
     fallback: bool,
 ) -> Path {
-    let ax_eligible = matches!(action, Action::Scroll { .. })
+    let ax_eligible = matches!(action, Action::Scroll { .. } | Action::Hotkey { .. })
         || matches!(action, Action::Click { button, clicks: 1, hold_keys, .. } if matches!(button.as_str(), "left" | "right") && hold_keys.is_empty())
         || matches!(action, Action::Type { enter: false, .. });
     if ax_eligible && ax_available {
@@ -69,7 +72,9 @@ pub fn screenshot(bundle: &str) -> Result<super::native::Frame, String> {
             .find(|a| !a.isTerminated())
             .map(|a| a.processIdentifier())
             .ok_or("Target app is not running")?;
-    capture::capture(pid).map(|(frame, _)| frame)
+    let (frame, window) = capture::capture(pid)?;
+    ax_actions::check_pane(pid, bundle, Some(window.id))?;
+    Ok(frame)
 }
 
 pub struct Session {
@@ -83,9 +88,14 @@ pub struct Session {
     pub overlay: overlay::Overlay,
     pub path: Mutex<Option<&'static str>>,
     pub fallback_reason: Mutex<Option<String>>,
+    pub menu_title: Mutex<Option<String>>,
+    pub menu_resolution: Mutex<Option<menus::Diagnostic>>,
+    menus: Mutex<menus::Inventory<ax_actions::Element>>,
+    resolved_menu: Mutex<Option<menus::Item<ax_actions::Element>>>,
     ax_fallback: AtomicBool,
     snapshot: Mutex<ax_tree::Snapshot<ax_actions::Element>>,
     selected: Mutex<Option<(u64, usize)>>,
+    pressed: Mutex<Option<ax_actions::Element>>,
     delivery: Mutex<Option<delivery::Scope>>,
     observed: Mutex<Option<[u8; 32]>>,
     attempted: Mutex<Option<(Action, [u8; 32])>>,
@@ -138,9 +148,14 @@ impl Session {
             overlay: overlay::Overlay::new(app, cursor),
             path: Mutex::new(None),
             fallback_reason: Mutex::new(None),
+            menu_title: Mutex::new(None),
+            menu_resolution: Mutex::new(None),
+            menus: Mutex::new(menus::Inventory::default()),
+            resolved_menu: Mutex::new(None),
             ax_fallback: AtomicBool::new(false),
             snapshot: Mutex::new(ax_tree::Snapshot::default()),
             selected: Mutex::new(None),
+            pressed: Mutex::new(None),
             delivery: Mutex::new(None),
             observed: Mutex::new(None),
             attempted: Mutex::new(None),
@@ -161,7 +176,12 @@ impl Session {
         Ok(())
     }
     pub fn context(&self) -> Result<Context, String> {
-        self.check()?;
+        self.check().map_err(|e| {
+            format!(
+                "Process identity check: pid={}, bundle={}, {e}",
+                self.pid, self.bundle
+            )
+        })?;
         Ok(Context {
             app: self.bundle.clone(),
             secure: ax_actions::secure(self.pid),
@@ -198,37 +218,51 @@ impl Session {
     pub fn capture(&self) -> Result<super::native::Frame, String> {
         self.check()?;
         let (frame, window) = capture::capture(self.pid)?;
+        ax_actions::check_pane(self.pid, &self.bundle, Some(window.id))?;
+        self.overlay.set_visible(window.on_screen);
         self.ax_fallback.store(false, Ordering::SeqCst);
         *self.fallback_reason.lock().unwrap() = None;
+        *self.path.lock().unwrap() = None;
+        *self.menu_title.lock().unwrap() = None;
+        *self.menu_resolution.lock().unwrap() = None;
+        *self.resolved_menu.lock().unwrap() = None;
         *self.observed.lock().unwrap() = Some(Sha256::digest(frame.png.as_bytes()).into());
         *self.selected.lock().unwrap() = None;
-        let (root, lookup) = ax_actions::window_element(self.pid, window.id);
         let mut snapshot = self.snapshot.lock().unwrap();
-        snapshot.replace(
-            &ax_tree::Native(&window),
-            root,
-            ax_tree::MAX_ELEMENTS,
-            ax_tree::SNAPSHOT_BUDGET,
-        );
-        snapshot.lookup = lookup;
+        snapshot.capture(self.pid, &window)?;
+        for (node, handle) in menus::open_elements(self.pid, self.pressed.lock().unwrap().as_ref())
+        {
+            snapshot.append_menu(node, handle);
+        }
+        let menus = menus::read(self.pid);
+        for item in menus.elements() {
+            snapshot.append_menu(item.node(), item.handle.clone());
+        }
+        *self.menus.lock().unwrap() = menus;
         *self.window.lock().unwrap() = Some(window);
         Ok(frame)
     }
     pub fn window(&self) -> Result<Window, String> {
         self.check()?;
-        let expected = self
+        let mut expected = self
             .window
             .lock()
             .unwrap()
             .clone()
             .ok_or("Capture a target window first")?;
-        windows::validate(&expected, self.pid)?;
+        expected.on_screen = windows::validate(&expected, self.pid)?;
+        self.overlay.set_visible(expected.on_screen);
         Ok(expected)
     }
     pub fn snapshot_json(&self) -> serde_json::Value {
         let snapshot = self.snapshot.lock().unwrap();
         let size = self.window.lock().unwrap().as_ref().map(|w| w.size);
-        serde_json::json!({"snapshot_id":snapshot.id,"elements":snapshot.elements,"size":size,"status":snapshot.status,"window_lookup":snapshot.lookup})
+        let status = if snapshot.partial > 0 {
+            format!("{}; partial: {}", snapshot.status, snapshot.partial)
+        } else {
+            snapshot.status.into()
+        };
+        serde_json::json!({"snapshot_id":snapshot.id,"elements":snapshot.elements,"size":size,"status":status,"partial":snapshot.partial,"walk_attempts":snapshot.attempts,"window_lookup":snapshot.lookup,"menus":self.menus.lock().unwrap().observation()})
     }
     pub fn select_element(
         &self,
@@ -241,9 +275,12 @@ impl Session {
         };
         let window = self.window()?;
         let snapshot = self.snapshot.lock().unwrap();
-        let (node, element) = snapshot.resolve(id, index)?;
-        if !element.belongs_to(self.pid, window.id) {
-            return Err("AX element left target window".into());
+        let (node, _) =
+            snapshot.resolve_bound(id, index, self.pid, window.id, ax_actions::Element::alive)?;
+        if node.role == "AXMenuItem"
+            && !matches!(action, Action::Click { button, clicks: 1, hold_keys, .. } if button == "left" && hold_keys.is_empty())
+        {
+            return Err("Menu elements support only a single AXPress click".into());
         }
         let [x, y, w, h] = node.frame.ok_or("AX element has no frame")?;
         let point = super::policy::map_point(
@@ -271,24 +308,86 @@ impl Session {
         *self.selected.lock().unwrap() = target;
         Ok((format!("{} {}", node.role, node.label), node.secure))
     }
+    pub fn policy_target(&self, action: &Action) -> Result<super::policy::Target, String> {
+        let window = self.window()?;
+        if let Action::Hotkey { keys } = action {
+            let inventory = if keys.is_empty() {
+                menus::Inventory::default()
+            } else {
+                menus::read(self.pid)
+            };
+            let result = inventory.resolve(keys);
+            let item = result.as_ref().ok().copied();
+            if !keys.is_empty() {
+                *self.menu_resolution.lock().unwrap() = result.err();
+                if let Some(error) = self
+                    .menu_resolution
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .and_then(|d| d.background_error(self.events_available(action)))
+                {
+                    return Err(error);
+                }
+            }
+            let target = item.map(menus::Item::target);
+            *self.resolved_menu.lock().unwrap() = item.map(|i| menus::Item {
+                handle: i.handle.clone(),
+                path: i.path.clone(),
+                metadata: i.metadata.clone(),
+            });
+            if let Some(target) = target {
+                return Ok(target);
+            }
+        }
+        let selected = if matches!(
+            action,
+            Action::Click { .. } | Action::Type { .. } | Action::Scroll { .. }
+        ) {
+            *self.selected.lock().unwrap()
+        } else {
+            None
+        };
+        let snapshot = self.snapshot.lock().unwrap();
+        let element = selected
+            .map(|(id, index)| {
+                snapshot
+                    .resolve_bound(id, index, self.pid, window.id, ax_actions::Element::alive)
+                    .map(|(_, e)| e)
+            })
+            .transpose()?;
+        let mut target = ax_actions::policy_target(self.pid, Some(window.id), action, element)?;
+        if let Some((id, index)) = selected {
+            let (node, element) = snapshot.resolve(id, index)?;
+            if node.role == "AXMenuItem" {
+                target.role = "AXMenuItem".into();
+                target.label = menus::path(element).ok_or("AX menu path unavailable")?;
+            }
+        }
+        Ok(target)
+    }
     pub fn verify_element(&self) -> Result<(), String> {
+        let window = self.window()?;
         let Some((id, index)) = *self.selected.lock().unwrap() else {
             return Ok(());
         };
-        let window = self.window()?;
         let snapshot = self.snapshot.lock().unwrap();
-        let (prior, element) = snapshot.resolve(id, index)?;
-        if !element.belongs_to(self.pid, window.id) {
-            return Err("AX element left target window".into());
+        let (prior, element) =
+            snapshot.resolve_bound(id, index, self.pid, window.id, ax_actions::Element::alive)?;
+        let mut current = ax_tree::Native(&window).read(element);
+        if prior.role == "AXMenuItem" {
+            current.label =
+                menus::path(element).ok_or("AX menu path unavailable; capture again")?;
         }
-        let current = ax_tree::Native(&window).read(element);
         if prior.role != current.role
             || prior.label != current.label
             || prior.secure != current.secure
-            || prior.frame != current.frame
+            || (prior.role != "AXMenuItem" && prior.frame != current.frame)
             || !current.enabled
         {
-            return Err("AX target changed after planning; capture again".into());
+            return Err(format!("AX target changed after planning: snapshot={id}, index={index}, role before={} after={}, label_changed={}, secure before={} after={}, frame before={:?} after={:?}, enabled={}; capture again",
+                prior.role, current.role, prior.label != current.label, prior.secure, current.secure,
+                prior.frame, current.frame, current.enabled));
         }
         Ok(())
     }
@@ -298,11 +397,40 @@ impl Session {
         let selected = *self.selected.lock().unwrap();
         let mut reason = self.fallback_reason.lock().unwrap();
         *reason = None;
+        if matches!(action, Action::Hotkey { .. }) {
+            if let Some(item) = self.resolved_menu.lock().unwrap().as_ref() {
+                *self.path.lock().unwrap() = Some("ax-menu");
+                *self.menu_title.lock().unwrap() = Some(item.path.clone());
+                item.handle.press()?;
+                return Ok(true);
+            }
+            return Ok(false);
+        }
         let handled = if let Some((id, index)) = selected {
             let snapshot = self.snapshot.lock().unwrap();
-            let (_, element) = snapshot.resolve(id, index)?;
-            if !element.belongs_to(self.pid, window.id) {
-                return Err("AX target changed".into());
+            let (node, element) = snapshot.resolve_bound(
+                id,
+                index,
+                self.pid,
+                window.id,
+                ax_actions::Element::alive,
+            )?;
+            if matches!(action, Action::Click { .. }) {
+                *self.pressed.lock().unwrap() = Some(element.clone());
+            }
+            if node.role == "AXMenuItem" {
+                *self.path.lock().unwrap() = Some("ax-menu");
+                *self.menu_title.lock().unwrap() = Some(node.label.clone());
+                element.press()?;
+                return Ok(true);
+            }
+            let selected_row = ax_actions::select_row(element, action).map_err(|error| {
+                *self.path.lock().unwrap() = Some("ax-select");
+                error
+            })?;
+            if selected_row {
+                *self.path.lock().unwrap() = Some("ax-select");
+                return Ok(true);
             }
             if let Action::Scroll {
                 clicks,
@@ -313,7 +441,13 @@ impl Session {
                 if *clicks == 0 {
                     true
                 } else if let Some(button) = snapshot.scroll_button(index, *clicks > 0) {
-                    let (_, button) = snapshot.resolve(id, button)?;
+                    let (_, button) = snapshot.resolve_bound(
+                        id,
+                        button,
+                        self.pid,
+                        window.id,
+                        ax_actions::Element::alive,
+                    )?;
                     ax_actions::element_action(
                         button,
                         &Action::Click {
@@ -342,7 +476,10 @@ impl Session {
                 }
             }
         } else {
-            ax_actions::try_action(self.pid, window.id, action)?
+            if matches!(action, Action::Click { .. }) {
+                *self.pressed.lock().unwrap() = ax_actions::target(self.pid, action_point(action));
+            }
+            ax_actions::try_action(self.pid, window.id, action, &mut reason)?
         };
         self.ax_fallback.store(!handled, Ordering::SeqCst);
         if !handled && reason.is_none() {
@@ -365,6 +502,9 @@ impl Session {
         Ok(handled)
     }
     pub fn events_available(&self, action: &Action) -> bool {
+        if ax_actions::elementless_keyboard(action, self.selected.lock().unwrap().is_some()) {
+            return ax_actions::focused_policy_window(self.pid).is_some();
+        }
         !matches!(
             action,
             Action::Type { .. } | Action::Hotkey { .. } | Action::HoldAndPress { .. }
@@ -380,6 +520,14 @@ impl Session {
             .lock()
             .unwrap()
             .get_or_insert_with(|| "action_requires_pixel_events".into());
+        if !self.events_available(action) {
+            let mut reason = self.fallback_reason.lock().unwrap();
+            *reason = Some(format!(
+                "background_keyboard_requires_activation; {}",
+                reason.as_deref().unwrap_or_default()
+            ));
+            return false;
+        }
         // A fresh AX failure still gets its one requested event attempt, even
         // when the previous step left the screenshot unchanged.
         if self.repeated_without_change(action) && !self.ax_fallback.load(Ordering::SeqCst) {
@@ -388,7 +536,6 @@ impl Session {
         let Some(window) = self.window.lock().unwrap().clone() else {
             return false;
         };
-        self.guard.delivering.store(true, Ordering::SeqCst);
         let keyboard = match action {
             Action::Type { .. } | Action::Hotkey { .. } | Action::HoldAndPress { .. } => true,
             Action::Click { hold_keys, .. } | Action::Drag { hold_keys, .. } => {
@@ -396,11 +543,26 @@ impl Session {
             }
             _ => false,
         };
-        *self.delivery.lock().unwrap() =
-            Some(delivery::Scope::enter(self, self.pid, window.id, keyboard));
+        let id =
+            if ax_actions::elementless_keyboard(action, self.selected.lock().unwrap().is_some()) {
+                let Some(id) = ax_actions::focused_policy_window(self.pid) else {
+                    return false;
+                };
+                id
+            } else {
+                window.id
+            };
+        self.guard.delivering.store(true, Ordering::SeqCst);
+        *self.delivery.lock().unwrap() = Some(delivery::Scope::enter(self, self.pid, id, keyboard));
         if self.events_available(action) {
             true
         } else {
+            let mut reason = self.fallback_reason.lock().unwrap();
+            *reason = Some(format!(
+                "background_keyboard_focus_changed; {}",
+                reason.as_deref().unwrap_or_default()
+            ));
+            drop(reason);
             self.end_delivery(false);
             false
         }

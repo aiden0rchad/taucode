@@ -38,12 +38,35 @@ impl State {
 }
 pub struct Guard {
     state: Mutex<State>,
+    action_prior: Mutex<Option<UserFocus>>,
     pub delivering: AtomicBool,
     pub restorations: Mutex<Vec<Value>>,
 }
 pub struct UserFocus {
     pid: Option<i32>,
     window: Option<u32>,
+}
+pub fn action_restoration(previous: Option<i32>, front: Option<i32>, target: i32) -> Option<i32> {
+    previous.filter(|pid| *pid != target && front == Some(target))
+}
+fn restore_action(
+    previous: Option<i32>,
+    target: i32,
+    front: impl Fn() -> Option<i32>,
+    restore: impl Fn(i32),
+    wait: impl Fn(Duration),
+) {
+    if previous.is_none() || previous == Some(target) {
+        return;
+    }
+    for delayed in [false, true] {
+        if delayed {
+            wait(Duration::from_millis(300));
+        }
+        if let Some(pid) = action_restoration(previous, front(), target) {
+            restore(pid);
+        }
+    }
 }
 impl UserFocus {
     // Capture before any run UI is created or shown.
@@ -67,11 +90,37 @@ impl Guard {
                 armed_until: Instant::now(),
             }),
             restorations: Mutex::new(vec![]),
+            action_prior: Mutex::new(None),
             delivering: AtomicBool::new(false),
         }
     }
     pub fn arm(&self) {
         self.state.lock().unwrap().armed_until = Instant::now() + Duration::from_millis(250);
+    }
+    pub fn begin_action(&self) {
+        *self.action_prior.lock().unwrap() = Some(UserFocus::capture());
+        self.arm();
+    }
+    pub fn end_action(&self) {
+        let Some(prior) = self.action_prior.lock().unwrap().take() else {
+            return;
+        };
+        let target = self.state.lock().unwrap().target;
+        restore_action(
+            prior.pid,
+            target,
+            front_pid,
+            |pid| {
+                let state = self.state.lock().unwrap();
+                let restore = State {
+                    previous: pid,
+                    window: prior.window,
+                    ..*state
+                };
+                self.restore_locked(&restore, "postActionInvariant");
+            },
+            std::thread::sleep,
+        );
     }
     pub fn start(&self, session: Weak<Session>) {
         self.tick();
@@ -95,17 +144,11 @@ impl Guard {
             return;
         };
         let mut s = self.state.lock().unwrap();
-        // The no-raise prologue must settle before posting. It may temporarily
-        // report the target active; the scope restores it after queued input.
-        // Never exempt taucode, even during a delivery lease or recent mouse input.
         let delivering = self.delivering.load(Ordering::SeqCst);
-        if delivering && front == s.target {
-            return;
-        }
         let previous = s.previous;
-        if s.observe(front, user_switched_recently(), Instant::now())
-            .is_some()
-        {
+        let action_running = self.action_prior.lock().unwrap().is_some();
+        let user_switched = user_switched_recently() && !(front == s.target && action_running);
+        if s.observe(front, user_switched, Instant::now()).is_some() {
             self.restore_locked(&s, "activation");
         } else if s.previous != previous || s.window.is_none() || Instant::now() >= s.armed_until {
             s.window = ax_actions::focused_window(s.previous);
@@ -212,5 +255,39 @@ fn user_switched_recently() -> bool {
         [1, 3, 12]
             .iter()
             .any(|kind| CGEventSourceSecondsSinceLastEventType(1, *kind) < 1.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::{Cell, RefCell};
+
+    #[test]
+    fn ax_menu_restores_immediate_and_delayed_activation_but_respects_other_apps() {
+        for (before, immediate, delayed, expected) in [
+            (10, 20, 10, 1),
+            (10, 10, 20, 1),
+            (10, 20, 20, 2),
+            (10, 30, 30, 0),
+            (20, 20, 20, 0),
+        ] {
+            let front = Cell::new(immediate);
+            let records = RefCell::new(vec![]);
+            restore_action(
+                Some(before),
+                20,
+                || Some(front.get()),
+                |pid| {
+                    records.borrow_mut().push(pid);
+                    front.set(pid);
+                },
+                |duration| {
+                    assert_eq!(duration, Duration::from_millis(300));
+                    front.set(delayed);
+                },
+            );
+            assert_eq!(records.borrow().as_slice(), vec![10; expected]);
+        }
     }
 }

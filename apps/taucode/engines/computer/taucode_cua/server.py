@@ -89,7 +89,7 @@ class Server:
                     raise ValueError('Invalid snapshot size')
                 snapshot = {**snapshot, 'elements': [{**e, 'frame': [v * size[i % 2] / bounds[i % 2] for i, v in enumerate(e['frame'])] if e.get('frame') else None} for e in snapshot['elements']]}
             info, actions = self.agent.predict(instruction, {'screenshot': planner_png, 'grounding_screenshot': png, 'ax_snapshot': snapshot,
-                'element_summary': observation_summary(snapshot['elements']) if snapshot else ''})
+                'element_summary': observation_summary(snapshot['elements'], snapshot.get('menus')) if snapshot else ''})
         action = actions[0]
         action['grounding_width'], action['grounding_height'] = self.size if self.mode == 'ui-tars' else size
         return {'action': action, 'reflection': info.get('reflection') or '', 'plan_text': info.get('plan') or '',

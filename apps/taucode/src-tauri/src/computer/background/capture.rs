@@ -13,8 +13,40 @@ pub fn capture(pid: i32) -> Result<(native::Frame, Window), String> {
     if native::permissions()["screen"] != true {
         return Err("Grant Screen Recording in System Settings".into());
     }
-    let content = SCShareableContent::get().map_err(|e| e.to_string())?;
-    let window = windows::select(&content, pid)?;
+    let (content, window) = windows::retry_windowless(
+        || {
+            let app =
+                objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+                    .ok_or("Target process exited")?;
+            if app.isTerminated() {
+                return Err("Target process exited".into());
+            }
+            let content = SCShareableContent::create()
+                .with_on_screen_windows_only(false)
+                .get()
+                .map_err(|e| format!("SCK window list: pid={pid}, {e}"))?;
+            let window = windows::select(&content, pid)?;
+            Ok((content, window))
+        },
+        || {
+            if super::ax_actions::window_count(pid)? != 0 {
+                return Ok(());
+            }
+            let app =
+                objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+                    .ok_or("Target process exited")?;
+            let url = app
+                .bundleURL()
+                .ok_or("Target application URL unavailable")?;
+            let config = objc2_app_kit::NSWorkspaceOpenConfiguration::configuration();
+            config.setActivates(false);
+            objc2_app_kit::NSWorkspace::sharedWorkspace()
+                .openApplicationAtURL_configuration_completionHandler(&url, &config, None);
+            Ok(())
+        },
+        std::time::Instant::now,
+        std::thread::sleep,
+    )?;
     let target = windows::describe(&window);
     // Desktop-independent window filter: occluders, HUD and all overlay windows are excluded by construction.
     let filter = SCContentFilter::create()
@@ -37,12 +69,15 @@ pub fn capture(pid: i32) -> Result<(native::Frame, Window), String> {
         })
         .unwrap_or(1.);
     if !scale.is_finite() || scale <= 0. || target.size.iter().any(|v| !v.is_finite() || *v <= 0.) {
-        return Err("Invalid window geometry".into());
+        return Err(format!(
+            "Capture geometry: window={}, size={:?}, scale={scale}",
+            target.id, target.size
+        ));
     }
     let width = (target.size[0] * scale).round() as u32;
     let height = (target.size[1] * scale).round() as u32;
     if width == 0 || height == 0 || width > 16384 || height > 16384 {
-        return Err("Window capture dimensions exceed limit".into());
+        return Err(format!("Capture dimensions exceed limit: window={}, width={width}, height={height}, limit=16384", target.id));
     }
     let config = SCStreamConfiguration::new()
         .with_width(width)
@@ -73,7 +108,12 @@ pub fn capture(pid: i32) -> Result<(native::Frame, Window), String> {
     stream.start_capture().map_err(|e| e.to_string())?;
     let result = rx
         .recv_timeout(std::time::Duration::from_secs(5))
-        .map_err(|_| "Window capture timed out".to_string());
+        .map_err(|e| {
+            format!(
+                "Window capture: pid={pid}, window={}, on-screen={}, wait=5s, {e}",
+                target.id, target.on_screen
+            )
+        });
     let stopped = stream.stop_capture().map_err(|e| e.to_string());
     let (png, thumbnail) = result??;
     stopped?;

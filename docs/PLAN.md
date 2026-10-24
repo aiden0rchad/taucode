@@ -442,6 +442,20 @@ Each milestone ends with a demo and its exit criteria passing.
   progress UI, step log.
 - Exit: 15 of 20 scripted macOS tasks pass (Finder, Notes, Settings toggles, a non-web app);
   kill switch stops within 100 ms; no screenshot ever contains our own window.
+- Status (2026-10-23, M3–M3i): background-only, element-first.
+  - **Live suite passing in the background** (cursor and frontmost unchanged):
+    - TextEdit typing
+    - Notes new note (⌘N → `ax-menu`)
+    - Finder browse into a subfolder
+    - System Settings General → About (`ax-select`)
+    - the Privacy & Security pane denylist
+    - Calculator 12×7
+    - a pi agent driving a local web app through the taucode browser
+  - **Known limit:** Finder disables File › New Folder while it's in the background, and
+    popup/context menus aren't reachable there yet. The agent gets a recoverable
+    "not executed" and reports failure.
+  - **Specs:** `docs/specs/m3d`–`m3i`. Harness: `suite.py` / `live_webapp.py` (session
+    scratchpad).
 
 **M4 — Side chats, subagents, checkpoints, ACP engine (3 weeks)**
 - Side chat pane, subagent tree, task list, next-step box, shadow-git rewind, worktree

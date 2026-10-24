@@ -13,6 +13,9 @@ click dispatch (tools/click.rs), AXChildren/AXWindows union (ax/tree.rs).
 Adapted to taucode dependencies and safety policy; press RPCs use a bounded
 50 ms timeout instead of Cua's 2 s to preserve the kill-switch latency budget.
 
+Menu shortcut matching and AXMenuBar traversal: tools/menu_equivalent.rs.
+Extended with virtual keys, ambiguity rejection and bounded planner observations.
+
 MIT License
 
 Copyright (c) 2025 Cua AI, Inc.

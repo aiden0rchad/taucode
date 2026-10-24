@@ -146,9 +146,12 @@ class StructuredACI(OSWorldACI):
                 except Exception as error:
                     if isinstance(error, ProviderError):
                         decision['model_result'] = 'provider_error'
+                        decision['error'] = redact(error)
+                        self.record_grounding(decision)
+                        raise
+                    decision['model_result'] = 'unparseable'
                     decision['error'] = redact(error)
-                    self.record_grounding(decision)
-                    raise
+                    decision['pixel_fallback_reason'] = 'unparseable_element_reply'
             else:
                 decision['pixel_fallback_reason'] = 'no_usable_elements' if snapshot else 'missing_snapshot'
         x, y = self.point(description, decision)

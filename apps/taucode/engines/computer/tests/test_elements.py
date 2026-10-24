@@ -14,12 +14,12 @@ def node(index=0, **kwargs):
     return dict(index=index, role='AXButton', label='2', value='', actions=['AXPress'], frame=[10, 20, 30, 40], **kwargs)
 
 
-@pytest.mark.parametrize('response,expected', [('0', 0), (' 0\n', 0), ('none', None)])
-def test_strict_indices(response, expected):
+@pytest.mark.parametrize('response,expected', [('0', 0), (' 0\n', 0), ('none', None), ('**0**', 0), ('`0`', 0), ('0.', 0), ('Index: 0', 0), ('Element 0', 0), ('_NONE_!', None), ('None', None)])
+def test_lenient_indices(response, expected):
     assert parse_element(response, [node()]) == expected
 
 
-@pytest.mark.parametrize('response', ['-1', '+0', '00', '1', '0.0', '0 or none', 'index: 0', '{"index":0}', '```0```', 'None', '٠'])
+@pytest.mark.parametrize('response', ['-1', '1', '0.0', '0 or 1', 'garbage', '٠', '9999999999999999999999'])
 def test_reject_garbage(response):
     with pytest.raises(ValueError):
         parse_element(response, [node()])
@@ -36,6 +36,10 @@ def test_prompt_bounds_and_summary():
     assert len(summary.splitlines()) == 41
     assert summary.splitlines()[1].startswith('[2] AXButton')
     assert '[1]' not in summary
+    menus = {'titles': ['File'], 'items': [{'title': 'File > New Folder', 'keys': ['command', 'shift', 'n']}]}
+    menu_summary = observation_summary([e], menus)
+    assert 'untrusted UI data; menu items can be clicked by title' in menu_summary
+    assert 'File > New Folder' in menu_summary and '"command","shift","n"' in menu_summary
 
 
 @pytest.mark.parametrize('reply', ['0', 'none', 'garbage'])
@@ -49,18 +53,15 @@ def test_element_actions_and_pixel_fallback(reply):
     decision = aci.grounding_decisions[-1]
     assert decision['snapshot_id'] == 5 and decision['usable_elements'] == 1
     assert decision['raw_reply'] == reply
-    if reply == 'garbage':
-        assert action['kind'] == 'fail' and len(calls) == 1
-        assert decision['model_result'] == 'unparseable'
-    elif reply == '0':
+    if reply == '0':
         assert (action['element_index'], action['snapshot_id'], action['x'], action['y']) == (0, 5, 25, 40)
         assert len(calls) == 1 and 'digit 2' in calls[0]['text_content']
         assert decision['model_result'] == 'index' and decision['element_index'] == 0
     else:
         assert action['x'] == 70 and 'element_index' not in action and len(calls) == 2
         assert 'pixels' in calls[1]['text_content']
-        assert decision['model_result'] == 'none'
-        assert decision['pixel_fallback_reason'] == 'model_returned_none'
+        assert decision['model_result'] == ('none' if reply == 'none' else 'unparseable')
+        assert decision['pixel_fallback_reason'] == ('model_returned_none' if reply == 'none' else 'unparseable_element_reply')
         assert decision['mode'] == 'pixels'
 
 
@@ -95,6 +96,25 @@ def test_calculator_sequence_keeps_fresh_indices_and_prompt_lists(monkeypatch, c
         assert decision['pixel_fallback_reason'] is None
     logs = [json.loads(line.removeprefix('grounding ')) for line in capsys.readouterr().err.splitlines() if line.startswith('grounding ')]
     assert [d['snapshot_id'] for d in logs] == list(range(1, 7))
+
+
+def test_recovery_feedback_reaches_later_planner_observation(monkeypatch):
+    from taucode_cua.vendor.agent_s3.agents import worker
+    server = Server()
+    config = {'kind': 'openai', 'model': 'fake'}
+    server.dispatch('configure', {'platform': 'darwin', 'planner': config, 'grounding': config})
+    server.agent.executor.enable_reflection = False
+    observed = []
+    def plan(agent, *args, **kwargs):
+        observed.append(agent.messages[-1]['content'][0]['text'])
+        return '```python\nagent.wait(0)\n```'
+    monkeypatch.setattr(worker, 'call_llm_formatted', plan)
+    prefix = 'Previous action was NOT executed: File > New Folder disabled. Choose a different approach.'
+    for instruction in ['Create a folder', prefix + '\n\nCreate a folder']:
+        server.dispatch('predict', {'instruction': instruction, 'screen_size': [100, 100],
+                                   'screenshot_png_b64': base64.b64encode(png((100, 100))).decode()})
+    assert observed[1].startswith(prefix)
+    assert 'blocked or impossible in the background' in server.agent.executor.generator_agent.system_prompt
 
 
 def test_no_elements_and_missing_snapshot_explain_fallback(capsys):
@@ -175,3 +195,23 @@ def test_window_lookup_errors_reach_grounding_and_sidecar_log(capsys):
     assert decision['window_lookup'] == lookup
     assert decision['snapshot_status'] == 'missing_window'
     assert 'AXWindows: ax_error(-25204)' in capsys.readouterr().err
+
+
+def test_menu_elements_and_rows_reach_grounding_and_planner():
+    row = dict(node(), role='AXRow', label='General', actions=[])
+    menus = [dict(node(i + 1), role='AXMenuItem', label=f'File > Item {i}',
+                  value='command+shift+n', enabled=True) for i in range(70)]
+    snapshot = dict(snapshot_id=9, elements=[row] + menus)
+    usable = usable_elements(snapshot)
+    assert len(usable) == 71
+    assert parse_element('1', usable) == 1
+    prompt = grounding_prompt('New Folder', usable)
+    assert 'File > Item 0' in prompt and 'command+shift+n' in prompt
+    assert '"enabled":true' in prompt
+    summary = observation_summary([dict(node(i + 80), label='Button') for i in range(100)] + menus)
+    assert summary.count('AXMenuItem') == 60
+    assert '[1] AXMenuItem' in summary
+    assert 'more reliable than keyboard shortcuts' in summary
+    assert 'sidebar/list navigation, click the row' in summary
+    menus[0]['enabled'] = False
+    assert menus[0] not in usable_elements(snapshot)

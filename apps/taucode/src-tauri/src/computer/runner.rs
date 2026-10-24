@@ -6,6 +6,47 @@ use crate::shared::providers::BoxFuture;
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
+pub const STALE_OBSERVATION: &str = "Stale observation: ";
+pub const RECOVERABLE: &str = "Action not executed: ";
+
+#[derive(Default)]
+struct Recovery {
+    consecutive: usize,
+    total: usize,
+    previous: Option<String>,
+}
+impl Recovery {
+    fn record(&mut self, reason: &str) -> Result<(), String> {
+        self.consecutive += 1;
+        self.total += 1;
+        self.previous = Some(format!(
+            "Previous action was NOT executed: {reason}. Choose a different approach.\n\n"
+        ));
+        if self.consecutive >= 3 || self.total >= 6 {
+            Err(reason.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+pub async fn settle<T: PartialEq, F: std::future::Future<Output = Result<T, String>>>(
+    mut read: impl FnMut() -> F,
+) {
+    let _ = tokio::time::timeout(Duration::from_secs(1), async {
+        let mut previous = None;
+        loop {
+            let current = read().await.ok();
+            if current.is_some() && current == previous {
+                break;
+            }
+            previous = current;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await;
+}
+
 pub struct Frame {
     pub png: String,
     pub thumbnail: String,
@@ -38,6 +79,9 @@ pub trait Environment {
         }
         Ok((String::new(), false))
     }
+    fn policy_target(&self, _: &Action) -> Result<Target, String> {
+        Ok(Target::default())
+    }
     fn verify_target(&self) -> Result<(), String> {
         Ok(())
     }
@@ -47,7 +91,11 @@ pub trait Environment {
     fn begin_foreground(&self, _: &Control, _: &Context) -> Result<(), String> {
         Err("Foreground fallback unavailable".into())
     }
+    fn begin_action(&self) {}
     fn end_action(&self) {}
+    fn settle(&self) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
     fn capture_description(&self) -> String {
         "Current frontmost application".into()
     }
@@ -69,18 +117,24 @@ pub trait Environment {
     fn open(&self, app: &str, target: &str) -> Result<(), String>;
     fn progress(&mut self, step: Value) -> Result<(), String>;
 }
-fn post(
-    env: &impl Environment,
-    control: &Control,
-    c: &Context,
-    epoch: u64,
-    event: Event,
-) -> Result<(), String> {
-    if control.epoch() != epoch {
-        return Err("Action interrupted by Pause".into());
+fn verify_app(check: &str, before: &Context, after: &Context) -> Result<(), String> {
+    if before.app != after.app {
+        return Err(format!(
+            "{check}; app before={} after={}; action cancelled",
+            before.app, after.app
+        ));
     }
-    let current = env.event_context(&event)?;
-    control.post(event, c, || Ok(current))
+    Ok(())
+}
+fn verify_policy_target(check: &str, before: &Target, after: &Target) -> Result<(), String> {
+    if before != after {
+        // Never log labels, pane titles, field values, or typed text.
+        return Err(format!("{check}; role before={} after={}, secure before={} after={}, label_changed={}, pane_changed={}; action cancelled",
+            before.role, after.role, before.secure, after.secure,
+            before.label != after.label,
+            before.window_title != after.window_title || before.selected_rows != after.selected_rows));
+    }
+    Ok(())
 }
 async fn execute(
     env: &impl Environment,
@@ -88,42 +142,47 @@ async fn execute(
     c: &Context,
     action: &Action,
     target: Option<&str>,
+    policy_target: &Target,
+    grounded: bool,
 ) -> Result<(), String> {
     let epoch = control.epoch();
+    let input_started = std::sync::atomic::AtomicBool::new(false);
+    let post = |event: Event| {
+        if control.epoch() != epoch {
+            return Err("Action interrupted by Pause".into());
+        }
+        let current = env.event_context(&event)?;
+        input_started.store(true, std::sync::atomic::Ordering::Relaxed);
+        control.post(event, c, || Ok(current))
+    };
+    let verify_typing = || -> Result<(), String> {
+        if matches!(action, Action::Type { .. }) {
+            env.verify_target()?;
+            let focused = Action::Hotkey { keys: vec![] };
+            let current = env.policy_target(if grounded { action } else { &focused })?;
+            verify_policy_target("Typing field changed before input", policy_target, &current)?;
+        }
+        Ok(())
+    };
     let key = |name: &str, down| {
-        post(
-            env,
-            control,
-            c,
-            epoch,
-            Event::Key(keycode(name).ok_or("Unknown key")?, down),
-        )
+        if down {
+            verify_typing()?;
+        }
+        post(Event::Key(keycode(name).ok_or("Unknown key")?, down))
     };
     let click = |point, button, clicks| -> Result<(), String> {
-        post(
-            env,
-            control,
-            c,
-            epoch,
-            Event::Mouse {
-                point,
-                button,
-                down: true,
-                clicks,
-            },
-        )?;
-        post(
-            env,
-            control,
-            c,
-            epoch,
-            Event::Mouse {
-                point,
-                button,
-                down: false,
-                clicks,
-            },
-        )
+        post(Event::Mouse {
+            point,
+            button,
+            down: true,
+            clicks,
+        })?;
+        post(Event::Mouse {
+            point,
+            button,
+            down: false,
+            clicks,
+        })
     };
     let result = async {
         match action {
@@ -171,7 +230,8 @@ async fn execute(
                 for ch in text.chars() {
                     tokio::task::yield_now().await;
                     control.checkpoint().await?;
-                    post(env, control, c, epoch, Event::Text(ch.to_string()))?;
+                    verify_typing()?;
+                    post(Event::Text(ch.to_string()))?;
                 }
                 if *enter {
                     key("enter", true)?;
@@ -184,8 +244,8 @@ async fn execute(
                 clicks,
                 shift,
             } => {
-                post(env, control, c, epoch, Event::Move([*x, *y], false))?;
-                post(env, control, c, epoch, Event::Scroll(*clicks, *shift))?;
+                post(Event::Move([*x, *y], false))?;
+                post(Event::Scroll(*clicks, *shift))?;
             }
             Action::Drag {
                 from,
@@ -195,48 +255,30 @@ async fn execute(
                 for k in hold_keys {
                     key(k, true)?;
                 }
-                post(
-                    env,
-                    control,
-                    c,
-                    epoch,
-                    Event::Mouse {
-                        point: *from,
-                        button: 0,
-                        down: true,
-                        clicks: 1,
-                    },
-                )?;
+                post(Event::Mouse {
+                    point: *from,
+                    button: 0,
+                    down: true,
+                    clicks: 1,
+                })?;
                 for n in 1..=20 {
                     control.checkpoint().await?;
                     let f = n as f64 / 20.;
-                    post(
-                        env,
-                        control,
-                        c,
-                        epoch,
-                        Event::Move(
-                            [
-                                from[0] + (to[0] - from[0]) * f,
-                                from[1] + (to[1] - from[1]) * f,
-                            ],
-                            true,
-                        ),
-                    )?;
+                    post(Event::Move(
+                        [
+                            from[0] + (to[0] - from[0]) * f,
+                            from[1] + (to[1] - from[1]) * f,
+                        ],
+                        true,
+                    ))?;
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
-                post(
-                    env,
-                    control,
-                    c,
-                    epoch,
-                    Event::Mouse {
-                        point: *to,
-                        button: 0,
-                        down: false,
-                        clicks: 1,
-                    },
-                )?;
+                post(Event::Mouse {
+                    point: *to,
+                    button: 0,
+                    down: false,
+                    clicks: 1,
+                })?;
             }
             Action::Hotkey { keys } => {
                 for k in keys {
@@ -293,7 +335,15 @@ async fn execute(
     }
     .await;
     control.release();
-    result
+    result.map_err(|error: String| {
+        if input_started.load(std::sync::atomic::Ordering::Relaxed)
+            && error.starts_with(STALE_OBSERVATION)
+        {
+            format!("Input already started; {error}")
+        } else {
+            error
+        }
+    })
 }
 pub async fn run(
     env: &mut impl Environment,
@@ -307,24 +357,90 @@ pub async fn run(
     let mut phase = "predictMs";
     let mut phase_start = Instant::now();
     let work = async {
-        for step in 0..settings.max_steps {
+        let mut step = 0;
+        let mut stale_retries = 0;
+        let mut run_stale_retries = 0;
+        let mut recovery = Recovery::default();
+        'steps: while step < settings.max_steps {
+            macro_rules! recover {
+                ($reason:expr) => {{
+                    let reason: String = $reason;
+                    control.checkpoint().await?;
+                    control.release();
+                    env.end_action();
+                    if let Some(mut entry) = pending.take() {
+                        entry[phase] = json!(phase_start.elapsed().as_millis() as u64);
+                        entry["recovered"] = json!(true);
+                        entry["error"] = json!(reason);
+                        entry["reason"] = json!(reason);
+                        env.progress(entry)?;
+                    }
+                    recovery.record(&reason)?;
+                    step += 1;
+                    stale_retries = 0;
+                    continue 'steps;
+                }};
+            }
+            // Only pre-input checks may discard a prediction. Never replay partial input.
+            macro_rules! observation {
+                ($result:expr) => {
+                    match $result {
+                        Ok(value) => value,
+                        Err(error)
+                            if error.starts_with(STALE_OBSERVATION)
+                                && stale_retries < 2
+                                && run_stale_retries < 6 =>
+                        {
+                            stale_retries += 1;
+                            run_stale_retries += 1;
+                            if let Some(entry) = pending.as_mut() {
+                                entry["staleRetries"] = json!(stale_retries);
+                            }
+                            control.release();
+                            env.end_action();
+                            continue 'steps;
+                        }
+                        Err(error)
+                            if error.starts_with(STALE_OBSERVATION)
+                                || error.starts_with(RECOVERABLE) =>
+                        {
+                            recover!(error)
+                        }
+                        Err(error) => return Err(error),
+                    }
+                };
+            }
             control.checkpoint().await?;
-            let context = env.context()?;
+            let context = env
+                .context()
+                .map_err(|e| format!("Pre-flight context: {e}"))?;
             if (settings.mode == "background" || context.app != "dev.taucode.desktop")
                 && !app_allowed(&context.app, settings, apps)
             {
                 return Err(format!("App blocked: {}", context.app));
             }
-            let frame = control.until(env.capture()).await?;
+            let frame = control
+                .until(env.capture())
+                .await
+                .map_err(|e| format!("Pre-flight capture: app={}, {e}", context.app))?;
             let scoped = format!("{instruction}\n\nHost policy: allowed application bundle IDs: {}. {}: {}. {} Never interact with taucode itself.", apps.join(", "), env.capture_description(), context.app, if settings.mode == "background" { "This run is bound to this app. Coordinates refer only to its captured window. Do not switch to another app." } else { "If taucode is frontmost, first use switch_applications with an allowed bundle ID." });
+            let scoped = format!("{}{scoped}", recovery.previous.as_deref().unwrap_or(""));
             phase = "predictMs";
             phase_start = Instant::now();
             pending = Some(
-                json!({"step":step+1,"thumbnail":frame.thumbnail,"action":{"kind":"predict"},"reflection":"","predictMs":0,"executeMs":0,"waitMs":0}),
+                json!({"step":step+1,"staleRetries":stale_retries,"thumbnail":frame.thumbnail,"action":{"kind":"predict"},"reflection":"","predictMs":0,"executeMs":0,"waitMs":0}),
             );
             let prediction = match control.until(env.predict(&scoped, &frame)).await {
                 Ok(prediction) => prediction,
                 Err(error) => {
+                    let diagnostics = env.grounding_diagnostics();
+                    if diagnostics
+                        .iter()
+                        .any(|d| d["pixel_result"] == "unparseable")
+                    {
+                        pending.as_mut().unwrap()["grounding"] = json!(diagnostics);
+                        recover!(error);
+                    }
                     let mut entry = pending.take().unwrap();
                     entry["predictMs"] = json!(phase_start.elapsed().as_millis() as u64);
                     entry["action"] = json!({"kind":"fail","reason":error});
@@ -339,7 +455,8 @@ pub async fn run(
             let mut action = prediction
                 .validated(frame.display)
                 .map_err(|e| env.planner_error(e))?;
-            let (element_label, secure) = env.ground_target(&prediction, &mut action)?;
+            observation!(env.verify_target());
+            let (element_label, secure) = observation!(env.ground_target(&prediction, &mut action));
             let description = format!(
                 "{} {}",
                 prediction.action["target"].as_str().unwrap_or(""),
@@ -348,8 +465,17 @@ pub async fn run(
             .trim()
             .to_owned();
             pending = Some(
-                json!({"step":step+1,"thumbnail":frame.thumbnail,"action":action,"target":description,"reflection":prediction.reflection,"planText":prediction.plan_text,"grounding":prediction.grounding,"predictMs":predict_ms,"executeMs":0,"waitMs":0}),
+                json!({"step":step+1,"staleRetries":stale_retries,"thumbnail":frame.thumbnail,"action":action,"target":description,"reflection":prediction.reflection,"planText":prediction.plan_text,"grounding":prediction.grounding,"predictMs":predict_ms,"executeMs":0,"waitMs":0}),
             );
+            if let Action::Fail { reason } = &action {
+                if prediction
+                    .grounding
+                    .iter()
+                    .any(|d| d["pixel_result"] == "unparseable")
+                {
+                    recover!(reason.clone());
+                }
+            }
             if let Some((id, index)) = prediction.element_target()? {
                 pending.as_mut().unwrap()["action"]["snapshot_id"] = json!(id);
                 pending.as_mut().unwrap()["action"]["element_index"] = json!(index);
@@ -362,61 +488,80 @@ pub async fn run(
                 Action::SwitchApp { app } => Some(env.target(app)?),
                 _ => None,
             };
+            if let (Action::Open { app_or_file }, Some(app)) = (&action, &target) {
+                if app_or_file != app && access(app, settings) == Access::ReadOnly {
+                    recover!(
+                        "App has read-only access: open the app by bundle ID, not a file".into()
+                    );
+                }
+            }
             let policy_action = match &target {
                 Some(app) => Action::SwitchApp { app: app.clone() },
                 None => action.clone(),
             };
             let current = env.context()?;
-            if current != context {
-                return Err("Focus changed while planning; action cancelled".into());
-            }
-            let policy_context = Context {
+            verify_app("Target binding changed while planning", &context, &current)?;
+            let mut policy_context = Context {
                 secure: current.secure || secure,
                 ..current.clone()
             };
-            env.verify_target()?;
-            match decide(
-                &policy_action,
-                &description,
-                &policy_context,
-                settings,
-                apps,
-                step,
-                start.elapsed(),
-            ) {
-                Decision::Deny(reason) => return Err(reason),
-                Decision::Confirm(reason) => {
-                    let entry = pending.as_mut().unwrap();
-                    entry["kind"] = json!("approval_wait");
-                    entry["reason"] = json!(reason);
-                    env.progress(entry.clone())?;
-                    let approved = control.until(env.approve(reason, &action, &current)).await;
-                    let entry = pending.as_mut().unwrap();
-                    entry["waitMs"] = json!(phase_start.elapsed().as_millis() as u64);
-                    entry["error"] = json!(approved.as_ref().err());
-                    env.progress(entry.clone())?;
-                    approved?;
-                    entry.as_object_mut().unwrap().remove("kind");
-                    entry.as_object_mut().unwrap().remove("reason");
+            observation!(env.verify_target());
+            let policy_target = observation!(env.policy_target(&action));
+            let after = loop {
+                match decide(
+                    &policy_action,
+                    &description,
+                    &policy_context,
+                    &policy_target,
+                    settings,
+                    apps,
+                    step,
+                    start.elapsed(),
+                ) {
+                    Decision::Deny(reason) => recover!(reason),
+                    Decision::Confirm(reason) => {
+                        let entry = pending.as_mut().unwrap();
+                        entry["kind"] = json!("approval_wait");
+                        entry["reason"] = json!(reason);
+                        env.progress(entry.clone())?;
+                        let approved = control.until(env.approve(reason, &action, &current)).await;
+                        let entry = pending.as_mut().unwrap();
+                        entry["waitMs"] = json!(phase_start.elapsed().as_millis() as u64);
+                        entry["error"] = json!(approved.as_ref().err());
+                        env.progress(entry.clone())?;
+                        approved?;
+                        entry.as_object_mut().unwrap().remove("kind");
+                        entry.as_object_mut().unwrap().remove("reason");
+                    }
+                    Decision::Allow => (),
                 }
-                Decision::Allow => (),
-            }
-            control.checkpoint().await?;
-            let after = env.context()?;
-            if after != current {
-                return Err("Focus changed after approval; action cancelled".into());
-            }
-            if let Decision::Deny(reason) = decide(
-                &policy_action,
-                &description,
-                &after,
-                settings,
-                apps,
-                step,
-                start.elapsed(),
-            ) {
-                return Err(reason);
-            }
+                control.checkpoint().await?;
+                let after = env.context()?;
+                verify_app("Target binding changed after approval", &current, &after)?;
+                verify_policy_target(
+                    "AX policy target changed after approval",
+                    &policy_target,
+                    &observation!(env.policy_target(&action)),
+                )?;
+                // A new fail-closed sample adds a confirmation, never a focus cancellation.
+                if after.secure && !policy_context.secure && matches!(action, Action::Type { .. }) {
+                    policy_context.secure = true;
+                    continue;
+                }
+                if let Decision::Deny(reason) = decide(
+                    &policy_action,
+                    &description,
+                    &after,
+                    &policy_target,
+                    settings,
+                    apps,
+                    step,
+                    start.elapsed(),
+                ) {
+                    recover!(reason);
+                }
+                break after;
+            };
             pending.as_mut().unwrap()["waitMs"] = json!(phase_start.elapsed().as_millis() as u64);
             phase = if matches!(action, Action::Wait { .. }) {
                 "waitMs"
@@ -424,12 +569,13 @@ pub async fn run(
                 "executeMs"
             };
             phase_start = Instant::now();
-            env.verify_target()?;
-            let preparation = env.prepare(&action, control, &after)?;
+            observation!(env.verify_target());
+            env.begin_action();
+            let preparation = observation!(env.prepare(&action, control, &after));
             if preparation == Preparation::NeedsForeground {
                 if !settings.allow_foreground_fallback {
-                    return Err(
-                        "Background input unavailable; foreground fallback is disabled".into(),
+                    recover!(
+                        "Background input unavailable; foreground fallback is disabled".into()
                     );
                 }
                 let reason =
@@ -442,22 +588,30 @@ pub async fn run(
                 env.progress(entry.clone())?;
                 control.until(env.approve(reason, &action, &after)).await?;
                 control.checkpoint().await?;
-                if env.context()? != after {
-                    return Err("Target changed after fallback approval".into());
-                }
+                verify_app(
+                    "Target changed after fallback approval",
+                    &after,
+                    &env.context()?,
+                )?;
                 if let Decision::Deny(reason) = decide(
                     &policy_action,
                     &description,
                     &after,
+                    &policy_target,
                     settings,
                     apps,
                     step,
                     start.elapsed(),
                 ) {
-                    return Err(reason);
+                    recover!(reason);
                 }
-                env.verify_target()?;
-                env.begin_foreground(control, &after)?;
+                observation!(env.verify_target());
+                verify_policy_target(
+                    "AX policy target changed after fallback approval",
+                    &policy_target,
+                    &observation!(env.policy_target(&action)),
+                )?;
+                observation!(env.begin_foreground(control, &after));
                 entry["waitMs"] = json!(
                     entry["waitMs"].as_u64().unwrap_or(0)
                         + phase_start.elapsed().as_millis() as u64
@@ -474,12 +628,38 @@ pub async fn run(
                     })
                     .await?;
             }
+            if preparation != Preparation::Handled {
+                verify_policy_target(
+                    "AX policy target changed before input",
+                    &policy_target,
+                    &observation!(env.policy_target(&action)),
+                )?;
+            }
             let outcome = if preparation == Preparation::Handled {
                 Ok(())
             } else {
-                execute(env, control, &after, &action, target.as_deref()).await
+                execute(
+                    env,
+                    control,
+                    &after,
+                    &action,
+                    target.as_deref(),
+                    &policy_target,
+                    prediction.element_target()?.is_some(),
+                )
+                .await
             };
             env.end_action();
+            let outcome = if outcome
+                .as_ref()
+                .err()
+                .is_some_and(|e| e.starts_with(STALE_OBSERVATION))
+            {
+                observation!(outcome);
+                Ok(())
+            } else {
+                outcome
+            };
             let outcome = outcome.and_then(|()| {
                 if let Action::Fail { reason } = &action {
                     Err(env.planner_error(reason.clone()))
@@ -493,6 +673,8 @@ pub async fn run(
             );
             entry["error"] = json!(outcome.as_ref().err());
             env.progress(entry)?;
+            step += 1;
+            stale_retries = 0;
             if outcome
                 .as_ref()
                 .err()
@@ -502,6 +684,9 @@ pub async fn run(
                 continue;
             }
             outcome?;
+            recovery.consecutive = 0;
+            recovery.previous = None;
+            control.until(env.settle()).await?;
             match action {
                 Action::Done { summary } => {
                     let last = control.until(env.capture()).await?;
@@ -533,6 +718,7 @@ pub async fn run(
     })
     .and_then(|r| r);
     control.stop();
+    env.end_action();
     if let (Err(error), Some(mut entry)) = (&result, pending) {
         entry[phase] = json!(phase_start.elapsed().as_millis() as u64);
         entry["error"] = json!(error);

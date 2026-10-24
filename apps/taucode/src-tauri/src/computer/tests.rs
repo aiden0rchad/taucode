@@ -10,6 +10,24 @@ use std::{
     time::{Duration, Instant},
 };
 #[test]
+fn mcp_steps_keep_planner_actions_and_diagnostics_without_images_or_ax_values() {
+    let steps = json!([{"step":1,"action":{"kind":"type","text":"planner text"},"thumbnail":"image","planText":"界".repeat(1500),"path":"ax-menu","menuTitle":"File > New","grounding":[{"value":"private AX text"}],"executeMs":13,"focusRestorations":[{"pid":7}],"error":null}, {"step":2,"action":{"kind":"fail"},"error":"failed"}]);
+    let compact = super::compact_steps(&steps);
+    assert_eq!(compact.len(), 2);
+    assert_eq!(compact[0]["action"], steps[0]["action"]);
+    assert_eq!(
+        compact[0]["planText"].as_str().unwrap().chars().count(),
+        1024
+    );
+    for key in ["thumbnail", "grounding"] {
+        assert!(compact[0].get(key).is_none());
+    }
+    for key in ["path", "menuTitle", "executeMs", "focusRestorations"] {
+        assert_eq!(compact[0][key], steps[0][key]);
+    }
+    assert_eq!(compact[1]["error"], "failed");
+}
+#[test]
 fn permission_requests_map_each_status_without_short_circuiting() {
     struct FakePermissions {
         screen: bool,
@@ -125,15 +143,25 @@ fn policy_denylist_secure_submit_limits() {
             &a,
             "Click document",
             &c,
+            &super::policy::Target::default(),
             &s,
-            &s.allowed_apps,
+            &s.app_ids(),
             0,
             Duration::ZERO
         ),
         Decision::Allow
     );
     assert!(matches!(
-        decide(&a, "BUY now", &c, &s, &s.allowed_apps, 0, Duration::ZERO),
+        decide(
+            &a,
+            "BUY now",
+            &c,
+            &super::policy::Target::default(),
+            &s,
+            &s.app_ids(),
+            0,
+            Duration::ZERO
+        ),
         Decision::Confirm(_)
     ));
     let text = Action::Type {
@@ -151,15 +179,25 @@ fn policy_denylist_secure_submit_limits() {
                 secure: true,
                 ..c.clone()
             },
+            &super::policy::Target::default(),
             &s,
-            &s.allowed_apps,
+            &s.app_ids(),
             0,
             Duration::ZERO
         ),
         Decision::Confirm("Typing into a secure text field")
     );
     assert!(matches!(
-        decide(&a, "", &c, &s, &s.allowed_apps, s.max_steps, Duration::ZERO),
+        decide(
+            &a,
+            "",
+            &c,
+            &super::policy::Target::default(),
+            &s,
+            &s.app_ids(),
+            s.max_steps,
+            Duration::ZERO
+        ),
         Decision::Deny(_)
     ));
     assert!(matches!(
@@ -167,23 +205,33 @@ fn policy_denylist_secure_submit_limits() {
             &a,
             "",
             &c,
+            &super::policy::Target::default(),
             &s,
-            &s.allowed_apps,
+            &s.app_ids(),
             0,
             Duration::from_secs(s.max_seconds)
         ),
         Decision::Deny(_)
     ));
     assert!(matches!(
-        decide(&a, "", &c, &s, &[], 0, Duration::ZERO),
+        decide(
+            &a,
+            "",
+            &c,
+            &super::policy::Target::default(),
+            &s,
+            &[],
+            0,
+            Duration::ZERO
+        ),
         Decision::Deny(_)
     ));
     for app in ALWAYS_DENIED {
         s.allowed_apps.push((*app).into());
-        assert!(!app_allowed(app, &s, &s.allowed_apps));
+        assert!(!app_allowed(app, &s, &s.app_ids()));
     }
     s.denied_apps.push(c.app.clone());
-    assert!(!app_allowed(&c.app, &s, &s.allowed_apps));
+    assert!(!app_allowed(&c.app, &s, &s.app_ids()));
 }
 #[test]
 fn stop_releases_keys_buttons_and_prevents_late_input() {
@@ -219,6 +267,21 @@ fn stop_releases_keys_buttons_and_prevents_late_input() {
         .is_err());
 }
 struct Fake {
+    instructions: Vec<String>,
+    prepare_error: Option<String>,
+    ax_handled: bool,
+    event_errors: std::cell::RefCell<std::collections::VecDeque<Option<String>>>,
+    observation_errors: std::cell::RefCell<std::collections::VecDeque<Option<String>>>,
+    native_front: std::cell::Cell<i32>,
+    prior_front: std::cell::Cell<Option<i32>>,
+    activate_during_action: bool,
+    fail_prepare: bool,
+    restorations: std::cell::Cell<usize>,
+    policy_evidence: Target,
+    policy_reads: std::cell::Cell<usize>,
+    policy_change: Option<(usize, Target)>,
+    contexts: std::cell::RefCell<std::collections::VecDeque<Context>>,
+    typing_focus_changes: bool,
     element_label: String,
     element_secure: bool,
     target_changes: bool,
@@ -327,10 +390,47 @@ fn stop_releases_target_input_before_overlay_cleanup_and_rejects_late_work() {
         .is_err());
 }
 impl Environment for Fake {
+    fn event_context(&self, _: &Event) -> Result<Context, String> {
+        if let Some(Some(error)) = self.event_errors.borrow_mut().pop_front() {
+            return Err(error);
+        }
+        self.context()
+    }
+    fn begin_action(&self) {
+        self.prior_front.set(Some(self.native_front.get()));
+    }
+    fn end_action(&self) {
+        if let Some(pid) = super::background::action_restoration(
+            self.prior_front.take(),
+            Some(self.native_front.get()),
+            20,
+        ) {
+            self.native_front.set(pid);
+            self.restorations.set(self.restorations.get() + 1);
+        }
+    }
+    fn policy_target(&self, action: &Action) -> Result<Target, String> {
+        self.policy_reads.set(self.policy_reads.get() + 1);
+        if let Some((after, target)) = &self.policy_change {
+            if self.policy_reads.get() > *after {
+                return Ok(target.clone());
+            }
+        }
+        let mut target = self.policy_evidence.clone();
+        if (self.typing_focus_changes && matches!(action, Action::Hotkey { .. }))
+            || (self.target_changes && self.approved > 0)
+        {
+            target.label = "Password".into();
+        }
+        Ok(target)
+    }
     fn ground_target(&self, _: &Prediction, _: &mut Action) -> Result<(String, bool), String> {
         Ok((self.element_label.clone(), self.element_secure))
     }
     fn verify_target(&self) -> Result<(), String> {
+        if let Some(Some(error)) = self.observation_errors.borrow_mut().pop_front() {
+            return Err(error);
+        }
         if self.target_changes && self.approved > 0 {
             Err("AX target changed".into())
         } else {
@@ -343,6 +443,18 @@ impl Environment for Fake {
         _: &Control,
         _: &Context,
     ) -> Result<runner::Preparation, String> {
+        if self.activate_during_action {
+            self.native_front.set(20);
+        }
+        if self.fail_prepare {
+            return Err("prepare failed after activation".into());
+        }
+        if let Some(error) = &self.prepare_error {
+            return Err(error.clone());
+        }
+        if self.ax_handled {
+            return Ok(runner::Preparation::Handled);
+        }
         Ok(
             if self.needs_foreground && matches!(action, Action::Click { .. }) {
                 runner::Preparation::NeedsForeground
@@ -367,13 +479,18 @@ impl Environment for Fake {
     }
     fn predict<'a>(
         &'a mut self,
-        _: &'a str,
+        instruction: &'a str,
         _: &'a Frame,
     ) -> BoxFuture<'a, Result<Prediction, String>> {
+        self.instructions.push(instruction.into());
         Box::pin(async { self.predictions.pop_front().ok_or("No fake action".into()) })
     }
     fn context(&self) -> Result<Context, String> {
-        Ok(self.focus.clone())
+        Ok(self
+            .contexts
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| self.focus.clone()))
     }
     fn approve<'a>(
         &'a mut self,
@@ -412,6 +529,21 @@ impl Environment for Fake {
 }
 fn fake(actions: Vec<Value>) -> Fake {
     Fake {
+        instructions: vec![],
+        prepare_error: None,
+        ax_handled: false,
+        event_errors: Default::default(),
+        observation_errors: Default::default(),
+        native_front: std::cell::Cell::new(10),
+        prior_front: std::cell::Cell::new(None),
+        activate_during_action: false,
+        fail_prepare: false,
+        restorations: std::cell::Cell::new(0),
+        policy_evidence: Target::default(),
+        policy_reads: std::cell::Cell::new(0),
+        policy_change: None,
+        contexts: Default::default(),
+        typing_focus_changes: false,
         element_label: String::new(),
         element_secure: false,
         target_changes: false,
@@ -426,6 +558,350 @@ fn fake(actions: Vec<Value>) -> Fake {
         change_after_approval: false,
         approval_delay: Duration::ZERO,
     }
+}
+
+#[tokio::test]
+async fn recoverable_errors_have_caps_feedback_and_no_input() {
+    let denied = json!({"kind":"switch_app","app":"com.apple.Terminal"});
+    let done = json!({"kind":"done","summary":"done"});
+    for (actions, recovered, succeeds) in [
+        (vec![denied.clone(), done.clone()], 1, true),
+        (vec![denied.clone(); 5], 3, false),
+        (
+            (0..6)
+                .flat_map(|_| [denied.clone(), json!({"kind":"wait","seconds":0})])
+                .collect(),
+            6,
+            false,
+        ),
+    ] {
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let mut env = fake(actions);
+        let s = settings();
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "task", Instant::now()).await;
+        assert_eq!(result.is_ok(), succeeds, "{result:?}");
+        assert_eq!(
+            env.steps.iter().filter(|s| s["recovered"] == true).count(),
+            recovered
+        );
+        assert!(env.instructions[1].starts_with("Previous action was NOT executed:"));
+        assert!(env.instructions[1].contains("Choose a different approach."));
+        assert!(input.0.lock().unwrap().is_empty());
+        assert_eq!(env.approved, 0);
+    }
+}
+
+#[tokio::test]
+async fn recoverable_vs_fatal_preparation_errors() {
+    for (reason, recovered, predictions) in [
+        (
+            "Action not executed: AX action unsupported; no viable fallback",
+            true,
+            3,
+        ),
+        (
+            "Action not executed: Background hotkey menu disabled: File > New Folder",
+            true,
+            3,
+        ),
+        ("Target binding changed", false, 1),
+        ("System Settings pane inspection failed", false, 1),
+        (
+            "Input already started; Stale observation: changed",
+            false,
+            1,
+        ),
+        (
+            "AX action completion unknown after timeout; background fallback unavailable",
+            false,
+            1,
+        ),
+        ("Stopped", false, 1),
+        ("Declined", false, 1),
+        ("Timed out waiting for approval", false, 1),
+    ] {
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let mut env = fake(vec![json!({"kind":"wait","seconds":0}); 5]);
+        env.prepare_error = Some(reason.into());
+        let s = settings();
+        let error = runner::run(&mut env, &control, &s, &s.app_ids(), "task", Instant::now())
+            .await
+            .unwrap_err();
+        assert_eq!(error, reason);
+        assert_eq!(env.instructions.len(), predictions);
+        assert_eq!(env.steps[0]["recovered"] == true, recovered);
+        assert!(input.0.lock().unwrap().is_empty());
+        assert_eq!(env.approved, 0);
+    }
+}
+
+#[tokio::test]
+async fn unparseable_grounding_recovers_but_provider_errors_are_fatal() {
+    for (result, recovers) in [("unparseable", true), ("provider_error", false)] {
+        let mut env = fake(vec![
+            json!({"kind":"fail","reason":"grounding failed"}),
+            json!({"kind":"done","summary":"done"}),
+        ]);
+        env.predictions[0].grounding = vec![json!({"pixel_result":result})];
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let s = settings();
+        assert_eq!(
+            runner::run(&mut env, &control, &s, &s.app_ids(), "task", Instant::now())
+                .await
+                .is_ok(),
+            recovers
+        );
+        assert_eq!(env.steps[0]["recovered"] == true, recovers);
+        assert!(input.0.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn exhausted_stale_step_recovers_and_ax_menu_restores_focus() {
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let mut env = fake(vec![json!({"kind":"wait","seconds":0}); 3]);
+    env.predictions
+        .push_back(prediction(json!({"kind":"done","summary":"replanned"})));
+    *env.observation_errors.borrow_mut() =
+        vec![Some(format!("{}geometry changed", runner::STALE_OBSERVATION)); 3].into();
+    env.ax_handled = true;
+    env.activate_during_action = true;
+    let s = settings();
+    assert!(
+        runner::run(&mut env, &control, &s, &s.app_ids(), "task", Instant::now())
+            .await
+            .is_ok()
+    );
+    assert_eq!(env.steps[0]["recovered"], true);
+    assert_eq!(env.steps[0]["staleRetries"], 2);
+    assert!(env.instructions[3].starts_with("Previous action was NOT executed:"));
+    assert_eq!(env.native_front.get(), 10);
+    assert_eq!(env.restorations.get(), 1);
+    assert!(input.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn stale_before_first_event_replans_but_partial_input_is_never_replayed() {
+    for partial in [false, true] {
+        let input = FakeInput::default();
+        let events = input.0.clone();
+        let control = Control::new(input);
+        control.start();
+        let mut env = fake(vec![
+            json!({"kind":"hotkey","keys":["escape"]}),
+            json!({"kind":"done","summary":"fresh"}),
+        ]);
+        let mut errors = env.event_errors.borrow_mut();
+        if partial {
+            errors.push_back(None);
+        }
+        errors.push_back(Some(format!(
+            "{}Window validation: drift",
+            runner::STALE_OBSERVATION
+        )));
+        drop(errors);
+        let settings = settings();
+        let result = runner::run(
+            &mut env,
+            &control,
+            &settings,
+            &settings.app_ids(),
+            "test",
+            Instant::now(),
+        )
+        .await;
+        assert_eq!(result.is_err(), partial);
+        assert_eq!(env.steps[0]["staleRetries"], u64::from(!partial));
+        if partial {
+            assert!(result.unwrap_err().contains("Input already started"));
+            assert_eq!(env.predictions.len(), 1);
+            assert_eq!(
+                *events.lock().unwrap(),
+                [Event::Key(53, true), Event::Key(53, false)]
+            );
+        } else {
+            assert!(env.predictions.is_empty());
+            assert!(events.lock().unwrap().is_empty());
+        }
+    }
+}
+
+#[tokio::test]
+async fn stale_observations_replan_without_consuming_steps_and_enforce_both_caps() {
+    let stale = || {
+        Some(format!(
+            "{}Window validation: geometry changed; action cancelled",
+            runner::STALE_OBSERVATION
+        ))
+    };
+    for (errors, retries, succeeds) in [
+        (vec![stale()], vec![1], true),
+        (vec![stale(), stale()], vec![2], true),
+        (vec![stale(), stale(), stale()], vec![2], false),
+        // Each successful step has three pre-input validation calls.
+        (
+            vec![vec![stale(), stale(), None, None, None]; 3]
+                .concat()
+                .into_iter()
+                .chain([stale()])
+                .collect(),
+            vec![2, 2, 2, 0],
+            false,
+        ),
+        (
+            vec![Some(
+                "Window validation: owner before=42 after=43; action cancelled".into(),
+            )],
+            vec![0],
+            false,
+        ),
+        (
+            vec![Some(
+                "Window validation: complete matching entries=0; action cancelled".into(),
+            )],
+            vec![0],
+            false,
+        ),
+    ] {
+        let input = FakeInput::default();
+        let events = input.0.clone();
+        let control = Control::new(input);
+        control.start();
+        let mut env = fake(vec![json!({"kind":"wait","seconds":0}); 20]);
+        for index in 0..2 {
+            env.predictions[index] = prediction(
+                json!({"kind":"click","x":100,"y":100,"button":"left","clicks":1,"hold_keys":[]}),
+            );
+        }
+        if succeeds {
+            env.predictions[retries[0] as usize] =
+                prediction(json!({"kind":"done","summary":"fresh"}));
+        }
+        *env.observation_errors.borrow_mut() = errors.into();
+        let mut settings = settings();
+        settings.max_steps = retries.len() as u32;
+        let result = runner::run(
+            &mut env,
+            &control,
+            &settings,
+            &settings.app_ids(),
+            "test",
+            Instant::now(),
+        )
+        .await;
+        assert_eq!(result.is_ok(), succeeds, "{result:?}");
+        assert_eq!(
+            env.steps
+                .iter()
+                .map(|step| step["staleRetries"].as_u64().unwrap())
+                .collect::<Vec<_>>(),
+            retries
+        );
+        let predictions = 20 - env.predictions.len();
+        assert_eq!(
+            predictions,
+            retries.iter().sum::<u64>() as usize + retries.len()
+        );
+        assert_eq!(env.captures, predictions + usize::from(succeeds));
+        assert!(
+            events.lock().unwrap().is_empty(),
+            "discarded predictions must not dispatch input"
+        );
+    }
+}
+
+#[tokio::test]
+async fn ax_settle_requires_consecutive_equal_reads_and_bounds_slow_reads() {
+    use std::cell::Cell;
+    for (readings, expected) in [
+        (vec![Ok(("General", 2)), Ok(("General", 2))], 2),
+        (
+            vec![
+                Ok(("General", 2)),
+                Ok(("About", 2)),
+                Ok(("About", 3)),
+                Ok(("About", 3)),
+            ],
+            4,
+        ),
+        (
+            vec![
+                Ok(("About", 3)),
+                Err("transient"),
+                Ok(("About", 3)),
+                Ok(("About", 3)),
+            ],
+            4,
+        ),
+    ] {
+        let mut readings = readings.into_iter();
+        let calls = Cell::new(0);
+        runner::settle(|| {
+            calls.set(calls.get() + 1);
+            std::future::ready(readings.next().unwrap().map_err(str::to_owned))
+        })
+        .await;
+        assert_eq!(calls.get(), expected);
+    }
+    for slow in [false, true] {
+        let calls = Cell::new(0);
+        let began = Instant::now();
+        runner::settle(|| {
+            calls.set(calls.get() + 1);
+            let value = calls.get();
+            async move {
+                if slow {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+                Ok(value)
+            }
+        })
+        .await;
+        assert!(began.elapsed() >= Duration::from_secs(1));
+        assert!(began.elapsed() < Duration::from_millis(1300));
+        assert!(calls.get() <= 10);
+    }
+}
+
+#[tokio::test]
+async fn post_action_restores_frontmost_with_fake_environment_even_on_prepare_failure() {
+    for fails in [false, true] {
+        let mut env = fake(vec![json!({"kind":"done","summary":"done"})]);
+        env.activate_during_action = true;
+        env.fail_prepare = fails;
+        let control = Control::new(FakeInput::default());
+        control.start();
+        let settings = settings();
+        let result = runner::run(
+            &mut env,
+            &control,
+            &settings,
+            &settings.app_ids(),
+            "test",
+            Instant::now(),
+        )
+        .await;
+        assert_eq!(result.is_err(), fails);
+        assert_eq!(env.native_front.get(), 10);
+        assert_eq!(env.restorations.get(), 1);
+    }
+    assert_eq!(
+        super::background::action_restoration(Some(10), Some(30), 20),
+        None
+    );
+    assert_eq!(
+        super::background::action_restoration(Some(20), Some(20), 20),
+        None
+    );
 }
 #[tokio::test]
 async fn fallback_requires_setting_and_fresh_approval_before_any_input() {
@@ -450,17 +926,13 @@ async fn fallback_requires_setting_and_fresh_approval_before_any_input() {
         let input = FakeInput::default();
         let control = Control::new(input.clone());
         control.start();
-        let result = runner::run(
-            &mut env,
-            &control,
-            &s,
-            &s.allowed_apps,
-            "test",
-            Instant::now(),
-        )
-        .await;
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
         let allowed = enabled && approved && !changed;
-        assert_eq!(result.is_ok(), allowed);
+        assert_eq!(result.is_ok(), !enabled || allowed);
+        if !enabled {
+            assert_eq!(env.steps[0]["recovered"], true);
+        }
         assert_eq!(env.takeovers.get(), usize::from(allowed));
         assert_eq!(input.0.lock().unwrap().is_empty(), !allowed);
         assert_eq!(env.approved, usize::from(enabled));
@@ -479,16 +951,9 @@ async fn loop_fake_capture_planner_input_and_progress() {
     let control = Control::new(input.clone());
     control.start();
     let s = settings();
-    let result = runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now(),
-    )
-    .await
-    .unwrap();
+    let result = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap();
     assert_eq!(result["summary"], "Complete");
     assert_eq!(env.steps.len(), 2);
     assert_eq!(env.captures, 3);
@@ -512,16 +977,11 @@ async fn declined_approval_and_changed_focus_never_type() {
         let control = Control::new(input.clone());
         control.start();
         let s = settings();
-        assert!(runner::run(
-            &mut env,
-            &control,
-            &s,
-            &s.allowed_apps,
-            "test",
-            Instant::now()
-        )
-        .await
-        .is_err());
+        assert!(
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+                .await
+                .is_err()
+        );
         assert_eq!(env.approved, 1);
         assert!(input.0.lock().unwrap().is_empty());
     }
@@ -572,16 +1032,9 @@ async fn bootstrap_can_only_switch_to_allowed_app_and_step_limit_stops() {
         ..settings()
     };
     assert_eq!(
-        runner::run(
-            &mut env,
-            &control,
-            &s,
-            &s.allowed_apps,
-            "test",
-            Instant::now()
-        )
-        .await
-        .unwrap_err(),
+        runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+            .await
+            .unwrap_err(),
         "Maximum steps reached"
     );
     assert_eq!(env.steps.len(), 1);
@@ -597,8 +1050,9 @@ async fn bootstrap_can_only_switch_to_allowed_app_and_step_limit_stops() {
             &click,
             "",
             &env.focus,
+            &super::policy::Target::default(),
             &s,
-            &s.allowed_apps,
+            &s.app_ids(),
             0,
             Duration::ZERO
         ),
@@ -612,8 +1066,9 @@ async fn bootstrap_can_only_switch_to_allowed_app_and_step_limit_stops() {
             &terminal,
             "",
             &env.focus,
+            &super::policy::Target::default(),
             &s,
-            &s.allowed_apps,
+            &s.app_ids(),
             0,
             Duration::ZERO
         ),
@@ -654,32 +1109,20 @@ async fn wall_limit_cancels_wait_and_denied_app_is_never_captured() {
     };
     let mut env = fake(vec![json!({"kind":"wait","seconds":10})]);
     assert_eq!(
-        runner::run(
-            &mut env,
-            &control,
-            &s,
-            &s.allowed_apps,
-            "test",
-            Instant::now()
-        )
-        .await
-        .unwrap_err(),
+        runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+            .await
+            .unwrap_err(),
         "Maximum wall time reached"
     );
     assert!(control.stopped());
     control.start();
     env.focus.app = "com.apple.Terminal".into();
     env.captures = 0;
-    assert!(runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now()
-    )
-    .await
-    .is_err());
+    assert!(
+        runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+            .await
+            .is_err()
+    );
     assert_eq!(env.captures, 0);
     assert!(input.0.lock().unwrap().is_empty());
 }
@@ -719,16 +1162,9 @@ async fn prediction_error_is_logged_without_input() {
     let control = Control::new(input.clone());
     control.start();
     let s = settings();
-    let error = runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now(),
-    )
-    .await
-    .unwrap_err();
+    let error = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap_err();
     assert_eq!(error, "No fake action");
     assert_eq!(env.steps.len(), 1);
     assert_eq!(env.steps[0]["error"], error);
@@ -762,7 +1198,7 @@ async fn click_policy_uses_target_not_agent_s_plan_or_reflection() {
             &mut env,
             &control,
             &s,
-            &s.allowed_apps,
+            &s.app_ids(),
             "12 × 7",
             Instant::now(),
         )
@@ -811,8 +1247,9 @@ fn risky_clicks_match_whole_words_case_insensitively() {
                         &click,
                         &target,
                         &context(),
+                        &super::policy::Target::default(),
                         &s,
-                        &s.allowed_apps,
+                        &s.app_ids(),
                         0,
                         Duration::ZERO
                     ),
@@ -832,8 +1269,9 @@ fn risky_clicks_match_whole_words_case_insensitively() {
                     &click,
                     &target,
                     &context(),
+                    &super::policy::Target::default(),
                     &s,
-                    &s.allowed_apps,
+                    &s.app_ids(),
                     0,
                     Duration::ZERO
                 ),
@@ -865,16 +1303,9 @@ async fn approval_timeout_logs_reason_target_and_wait_duration_without_input() {
         max_seconds: 1,
         ..settings()
     };
-    let error = runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now(),
-    )
-    .await
-    .unwrap_err();
+    let error = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap_err();
     assert_eq!(error, "Timed out waiting for approval: Potential submit, send, purchase or destructive click (Delete account)");
     assert_eq!(env.steps.len(), 1);
     assert_eq!(env.steps[0]["kind"], "approval_wait");
@@ -912,16 +1343,9 @@ async fn grounding_diagnostics_and_index_zero_survive_approval_and_final_progres
     let control = Control::new(FakeInput::default());
     control.start();
     let s = settings();
-    runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now(),
-    )
-    .await
-    .unwrap();
+    runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap();
     assert_eq!(env.approved, 1);
     let entries: Vec<_> = env.steps.iter().filter(|s| s["step"] == 1).collect();
     assert!(entries.len() >= 2);
@@ -943,16 +1367,11 @@ async fn element_label_policy_cannot_be_bypassed_by_benign_description() {
     let control = Control::new(input.clone());
     control.start();
     let s = settings();
-    assert!(runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now()
-    )
-    .await
-    .is_err());
+    assert!(
+        runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+            .await
+            .is_err()
+    );
     assert_eq!(env.approved, 1);
     assert!(input.0.lock().unwrap().is_empty());
 }
@@ -968,20 +1387,226 @@ async fn changed_element_after_approval_cancels_input() {
     let control = Control::new(input.clone());
     control.start();
     let s = settings();
-    assert!(runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now()
-    )
-    .await
-    .is_err());
+    assert!(
+        runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+            .await
+            .is_err()
+    );
     assert_eq!(env.approved, 1);
     assert!(env
         .steps
         .iter()
         .any(|step| step["reason"] == "Typing into a secure text field"));
     assert!(input.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn typing_policy_runs_before_events_and_rechecks_the_focused_field() {
+    for (mode, access, changed, approvals, succeeds) in [
+        (ConfirmTyping::Sensitive, Access::Full, false, 0, true),
+        (ConfirmTyping::Always, Access::Full, false, 1, true),
+        (ConfirmTyping::Sensitive, Access::ReadOnly, false, 0, true),
+        (ConfirmTyping::Sensitive, Access::Full, true, 0, false),
+    ] {
+        let mut env = fake(vec![
+            json!({"kind":"type","text":"hello","overwrite":false,"enter":false}),
+            json!({"kind":"done","summary":"done"}),
+        ]);
+        env.policy_evidence = Target {
+            role: "AXTextArea".into(),
+            label: "Document".into(),
+            ..Default::default()
+        };
+        env.typing_focus_changes = changed;
+        let mut s = settings();
+        s.confirm_typing = mode;
+        s.allowed_apps[0].access = access;
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
+        assert_eq!(result.is_ok(), succeeds, "{result:?}");
+        assert_eq!(env.approved, approvals);
+        assert_eq!(
+            input
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|e| matches!(e, Event::Text(_)))
+                .count(),
+            if succeeds && access != Access::ReadOnly {
+                5
+            } else {
+                0
+            }
+        );
+    }
+}
+#[tokio::test]
+async fn changed_sensitive_metadata_after_approval_cancels_before_input() {
+    let mut env = fake(vec![
+        json!({"kind":"type","text":"hello","overwrite":false,"enter":false}),
+    ]);
+    env.policy_evidence = Target {
+        role: "AXTextArea".into(),
+        label: "Document".into(),
+        ..Default::default()
+    };
+    env.target_changes = true;
+    let mut s = settings();
+    s.confirm_typing = ConfirmTyping::Always;
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let error = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap_err();
+    assert!(error.contains("AX policy target changed"));
+    assert_eq!(env.approved, 1);
+    assert!(input.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn secure_samples_change_confirmation_without_cancelling_planning() {
+    for (samples, approvals) in [
+        (vec![false, true, false], 1),
+        (vec![true, false, false], 0),
+        (vec![false, false, true, false], 1),
+    ] {
+        let mut env = fake(vec![
+            json!({"kind":"type","text":"hello","overwrite":false,"enter":false}),
+            json!({"kind":"done","summary":"done"}),
+        ]);
+        env.policy_evidence.role = "AXTextArea".into();
+        *env.contexts.borrow_mut() = samples
+            .into_iter()
+            .map(|secure| Context {
+                secure,
+                ..context()
+            })
+            .collect();
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let mut s = settings();
+        s.mode = "background".into();
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(env.approved, approvals);
+        assert_eq!(
+            input
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|e| matches!(e, Event::Text(_)))
+                .count(),
+            5
+        );
+        if approvals > 0 {
+            assert!(env
+                .steps
+                .iter()
+                .any(|step| step["reason"] == "Typing into a secure text field"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn planning_app_change_cancels_with_binding_diagnostics() {
+    let mut env = fake(vec![
+        json!({"kind":"type","text":"private text","overwrite":false,"enter":false}),
+    ]);
+    *env.contexts.borrow_mut() = [
+        context(),
+        Context {
+            app: "com.apple.Finder".into(),
+            secure: false,
+        },
+    ]
+    .into();
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let s = settings();
+    let error = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap_err();
+    assert!(error.contains("app before=com.apple.TextEdit after=com.apple.Finder"));
+    assert!(!error.contains("private text"));
+    assert!(input.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn grounded_typing_rechecks_selected_metadata_instead_of_focus() {
+    for changed in [None, Some("role"), Some("label"), Some("secure")] {
+        let mut env = fake(vec![
+            json!({"kind":"type","text":"hello","overwrite":false,"enter":false,"snapshot_id":1,"element_index":0}),
+            json!({"kind":"done","summary":"done"}),
+        ]);
+        env.policy_evidence.role = "AXTextArea".into();
+        env.policy_evidence.label = "Document".into();
+        env.typing_focus_changes = true; // Focused field differs from the grounded field.
+        if let Some(field) = changed {
+            let mut target = env.policy_evidence.clone();
+            match field {
+                "role" => target.role = "AXTextField".into(),
+                "label" => target.label = "private label".into(),
+                "secure" => target.secure = true,
+                _ => unreachable!(),
+            }
+            env.policy_change = Some((3, target)); // Immediately before the first input.
+        }
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let s = settings();
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
+        if changed.is_some() {
+            let error = result.unwrap_err();
+            assert!(
+                error.contains("Typing field changed before input"),
+                "{error}"
+            );
+            assert!(!error.contains("private label"));
+            assert!(input.0.lock().unwrap().is_empty());
+        } else {
+            assert!(result.is_ok(), "{result:?}");
+            assert_eq!(
+                input
+                    .0
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|e| matches!(e, Event::Text(_)))
+                    .count(),
+                5
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn grounded_secure_and_sensitive_fields_still_require_confirmation() {
+    for secure in [false, true] {
+        let mut env = fake(vec![
+            json!({"kind":"type","text":"hello","overwrite":false,"enter":false,"snapshot_id":1,"element_index":0}),
+            json!({"kind":"done","summary":"done"}),
+        ]);
+        env.policy_evidence.role = "AXTextField".into();
+        env.policy_evidence.secure = secure;
+        env.policy_evidence.label = if secure { "Document" } else { "Password" }.into();
+        env.typing_focus_changes = true;
+        let control = Control::new(FakeInput::default());
+        control.start();
+        let s = settings();
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(env.approved, 1);
+    }
 }
