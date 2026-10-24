@@ -287,7 +287,7 @@ impl Process {
     }
 }
 
-fn redact(mut text: String, secrets: &[String]) -> String {
+pub(super) fn redact(mut text: String, secrets: &[String]) -> String {
     for secret in secrets.iter().filter(|s| !s.is_empty()) {
         let escaped = serde_json::to_string(secret).unwrap();
         text = text

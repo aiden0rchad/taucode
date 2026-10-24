@@ -441,13 +441,21 @@ pub(crate) async fn fork_thread_core(
     model: Option<String>,
 ) -> Result<Value, String> {
     let session = get_session_clone(sessions, &workspace_id).await?;
+    let metadata = if session.pi.data.is_some() {
+        crate::storage::read_thread_metadata(&super::sidechats::metadata_path(&session, &workspace_id, &thread_id)?)?
+    } else { Value::Null };
     let mut params = json!({ "threadId": thread_id, "excludeTurns": true });
     if let Some(model) = model {
         params["model"] = json!(model);
     }
-    session
+    if metadata.get("sideOf").is_some() { params["sandbox"] = json!("read-only"); }
+    let mut response = session
         .send_request_for_workspace(&workspace_id, "thread/fork", params)
-        .await
+        .await?;
+    if let Some(side_of) = metadata.get("sideOf") {
+        super::sidechats::persist(&session, &workspace_id, &mut response, side_of.clone())?;
+    }
+    Ok(response)
 }
 
 pub(crate) async fn list_threads_core(
@@ -961,4 +969,12 @@ mod tests {
         assert!(THREAD_LIST_SOURCE_KINDS.contains(&"subAgentCompact"));
         assert!(THREAD_LIST_SOURCE_KINDS.contains(&"subAgentThreadSpawn"));
     }
+}
+
+pub(crate) async fn thread_feature_core(
+    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    workspace_id: String, method: &str, params: Value,
+) -> Result<Value, String> {
+    get_session_clone(sessions, &workspace_id).await?
+        .send_request_for_workspace(&workspace_id, method, params).await
 }

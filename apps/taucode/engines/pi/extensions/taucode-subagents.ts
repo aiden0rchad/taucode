@@ -11,7 +11,7 @@ import { checkLimits, inside, resolveTask, type Policy } from "./lib/policy.ts";
 const taskFields = { agent: Type.String(), task: Type.String(), model: Type.Optional(Type.String()), cwd: Type.Optional(Type.String()) };
 const Task = Type.Object(taskFields);
 type TaskInput = { agent: string; task: string; model?: string; cwd?: string };
-type Message = { role: string; content?: { type: string; text?: string }[]; stopReason?: string; errorMessage?: string; usage?: Record<string, any> };
+type Message = { role: string; toolCallId?: string; toolName?: string; content?: { type: string; text?: string }[]; stopReason?: string; errorMessage?: string; usage?: Record<string, any> };
 type Result = TaskInput & { exitCode: number; status: string; messages: Message[]; stderr: string; stopReason?: string; usage: Record<string, number> };
 const output = (r: Result) => r.messages.filter(m => m.role === "assistant").at(-1)?.content?.filter(c => c.type === "text").map(c => c.text).join("\n") || r.stderr;
 
@@ -83,7 +83,10 @@ export default function (pi: ExtensionAPI) {
               if (event.type === "message_end" || event.type === "tool_result_end") {
                 const msg = event.message as Message;
                 if (!msg) return;
-                r.messages.push(msg);
+                const previous = msg.role === "toolResult" && msg.toolName === "subagent"
+                  ? r.messages.findIndex(m => m.role === "toolResult" && m.toolCallId === msg.toolCallId) : -1;
+                if (previous >= 0) r.messages[previous] = msg;
+                else r.messages.push(msg);
                 if (msg.role === "assistant") {
                   r.usage.turns++;
                   for (const key of ["input", "output", "cacheRead", "cacheWrite"]) r.usage[key] += msg.usage?.[key] ?? 0;
@@ -92,6 +95,14 @@ export default function (pi: ExtensionAPI) {
                   r.stopReason = msg.stopReason;
                   if (msg.errorMessage) r.stderr = msg.errorMessage;
                 }
+                update();
+              } else if (event.toolName === "subagent" && ["tool_execution_update", "tool_execution_end"].includes(event.type)) {
+                const snapshot = event.partialResult ?? event.result;
+                if (!Array.isArray(snapshot?.details?.results)) return;
+                const msg = { ...snapshot, role: "toolResult", toolName: "subagent", toolCallId: event.toolCallId };
+                const previous = r.messages.findIndex(m => m.role === "toolResult" && m.toolCallId === event.toolCallId);
+                if (previous >= 0) r.messages[previous] = msg;
+                else r.messages.push(msg);
                 update();
               } else if (event.type === "message_update") {
                 const partial = event.message as Message | undefined;
@@ -107,6 +118,7 @@ export default function (pi: ExtensionAPI) {
         } catch (e) {
           r.stderr = String(e); r.exitCode = 1; r.status = "failed";
         } finally {
+          if (signal?.aborted) r.stopReason = "aborted";
           if (acquired) { active--; for (const wake of [...waiters]) wake(); }
           update();
         }

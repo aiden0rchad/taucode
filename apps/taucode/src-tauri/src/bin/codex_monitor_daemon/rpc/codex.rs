@@ -16,6 +16,17 @@ pub(super) async fn try_handle(
     params: &Value,
 ) -> Option<Result<Value, String>> {
     match method {
+        "create_side_chat" | "get_subagent_transcript" => {
+            let workspace = match parse_string(params, "workspaceId") {
+                Ok(value) => value, Err(err) => return Some(Err(err)),
+            };
+            let thread = match parse_string(params, "threadId") {
+                Ok(value) => value, Err(err) => return Some(Err(err)),
+            };
+            let rpc = if method == "create_side_chat" { "thread/sidechat" } else { "subagent/transcript" };
+            Some(codex_core::thread_feature_core(&state.sessions, workspace, rpc,
+                json!({"threadId":thread,"atItemId":params["atItemId"],"nodeId":params["nodeId"]})).await)
+        }
         "connector_request" => {
             let input = params["params"].clone();
             let changed = matches!(input["action"].as_str(), Some("setSecret" | "deleteSecret"));

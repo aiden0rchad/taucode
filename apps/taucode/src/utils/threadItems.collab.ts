@@ -371,7 +371,9 @@ export function parseCollabToolCallItem(
     collabSender: sender ?? undefined,
     collabReceiver: primaryReceiver ?? undefined,
     collabReceivers: receiverAgents.length > 0 ? receiverAgents : undefined,
-    collabStatuses: collabStatuses.length > 0 ? collabStatuses : undefined,
+    collabStatuses: collabStatuses.length > 0 ? collabStatuses.map(s => ({ ...s, model: s.model ?? (typeof item.model === "string" ? item.model : undefined) })) : undefined,
+    turnId: typeof item.turnId === "string" ? item.turnId : undefined,
+    agentsTree: Array.isArray(item.agentsTree) ? item.agentsTree as import("../types").AgentNode[] : undefined,
   };
 }
 

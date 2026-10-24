@@ -1216,3 +1216,9 @@ export const providerTestAndFetch = (id: string) => invoke<{ ok: boolean; latenc
 export function checkpointRequest(workspaceId: string, params: Record<string, unknown>): Promise<import("@/types").CheckpointResponse> {
   return invoke("checkpoint_request", { workspaceId, params });
 }
+export function getSubagentTranscript(workspaceId: string, threadId: string, nodeId: string) {
+  return invoke<{ messages: Record<string, unknown>[]; truncated: boolean }>("get_subagent_transcript", { workspaceId, threadId, nodeId });
+}
+export function createSideChat(workspaceId: string, threadId: string, atItemId?: string) {
+  return invoke<{ result: { thread: Record<string, unknown> & { id: string } } }>("create_side_chat", { workspaceId, threadId, atItemId });
+}

@@ -149,6 +149,7 @@ export function useThreadLinking({
       fallbackThreadId: string,
       item: Record<string, unknown>,
     ) => {
+      if (Array.isArray(item.agentsTree)) return;
       const itemType = asString(item?.type ?? "");
       const isCollabType =
         itemType === "collabToolCall" || itemType === "collabAgentToolCall" || itemType === "subAgentActivity";

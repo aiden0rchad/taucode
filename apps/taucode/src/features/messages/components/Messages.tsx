@@ -53,6 +53,9 @@ type MessagesProps = {
   onPlanSubmitChanges?: (changes: string) => void;
   onOpenThreadLink?: (threadId: string, workspaceId?: string | null) => void;
   onQuoteMessage?: (text: string) => void;
+  onSideChat?: (itemId: string) => void;
+  sideChatDisabledReason?: string;
+  onSendToMain?: (text: string) => void;
 };
 
 export const Messages = memo(function Messages({
@@ -79,7 +82,7 @@ export const Messages = memo(function Messages({
   onPlanAccept,
   onPlanSubmitChanges,
   onOpenThreadLink,
-  onQuoteMessage,
+  onQuoteMessage, onSideChat, sideChatDisabledReason, onSendToMain,
 }: MessagesProps) {
   const lastUserId = [...items].reverse().find((item) => item.kind === "message" && item.role === "user")?.id;
   const checkpointWarnings = useCheckpointWarnings(workspaceId, threadId, lastUserId);
@@ -169,6 +172,9 @@ export const Messages = memo(function Messages({
           item={item}
           isCopied={isCopied}
           rewindAction={item.role === "user" && workspaceId && threadId ? <><RewindAction workspaceId={workspaceId} threadId={threadId} userItemId={item.id} running={isThinking} />{checkpointWarnings[item.id] && <span role="status">{checkpointWarnings[item.id]}</span>}</> : undefined}
+          onSideChat={onSideChat}
+          sideChatDisabledReason={sideChatDisabledReason}
+          onSendToMain={onSendToMain}
           onCopy={handleCopyMessage}
           onQuote={onQuoteMessage ? handleQuoteMessage : undefined}
           codeBlockCopyUseModifier={codeBlockCopyUseModifier}

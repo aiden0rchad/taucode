@@ -1,4 +1,5 @@
 pub(super) mod config;
+pub(crate) mod agents;
 mod process;
 #[cfg(test)]
 mod tests;
@@ -35,7 +36,7 @@ struct Session {
     configuration: String,
 }
 pub(crate) struct PiEngine {
-    data: Option<PathBuf>,
+    pub(super) data: Option<PathBuf>,
     pub paths: Mutex<HashMap<String, String>>,
     sessions: Mutex<HashMap<String, Session>>,
     registry: Mutex<HashMap<String, (Vec<ProviderEntry>, AgentPolicy)>>,
@@ -118,7 +119,7 @@ impl PiEngine {
             session.configuration.clear();
         }
     }
-    fn emit(&self, workspace: &str, event: Value) {
+    pub(super) fn emit(&self, workspace: &str, event: Value) {
         let _ = self.events.send(event.clone());
         (self.sink)(workspace, event);
     }
@@ -538,6 +539,37 @@ impl PiEngine {
             .get_mut(id)
             .filter(|s| s.workspace == workspace)
             .ok_or("Unknown pi thread")?;
+        if method == "subagent/transcript" {
+            let node = params["nodeId"].as_str().ok_or("Missing node ID")?;
+            let transcript = if let Some(p) = &s.process {
+                p.translator.lock().await.transcripts.get(node).cloned()
+            } else { None };
+            let transcript = transcript.or_else(|| read_session(&s.file, &registry).ok()
+                .and_then(|(_, t)| t.transcripts.get(node).cloned()))
+                .ok_or("Unknown subagent node")?;
+            // Session files are raw. Apply the same credential redaction used by RPC.
+            let mut secrets = Vec::new();
+            for provider in registry.iter().filter(|p| p.enabled) {
+                if let Some(token) = providers::token(provider, self.keys.as_ref()).await? { secrets.push(token); }
+            }
+            if let Some(data) = &self.data {
+                let connectors = super::connectors::load(data, workspace, self.graph.as_ref())?;
+                secrets.extend(super::connectors::delivery(&connectors, self.keys.as_ref())?.secrets);
+            }
+            return serde_json::from_str(&process::redact(transcript.to_string(), &secrets)).map_err(|e|e.to_string());
+        }
+        if method == "thread/fork" && params.get("sideOf").is_some() {
+            let new_id = uuid::Uuid::new_v4().to_string();
+            let file = self.directory(workspace)?.join(format!("{new_id}.jsonl"));
+            fork_session(&s.file, &file, &new_id, &params["sideOf"], params["atItemId"].as_str())?;
+            let (mut cloned, _) = read_session(&file, &registry)?;
+            cloned["modelProvider"] = s.thread["modelProvider"].clone();
+            cloned["model"] = s.thread["model"].clone();
+            let home = self.data.as_ref().ok_or("Pi runtime is not configured")?.join("pi/agent").join(workspace);
+            config::write_access(&home, &new_id, Some("read-only"))?;
+            sessions.insert(new_id, Session { workspace: workspace.into(), thread: cloned.clone(), file, process: None, configuration: String::new() });
+            return Ok(json!({"result":thread_response(cloned, false, "read-only")}));
+        }
         if method == "thread/accessMode/set" || method == "turn/start" {
             let mode = params["accessMode"].as_str().or_else(|| {
                 match params["sandboxPolicy"]["type"].as_str() {
@@ -895,6 +927,41 @@ fn thread_response(thread: Value, resume: bool, mode: &str) -> Value {
     }
     response
 }
+fn fork_session(source: &Path, target: &Path, id: &str, side_of: &Value, at_item: Option<&str>) -> Result<(), String> {
+    let bytes = std::fs::read_to_string(source).map_err(|e|e.to_string())?;
+    let mut entries = Vec::<Value>::new();
+    for line in bytes.split_inclusive('\n').filter(|l| !l.trim().is_empty()) {
+        match serde_json::from_str(line) {
+            Ok(entry) => entries.push(entry),
+            Err(_) if !line.ends_with('\n') => break,
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    let parent = entries.first().and_then(|e|e["id"].as_str()).ok_or("Missing session header")?.to_owned();
+    if let Some(item) = at_item {
+        let mut count = 0;
+        let end = entries.iter().position(|entry| {
+            if entry["type"] != "message" || entry["message"]["role"] != "assistant" { return false; }
+            count += 1;
+            let stamp = entry["message"]["timestamp"].as_u64().unwrap_or(count);
+            item == format!("{parent}:message:{stamp}")
+        }).ok_or("This message is not yet saved in the pi session")?;
+        entries.truncate(end + 1);
+    }
+    entries[0]["id"] = json!(id);
+    entries[0]["sideOf"] = side_of.clone();
+    entries[0]["timestamp"] = json!(chrono::Utc::now().to_rfc3339());
+    let mut output = entries.iter().map(Value::to_string).collect::<Vec<_>>().join("\n");
+    output.push('\n');
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(target).map_err(|e|e.to_string())?;
+    if let Err(e) = file.write_all(output.as_bytes()) {
+        let _ = std::fs::remove_file(target);
+        return Err(e.to_string());
+    }
+    Ok(())
+}
+
 fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Translator), String> {
     let bytes = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
     let mut entries = vec![];
@@ -912,6 +979,10 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
     let id = header["id"].as_str().ok_or("Missing pi session ID")?;
     let cwd = header["cwd"].as_str().ok_or("Missing pi cwd")?;
     let mut thread = thread_value(id, cwd, file);
+    if header.get("sideOf").is_some() {
+        thread["sideOf"] = header["sideOf"].clone();
+        thread["forkedFromId"] = header["sideOf"]["threadId"].clone();
+    }
     if let Some(time) = header["timestamp"]
         .as_str()
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())

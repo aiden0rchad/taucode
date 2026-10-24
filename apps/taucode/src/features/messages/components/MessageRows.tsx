@@ -59,6 +59,9 @@ type WorkingIndicatorProps = {
 
 type MessageRowProps = MarkdownFileLinkProps & {
   rewindAction?: React.ReactNode;
+  onSideChat?: (itemId: string) => void;
+  sideChatDisabledReason?: string;
+  onSendToMain?: (text: string) => void;
   item: Extract<ConversationItem, { kind: "message" }>;
   isCopied: boolean;
   onCopy: (item: Extract<ConversationItem, { kind: "message" }>) => void;
@@ -371,6 +374,7 @@ export const WorkingIndicator = memo(function WorkingIndicator({
 
 export const MessageRow = memo(function MessageRow({
   rewindAction,
+  onSideChat, sideChatDisabledReason, onSendToMain,
   item,
   isCopied,
   onCopy,
@@ -478,6 +482,10 @@ export const MessageRow = memo(function MessageRow({
           />
         )}
         {rewindAction}
+        {item.role === "assistant" && (onSideChat || onSendToMain) && <div className="message-side-actions">
+          {onSideChat && <span title={sideChatDisabledReason}><button type="button" className="ghost" disabled={Boolean(sideChatDisabledReason)} onClick={() => onSideChat(item.id)}>Side chat</button></span>}
+          {onSendToMain && <button type="button" className="ghost" onClick={() => onSendToMain(item.text)}>Send to main</button>}
+        </div>}
         {onQuote && hasText && (
           <button
             type="button"
