@@ -139,6 +139,7 @@ impl EngineBackend for CodexEngine {
 }
 pub(crate) use super::pi::PiEngine;
 pub(crate) struct WorkspaceSession {
+    pub checkpoints: Option<Arc<super::checkpoints::Checkpoints>>,
     pub codex: Mutex<Option<Arc<CodexEngine>>>,
     configuration: Mutex<Option<String>>,
     reload_threads: Mutex<HashSet<String>>,
@@ -178,6 +179,7 @@ impl WorkspaceSession {
             configuration: Mutex::new(None),
             reload_threads: Mutex::new(HashSet::new()),
             factory: None,
+            checkpoints: None,
             pi: PiEngine::default(),
             owners: Mutex::new(HashMap::new()),
             thread_providers: Mutex::new(HashMap::new()),
@@ -202,6 +204,7 @@ impl WorkspaceSession {
             #[cfg(test)]
             test_backend: None,
             factory: Some(factory),
+            checkpoints: None,
             codegraph,
             codex_args,
             owner_workspace_id,
@@ -290,6 +293,7 @@ impl WorkspaceSession {
     }
     pub async fn register_workspace_with_path(&self, id: &str, path: Option<&str>) {
         if let Some(path) = path {
+            if let Some(checkpoints) = &self.checkpoints { checkpoints.register(id, path); }
             self.pi.paths.lock().await.insert(id.into(), path.into());
         }
         if let Some(c) = self.codex.lock().await.as_ref() {
@@ -301,7 +305,21 @@ impl WorkspaceSession {
             c.unregister_workspace(id).await;
         }
     }
-    pub async fn send_request_for_workspace(
+    pub async fn send_request_for_workspace(&self, workspace: &str, method: &str, params: Value) -> Result<Value, String> {
+        let thread = params["threadId"].as_str().unwrap_or("").to_owned();
+        if method == "turn/start" {
+            if let Some(checkpoints) = &self.checkpoints {
+                let engine = if self.pi.owns(workspace, &thread).await { "pi" } else { "codex" };
+                checkpoints.before(workspace, &thread, engine, &params).await?;
+            }
+        }
+        let result = self.request_inner(workspace, method, params).await;
+        if method == "turn/start" && (result.is_err() || result.as_ref().is_ok_and(|r| r.get("error").is_some())) {
+            if let Some(checkpoints) = &self.checkpoints { checkpoints.complete(workspace, &thread); }
+        }
+        result
+    }
+    async fn request_inner(
         &self,
         workspace: &str,
         method: &str,

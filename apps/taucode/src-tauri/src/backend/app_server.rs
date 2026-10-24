@@ -960,7 +960,6 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
     let providers = settings.providers.clone();
     let args = codex_args.clone();
     let graph = codegraph.clone();
-    let sink = event_sink.clone();
     let pi_cwd = entry.path.clone();
     let pi_home = codex_home
         .clone()
@@ -971,6 +970,10 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
         .and_then(Path::parent)
         .map(Path::to_path_buf)
         .ok_or("Missing taucode app data directory for pi")?;
+    let emit_sink = event_sink.clone();
+    let checkpoints = crate::shared::checkpoints::Checkpoints::new(pi_data.clone(), workspace_id.clone(), pi_cwd.clone(), Arc::new(move |event| emit_sink.emit_app_server_event(event)));
+    let event_sink = crate::shared::checkpoints::CheckpointSink { inner: event_sink, checkpoints: checkpoints.clone() };
+    let sink = event_sink.clone();
     let factory = Box::new(move || {
         let (mut entry, bin, args, home, version, sink, graph, mut settings) = (
             entry.clone(),
@@ -1008,6 +1011,7 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
         graph,
         workspace_id.clone(),
     );
+    session.checkpoints = Some(checkpoints);
     let pi_sink = sink.clone();
     session.pi = crate::shared::pi::PiEngine::new(
         pi_data,
@@ -1182,6 +1186,10 @@ async fn spawn_codex_engine<E: EventSink>(
             .await;
         }
 
+        for thread in session_clone.active_threads.lock().await.drain() {
+            let workspace = session_clone.thread_workspace.lock().await.get(&thread).cloned().unwrap_or_else(|| fallback_workspace_id.clone());
+            event_sink_clone.emit_app_server_event(AppServerEvent { workspace_id: workspace, message: json!({"method":"turn/completed","params":{"threadId":thread,"turn":{"status":"failed","error":{"message":"Engine process exited"}}}}) });
+        }
         // Ensure pending foreground requests cannot accumulate after process output ends.
         session_clone.pending.lock().await.clear();
         session_clone.request_context.lock().await.clear();

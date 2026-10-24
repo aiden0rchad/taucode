@@ -1,3 +1,4 @@
+import { openCheckpoints } from "@services/events";
 import { useCallback, type MouseEvent } from "react";
 import { Menu, MenuItem } from "@tauri-apps/api/menu";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
@@ -61,7 +62,8 @@ export function useSidebarMenus({
           }
         },
       });
-      const items = [renameItem, syncItem];
+      const checkpointsItem = await MenuItem.new({ text: "Checkpoints…", action: () => openCheckpoints({ workspaceId, threadId }) });
+      const items = [renameItem, syncItem, checkpointsItem];
       if (canPin) {
         const isPinned = isThreadPinned(workspaceId, threadId);
         items.push(

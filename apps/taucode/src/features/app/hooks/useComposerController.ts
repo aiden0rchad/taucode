@@ -197,5 +197,6 @@ export function useComposerController({
     handleEditQueued,
     handleDeleteQueued,
     clearDraftForThread,
+    restoreDraftForThread: (thread: string, text: string) => setComposerDraftsByThread((previous) => ({ ...previous, [thread]: text })),
   };
 }

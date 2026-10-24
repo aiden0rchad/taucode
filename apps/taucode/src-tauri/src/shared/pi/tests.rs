@@ -857,3 +857,26 @@ async fn disk_history_pages_turns_and_items_without_starting_pi() {
         .all(|s| s.process.is_none()));
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn rewind_tree_excludes_user_message_and_undo_retains_old_branch() {
+    let dir = std::env::temp_dir().join(format!("pi-rewind-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("session.jsonl");
+    let rows = [
+        json!({"type":"session","id":"thread","cwd":"/tmp","timestamp":"2026-10-23T00:00:00Z"}),
+        json!({"type":"message","id":"u1","parentId":null,"message":{"role":"user","timestamp":1,"content":[{"type":"text","text":"first"}]}}),
+        json!({"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","timestamp":2,"content":[{"type":"text","text":"answer"}]}}),
+        json!({"type":"message","id":"u2","parentId":"a1","message":{"role":"user","timestamp":3,"content":[{"type":"text","text":"second"}]}}),
+    ];
+    std::fs::write(&file, rows.iter().map(|v| format!("{v}\n")).collect::<String>()).unwrap();
+    let leaf = rewind_session(&file, "thread", Some("thread:user:3"), None).unwrap();
+    assert_eq!(leaf, "u2");
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns.len(), 1);
+    assert!(std::fs::read_to_string(&file).unwrap().contains("second"));
+    rewind_session(&file, "thread", None, Some(leaf)).unwrap();
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns.len(), 2);
+    rewind_session(&file, "thread", Some("thread:user:1"), None).unwrap();
+    assert!(read_session(&file, &[]).unwrap().1.turns.is_empty());
+    std::fs::remove_dir_all(dir).unwrap();
+}

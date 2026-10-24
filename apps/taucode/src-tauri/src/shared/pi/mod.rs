@@ -80,6 +80,28 @@ impl PiEngine {
             ..Self::default()
         }
     }
+    pub async fn is_running(&self, id: &str) -> bool {
+        let sessions = self.sessions.lock().await;
+        if let Some(process) = sessions.get(id).and_then(|s| s.process.as_ref()) {
+            return process.running.load(Ordering::SeqCst) || process.translator.lock().await.active;
+        }
+        false
+    }
+    pub async fn rewind(&self, workspace: &str, id: &str, user_item: Option<&str>, leaf: Option<Value>) -> Result<Value, String> {
+        // Load the session through the normal history path without sending a prompt.
+        self.request(workspace, "thread/read", json!({"threadId":id})).await?;
+        let mut sessions = self.sessions.lock().await;
+        let session = sessions.get_mut(id).filter(|s| s.workspace == workspace).ok_or("Unknown pi session")?;
+        if let Some(process) = &session.process {
+            let _operation = process.operation.lock().await;
+            if process.running.load(Ordering::SeqCst) || process.translator.lock().await.active { return Err("Finish or interrupt the pi turn before rewinding".into()); }
+            process.shutdown().await?;
+        }
+        let previous = rewind_session(&session.file, id, user_item, leaf)?;
+        session.process = None;
+        session.configuration.clear();
+        Ok(previous)
+    }
     pub async fn configure(
         &self,
         workspace: &str,
@@ -1015,4 +1037,37 @@ fn prompt_input(input: &Value) -> Result<(String, Vec<Value>), String> {
         }
     }
     Ok((texts.join("\n"), images))
+}
+
+// Appending a custom entry moves the active tree leaf while retaining every old
+// entry. Pi's session manager and read_session both follow the last entry's parent.
+fn rewind_session(file: &Path, thread: &str, user_item: Option<&str>, leaf: Option<Value>) -> Result<Value, String> {
+    use std::io::Write;
+    let bytes = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
+    let entries: Vec<Value> = bytes.lines().filter(|s| !s.is_empty()).map(serde_json::from_str).collect::<Result<_, _>>().map_err(|e| e.to_string())?;
+    let previous = entries.last().filter(|e| e["type"] != "session").map(|e| e["id"].clone()).unwrap_or(Value::Null);
+    let by_id: HashMap<_, _> = entries.iter().filter_map(|e| e["id"].as_str().map(|id| (id, e))).collect();
+    let parent = if let Some(leaf) = leaf {
+        if !leaf.is_null() && !leaf.as_str().is_some_and(|id| by_id.contains_key(id)) { return Err("Unknown pi undo leaf".into()); }
+        leaf
+    } else {
+        let user_item = user_item.ok_or("Missing pi user item")?;
+        let mut next = previous.as_str();
+        let mut seen = std::collections::HashSet::new();
+        let mut parent = None;
+        while let Some(id) = next {
+            if !seen.insert(id) { return Err("Cyclic pi session history".into()); }
+            let entry = by_id.get(id).ok_or("Missing pi session entry")?;
+            if entry["type"] == "message" && entry["message"]["role"] == "user" && format!("{}:user:{}", thread, entry["message"]["timestamp"]) == user_item {
+                parent = Some(entry["parentId"].clone()); break;
+            }
+            next = entry["parentId"].as_str();
+        }
+        parent.ok_or("Message is not on the active pi branch")?
+    };
+    let marker = json!({"type":"custom","customType":"taucode-rewind","id":uuid::Uuid::new_v4().to_string(),"parentId":parent,"timestamp":chrono::Utc::now().to_rfc3339(),"data":{}});
+    let mut output = std::fs::OpenOptions::new().append(true).open(file).map_err(|e| e.to_string())?;
+    writeln!(output, "{}{}", if bytes.ends_with('\n') { "" } else { "\n" }, marker).map_err(|e| e.to_string())?;
+    output.sync_all().map_err(|e| e.to_string())?;
+    Ok(previous)
 }

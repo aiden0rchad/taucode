@@ -58,6 +58,7 @@ type WorkingIndicatorProps = {
 };
 
 type MessageRowProps = MarkdownFileLinkProps & {
+  rewindAction?: React.ReactNode;
   item: Extract<ConversationItem, { kind: "message" }>;
   isCopied: boolean;
   onCopy: (item: Extract<ConversationItem, { kind: "message" }>) => void;
@@ -369,6 +370,7 @@ export const WorkingIndicator = memo(function WorkingIndicator({
 });
 
 export const MessageRow = memo(function MessageRow({
+  rewindAction,
   item,
   isCopied,
   onCopy,
@@ -475,6 +477,7 @@ export const MessageRow = memo(function MessageRow({
             onClose={() => setLightboxIndex(null)}
           />
         )}
+        {rewindAction}
         {onQuote && hasText && (
           <button
             type="button"

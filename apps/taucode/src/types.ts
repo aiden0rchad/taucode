@@ -729,3 +729,23 @@ export type DictationTranscript = {
   id: string;
   text: string;
 };
+
+export type Checkpoint = {
+  id: string;
+  commit: string | null;
+  metadata: { threadId: string; turnId: string; userItemId: string; kind: "before" | "after" | "pre-rewind"; timestamp: string; engine: string; preview?: string };
+  skipped: string[];
+  warning: string | null;
+  filesChanged: number;
+};
+export type CheckpointChange = { path: string; status: "modified" | "added since" | "deleted since"; diff: string };
+export type CheckpointResponse = {
+  checkpoints?: Checkpoint[];
+  changes?: CheckpointChange[];
+  conversation?: boolean;
+  engine?: string;
+  undoAvailable?: boolean;
+  conversationChanged?: boolean;
+  text?: string;
+  error?: string | null;
+};
