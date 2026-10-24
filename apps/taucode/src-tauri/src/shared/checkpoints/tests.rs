@@ -213,6 +213,36 @@ fn codex_rollback_fixture() {
 }
 
 #[tokio::test]
+async fn two_turns_bind_before_and_after_for_each_engine() {
+    let f = Fixture::new();
+    f.write("file", "before");
+    let checkpoints = Checkpoints::with_limits(f.data.clone(), "workspace".into(), f.root.to_string_lossy().into(), Arc::new(|_| {}), CheckpointLimits::testing());
+    for engine in ["pi", "codex", "claude"] {
+        for index in 1..=2 {
+            checkpoints.before("workspace", engine, engine, &json!({"input":[{"text":"change"}]})).await.unwrap();
+            let turn = format!("{engine}-turn-{index}");
+            let user = format!("{engine}-user-{index}");
+            checkpoints.observe(&AppServerEvent { workspace_id: "workspace".into(), message: json!({"method":"turn/started","params":{"threadId":engine,"turn":{"id":turn}}}) });
+            checkpoints.observe(&AppServerEvent { workspace_id: "workspace".into(), message: json!({"method":"item/started","params":{"threadId":engine,"turnId":turn,"item":{"type":"userMessage","id":user}}}) }).unwrap().await.unwrap();
+            let rows = f.repo.list(engine).unwrap();
+            let before = rows.last().unwrap();
+            assert_eq!(before.metadata["userItemId"], user);
+            assert_eq!(before.metadata["turnId"], turn);
+            checkpoints.observe(&AppServerEvent { workspace_id: "workspace".into(), message: json!({"method":"turn/completed","params":{"threadId":engine,"turn":{"id":turn}}}) }).unwrap().await.unwrap();
+        }
+        let rows = f.repo.list(engine).unwrap();
+        assert_eq!(rows.len(), 4);
+        for pair in rows.chunks_exact(2) {
+            assert_eq!(pair[0].metadata["userItemId"], pair[1].metadata["userItemId"]);
+            assert_eq!(pair[0].metadata["turnId"], pair[1].metadata["turnId"]);
+        }
+        assert_ne!(rows[0].metadata["userItemId"], rows[2].metadata["userItemId"]);
+        assert_ne!(rows[0].metadata["turnId"], rows[2].metadata["turnId"]);
+        assert_eq!(rows.iter().find(|r| r.metadata["kind"] == "before" && r.metadata["userItemId"] == rows[2].metadata["userItemId"]).unwrap().id, rows[2].id);
+    }
+}
+
+#[tokio::test]
 async fn lifecycle_binds_engine_ids_and_snapshots_after_completion() {
     let f = Fixture::new();
     f.write("file", "before");

@@ -22,6 +22,19 @@ beforeEach(() => {
 afterEach(cleanup);
 const open = (message = true) => act(() => openCheckpoints({ workspaceId: "workspace", threadId: "thread", ...(message ? { userItemId: "user" } : {}) }));
 describe("checkpoints", () => {
+  it("selects the second turn's before checkpoint by user item", async () => {
+    const rows = ["before", "after", "before", "after"].map((kind, index) => ({
+      ...row, id: `checkpoint-${index + 1}`,
+      metadata: { ...row.metadata, kind, turnId: `turn-${Math.floor(index / 2) + 1}`, userItemId: `user-${Math.floor(index / 2) + 1}` },
+    }));
+    const original = vi.mocked(checkpointRequest).getMockImplementation()!;
+    vi.mocked(checkpointRequest).mockImplementation((w, p) => p.action === "list" ? Promise.resolve({ checkpoints: rows as Checkpoint[] }) : original(w, p));
+    render(<Checkpoints running={{}} onChanged={changed} />);
+    act(() => openCheckpoints({ workspaceId: "workspace", threadId: "thread", userItemId: "user-2" }));
+    await screen.findByText("Confirm rewind");
+    fireEvent.click(screen.getByText("Confirm rewind"));
+    await waitFor(() => expect(checkpointRequest).toHaveBeenCalledWith("workspace", expect.objectContaining({ action: "rewind", checkpointId: "checkpoint-3" })));
+  });
   it("selects paths, warns about deletion, expands diffs, confirms and undoes", async () => {
     render(<Checkpoints running={{}} onChanged={changed} />); open();
     await screen.findByText("This file will be deleted.");

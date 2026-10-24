@@ -459,6 +459,8 @@ fn managed_policy_and_access_files_update_and_preserve_session_rules() {
     config::write_access(&home, "thread", Some("read-only")).unwrap();
     assert_eq!(read(&file)["sessionAllow"].as_array().unwrap().len(), 1);
     assert_eq!(read(&file)["accessMode"], "read-only");
+    config::write_access(&home, "thread", Some("current")).unwrap();
+    assert_eq!(read(&file)["accessMode"], "read-only");
     assert!(config::write_access(&home, "../escape", None).is_err());
     assert!(config::write_access(&home, "thread", Some("invalid")).is_err());
     let workspace: crate::types::WorkspaceEntry = serde_json::from_value(json!({"id":"workspace","name":"Project","path":dir,"settings":{"agentPolicy":{"subagents":{"maxConcurrent":7}}}})).unwrap();
@@ -1096,5 +1098,93 @@ async fn real_pi_work_starts_offline_with_work_policy_and_skills() {
     let access: Value = serde_json::from_slice(&std::fs::read(dir.join("data/pi/agent/workspace/taucode/threads").join(format!("{id}.json"))).unwrap()).unwrap();
     assert_eq!(access["kind"], "work");
     engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn side_chat_current_blocks_mutations_and_two_turn_checkpoints_bind_real_items() {
+    use crate::backend::events::AppServerEvent;
+    use crate::shared::{checkpoints::{Checkpoints, CheckpointLimits}, engines::WorkspaceSession};
+    let dir = temp();
+    let root = dir.join("workspace");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("file"), "before").unwrap();
+    let checkpoints = Checkpoints::with_limits(dir.clone(), "workspace".into(), root.to_string_lossy().into(),
+        Arc::new(|_| {}), CheckpointLimits::testing());
+    let observer = checkpoints.clone();
+    let (tx, mut completions) = tokio::sync::mpsc::unbounded_channel();
+    let providers = vec![serde_json::from_value(json!({"id":"first","name":"First","kind":"ollama","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"fake","enabled":true}]})).unwrap()];
+    let mut session = WorkspaceSession::lazy(Box::new(|| Box::pin(async { Err("Codex must not be used".into()) })),
+        providers, AgentPolicy::default(), None, None, "workspace".into());
+    session.checkpoints = Some(checkpoints.clone());
+    session.pi = PiEngine::new(dir.clone(), "workspace".into(), root.to_string_lossy().into(), None,
+        Arc::new(move |workspace, message| {
+            let complete = message["method"] == "turn/completed";
+            if let Some(handle) = observer.observe(&AppServerEvent { workspace_id: workspace.into(), message }) {
+                if complete { tx.send(handle).unwrap(); }
+            }
+        }));
+    session.pi.fake = true;
+    session.pi.keys = Arc::new(Keys);
+    let session = Arc::new(session);
+    let core_sessions = Mutex::new(HashMap::from([("workspace".into(), session.clone())]));
+    let workspaces = Mutex::new(HashMap::from([("workspace".into(), serde_json::from_value(json!({"id":"workspace","name":"Workspace","path":root,"settings":{}})).unwrap())]));
+    let parent = session.send_request_for_workspace("workspace", "thread/start", json!({"engine":"pi","model":"first/fake"})).await.unwrap();
+    let parent = parent["result"]["thread"]["id"].as_str().unwrap();
+    let side = session.send_request_for_workspace("workspace", "thread/sidechat", json!({"threadId":parent})).await.unwrap();
+    let id = side["result"]["thread"]["id"].as_str().unwrap();
+    let home = dir.join("pi/agent/workspace");
+    let access = home.join("taucode/threads").join(format!("{id}.json"));
+    for (text, mode) in [("first", Some("current".into())), ("second", None)] {
+        crate::shared::codex_core::send_user_message_core(&core_sessions, &workspaces, "workspace".into(), id.into(), text.into(), None, None, None, mode, None, None).await.unwrap();
+        session.send_request_for_workspace("workspace", "turn/interrupt", json!({"threadId":id})).await.unwrap();
+        completions.recv().await.unwrap().await.unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&std::fs::read(&access).unwrap()).unwrap()["accessMode"], "read-only");
+        assert_eq!(session.pi.sessions.lock().await[id].process.as_ref().unwrap().translator.lock().await.access_mode, "read-only");
+    }
+    let gate = Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/pi/extensions/taucode-gate.ts");
+    let output = std::process::Command::new("node").args(["--input-type=module", "-e", r#"
+        import assert from 'node:assert/strict';
+        import { pathToFileURL } from 'node:url';
+        const { default: gate } = await import(pathToFileURL(process.argv[1]).href);
+        let handler;
+        gate({ on: (name, fn) => { if (name === 'tool_call') handler = fn; } });
+        const ctx = { cwd: process.argv[2], hasUI: true, ui: { select: () => assert.fail('read-only must not ask for approval') } };
+        for (const [toolName, input] of [
+            ['write', { path: 'file', content: 'changed' }],
+            ['edit', { path: 'file', oldText: 'before', newText: 'changed' }],
+            ['bash', { command: 'touch forbidden' }],
+        ]) assert.equal((await handler({ toolName, toolCallId: toolName, input }, ctx)).block, true);
+    "#]).arg(gate).arg(&root).env("PI_CODING_AGENT_DIR", &home).env("TAUCODE_SESSION_KEY", id)
+        .env_remove("TAUCODE_SUBAGENT_DEPTH").output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let list = checkpoints.request(&session, "workspace", json!({"threadId":id,"action":"list"})).await.unwrap();
+    let rows = list["checkpoints"].as_array().unwrap();
+    assert_eq!(rows.len(), 4);
+    let history = session.send_request_for_workspace("workspace", "thread/read", json!({"threadId":id})).await.unwrap();
+    for (index, pair) in rows.chunks_exact(2).enumerate() {
+        let turn = &history["result"]["thread"]["turns"][index];
+        let user = turn["items"].as_array().unwrap().iter().find(|i| i["type"] == "userMessage").unwrap();
+        for row in pair {
+            assert_eq!(row["metadata"]["turnId"], turn["id"]);
+            assert_eq!(row["metadata"]["userItemId"], user["id"]);
+        }
+    }
+    assert_ne!(rows[0]["metadata"]["userItemId"], rows[2]["metadata"]["userItemId"]);
+    assert_ne!(rows[0]["metadata"]["turnId"], rows[2]["metadata"]["turnId"]);
+    std::fs::write(root.join("file"), "after").unwrap();
+    let rewind = checkpoints.request(&session, "workspace", json!({"threadId":id,"action":"rewind","checkpointId":rows[2]["id"],"mode":"files","paths":["file"]})).await.unwrap();
+    assert_eq!(rewind["conversationChanged"], false);
+    assert_eq!(std::fs::read_to_string(root.join("file")).unwrap(), "before");
+    let undo = checkpoints.request(&session, "workspace", json!({"threadId":id,"action":"undo"})).await.unwrap();
+    assert_eq!(undo["conversationChanged"], false);
+    assert_eq!(std::fs::read_to_string(root.join("file")).unwrap(), "after");
+    for mode in ["ask", "full-access"] {
+        crate::shared::codex_core::send_user_message_core(&core_sessions, &workspaces, "workspace".into(), id.into(), "override".into(), None, None, None, Some(mode.into()), None, None).await.unwrap();
+        session.send_request_for_workspace("workspace", "turn/interrupt", json!({"threadId":id})).await.unwrap();
+        completions.recv().await.unwrap().await.unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&std::fs::read(&access).unwrap()).unwrap()["accessMode"], mode);
+    }
+    session.shutdown().await;
     std::fs::remove_dir_all(dir).unwrap();
 }

@@ -406,9 +406,42 @@ impl WorkspaceSession {
             }
             return Ok(response);
         }
-        // Codex access is sent with the next turn, as before. Pi re-reads it live.
-        if method == "thread/accessMode/set" {
-            return Ok(json!({"result":{}}));
+        if matches!(method, "turn/start" | "thread/accessMode/set") {
+            let id = thread_id.as_deref().ok_or("Missing thread ID")?;
+            let path = self.pi.data.as_ref().map(|_| super::sidechats::metadata_path(self, workspace, id)).transpose()?;
+            let mut metadata = match &path {
+                Some(path) => crate::storage::read_thread_metadata(path)?,
+                None => json!({}),
+            };
+            if !metadata.is_object() { return Err("Invalid thread metadata".into()); }
+            if params.get("accessMode").is_some_and(|v| !v.is_string())
+                || method == "thread/accessMode/set" && params.get("accessMode").is_none()
+            { return Err("Invalid access mode".into()); }
+            let requested = params["accessMode"].as_str().or_else(|| match params["sandboxPolicy"]["type"].as_str() {
+                Some("readOnly") => Some("read-only"),
+                Some("workspaceWrite") => Some("ask"),
+                Some("dangerFullAccess") => Some("full-access"),
+                _ => None,
+            }).unwrap_or("current");
+            let mode = if requested == "current" {
+                metadata.get("accessMode").map(|v| v.as_str().ok_or("Invalid saved access mode")).transpose()?
+                    .unwrap_or(if metadata.get("sideOf").is_some() { "read-only" } else { "ask" })
+            } else { requested }.to_owned();
+            if !matches!(mode.as_str(), "read-only" | "ask" | "full-access") {
+                return Err("Invalid access mode".into());
+            }
+            metadata["accessMode"] = json!(mode);
+            if let Some(path) = path { crate::storage::write_thread_metadata(&path, &metadata)?; }
+            else if method == "thread/accessMode/set" { return Err("Thread metadata storage unavailable".into()); }
+            if method == "thread/accessMode/set" { return Ok(json!({"result":{}})); }
+            params.as_object_mut().unwrap().remove("accessMode");
+            params["approvalPolicy"] = json!(if mode == "ask" { "on-request" } else { "never" });
+            params["sandboxPolicy"] = match mode.as_str() {
+                "read-only" => json!({"type":"readOnly"}),
+                "full-access" => json!({"type":"dangerFullAccess"}),
+                _ if params["sandboxPolicy"]["type"] == "workspaceWrite" => params["sandboxPolicy"].clone(),
+                _ => json!({"type":"workspaceWrite","writableRoots":params["cwd"].as_str().into_iter().collect::<Vec<_>>(),"networkAccess":true}),
+            };
         }
         if method == "turn/start" && params.get("model").and_then(Value::as_str).is_none() {
             let id = thread_id.as_deref().ok_or("Missing thread ID")?;
@@ -786,6 +819,80 @@ pub(crate) fn prepare_codex(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn codex_side_chat_access_survives_current_omission_overrides_and_restart() {
+        use crate::shared::codex_core::{send_user_message_core, set_thread_access_mode_core};
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let data = std::env::temp_dir().join(format!("codex-access-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&data).unwrap();
+        let provider: ProviderEntry = serde_json::from_value(json!({"id":"test","name":"Test","kind":"openai","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"model","enabled":true}]})).unwrap();
+        let backend = make_session().codex_backend().await.unwrap();
+        let session = || {
+            let mut session = WorkspaceSession::new(backend.clone(), vec![provider.clone()], AgentPolicy::default());
+            session.pi = PiEngine::new(data.clone(), "fixture".into(), data.to_string_lossy().into(), None, Arc::new(|_, _| {}));
+            Arc::new(session)
+        };
+        let stdout = backend.child.lock().await.stdout.take().unwrap();
+        let responder = backend.clone();
+        let server = tokio::spawn(async move {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Some(line) = lines.next_line().await.unwrap() {
+                let request: Value = serde_json::from_str(&line).unwrap();
+                let result = match request["method"].as_str().unwrap() {
+                    "thread/fork" => {
+                        assert_eq!(request["params"]["sandbox"], "read-only");
+                        json!({"thread":{"id":"side","modelProvider":"test"}})
+                    }
+                    "thread/read" => json!({"thread":{"id":request["params"]["threadId"],"modelProvider":"test"}}),
+                    "turn/start" => {
+                        assert!(request["params"].get("accessMode").is_none());
+                        json!({"seen":request["params"]})
+                    }
+                    method => panic!("Unexpected Codex request: {method}"),
+                };
+                responder.pending.lock().await.remove(&request["id"].as_u64().unwrap()).unwrap()
+                    .send(json!({"result":result})).unwrap();
+            }
+        });
+        let first = session();
+        first.send_request_for_workspace("fixture", "thread/accessMode/set", json!({"threadId":"parent","accessMode":"full-access"})).await.unwrap();
+        first.send_request_for_workspace("fixture", "thread/sidechat", json!({"threadId":"parent"})).await.unwrap();
+        let path = super::super::sidechats::metadata_path(&first, "fixture", "side").unwrap();
+        assert_eq!(crate::storage::read_thread_metadata(&path).unwrap()["accessMode"], "read-only");
+        let workspaces = Mutex::new(HashMap::from([("fixture".into(), serde_json::from_value(json!({"id":"fixture","name":"Fixture","path":data,"settings":{}})).unwrap())]));
+        let sessions = Mutex::new(HashMap::from([("fixture".into(), session())]));
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            set_thread_access_mode_core(&sessions, "fixture".into(), "side".into(), "current".into()).await.unwrap();
+            for (requested, expected) in [(Some("current"), "readOnly"), (None, "readOnly"), (Some("ask"), "workspaceWrite"), (Some("current"), "workspaceWrite"), (Some("full-access"), "dangerFullAccess"), (None, "dangerFullAccess")] {
+                let response = send_user_message_core(&sessions, &workspaces, "fixture".into(), "side".into(), "hello".into(), None, None, None, requested.map(str::to_owned), None, None).await.unwrap();
+                let params = &response["result"]["seen"];
+                assert_eq!(params["sandboxPolicy"]["type"], expected);
+                assert_eq!(params["approvalPolicy"], if expected == "workspaceWrite" { "on-request" } else { "never" });
+                if expected == "workspaceWrite" { assert_eq!(params["sandboxPolicy"]["writableRoots"], json!([data])); }
+            }
+            for (mode, expected) in [("read-only", "readOnly"), ("ask", "workspaceWrite"), ("full-access", "dangerFullAccess")] {
+                set_thread_access_mode_core(&sessions, "fixture".into(), "side".into(), mode.into()).await.unwrap();
+                sessions.lock().await.insert("fixture".into(), session());
+                let response = send_user_message_core(&sessions, &workspaces, "fixture".into(), "side".into(), "hello".into(), None, None, None, Some("current".into()), None, None).await.unwrap();
+                assert_eq!(response["result"]["seen"]["sandboxPolicy"]["type"], expected);
+                assert_eq!(crate::storage::read_thread_metadata(&path).unwrap()["accessMode"], mode);
+            }
+            set_thread_access_mode_core(&sessions, "fixture".into(), "side".into(), "read-only".into()).await.unwrap();
+            let response = first.send_request_for_workspace("fixture", "turn/start", json!({"threadId":"side","accessMode":"current","sandboxPolicy":{"type":"dangerFullAccess"}})).await.unwrap();
+            assert_eq!(response["result"]["seen"]["sandboxPolicy"]["type"], "readOnly");
+            let response = first.send_request_for_workspace("fixture", "turn/start", json!({"threadId":"side"})).await.unwrap();
+            assert_eq!(response["result"]["seen"]["sandboxPolicy"]["type"], "readOnly");
+            assert!(send_user_message_core(&sessions, &workspaces, "fixture".into(), "side".into(), "hello".into(), None, None, None, Some("invalid".into()), None, None).await.is_err());
+        }).await.unwrap();
+        let saved = crate::storage::read_thread_metadata(&path).unwrap();
+        assert_eq!(saved["accessMode"], "read-only");
+        assert_eq!(saved["sideOf"]["threadId"], "parent");
+        assert_eq!(crate::storage::read_thread_metadata(&super::super::sidechats::metadata_path(&first, "fixture", "parent").unwrap()).unwrap()["accessMode"], "full-access");
+        backend.child.lock().await.kill().await.unwrap();
+        server.await.unwrap();
+        std::fs::remove_dir_all(data).unwrap();
+    }
 
     #[test]
     fn native_collab_nodes_map_to_real_child_threads() {

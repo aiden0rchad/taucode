@@ -56,6 +56,15 @@ for line in sys.stdin:
         if text == "auth":
             send({"id": request["id"], "error": {"code": -32000, "message": "Authentication required: sign in"}})
             continue
+        if text in ("beta-error", "chunk-error", "result-error"):
+            detail = "API Error: 400 Routing and Anthropic beta override headers are disabled for Claude. fixture-api-secret"
+            if text != "beta-error":
+                update(session, "agent_message_chunk", content={"type": "text", "text": detail})
+            if text == "result-error":
+                response(request, {"stopReason": "error"})
+            else:
+                send({"id": request["id"], "error": {"code": -32603, "message": "Internal error: " + detail if text == "beta-error" else "Internal error", "data": {"errorKind": "provider_error"}}})
+            continue
         if text == "wait":
             pending[session] = request
             continue

@@ -45,6 +45,7 @@ def emit(value):
 
 
 held = None
+prompt_serial = 0
 for line in sys.stdin:
     request = json.loads(line)
     record(request)
@@ -75,6 +76,10 @@ for line in sys.stdin:
     if kind == "prompt":
         emit(response)
         emit({"type": "agent_start"})
+        prompt_serial += 1
+        message = {"role": "user", "timestamp": prompt_serial, "content": request["message"]}
+        emit({"type": "message_start", "message": message})
+        emit({"type": "message_end", "message": message})
         emit({"type": "message_start", "message": {"role": "assistant"}})
         emit({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": "one\u2028two\u2029three"}})
         if request.get("message") == "crash":

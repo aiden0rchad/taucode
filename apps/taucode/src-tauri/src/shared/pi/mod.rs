@@ -696,9 +696,11 @@ impl PiEngine {
                 .join(if self.chat { "chats/agent" } else { "pi/agent" })
                 .join(if self.chat { id } else { workspace });
             config::write_access(&home, id, mode)?;
-            if let (Some(p), Some(mode)) = (&s.process, mode) {
-                p.translator.lock().await.access_mode =
-                    if mode == "current" { "ask" } else { mode }.into();
+            if let Some(p) = &s.process {
+                let access: Value = serde_json::from_slice(&std::fs::read(
+                    home.join("taucode/threads").join(format!("{id}.json")),
+                ).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+                p.translator.lock().await.access_mode = access["accessMode"].as_str().unwrap_or("ask").into();
             }
             if method == "thread/accessMode/set" {
                 return Ok(json!({"result":{}}));

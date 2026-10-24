@@ -18,11 +18,28 @@ use tokio::{
 
 pub(super) const AUTH_ERROR: &str = "Claude Code rejected the API key (no claude.ai login is used)";
 type Handler = Arc<dyn Fn(Value) -> BoxFuture<'static, Option<Value>> + Send + Sync>;
-type Response = oneshot::Receiver<Result<Value, String>>;
+#[derive(Clone, Debug)]
+pub(super) struct RpcError {
+    pub message: String,
+    pub error_kind: Option<Value>,
+}
+impl From<String> for RpcError {
+    fn from(message: String) -> Self {
+        Self { message, error_kind: None }
+    }
+}
+impl std::fmt::Display for RpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)?;
+        if let Some(kind) = &self.error_kind { write!(f, " (errorKind: {kind})")?; }
+        Ok(())
+    }
+}
+type Response = oneshot::Receiver<Result<Value, RpcError>>;
 pub(super) struct Client {
     child: Mutex<Child>,
     stdin: Mutex<Option<ChildStdin>>,
-    pending: Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>,
+    pending: Mutex<HashMap<u64, oneshot::Sender<Result<Value, RpcError>>>>,
     next: AtomicU64,
     pub alive: AtomicBool,
     pub running: AtomicUsize,
@@ -109,14 +126,14 @@ impl Client {
                 } else if let Some(id) = message["id"].as_u64() {
                     if let Some(sender) = reader.pending.lock().await.remove(&id) {
                         let result = if message.get("error").is_some() {
-                            Err(if message["error"]["code"] == -32000 {
+                            Err(RpcError { message: if message["error"]["code"] == -32000 {
                                 AUTH_ERROR.into()
                             } else {
                                 message["error"]["message"]
                                     .as_str()
                                     .unwrap_or("ACP request failed")
                                     .to_string()
-                            })
+                            }, error_kind: message["error"]["data"].get("errorKind").cloned() })
                         } else {
                             Ok(message["result"].clone())
                         };
@@ -126,7 +143,7 @@ impl Client {
             };
             reader.alive.store(false, Ordering::SeqCst);
             for (_, sender) in reader.pending.lock().await.drain() {
-                let _ = sender.send(Err(error.clone()));
+                let _ = sender.send(Err(error.clone().into()));
             }
             handler(json!({"method":"acp/disconnected","params":{"message":error}})).await;
         });
@@ -191,10 +208,10 @@ impl Client {
         let (id, rx) = self.begin(method, params).await?;
         // Prompts can wait indefinitely for the user's approval; other RPCs are bounded.
         if method == "session/prompt" {
-            return rx.await.map_err(|_| "ACP response channel closed")?;
+            return rx.await.map_err(|_| "ACP response channel closed")?.map_err(|e| e.to_string());
         }
         match tokio::time::timeout(Duration::from_secs(120), rx).await {
-            Ok(result) => result.map_err(|_| "ACP response channel closed")?,
+            Ok(result) => result.map_err(|_| "ACP response channel closed")?.map_err(|e| e.to_string()),
             Err(_) => {
                 self.pending.lock().await.remove(&id);
                 Err(format!("ACP {method} timed out"))

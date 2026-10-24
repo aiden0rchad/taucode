@@ -119,6 +119,26 @@ impl Translator {
         out.push(self.event("thread/status/changed", json!({"status":{"type":"idle"}})));
         out
     }
+    pub fn fail_prompt(&mut self, mut error: super::client::RpcError) -> Vec<Value> {
+        if let Some(items) = self.turns.last().and_then(|t| t["items"].as_array()) {
+            for text in items.iter().filter(|i| i["type"] == "agentMessage")
+                .filter_map(|i| i["text"].as_str()).filter(|s| s.starts_with("API Error:"))
+            {
+                if !error.message.contains(text) {
+                    error.message.push('\n');
+                    error.message.push_str(text);
+                }
+            }
+        }
+        let mut events = self.finish("error", Some(&error.message));
+        if let Some(kind) = error.error_kind {
+            if let Some(turn) = self.turns.last_mut() { turn["error"]["errorKind"] = kind.clone(); }
+            for event in events.iter_mut().filter(|e| e["method"] == "turn/completed") {
+                event["params"]["turn"]["error"]["errorKind"] = kind.clone();
+            }
+        }
+        events
+    }
     pub fn update(&mut self, update: &Value) -> Vec<Value> {
         let kind = update["sessionUpdate"].as_str().unwrap_or("");
         let mut out = vec![];

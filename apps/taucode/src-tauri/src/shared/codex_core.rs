@@ -619,30 +619,13 @@ pub(crate) async fn send_user_message_core(
     let session = get_session_clone(sessions, &workspace_id).await?;
     let workspace_path = resolve_workspace_path_core(workspaces, &workspace_id).await?;
     let access_mode = access_mode.unwrap_or_else(|| "current".to_string());
-    let sandbox_policy = match access_mode.as_str() {
-        "full-access" => json!({ "type": "dangerFullAccess" }),
-        "read-only" => json!({ "type": "readOnly" }),
-        _ => json!({
-            "type": "workspaceWrite",
-            "writableRoots": [workspace_path.clone()],
-            "networkAccess": true
-        }),
-    };
-
-    let approval_policy = if access_mode == "full-access" {
-        "never"
-    } else {
-        "on-request"
-    };
-
     let input = build_turn_input_items(text, images)?;
 
     let mut params = Map::new();
     params.insert("threadId".to_string(), json!(thread_id));
     params.insert("input".to_string(), json!(input));
     params.insert("cwd".to_string(), json!(workspace_path));
-    params.insert("approvalPolicy".to_string(), json!(approval_policy));
-    params.insert("sandboxPolicy".to_string(), json!(sandbox_policy));
+    params.insert("accessMode".to_string(), json!(access_mode));
     params.insert("model".to_string(), json!(model));
     params.insert("effort".to_string(), json!(effort));
     insert_optional_nullable_string(&mut params, "serviceTier", service_tier);

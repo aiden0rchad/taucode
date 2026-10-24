@@ -499,7 +499,8 @@ impl ClaudeAcpEngine {
         Ok(())
     }
     async fn set_mode(&self, id: &str, client: &Client, mode: &str) -> Result<(), String> {
-        let mode = if mode == "current" { "ask" } else { mode };
+        let current = self.threads.lock().await.get(id).ok_or("Unknown Claude thread")?.mode.clone();
+        let mode = if mode == "current" { &current } else { mode };
         if !matches!(mode, "ask" | "read-only" | "full-access") {
             return Err("Invalid access mode".into());
         }
@@ -871,8 +872,8 @@ impl ClaudeAcpEngine {
             let result = match response {
                 Ok((_, rx)) => rx
                     .await
-                    .unwrap_or_else(|_| Err("ACP response channel closed".into())),
-                Err(e) => Err(e),
+                    .unwrap_or_else(|_| Err("ACP response channel closed".to_string().into())),
+                Err(e) => Err(e.into()),
             };
             let emit = |event: Value| {
                 let _ = events.send(event.clone());
@@ -881,10 +882,11 @@ impl ClaudeAcpEngine {
             let mut threads = threads.lock().await;
             if let Some(t) = threads.get_mut(&id) {
                 let updates = match result {
+                    Ok(v) if v["stopReason"] == "error" => t.history.fail_prompt("ACP prompt failed".to_string().into()),
                     Ok(v) => t
                         .history
                         .finish(v["stopReason"].as_str().unwrap_or("end_turn"), None),
-                    Err(e) => t.history.finish("error", Some(&e)),
+                    Err(e) => t.history.fail_prompt(e),
                 };
                 if let Err(e) = t.save() {
                     emit(t.history.event("error", json!({"error":{"message":e}})));

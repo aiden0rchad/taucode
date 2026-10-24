@@ -525,10 +525,12 @@ async fn router_checkpoints_sidechats_and_task_transcripts() {
     session.pi = crate::shared::pi::PiEngine::new(data.clone(), "workspace".into(), root.to_string_lossy().into(), None, Arc::new(|_, _| {}));
     session.claude = engine(&data);
     session.claude.sink = Arc::new(move |workspace, message| {
+        let complete = message["method"] == "turn/completed";
         if let Some(handle) = observer.observe(&AppServerEvent { workspace_id: workspace.into(), message }) {
-            tx.send(handle).unwrap();
+            if complete { tx.send(handle).unwrap(); }
         }
     });
+    let session = Arc::new(session);
     let start = session.send_request_for_workspace("workspace", "thread/start", json!({"engine":"claude"})).await.unwrap();
     let id = start["result"]["thread"]["id"].as_str().unwrap();
     let mut events = session.claude.events();
@@ -552,6 +554,12 @@ async fn router_checkpoints_sidechats_and_task_transcripts() {
     let rows = rows["checkpoints"].as_array().unwrap();
     assert_eq!(rows.len(), 6, "checkpoint events: {:?}", checkpoint_events.lock().unwrap().iter().map(|e| &e.message).collect::<Vec<_>>());
     assert!(rows.iter().all(|r| r["commit"].is_string() && r["metadata"]["engine"] == "claude"));
+    for pair in rows.chunks_exact(2) {
+        assert_eq!(pair[0]["metadata"]["userItemId"], pair[1]["metadata"]["userItemId"]);
+        assert_eq!(pair[0]["metadata"]["turnId"], pair[1]["metadata"]["turnId"]);
+    }
+    assert_ne!(rows[0]["metadata"]["userItemId"], rows[2]["metadata"]["userItemId"]);
+    assert_ne!(rows[0]["metadata"]["turnId"], rows[2]["metadata"]["turnId"]);
     let capabilities = checkpoints.request(&session, "workspace", json!({"threadId":id,"action":"capabilities"})).await.unwrap();
     assert_eq!(capabilities, json!({"engine":"claude","conversation":false}));
     let rewind = json!({"threadId":id,"action":"rewind","checkpointId":rows[0]["id"],"mode":"conversation","paths":["file"]});
@@ -567,6 +575,19 @@ async fn router_checkpoints_sidechats_and_task_transcripts() {
     let child = side["result"]["thread"]["id"].as_str().unwrap();
     let read = session.send_request_for_workspace("workspace", "thread/read", json!({"threadId":child})).await.unwrap();
     assert_eq!(read["result"]["thread"]["sideOf"]["threadId"], id);
+    let core_sessions = Mutex::new(HashMap::from([("workspace".into(), session.clone())]));
+    let workspaces = Mutex::new(HashMap::from([("workspace".into(), serde_json::from_value(json!({"id":"workspace","name":"Workspace","path":root,"settings":{}})).unwrap())]));
+    for mode in [Some("current".into()), None] {
+        crate::shared::codex_core::send_user_message_core(&core_sessions, &workspaces, "workspace".into(), child.into(), "hello".into(), None, None, None, mode, None, None).await.unwrap();
+        event(&mut events, "turn/completed").await;
+        completed.recv().await.unwrap().await.unwrap();
+    }
+    assert_eq!(session.claude.threads.lock().await[child].mode, "read-only");
+    assert!(session.claude.dialogs.lock().await.is_empty());
+    for mode in ["ask", "full-access"] {
+        session.send_request_for_workspace("workspace", "thread/accessMode/set", json!({"threadId":child,"accessMode":mode})).await.unwrap();
+        assert_eq!(session.claude.threads.lock().await[child].mode, mode);
+    }
     assert!(session.send_request_for_workspace("workspace", "thread/sidechat", json!({"threadId":id,"atItemId":"message"})).await.unwrap_err().contains("Message-level"));
     let client = session.claude.runtimes.lock().await["workspace"].client.clone();
     client.capabilities.lock().await["agentCapabilities"]["sessionCapabilities"] = json!({"fork":false});
@@ -641,4 +662,31 @@ fn connectors_keep_transport_credentials_and_exact_lists() {
         permissions::connector_decision(&entries, "mcp__stdio__read", "ask"),
         permissions::Decision::Ask
     );
+}
+
+#[tokio::test]
+async fn prompt_errors_preserve_adapter_details_kind_and_redaction() {
+    let data = temp();
+    let engine = engine(&data);
+    engine.configure("workspace", vec![provider("anthropic")], AgentPolicy::default()).await;
+    let start = engine.request("workspace", "thread/start", json!({})).await.unwrap();
+    let id = start["result"]["thread"]["id"].as_str().unwrap();
+    let mut events = engine.events();
+    for prompt in ["beta-error", "chunk-error", "result-error"] {
+        engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":prompt}]})).await.unwrap();
+        let done = event(&mut events, "turn/completed").await;
+        assert_eq!(done["params"]["turn"]["status"], "failed");
+        let error = &done["params"]["turn"]["error"];
+        assert!(error["message"].as_str().unwrap().contains("API Error: 400 Routing and Anthropic beta override headers are disabled for Claude."));
+        assert!(!done.to_string().contains("fixture-api-secret"));
+        if prompt != "result-error" { assert_eq!(error["errorKind"], "provider_error"); }
+    }
+    let client = engine.runtimes.lock().await["workspace"].client.clone();
+    let session = start["result"]["thread"]["sessionId"].clone();
+    let error = client.request("session/prompt", json!({"sessionId":session,"prompt":[{"type":"text","text":"beta-error"}]})).await.unwrap_err();
+    assert!(error.contains("Internal error: API Error: 400"));
+    assert!(error.contains("provider_error"));
+    assert!(!error.contains("fixture-api-secret"));
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(data).unwrap();
 }

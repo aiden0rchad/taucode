@@ -91,6 +91,12 @@ pub(crate) async fn create(
         }),
     ))
     .await?;
+    let id = response.pointer("/result/thread/id").and_then(Value::as_str).ok_or("Fork returned no ID")?;
+    Box::pin(session.send_request_for_workspace(
+        workspace,
+        "thread/accessMode/set",
+        json!({"threadId":id,"accessMode":"read-only"}),
+    )).await?;
     persist(session, workspace, &mut response, side_of)?;
     Ok(response)
 }

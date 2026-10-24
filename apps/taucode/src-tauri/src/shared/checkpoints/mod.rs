@@ -130,7 +130,7 @@ impl Checkpoints {
     ) -> Result<(), String> {
         let key = (workspace.to_owned(), thread.to_owned());
         let checkpoint_id = uuid::Uuid::new_v4().to_string();
-        let metadata = json!({"checkpointId":checkpoint_id,"threadId":thread,"turnId":uuid::Uuid::new_v4().to_string(),"userItemId":uuid::Uuid::new_v4().to_string(),"kind":"before","timestamp":chrono::Utc::now().to_rfc3339(),"engine":engine,"preview":params["input"].as_array().map(|a| a.iter().filter_map(|v| v["text"].as_str()).collect::<Vec<_>>().join("\n")).unwrap_or_default()});
+        let metadata = json!({"checkpointId":checkpoint_id,"threadId":thread,"turnId":null,"userItemId":null,"kind":"before","timestamp":chrono::Utc::now().to_rfc3339(),"engine":engine,"preview":params["input"].as_array().map(|a| a.iter().filter_map(|v| v["text"].as_str()).collect::<Vec<_>>().join("\n")).unwrap_or_default()});
         {
             let mut state = self.state.lock().unwrap();
             if state.rewinding {
@@ -190,20 +190,46 @@ impl Checkpoints {
         };
         let key = (event.workspace_id.clone(), thread.into());
         let method = event.message["method"].as_str().unwrap_or("");
+        let mut binding = None;
         {
             let mut state = self.state.lock().unwrap();
             if let Some(active) = state.active.get_mut(&key) {
                 if let Some(turn) = p["turnId"].as_str().or(p["turn"]["id"].as_str()) {
                     active.metadata["turnId"] = turn.into();
                 }
-                if p["item"]["type"] == "userMessage" && !active.user_bound {
+                if matches!(method, "item/started" | "item/completed")
+                    && p["item"]["type"] == "userMessage"
+                    && p["item"]["id"].as_str().is_some_and(|id| !id.is_empty())
+                    && !active.user_bound
+                {
                     active.metadata["userItemId"] = p["item"]["id"].clone();
                     active.user_bound = true;
+                    binding = Some(active.clone());
                 }
             }
         }
         if method == "turn/completed" {
             return self.complete(&key.0, &key.1);
+        }
+        if let Some(active) = binding {
+            let this = self.clone();
+            return Some(tokio::spawn(async move {
+                let _operation = this.operation.lock().await;
+                // Completion binds its own snapshot. A delayed event must not
+                // rewrite the before commit after the after commit is appended.
+                if !this.state.lock().unwrap().active.get(&key)
+                    .is_some_and(|current| current.checkpoint == active.checkpoint) { return; }
+                let result = async {
+                    let repo = this.repo(&key.0)?;
+                    let thread = key.1.clone();
+                    tokio::task::spawn_blocking(move || repo.bind(&thread,
+                        active.checkpoint.as_deref().unwrap_or(""),
+                        active.metadata["turnId"].as_str().unwrap_or(""),
+                        active.metadata["userItemId"].as_str().unwrap_or("")))
+                        .await.map_err(|e| e.to_string())?
+                }.await;
+                this.notify(&key.0, &key.1, result.err().as_deref());
+            }));
         }
         None
     }
@@ -339,6 +365,7 @@ impl Checkpoints {
             })
             .await
             .map_err(|e| e.to_string())??;
+            let conversation_changed = undo.leaf.is_some();
             if let Some(leaf) = undo.leaf {
                 session
                     .pi
@@ -346,7 +373,7 @@ impl Checkpoints {
                     .await?;
             }
             self.state.lock().unwrap().undo.remove(&key);
-            return Ok(json!({"rewound":false,"conversationChanged":pi,"undoAvailable":false}));
+            return Ok(json!({"rewound":false,"conversationChanged":conversation_changed,"undoAvailable":false}));
         }
         if action != "rewind" {
             return Err("Unknown checkpoint action".into());

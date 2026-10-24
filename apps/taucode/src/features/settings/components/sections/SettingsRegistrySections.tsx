@@ -88,6 +88,7 @@ export function AgentPolicyEditor({ policy, providers, onChange }: { policy: Age
     <p>Engine enforcement: pi enforces every field. Codex enforces max concurrent, max depth, default subagent model, and roles.</p>
     <label>Default engine<select value={policy.defaultEngine} onChange={e => onChange({ ...policy, defaultEngine: e.target.value as AgentPolicy["defaultEngine"] })}><option value="pi">pi</option><option value="codex">codex</option><option value="claude" disabled={!providers.some(p => p.enabled && providerEngines(p).includes("claude") && p.models.some(m => m.enabled))}>Claude Code (ACP)</option></select></label>
     {!providers.some(p => p.enabled && providerEngines(p).includes("claude") && p.models.some(m => m.enabled)) && <small>Claude Code needs an enabled Anthropic or Anthropic-compatible provider and model.</small>}
+    <small>Some Anthropic-compatible gateways reject Claude Code's <code>anthropic-beta</code> headers (e.g. LiteLLM with beta overrides disabled). If turns fail with a 400 about beta headers, allow those headers on the gateway or use a different model route.</small>
     {modelSelect("Default model", modelKey(policy.defaultModel), v => onChange({ ...policy, defaultModel: modelRef(v) }))}
     <small>Enable subagents: pi</small>
     <label><input type="checkbox" checked={sub.enabled} onChange={e => onChange({ ...policy, subagents: { ...sub, enabled: e.target.checked } })} />Enable subagents</label>
