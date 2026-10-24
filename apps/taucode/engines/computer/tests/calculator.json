@@ -1,0 +1,98 @@
+[
+  {
+    "AXRole": "AXButton",
+    "AXTitle": "",
+    "AXDescription": "1",
+    "AXHelp": "",
+    "AXIdentifier": "calculator.0",
+    "actions": [
+      "AXPress"
+    ],
+    "frame": [
+      10,
+      20,
+      25,
+      25
+    ]
+  },
+  {
+    "AXRole": "AXButton",
+    "AXTitle": "",
+    "AXDescription": "2",
+    "AXHelp": "",
+    "AXIdentifier": "calculator.1",
+    "actions": [
+      "AXPress"
+    ],
+    "frame": [
+      40,
+      20,
+      25,
+      25
+    ]
+  },
+  {
+    "AXRole": "AXButton",
+    "AXTitle": "",
+    "AXDescription": "Multiply",
+    "AXHelp": "",
+    "AXIdentifier": "calculator.2",
+    "actions": [
+      "AXPress"
+    ],
+    "frame": [
+      70,
+      20,
+      25,
+      25
+    ]
+  },
+  {
+    "AXRole": "AXButton",
+    "AXTitle": "",
+    "AXDescription": "Equals",
+    "AXHelp": "",
+    "AXIdentifier": "calculator.3",
+    "actions": [
+      "AXPress"
+    ],
+    "frame": [
+      100,
+      20,
+      25,
+      25
+    ]
+  },
+  {
+    "AXRole": "AXButton",
+    "AXTitle": "",
+    "AXDescription": "All Clear",
+    "AXHelp": "",
+    "AXIdentifier": "calculator.4",
+    "actions": [
+      "AXPress"
+    ],
+    "frame": [
+      130,
+      20,
+      25,
+      25
+    ]
+  },
+  {
+    "AXRole": "AXButton",
+    "AXTitle": "",
+    "AXDescription": "7",
+    "AXHelp": "",
+    "AXIdentifier": "calculator.5",
+    "actions": [
+      "AXPress"
+    ],
+    "frame": [
+      160,
+      20,
+      25,
+      25
+    ]
+  }
+]

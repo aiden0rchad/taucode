@@ -41,7 +41,8 @@ class OSWorldACI(ACI):
         else:
             prompt = f"Query:{ref_expr}\nOutput only the coordinate of one point in your response.\n"
         self.grounding_model.add_message(text_content=prompt, image_content=image, put_text_last=True)
-        return parse_coordinates(call_llm_safe(self.grounding_model))
+        self.grounding_reply = call_llm_safe(self.grounding_model)
+        return parse_coordinates(self.grounding_reply)
 
 
     def assign_screenshot(self, obs: Dict):

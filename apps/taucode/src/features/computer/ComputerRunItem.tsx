@@ -43,9 +43,11 @@ export function ComputerRunItem({ run: reference }: { run: ComputerRun }) {
       <details><summary>Step {step.step}: {step.kind === "approval_wait" ? "Approval wait" : String(step.action.kind ?? "action")}</summary>
         {step.thumbnail && <img width={240} src={`data:image/png;base64,${step.thumbnail}`} alt={`Screen before step ${step.step}`} />}
         {step.path && <p>Input: {step.path}{step.foregroundApproval ? " · takeover approved" : ""}</p>}
+        {step.executionFallbackReason && <p>Pixel fallback: {step.executionFallbackReason}</p>}
         {step.window && <p>Window {step.window.id}: {step.window.title}</p>}
         {!!step.focusRestorations?.length && <p>Focus restored: {step.focusRestorations.length}</p>}
         <pre>{JSON.stringify(step.action, null, 2)}</pre>
+        {!!step.grounding?.length && <details><summary>Grounding decisions</summary><pre>{JSON.stringify(step.grounding, null, 2)}</pre></details>}
         {step.reflection && <p>{step.reflection}</p>}
         {step.predictMs !== undefined && <p>Predict: {step.predictMs} ms · Execute: {step.executeMs ?? 0} ms · Wait: {step.waitMs ?? 0} ms</p>}
         {step.error && <p role="alert">{step.error}</p>}

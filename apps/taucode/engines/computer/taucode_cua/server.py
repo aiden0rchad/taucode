@@ -92,7 +92,8 @@ class Server:
                 'element_summary': observation_summary(snapshot['elements']) if snapshot else ''})
         action = actions[0]
         action['grounding_width'], action['grounding_height'] = self.size if self.mode == 'ui-tars' else size
-        return {'action': action, 'reflection': info.get('reflection') or '', 'plan_text': info.get('plan') or ''}
+        return {'action': action, 'reflection': info.get('reflection') or '', 'plan_text': info.get('plan') or '',
+                'grounding': getattr(getattr(self.agent, 'grounding_agent', None), 'grounding_decisions', [])}
 
 
 def rpc_error(error, method):
@@ -123,7 +124,8 @@ def main():
             response = {'jsonrpc': '2.0', 'id': request.get('id'), 'result': result}
         except Exception as error:
             response = {'jsonrpc': '2.0', 'id': request.get('id') if isinstance(request, dict) else None,
-                        'error': rpc_error(error, request.get('method') if isinstance(request, dict) else None)}
+                        'error': {**rpc_error(error, request.get('method') if isinstance(request, dict) else None),
+                                  'data': {'grounding': getattr(getattr(server.agent, 'grounding_agent', None), 'grounding_decisions', [])}}}
         output.write(json.dumps(response, allow_nan=False) + '\n')
         output.flush()
 

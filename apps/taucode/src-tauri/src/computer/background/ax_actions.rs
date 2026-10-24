@@ -63,6 +63,21 @@ impl Element {
             Some(Self(ptr))
         }
     }
+    pub(super) fn reading<T>(&self, read: impl FnOnce() -> T) -> T {
+        struct Reset<'a>(&'a Element);
+        impl Drop for Reset<'_> {
+            fn drop(&mut self) {
+                unsafe {
+                    AXUIElementSetMessagingTimeout(self.0 .0, 0.005);
+                }
+            }
+        }
+        unsafe {
+            AXUIElementSetMessagingTimeout(self.0, 0.05);
+        }
+        let _reset = Reset(self);
+        read()
+    }
     pub(super) fn app(pid: i32) -> Option<Self> {
         Self::owned(unsafe { AXUIElementCreateApplication(pid) })
     }
@@ -332,12 +347,12 @@ pub fn action_status(status: i32) -> Result<bool, String> {
 }
 
 pub(super) fn window_element(pid: i32, id: u32) -> Option<Element> {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
-    Element::app(pid)?
-        .children("AXWindows", 128)
+    let deadline = std::time::Instant::now() + super::ax_tree::SNAPSHOT_BUDGET;
+    let app = Element::app(pid)?;
+    app.reading(|| app.children("AXWindows", 128))
         .into_iter()
         .take_while(|_| std::time::Instant::now() < deadline)
-        .find(|w| w.window_id() == Some(id))
+        .find(|w| w.reading(|| w.window_id()) == Some(id))
 }
 
 // Adapted from tools/click.rs, set_value.rs and type_text.rs. No focus/raise writes.

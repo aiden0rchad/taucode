@@ -87,6 +87,8 @@ pub struct Prediction {
     pub action: Value,
     pub reflection: String,
     pub plan_text: String,
+    #[serde(default)]
+    pub grounding: Vec<Value>,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Display {

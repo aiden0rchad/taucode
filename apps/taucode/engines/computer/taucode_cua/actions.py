@@ -3,8 +3,9 @@ import ast
 import inspect
 import json
 import math
+import sys
 
-from .requests import ProviderError
+from .requests import ProviderError, redact
 from .elements import usable_elements, grounding_prompt, parse_element
 from .images import downscale
 from .vendor.agent_s3.utils.common_utils import call_llm_safe
@@ -72,33 +73,84 @@ def boolean(value):
 
 
 class StructuredACI(OSWorldACI):
-    def point(self, description):
-        point = self.generate_coords(check_text(description), self.obs)
-        if len(point) != 2 or any(type(n) not in (int, float) or not math.isfinite(n) for n in point):
-            raise ValueError('Invalid grounding coordinates')
-        w, h = (self.engine_params_for_grounding[k] for k in ('grounding_width', 'grounding_height'))
-        if not (0 <= point[0] < w and 0 <= point[1] < h):
-            raise ValueError('Grounding coordinates outside screen')
-        return point
+    def assign_screenshot(self, obs):
+        super().assign_screenshot(obs)
+        self.grounding_decisions = []
+
+    def decision(self):
+        snapshot = self.obs.get('ax_snapshot') if self.obs else None
+        mode = self.engine_params_for_grounding.get('grounding_mode', 'pixels')
+        return dict(configured_mode=mode, mode=mode,
+                    usable_elements=len(usable_elements(snapshot)) if snapshot else 0,
+                    snapshot_id=snapshot['snapshot_id'] if snapshot else None,
+                    snapshot_status=snapshot.get('status', 'unknown') if snapshot else 'missing',
+                    model_result='not_requested', raw_reply='', element_index=None,
+                    pixel_fallback_reason=None)
+
+    def record_grounding(self, decision):
+        if not hasattr(self, 'grounding_decisions'):
+            self.grounding_decisions = []
+        self.grounding_decisions.append(decision)
+        print('grounding ' + json.dumps(decision, ensure_ascii=False, separators=(',', ':')), file=sys.stderr, flush=True)
+
+    def point(self, description, decision=None):
+        decision = self.decision() if decision is None else decision
+        decision['mode'] = 'ui-tars' if decision['configured_mode'] == 'ui-tars' else 'pixels'
+        if decision['configured_mode'] == 'elements' and not decision['pixel_fallback_reason']:
+            decision['pixel_fallback_reason'] = 'coordinate_only_action'
+        self.grounding_reply = ''
+        try:
+            point = self.generate_coords(check_text(description), self.obs)
+            if len(point) != 2 or any(type(n) not in (int, float) or not math.isfinite(n) for n in point):
+                raise ValueError('Invalid grounding coordinates')
+            w, h = (self.engine_params_for_grounding[k] for k in ('grounding_width', 'grounding_height'))
+            if not (0 <= point[0] < w and 0 <= point[1] < h):
+                raise ValueError('Grounding coordinates outside screen')
+            decision['pixel_result'] = 'coordinates'
+            return point
+        except Exception as error:
+            decision['pixel_result'] = 'provider_error' if isinstance(error, ProviderError) else 'unparseable'
+            decision['error'] = redact(error)
+            raise
+        finally:
+            decision['pixel_raw_reply'] = redact(self.grounding_reply, raw=True)
+            self.record_grounding(decision)
 
     def ground(self, description):
         description = check_text(description)
+        decision = self.decision()
         snapshot = self.obs.get('ax_snapshot') if self.obs else None
-        if self.engine_params_for_grounding.get('grounding_mode') == 'elements' and snapshot:
-            elements = usable_elements(snapshot)
+        if decision['configured_mode'] == 'elements':
+            elements = usable_elements(snapshot) if snapshot else []
             if elements:
-                image, (width, height) = downscale(self.obs.get('grounding_screenshot', self.obs['screenshot']))
-                self.engine_params_for_grounding.update(grounding_width=width, grounding_height=height)
-                self.grounding_model.reset()
-                self.grounding_model.add_message(text_content=grounding_prompt(description, elements), image_content=image, put_text_last=True)
-                index = parse_element(call_llm_safe(self.grounding_model), elements)
-                if index is not None:
-                    e = next(e for e in elements if e['index'] == index)
-                    x, y, w, h = e['frame']
-                    if not (0 <= x + w / 2 < width and 0 <= y + h / 2 < height):
-                        raise ValueError('Element center outside screenshot')
-                    return dict(x=x + w / 2, y=y + h / 2, element_index=index, snapshot_id=snapshot['snapshot_id'])
-        x, y = self.point(description)
+                try:
+                    image, (width, height) = downscale(self.obs.get('grounding_screenshot', self.obs['screenshot']))
+                    self.engine_params_for_grounding.update(grounding_width=width, grounding_height=height)
+                    self.grounding_model.reset()
+                    self.grounding_model.add_message(text_content=grounding_prompt(description, elements), image_content=image, put_text_last=True)
+                    reply = call_llm_safe(self.grounding_model)
+                    decision['raw_reply'] = redact(reply, raw=True)
+                    decision['model_result'] = 'unparseable'
+                    index = parse_element(reply, elements)
+                    decision['model_result'] = 'none' if index is None else 'index'
+                    if index is not None:
+                        e = next(e for e in elements if e['index'] == index)
+                        x, y, w, h = e['frame']
+                        if not (0 <= x + w / 2 < width and 0 <= y + h / 2 < height):
+                            raise ValueError('Element center outside screenshot')
+                        decision['element_index'] = index
+                        self.record_grounding(decision)
+                        return dict(x=x + w / 2, y=y + h / 2, element_index=index, snapshot_id=snapshot['snapshot_id'])
+                    decision['pixel_fallback_reason'] = 'model_returned_none'
+                except Exception as error:
+                    if isinstance(error, ProviderError):
+                        decision['model_result'] = 'provider_error'
+                    decision['error'] = redact(error)
+                    self.record_grounding(decision)
+                    raise
+            else:
+                decision['pixel_fallback_reason'] = 'no_usable_elements' if snapshot else 'missing_snapshot'
+        x, y = self.point(description, decision)
         return dict(x=x, y=y)
 
     @agent_action

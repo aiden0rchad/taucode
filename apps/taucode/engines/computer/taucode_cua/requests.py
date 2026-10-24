@@ -20,14 +20,14 @@ class PredictionTimeout(ProviderError):
     pass
 
 
-def redact(message):
+def redact(message, *, raw=False):
     text = str(message)
     for name in ('TAUCODE_CUA_PLANNER_KEY', 'TAUCODE_CUA_GROUNDING_KEY'):
         key = os.environ.get(name)
         if key:
             text = text.replace(key, '[redacted]')
     text = re.sub(r'(?i)\bBearer\s+[^\s\'"<>]+|\bsk-[\w-]+|[A-Za-z0-9_+/=-]{32,}', '[redacted]', text)
-    return ' '.join(text.split())[:300]
+    return text[:200] if raw else ' '.join(text.split())[:300]
 
 
 def provider_message(error):
