@@ -2,7 +2,6 @@
   --sidebar-padding: 20px;
   padding: var(--sidebar-top-padding, 36px) var(--sidebar-padding) 20px;
   background: var(--surface-sidebar);
-  backdrop-filter: none;
   border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
@@ -44,8 +43,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 12, 16, 0.4);
-  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, rgb(10, 12, 16) 40%, var(--surface-app));
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
@@ -75,9 +73,9 @@
   color: transparent;
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.25),
-    rgba(255, 255, 255, 0.85),
-    rgba(255, 255, 255, 0.25)
+    color-mix(in srgb, rgb(255, 255, 255) 25%, var(--surface-app)),
+    color-mix(in srgb, rgb(255, 255, 255) 85%, var(--surface-app)),
+    color-mix(in srgb, rgb(255, 255, 255) 25%, var(--surface-app))
   );
   background-size: 200% 100%;
   background-clip: text;
@@ -230,7 +228,7 @@
 .sidebar-sort-divider {
   height: 1px;
   margin: 4px 6px;
-  background: var(--border-subtle);
+  background: var(--surface-border-subtle);
 }
 
 .sidebar-sort-option {
@@ -814,7 +812,7 @@
 
 .workspace-name-match {
   color: var(--text-strong);
-  background: var(--border-accent-soft);
+  background: var(--surface-border-accent-soft);
   border-radius: 4px;
   padding: 0 2px;
 }
@@ -1010,9 +1008,9 @@
   border-radius: 999px;
   background: linear-gradient(
     110deg,
-    rgba(255, 255, 255, 0.04) 8%,
-    rgba(255, 255, 255, 0.18) 18%,
-    rgba(255, 255, 255, 0.04) 33%
+    color-mix(in srgb, rgb(255, 255, 255) 4%, var(--surface-app)) 8%,
+    color-mix(in srgb, rgb(255, 255, 255) 18%, var(--surface-app)) 18%,
+    color-mix(in srgb, rgb(255, 255, 255) 4%, var(--surface-app)) 33%
   );
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
@@ -1122,7 +1120,7 @@
 }
 
 .thread-row.active {
-  background: color-mix(in srgb, var(--surface-active) 96%, transparent);
+  background: color-mix(in srgb, var(--surface-active) 96%, var(--surface-app));
   border-color: color-mix(in srgb, var(--border-accent) 42%, transparent);
   color: var(--text-strong);
 }
@@ -1208,12 +1206,11 @@
     var(--thread-subagent-pill-saturation, 72%)
     78%
   );
-  background: hsl(
+  background: color-mix(in srgb, hsl(
     var(--thread-subagent-pill-hue, 228)
     calc(var(--thread-subagent-pill-saturation, 72%) - 8%)
     var(--thread-subagent-pill-accent, 56%)
-    / 0.14
-  );
+    ) 14.000000000000002%, var(--surface-app));
   border-color: hsl(
     var(--thread-subagent-pill-hue, 228)
     calc(var(--thread-subagent-pill-saturation, 72%) - 10%)
@@ -1222,19 +1219,17 @@
   );
 }
 
-:root[data-theme="light"] .thread-subagent-pill,
-:root[data-theme="light"] .app.reduced-transparency .thread-subagent-pill {
+:root[data-theme="light"] .thread-subagent-pill {
   color: hsl(
     var(--thread-subagent-pill-hue, 228)
     calc(var(--thread-subagent-pill-saturation, 72%) - 4%)
     34%
   );
-  background: hsl(
+  background: color-mix(in srgb, hsl(
     var(--thread-subagent-pill-hue, 228)
     calc(var(--thread-subagent-pill-saturation, 72%) - 12%)
     60%
-    / 0.18
-  );
+    ) 18%, var(--surface-app));
   border-color: hsl(
     var(--thread-subagent-pill-hue, 228)
     calc(var(--thread-subagent-pill-saturation, 72%) - 16%)
@@ -1244,19 +1239,17 @@
 }
 
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme]) .thread-subagent-pill,
-  :root:not([data-theme]) .app.reduced-transparency .thread-subagent-pill {
+  :root:not([data-theme]) .thread-subagent-pill {
     color: hsl(
       var(--thread-subagent-pill-hue, 228)
       calc(var(--thread-subagent-pill-saturation, 72%) - 4%)
       34%
     );
-    background: hsl(
+    background: color-mix(in srgb, hsl(
       var(--thread-subagent-pill-hue, 228)
       calc(var(--thread-subagent-pill-saturation, 72%) - 12%)
       60%
-      / 0.18
-    );
+      ) 18%, var(--surface-app));
     border-color: hsl(
       var(--thread-subagent-pill-hue, 228)
       calc(var(--thread-subagent-pill-saturation, 72%) - 16%)
@@ -1297,25 +1290,25 @@
 
 .thread-state-chip.processing {
   color: #ffb870;
-  background: rgba(255, 159, 67, 0.12);
+  background: color-mix(in srgb, rgb(255, 159, 67) 12%, var(--surface-app));
   border-color: rgba(255, 159, 67, 0.24);
 }
 
 .thread-state-chip.reviewing {
   color: #7be9dd;
-  background: rgba(47, 209, 196, 0.12);
+  background: color-mix(in srgb, rgb(47, 209, 196) 12%, var(--surface-app));
   border-color: rgba(47, 209, 196, 0.22);
 }
 
 .thread-state-chip.unread {
   color: #8ac0ff;
-  background: rgba(77, 163, 255, 0.12);
+  background: color-mix(in srgb, rgb(77, 163, 255) 12%, var(--surface-app));
   border-color: rgba(77, 163, 255, 0.22);
 }
 
 .thread-state-chip.ready {
   color: #7be9a4;
-  background: rgba(63, 228, 126, 0.12);
+  background: color-mix(in srgb, rgb(63, 228, 126) 12%, var(--surface-app));
   border-color: rgba(63, 228, 126, 0.2);
 }
 
@@ -1399,8 +1392,8 @@
   margin: 2px 18px 2px 14px;
   background: linear-gradient(
     90deg,
-    var(--border-subtle) 0%,
-    transparent 100%
+    var(--surface-border-subtle) 0%,
+    var(--surface-app) 100%
   );
 }
 
@@ -1536,7 +1529,7 @@
 }
 
 .worktree-row.active {
-  background: color-mix(in srgb, var(--surface-active) 96%, transparent);
+  background: color-mix(in srgb, var(--surface-active) 96%, var(--surface-app));
   border-color: color-mix(in srgb, var(--border-accent) 42%, transparent);
 }
 
@@ -1693,7 +1686,7 @@
   padding: 4px 10px;
   border-radius: 10px;
   border: 1px solid var(--border-quiet);
-  background: color-mix(in srgb, var(--surface-hover) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-hover) 82%, var(--surface-app));
   color: var(--text-muted);
   display: inline-flex;
   align-items: center;
@@ -1786,10 +1779,6 @@
   100% {
     background-position: -200% 0;
   }
-}
-.app.reduced-transparency .sidebar {
-  background: var(--surface-sidebar-opaque);
-  backdrop-filter: none;
 }
 
 .app.sidebar-collapsed .sidebar {

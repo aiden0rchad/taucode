@@ -203,7 +203,6 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "plugin:window|inner_size": case "plugin:window|outer_size": return { width: 1440, height: 1000 };
       case "plugin:window|inner_position": case "plugin:window|outer_position": return { x: 0, y: 0 };
       case "plugin:window|is_maximized": case "plugin:window|is_fullscreen": return false;
-      case "plugin:liquid-glass|is_glass_supported": return false;
       case "plugin:window|is_focused": case "plugin:window|is_visible": return true;
       case "plugin:app|version": return "0.0.0-preview";
       case "plugin:app|name": return "taucode preview";
@@ -214,13 +213,16 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "menu_set_accelerators": case "set_tray_recent_threads": case "set_tray_session_usage":
       case "browser_unsubscribe": case "work_output": case "provider_set_api_key": case "provider_delete_api_key":
       case "plugin:window|set_title": case "plugin:window|set_theme": case "plugin:window|set_effects":
-      case "plugin:liquid-glass|set_liquid_glass_effect": case "plugin:webview|set_webview_zoom": return null;
+      case "plugin:webview|set_webview_zoom": return null;
       default: return unknown(command);
     }
   }
   return {
     state,
     handler(command: string, payload?: unknown): unknown {
+      if (command === "get_git_status" && record(payload).workspaceId === "workspace-notes") {
+        return Promise.reject(new Error("could not find repository at '/preview/notes'; class=Repository (6); code=NotFound (-3)"));
+      }
       try { return structuredClone(handle(command, record(payload))); }
       catch { return unknown(command); }
     },

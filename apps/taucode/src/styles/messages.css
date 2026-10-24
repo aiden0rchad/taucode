@@ -93,9 +93,9 @@
   color: transparent;
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.3),
-    rgba(255, 255, 255, 0.95),
-    rgba(255, 255, 255, 0.3)
+    color-mix(in srgb, rgb(255, 255, 255) 30%, var(--surface-app)),
+    color-mix(in srgb, rgb(255, 255, 255) 95%, var(--surface-app)),
+    color-mix(in srgb, rgb(255, 255, 255) 30%, var(--surface-app))
   );
   background-size: 200% 100%;
   -webkit-background-clip: text;
@@ -129,7 +129,7 @@
 .turn-complete-line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--cm-border-heavy));
+  background: linear-gradient(90deg, var(--surface-app), var(--cm-border-heavy));
 }
 
 .turn-complete-label {
@@ -178,8 +178,7 @@
   transition:
     background-color 0.18s ease,
     border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    backdrop-filter 0.18s ease;
+    box-shadow 0.18s ease;
 }
 
 .message-bubble {
@@ -343,7 +342,7 @@
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(10, 12, 16, 0.7);
+  background: color-mix(in srgb, rgb(10, 12, 16) 70%, var(--surface-app));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -399,8 +398,7 @@
   transition:
     background-color 0.18s ease,
     border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    backdrop-filter 0.18s ease;
+    box-shadow 0.18s ease;
 }
 
 .item-card.review {
@@ -512,7 +510,7 @@
   border-radius: 16px;
   padding: 12px 14px;
   margin: 0;
-  background: color-mix(in srgb, var(--cm-surface-panel-soft) 88%, transparent);
+  background: color-mix(in srgb, var(--cm-surface-panel-soft) 88%, var(--surface-app));
   display: flex;
   position: relative;
   min-width: 0;
@@ -580,7 +578,7 @@
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: var(--status-unknown);
+  background: var(--surface-status-unknown);
   box-shadow: 0 0 0 1px var(--border-subtle);
   flex: 0 0 auto;
   margin-top: 2px;
@@ -606,15 +604,15 @@
 }
 
 .tool-inline-dot.completed {
-  background: var(--status-success);
+  background: var(--surface-status-success);
 }
 
 .tool-inline-dot.processing {
-  background: var(--status-warning);
+  background: var(--surface-status-warning);
 }
 
 .tool-inline-dot.failed {
-  background: var(--status-error);
+  background: var(--surface-status-error);
 }
 
 .tool-inline-label {
@@ -949,7 +947,6 @@
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 10px 28px rgba(7, 12, 34, 0.12);
-  backdrop-filter: saturate(1.08) brightness(1.05);
 }
 
 .message.assistant .bubble:hover,
@@ -1110,7 +1107,7 @@
 .markdown {
   white-space: normal;
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   line-height: 1.5;
   color: var(--text-stronger);
 }
@@ -1136,7 +1133,7 @@
 
 .message .markdown :not(pre) > code {
   color: var(--text-stronger);
-  background: color-mix(in srgb, var(--surface-command) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-command) 82%, var(--surface-app));
   border: 1px solid var(--border-subtle);
   padding: 1px 5px;
   border-radius: 6px;
@@ -1151,7 +1148,7 @@
   padding: 2px 7px;
   border-radius: 8px;
   border: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-command) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-command) 82%, var(--surface-app));
   color: var(--message-link-color);
   text-decoration: none;
   vertical-align: baseline;
@@ -1177,7 +1174,7 @@
   padding: 0 5px;
   border-radius: 999px;
   border: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-control) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-control) 78%, var(--surface-app));
   color: var(--text-muted);
   font-size: 0.64em;
   line-height: 1.35;
@@ -1304,7 +1301,7 @@
   overflow-x: auto;
   border: 1px solid var(--border-strong);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--surface-card-strong) 92%, transparent);
+  background: color-mix(in srgb, var(--surface-card-strong) 92%, var(--surface-app));
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
 }
 
@@ -1329,7 +1326,7 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: color-mix(in srgb, var(--surface-control) 90%, transparent);
+  background: color-mix(in srgb, var(--surface-control) 90%, var(--surface-app));
   border-bottom: 1px solid var(--border-strong);
   font-size: 10px;
   font-weight: 700;
@@ -1347,7 +1344,7 @@
 }
 
 .markdown .markdown-table tbody tr:hover td {
-  background: color-mix(in srgb, var(--surface-control-hover) 36%, transparent);
+  background: color-mix(in srgb, var(--surface-control-hover) 36%, var(--surface-app));
 }
 
 .message .markdown .markdown-table td:first-child {
@@ -1437,7 +1434,7 @@
   margin: 0;
   padding: 6px 10px;
   border-left: 2px solid var(--border-accent-soft);
-  background: color-mix(in srgb, var(--surface-card-strong) 65%, transparent);
+  background: color-mix(in srgb, var(--surface-card-strong) 65%, var(--surface-app));
   border-radius: 6px;
   color: var(--text-muted);
 }

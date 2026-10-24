@@ -136,7 +136,7 @@ export function GitDiffModeContent({
   const gitRootTitle = gitRootNotFound
     ? "Git root folder not found."
     : missingRepo
-      ? "This workspace isn't a Git repository yet."
+      ? "This workspace is not a Git repository."
       : "Choose a repo for this workspace.";
   const generateCommitMessageTooltip = "Generate commit message";
   const showWorktreeApplyInUnstaged = showApplyWorktree && unstagedFiles.length > 0;

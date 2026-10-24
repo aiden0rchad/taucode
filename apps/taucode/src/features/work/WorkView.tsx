@@ -7,6 +7,13 @@ import { Checkpoints, RewindAction } from "@/features/checkpoints/Checkpoints";
 import { ModeSwitcher } from "@/features/chat/ModeShell";
 import { templates, useWork, workGroups } from "./useWork";
 import "./work.css";
+import Square from "lucide-react/dist/esm/icons/square";
+import Plus from "lucide-react/dist/esm/icons/plus";
+import Settings2 from "lucide-react/dist/esm/icons/settings-2";
+import { BrowserDock } from "@/features/browser/BrowserDock";
+import { SidebarBottomRail } from "@app/components/SidebarBottomRail";
+import { ModeHeader } from "@/features/chat/ModeHeader";
+import { RowMenu } from "@/features/chat/RowMenu";
 
 function InputRequest({ request, busy, respond }: { request: WorkRequest; busy: boolean; respond: (answer: Record<string, unknown>) => void }) {
   const [answer, setAnswer] = useState("");
@@ -23,7 +30,7 @@ function InputRequest({ request, busy, respond }: { request: WorkRequest; busy: 
   </section>;
 }
 
-export function WorkView({ settings }: { settings: AppSettings }) {
+export function WorkView({ settings, onOpenSettings = () => {} }: { settings: AppSettings; onOpenSettings?: () => void }) {
   const work = useWork();
   const [brief, setBrief] = useState("");
   const [spaceId, setSpaceId] = useState("");
@@ -62,37 +69,40 @@ export function WorkView({ settings }: { settings: AppSettings }) {
     work.setActive(created.id); setBrief(""); setAttachments([]); setShowList(false);
   });
   const selectTask = (id: string) => { work.setActive(id); setSpaceId(""); setShowList(false); };
-  const taskButton = (entry: WorkTask) => <button className="work-task" key={entry.id} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}><span className={"work-status " + entry.status} aria-label={entry.status} />{entry.title}<small>{entry.status.replace("-", " ")}</small></button>;
+  const taskButton = (entry: WorkTask) => <RowMenu key={entry.id} label={entry.title} actions={[
+    { label: "Open task", onClick: () => selectTask(entry.id) },
+    ...(["running", "needs-input", "queued"].includes(entry.status) ? [{ label: "Stop task", disabled: busy, onClick: () => { void run(() => work.mutate("stop", { taskId: entry.id })); } }] : []),
+  ]}><button className={`thread-row has-secondary-line is-nested${work.active === entry.id ? " active" : ""}`} aria-label={entry.title} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}><span className={`thread-status ${entry.status === "running" ? "processing" : entry.status === "needs-input" ? "reviewing" : "ready"}`} aria-label={entry.status} /><span className="thread-content"><span className="thread-name">{entry.title}</span><span className="thread-details">{entry.status.replace("-", " ")}</span></span></button></RowMenu>;
   const checkpoints = useCallback<typeof checkpointRequest>((_space, params) => {
     const task = tasksRef.current.find(t => t.threadId === params.threadId);
     return workRequest("checkpoint", { taskId: task?.id, request: params });
   }, []);
-  return <div className={"chat-layout work-layout" + (showList ? " chat-list-open" : "")}>
-    <aside className="chat-sidebar" aria-label="Spaces and tasks">
+  return <BrowserDock searchUrl={settings.browser?.searchUrl} onInterrupt={() => work.active ? workRequest("stop", { taskId: work.active }).then(() => {}) : undefined}><div className={"chat-layout work-layout" + (showList ? " chat-list-open" : "")}>
+    <aside className="sidebar chat-sidebar" aria-label="Spaces and tasks">
       <ModeSwitcher />
-      <button onClick={() => { work.setActive(null); setShowList(false); }}>＋ New task</button>
+      <button className="ghost sidebar-labeled-button mode-new" onClick={() => { work.setActive(null); setShowList(false); }}><Plus size={14} aria-hidden />New task</button>
+      <div className="sidebar-section-header"><span className="sidebar-section-title">Spaces</span><div className="mode-section-actions"><button className="ghost sidebar-title-add" aria-label="Add space…" title="Add space…" disabled={busy} onClick={() => { void run(async () => { const path = await pickWorkspacePath(); if (path) { setFolder(path); setReadOnlyFolders([]); work.setActive(null); setShowList(false); } }); }}><Plus size={14} aria-hidden /></button><details className="mode-section-menu"><summary aria-label="Space options" title="Space options"><Settings2 size={14} aria-hidden /></summary><div className="ds-popover"><label className="work-concurrency">Concurrent tasks <select aria-label="Concurrent tasks" value={work.state.concurrency} disabled={busy} onChange={e => { void run(() => work.mutate("concurrency", { count: Number(e.target.value) })); }}>{[1,2,3,4,5,6,7,8].map(n => <option key={n}>{n}</option>)}</select></label></div></details></div></div>
       <div className="chat-list">
-        <section aria-label="Needs input inbox" className="work-inbox"><h2>Needs input · {needs.length}</h2>{needs.map(taskButton)}{!needs.length && <p className="chat-muted">You’re all caught up.</p>}</section>
+        <section aria-label="Needs input inbox" className="work-inbox"><h2 className="sidebar-section-header"><span className="sidebar-section-title">Needs input · {needs.length}</span></h2>{needs.map(taskButton)}{!needs.length && <p className="chat-muted">You’re all caught up.</p>}</section>
         {work.state.spaces.map(space => <section className="work-space" key={space.id} aria-label={space.name}>
-          <h2 title={space.path}>{space.name}</h2>
+          <h2 className="sidebar-section-header" title={space.path}><span className="sidebar-section-title">{space.name}</span></h2>
           {space.readOnly && <p className="chat-muted">Read-only history. Choose an available space to continue.</p>}
           {!!space.readOnlyFolders.length && <details><summary>{space.readOnlyFolders.length} read-only folders</summary>{space.readOnlyFolders.map(path => <p key={path} className="chat-muted">{path}</p>)}</details>}
           {workGroups.map(([label, statuses]) => {
             const entries = work.state.tasks.filter(t => t.spaceId === space.id && (statuses as readonly string[]).includes(t.status));
-            return !!entries.length && <section key={label} aria-label={space.name + " " + label}><h3>{label}</h3>{entries.map(taskButton)}</section>;
+            return !!entries.length && <section key={label} aria-label={space.name + " " + label}><h3 className="sidebar-section-header"><span className="sidebar-section-title">{label}</span></h3>{entries.map(taskButton)}</section>;
           })}
         </section>)}
       </div>
-      <button disabled={busy} onClick={() => { void run(async () => { const path = await pickWorkspacePath(); if (path) { setFolder(path); setReadOnlyFolders([]); work.setActive(null); setShowList(false); } }); }}>Add space…</button>
-      <label className="work-concurrency">Concurrent tasks <select aria-label="Concurrent tasks" value={work.state.concurrency} disabled={busy} onChange={e => { void run(() => work.mutate("concurrency", { count: Number(e.target.value) })); }}>{[1,2,3,4,5,6,7,8].map(n => <option key={n}>{n}</option>)}</select></label>
-      <button disabled={busy || !work.state.tasks.some(t => ["queued","running","needs-input"].includes(t.status))} onClick={() => { void run(() => work.mutate("stop-all")); }}>Stop all tasks</button>
+      <SidebarBottomRail onOpenSettings={onOpenSettings} onOpenDebug={() => {}} showDebugButton={false} />
     </aside>
     <main className="chat-main">
-      <header className="chat-header"><button className="chat-list-toggle" aria-expanded={showList} onClick={() => setShowList(!showList)}>☰ Spaces</button><strong>{task?.title || "New task"}</strong>
-        {task && <div className="work-actions"><span role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && <button disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop task</button>}
+      <ModeHeader title={task?.title || "New task"} navigation={<button className="ghost main-header-action chat-list-toggle" aria-expanded={showList} onClick={() => setShowList(!showList)}>☰ Spaces</button>}>
+        {task && <div className="work-actions"><span className={`thread-state-chip ${task.status === "running" ? "processing" : task.status === "needs-input" ? "reviewing" : "ready"}`} role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && <button className="ghost main-header-action" aria-label="Stop task" title="Stop task" disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop</button>}
           {task.threadId && !task.importId && <RewindAction workspaceId={task.spaceId} threadId={task.threadId} running={active} />}
         </div>}
-      </header>
+        {work.state.tasks.some(t => ["running", "needs-input"].includes(t.status)) && <button className="ghost main-header-action" aria-label="Stop all tasks" title="Stop all tasks" disabled={busy} onClick={() => { void run(() => work.mutate("stop-all")); }}><Square size={14} aria-hidden /></button>}
+      </ModeHeader>
       {work.error && <p role="alert" className="work-error">{work.error}</p>}
       {folder && <section className="work-add-space" aria-label="New space"><h2>New space</h2><p>{folder}</p><p className="chat-muted">This is the folder where tasks can create files. Add other folders for reading only.</p>
         {readOnlyFolders.map(path => <p key={path}>{path}<button onClick={() => setReadOnlyFolders(current => current.filter(p => p !== path))}>Remove</button></p>)}
@@ -102,10 +112,10 @@ export function WorkView({ settings }: { settings: AppSettings }) {
       </section>}
       {task ? <div className="work-task-view">
         <div className="chat-scroll" role="log" aria-label="Task progress" aria-live="polite"><div className="chat-column">
-          <article className="chat-message user"><h2>Task brief</h2><Markdown value={task.brief} showFilePath={false} /><ul>{task.attachments.map(path => <li key={path}>{path}</li>)}</ul></article>
+          <article className="message chat-message user"><h2>Task brief</h2><Markdown codeBlockStyle="message" className="markdown" value={task.brief} showFilePath={false} /><ul>{task.attachments.map(path => <li key={path}>{path}</li>)}</ul></article>
           {task.pending.map(request => <InputRequest key={request.id} request={request} busy={busy} respond={answer => { void run(() => work.mutate("respond", { taskId: task.id, requestId: request.id, answer })); }} />)}
           {task.error && <p role="alert">{task.error}</p>}
-          {work.items.map(item => item.kind === "message" ? <article className={"chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown value={item.text} codeBlock showFilePath={false} /></article> : item.kind === "tool" ? <details className="work-tool" key={item.id}><summary>{item.title} · {item.status}</summary><pre>{item.detail}</pre>{item.output && <Markdown value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown value={item.content || item.summary} showFilePath={false} /></details> : null)}
+          {work.items.map(item => item.kind === "message" ? <article className={"message chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown codeBlockStyle="message" className="markdown" value={item.text} showFilePath={false} /></article> : item.kind === "tool" ? <details className="work-tool" key={item.id}><summary>{item.title} · {item.status}</summary><pre>{item.detail}</pre>{item.output && <Markdown codeBlockStyle="message" className="markdown" value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown codeBlockStyle="message" className="markdown" value={item.content || item.summary} showFilePath={false} /></details> : null)}
           {task.status === "queued" && <p className="chat-muted">Waiting for an available slot. One task runs in each space at a time.</p>}
           {active && <p className="chat-muted">This task keeps running when you switch modes or hide the window.</p>}
           {task.importId ? <section aria-label="Continue imported task">
@@ -143,6 +153,6 @@ export function WorkView({ settings }: { settings: AppSettings }) {
       </div></div>}
     </main>
     <Checkpoints requestCheckpoint={checkpoints} running={Object.fromEntries(work.state.tasks.filter(t => t.threadId).map(t => [t.threadId!, { isProcessing: ["running","needs-input"].includes(t.status) }]))} onChanged={async (_space, thread) => { const task = tasksRef.current.find(t => t.threadId === thread); if (task) await work.read(task); await work.refresh(); }} />
-  </div>;
+  </div></BrowserDock>;
 }
 

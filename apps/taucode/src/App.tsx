@@ -61,5 +61,5 @@ export default function App() {
     );
   }
 
-  return <><ModeShell><MainApp /></ModeShell><ComputerApprovals /></>;
+  return <><ModeShell renderSettings={onClose => <MainApp settingsOnly onCloseModeSettings={onClose} />}><MainApp /></ModeShell><ComputerApprovals /></>;
 }

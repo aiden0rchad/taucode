@@ -54,7 +54,6 @@
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "tauri-plugin-liquid-glass-api": "^0.1.6",
     "vscode-material-icons": "^0.1.1"
   },
   "devDependencies": {

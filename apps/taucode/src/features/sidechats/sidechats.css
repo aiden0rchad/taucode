@@ -1,7 +1,7 @@
 .side-chat-split { display: flex; height: 100%; min-height: 0; flex: 1; overflow: hidden; }
 .side-chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .side-chat-sheet { display: flex; flex-direction: column; min-width: 260px; min-height: 0; background: var(--surface-messages); color: var(--text-primary); }
-.side-chat-divider { flex: 0 0 5px; cursor: col-resize; background: var(--border-subtle); touch-action: none; }
+.side-chat-divider { flex: 0 0 5px; cursor: col-resize; background: var(--surface-border-subtle); touch-action: none; }
 .side-chat-divider:focus-visible { outline: 2px solid var(--text-accent); }
 .side-chat-header { display: flex; align-items: center; gap: 8px; padding: 10px; border-bottom: 1px solid var(--border-subtle); font-size: 12px; }
 .side-chat-header strong { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

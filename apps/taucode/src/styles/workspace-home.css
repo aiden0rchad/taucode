@@ -100,7 +100,7 @@
 .workspace-home-error {
   font-size: 12px;
   color: var(--text-danger);
-  background: rgba(236, 72, 153, 0.08);
+  background: color-mix(in srgb, rgb(236, 72, 153) 8%, var(--surface-app));
   border-radius: 10px;
   padding: 8px 10px;
   border: 1px solid rgba(236, 72, 153, 0.2);
@@ -378,7 +378,7 @@
 .workspace-home-run-error {
   font-size: 12px;
   color: var(--text-danger);
-  background: rgba(236, 72, 153, 0.08);
+  background: color-mix(in srgb, rgb(236, 72, 153) 8%, var(--surface-app));
   border-radius: 10px;
   padding: 6px 10px;
   border: 1px solid rgba(236, 72, 153, 0.2);
@@ -392,7 +392,7 @@
 }
 
 .workspace-home-run-error-item {
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, rgb(255, 255, 255) 4%, var(--surface-app));
   border-radius: 8px;
   padding: 4px 8px;
   border: 1px solid var(--border-muted);

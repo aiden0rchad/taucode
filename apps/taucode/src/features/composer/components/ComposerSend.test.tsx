@@ -16,6 +16,7 @@ vi.mock("../../../services/dragDrop", () => ({
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
+  invoke: async () => [],
   convertFileSrc: (path: string) => `tauri://${path}`,
 }));
 
@@ -30,6 +31,7 @@ vi.mock("../../../utils/platformPaths", async () => {
 });
 
 type HarnessProps = {
+  engine?: import("@/types").EngineKind;
   onSend: (
     text: string,
     images: string[],
@@ -43,6 +45,7 @@ type HarnessProps = {
 };
 
 function ComposerHarness({
+  engine,
   onSend,
 
   isProcessing = false,
@@ -55,6 +58,7 @@ function ComposerHarness({
 
   return (
     <Composer
+      engine={engine}
       onSend={onSend}
       onStop={() => {}}
       canStop={false}
@@ -89,6 +93,10 @@ function ComposerHarness({
 }
 
 describe("Composer send triggers", () => {
+  it.each([['pi', 'taucode'], ['codex', 'Codex'], ['claude', 'Claude Code']] as const)("names the %s engine in the placeholder", (engine, label) => {
+    render(<ComposerHarness onSend={vi.fn()} engine={engine} />);
+    expect(screen.getByPlaceholderText(`Ask ${label} to do something…`)).toBeTruthy();
+  });
   afterEach(() => {
     cleanup();
     vi.mocked(isMobilePlatform).mockReturnValue(false);

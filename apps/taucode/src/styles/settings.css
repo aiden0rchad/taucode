@@ -24,10 +24,6 @@
   background: var(--surface-topbar);
 }
 
-.app.reduced-transparency .settings-titlebar {
-  backdrop-filter: none;
-}
-
 .settings-title {
   font-size: 15px;
   font-weight: 600;
@@ -229,7 +225,7 @@
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--text-strong);
-  background: color-mix(in srgb, var(--border-accent) 18%, transparent);
+  background: color-mix(in srgb, var(--surface-border-accent) 18%, var(--surface-app));
   border: 1px solid color-mix(in srgb, var(--border-accent) 45%, transparent);
 }
 
@@ -273,9 +269,7 @@
 
 .settings-add-remote-overlay .ds-modal-backdrop,
 .settings-delete-remote-overlay .ds-modal-backdrop {
-  background: rgba(5, 8, 14, 0.8);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  background: color-mix(in srgb, rgb(5, 8, 14) 80%, var(--surface-app));
 }
 
 .settings-add-remote-card {
@@ -363,7 +357,7 @@
 }
 
 .settings-add-remote-card .settings-input {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, rgb(255, 255, 255) 8%, var(--surface-app));
   border-color: rgba(255, 255, 255, 0.2);
   color: #f5f8ff;
 }
@@ -376,12 +370,12 @@
 .settings-delete-remote-card .ghost {
   color: #dce6f7;
   border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, rgb(255, 255, 255) 6%, var(--surface-app));
 }
 
 .settings-add-remote-card .ghost:hover,
 .settings-delete-remote-card .ghost:hover {
-  background: rgba(255, 255, 255, 0.11);
+  background: color-mix(in srgb, rgb(255, 255, 255) 11%, var(--surface-app));
 }
 
 .settings-shortcuts-search {
@@ -482,7 +476,7 @@
 .settings-agents-error {
   font-size: 12px;
   color: var(--text-danger);
-  background: rgba(236, 72, 153, 0.08);
+  background: color-mix(in srgb, rgb(236, 72, 153) 8%, var(--surface-app));
   border-radius: 10px;
   padding: 8px 10px;
   border: 1px solid rgba(236, 72, 153, 0.2);
@@ -624,7 +618,7 @@
 
 .settings-download-fill {
   height: 100%;
-  background: linear-gradient(90deg, rgba(100, 200, 255, 0.7), rgba(120, 235, 190, 0.8));
+  background: linear-gradient(90deg, color-mix(in srgb, rgb(100, 200, 255) 70%, var(--surface-app)), color-mix(in srgb, rgb(120, 235, 190) 80%, var(--surface-app)));
 }
 
 .settings-download-meta {
@@ -765,7 +759,7 @@
 
 .settings-segmented-option:hover:not(.is-disabled) {
   color: var(--text-strong);
-  background: color-mix(in srgb, var(--surface-card) 55%, transparent);
+  background: color-mix(in srgb, var(--surface-card) 55%, var(--surface-app));
 }
 
 .settings-segmented-option.is-active {
@@ -813,7 +807,7 @@
 
 .settings-divider {
   height: 1px;
-  background: var(--border-muted);
+  background: var(--surface-border-muted);
   margin: 16px 0;
   border-radius: 999px;
 }
@@ -1036,7 +1030,7 @@
   padding: 2px 6px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--status-error) 40%, transparent);
-  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+  background: color-mix(in srgb, var(--surface-status-error) 12%, var(--surface-app));
 }
 
 .settings-open-app-input[data-invalid] {
@@ -1227,13 +1221,8 @@
 }
 
 .settings-toggle.on {
-  background: linear-gradient(135deg, rgba(100, 200, 255, 0.6), rgba(120, 235, 190, 0.6));
+  background: linear-gradient(135deg, color-mix(in srgb, rgb(100, 200, 255) 60%, var(--surface-app)), color-mix(in srgb, rgb(120, 235, 190) 60%, var(--surface-app)));
   border-color: var(--border-accent);
-}
-
-.app.reduced-transparency .settings-toggle:not(.on) {
-  background: var(--surface-control-hover);
-  border-color: var(--border-stronger);
 }
 
 .settings-toggle-knob {

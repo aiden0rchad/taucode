@@ -26,7 +26,7 @@
   right: 0;
   top: 0;
   height: 1px;
-  background: var(--border-strong);
+  background: var(--surface-border-strong);
   opacity: 0.4;
 }
 
@@ -93,12 +93,12 @@
 }
 
 .debug-source.error {
-  background: rgba(255, 107, 107, 0.2);
+  background: color-mix(in srgb, rgb(255, 107, 107) 20%, var(--surface-app));
   color: #ff9b9b;
 }
 
 .debug-source.stderr {
-  background: rgba(255, 196, 96, 0.2);
+  background: color-mix(in srgb, rgb(255, 196, 96) 20%, var(--surface-app));
   color: #ffcf80;
 }
 

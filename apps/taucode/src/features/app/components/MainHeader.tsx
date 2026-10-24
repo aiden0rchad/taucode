@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Check from "lucide-react/dist/esm/icons/check";
+import { BrowserToggle } from "@/features/browser/BrowserDock";
+import { HeaderActions } from "./HeaderActions";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import Terminal from "lucide-react/dist/esm/icons/terminal";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -339,7 +341,7 @@ export function MainHeader({
                 </PopoverSurface>
               )}
             </div>
-          ) : (
+          ) : branchName && branchName !== "unknown" ? (
             <div className="workspace-branch-menu" ref={menuRef}>
               <MenuTrigger
                 isOpen={menuOpen}
@@ -476,10 +478,10 @@ export function MainHeader({
                 </PopoverSurface>
               )}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
-      <div className="main-header-actions">
+      <HeaderActions>
         {showWorkspaceTools &&
           onRunLaunchScript &&
           onOpenLaunchScriptEditor &&
@@ -572,8 +574,8 @@ export function MainHeader({
             <Check className="main-header-icon-check" size={14} />
           </span>
         </button>
-        {extraActionsNode}
-      </div>
+        {extraActionsNode ?? <BrowserToggle />}
+      </HeaderActions>
     </header>
   );
 }

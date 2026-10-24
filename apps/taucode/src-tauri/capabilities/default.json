@@ -13,7 +13,6 @@
         "dialog:default",
         "process:default",
         "window-state:default",
-        "liquid-glass:default",
         "notification:default",
         "core:window:allow-close",
         "core:window:allow-is-maximized",

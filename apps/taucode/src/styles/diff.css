@@ -47,8 +47,8 @@
   cursor: pointer;
   min-height: 34px;
   appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
-    linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+  background-image: linear-gradient(45deg, var(--surface-app) 50%, var(--surface-text-dim) 50%),
+    linear-gradient(135deg, var(--surface-text-dim) 50%, var(--surface-app) 50%);
   background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
@@ -541,19 +541,19 @@
 .per-file-edit-status[data-status="A"] {
   color: #47d488;
   border-color: rgba(71, 212, 136, 0.4);
-  background: rgba(71, 212, 136, 0.12);
+  background: color-mix(in srgb, rgb(71, 212, 136) 12%, var(--surface-app));
 }
 
 .per-file-edit-status[data-status="D"] {
   color: #ff6b6b;
   border-color: rgba(255, 107, 107, 0.45);
-  background: rgba(255, 107, 107, 0.12);
+  background: color-mix(in srgb, rgb(255, 107, 107) 12%, var(--surface-app));
 }
 
 .per-file-edit-status[data-status="R"] {
   color: #f5c363;
   border-color: rgba(245, 195, 99, 0.4);
-  background: rgba(245, 195, 99, 0.12);
+  background: color-mix(in srgb, rgb(245, 195, 99) 12%, var(--surface-app));
 }
 
 .per-file-edit-label {
@@ -739,7 +739,7 @@
 }
 
 .diff-row-action--stage:hover {
-  background: rgba(71, 212, 136, 0.14);
+  background: color-mix(in srgb, rgb(71, 212, 136) 14%, var(--surface-app));
   border-color: rgba(71, 212, 136, 0.35);
   color: #47d488;
 }
@@ -750,7 +750,7 @@
 }
 
 .diff-row-action--unstage:hover {
-  background: rgba(245, 195, 99, 0.14);
+  background: color-mix(in srgb, rgb(245, 195, 99) 14%, var(--surface-app));
   border-color: rgba(245, 195, 99, 0.35);
   color: #f5c363;
 }
@@ -761,19 +761,19 @@
 }
 
 .diff-row-action--discard:hover {
-  background: rgba(255, 107, 107, 0.14);
+  background: color-mix(in srgb, rgb(255, 107, 107) 14%, var(--surface-app));
   border-color: rgba(255, 107, 107, 0.35);
   color: #ff6b6b;
 }
 
 .diff-row-action--review:hover {
-  background: rgba(90, 169, 255, 0.14);
+  background: color-mix(in srgb, rgb(90, 169, 255) 14%, var(--surface-app));
   border-color: rgba(90, 169, 255, 0.35);
   color: #5aa9ff;
 }
 
 .diff-row-action--apply:hover {
-  background: rgba(90, 169, 255, 0.14);
+  background: color-mix(in srgb, rgb(90, 169, 255) 14%, var(--surface-app));
   border-color: rgba(90, 169, 255, 0.35);
   color: #5aa9ff;
 }
@@ -795,19 +795,19 @@
 .diff-icon-added {
   color: #47d488;
   border-color: rgba(71, 212, 136, 0.4);
-  background: rgba(71, 212, 136, 0.12);
+  background: color-mix(in srgb, rgb(71, 212, 136) 12%, var(--surface-app));
 }
 
 .diff-icon-modified {
   color: #f5c363;
   border-color: rgba(245, 195, 99, 0.4);
-  background: rgba(245, 195, 99, 0.12);
+  background: color-mix(in srgb, rgb(245, 195, 99) 12%, var(--surface-app));
 }
 
 .diff-icon-deleted {
   color: #ff6b6b;
   border-color: rgba(255, 107, 107, 0.45);
-  background: rgba(255, 107, 107, 0.12);
+  background: color-mix(in srgb, rgb(255, 107, 107) 12%, var(--surface-app));
 }
 
 

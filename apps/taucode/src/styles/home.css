@@ -1,4 +1,5 @@
 .home {
+  position: relative;
   height: 100%;
   width: 100%;
   grid-column: 1 / -1;
@@ -16,6 +17,14 @@
   padding: calc(36px + var(--home-scroll-offset, 0px)) 32px 24px;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+.app .home > .home-header-actions {
+  position: absolute;
+  top: 10px;
+  right: 24px;
+  width: auto;
+  margin: 0;
 }
 
 .app.layout-desktop .home {
@@ -131,8 +140,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  background-image: linear-gradient(45deg, transparent 50%, var(--select-caret) 50%),
-    linear-gradient(135deg, var(--select-caret) 50%, transparent 50%);
+  background-image: linear-gradient(45deg, var(--surface-app) 50%, var(--select-caret) 50%),
+    linear-gradient(135deg, var(--select-caret) 50%, var(--surface-app) 50%);
   background-position: calc(100% - 6px) calc(50% + 1px),
     calc(100% - 2px) calc(50% + 1px);
   background-size: 5px 5px, 5px 5px;
@@ -233,7 +242,7 @@
 .home-usage-card {
   padding: 12px 14px;
   border-radius: 14px;
-  background: linear-gradient(135deg, rgba(98, 176, 255, 0.15), transparent 60%),
+  background: linear-gradient(135deg, color-mix(in srgb, rgb(98, 176, 255) 15%, var(--surface-app)), var(--surface-app) 60%),
     var(--surface-card);
   border: 1px solid var(--border-subtle);
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
@@ -251,12 +260,12 @@
 }
 
 .home-usage-card.is-up {
-  background: linear-gradient(135deg, rgba(88, 190, 255, 0.18), transparent 58%),
+  background: linear-gradient(135deg, color-mix(in srgb, rgb(88, 190, 255) 18%, var(--surface-app)), var(--surface-app) 58%),
     var(--surface-card);
 }
 
 .home-usage-card.is-down {
-  background: linear-gradient(135deg, rgba(255, 177, 124, 0.16), transparent 58%),
+  background: linear-gradient(135deg, color-mix(in srgb, rgb(255, 177, 124) 16%, var(--surface-app)), var(--surface-app) 58%),
     var(--surface-card);
 }
 
@@ -317,7 +326,7 @@
   padding: 12px 14px;
   border-radius: 16px;
   background:
-    radial-gradient(circle at top, rgba(62, 156, 255, 0.16), transparent 60%),
+    radial-gradient(circle at top, color-mix(in srgb, rgb(62, 156, 255) 16%, var(--surface-app)), var(--surface-app) 60%),
     var(--surface-card);
   border: 1px solid var(--border-subtle);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
@@ -348,7 +357,7 @@
   height: 28px;
   border-radius: 999px;
   border: 1px solid var(--border-subtle);
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, rgb(255, 255, 255) 4%, var(--surface-app));
   color: var(--text-stronger);
   display: inline-flex;
   align-items: center;
@@ -367,7 +376,7 @@
 .home-usage-chart-button:disabled {
   opacity: 0.38;
   cursor: default;
-  background: rgba(255, 255, 255, 0.02);
+  background: color-mix(in srgb, rgb(255, 255, 255) 2%, var(--surface-app));
   color: var(--text-faint);
   border-color: var(--border-subtle);
   transform: none;
@@ -400,7 +409,7 @@
   display: block;
   width: 100%;
   border-radius: 2px;
-  background: linear-gradient(180deg, rgba(99, 186, 255, 0.9), rgba(78, 132, 255, 0.65));
+  background: linear-gradient(180deg, color-mix(in srgb, rgb(99, 186, 255) 90%, var(--surface-app)), color-mix(in srgb, rgb(78, 132, 255) 65%, var(--surface-app)));
   box-shadow: 0 6px 14px rgba(30, 100, 200, 0.25);
 }
 
@@ -472,7 +481,7 @@
   border-radius: 999px;
   font-size: 12px;
   color: var(--text-stronger);
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, rgb(255, 255, 255) 4%, var(--surface-app));
   border: 1px solid var(--border-subtle);
   max-width: 100%;
   min-width: 0;
@@ -494,7 +503,7 @@
   padding: 14px;
   border-radius: 14px;
   border: 1px dashed var(--border-subtle);
-  background: rgba(255, 255, 255, 0.02);
+  background: color-mix(in srgb, rgb(255, 255, 255) 2%, var(--surface-app));
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -561,7 +570,7 @@
   padding: 14px 14px 16px;
   border-radius: 16px;
   background:
-    linear-gradient(135deg, rgba(100, 200, 255, 0.12), transparent 60%),
+    linear-gradient(135deg, color-mix(in srgb, rgb(100, 200, 255) 12%, var(--surface-app)), var(--surface-app) 60%),
     var(--surface-card);
   border: 1px solid var(--border-subtle);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
@@ -608,9 +617,9 @@
   border-radius: 999px;
   background: linear-gradient(
     110deg,
-    rgba(255, 255, 255, 0.04) 8%,
-    rgba(255, 255, 255, 0.18) 18%,
-    rgba(255, 255, 255, 0.04) 33%
+    color-mix(in srgb, rgb(255, 255, 255) 4%, var(--surface-app)) 8%,
+    color-mix(in srgb, rgb(255, 255, 255) 18%, var(--surface-app)) 18%,
+    color-mix(in srgb, rgb(255, 255, 255) 4%, var(--surface-app)) 33%
   );
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;

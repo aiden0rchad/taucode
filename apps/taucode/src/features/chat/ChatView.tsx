@@ -7,10 +7,17 @@ import { modelKey, modelRef } from "@/features/settings/registry";
 import { ModeSwitcher, useModeSettings } from "./ModeShell";
 import { chatGroups, chatMarkdown, chatTitle, inlineAttachment, readAttachment, type Attachment } from "./chat";
 import { useChat } from "./useChat";
+import Plus from "lucide-react/dist/esm/icons/plus";
+import Trash from "lucide-react/dist/esm/icons/trash-2";
+import Download from "lucide-react/dist/esm/icons/download";
+import { BrowserDock } from "@/features/browser/BrowserDock";
+import { SidebarBottomRail } from "@app/components/SidebarBottomRail";
+import { ModeHeader } from "./ModeHeader";
+import { RowMenu } from "./RowMenu";
 
 const examples = ["Explain something surprising about the ocean", "Help me plan a relaxing weekend", "Give me three ideas for a short story"];
 
-export function ChatView({ settings }: { settings: AppSettings }) {
+export function ChatView({ settings, onOpenSettings = () => {} }: { settings: AppSettings; onOpenSettings?: () => void }) {
   const chat = useChat();
   const updateSettings = useModeSettings(settings);
   const models = (settings.providers ?? []).filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => ({ ...m, key: `${p.id}/${m.id}`, label: `${p.name} · ${m.displayName || m.id}` })));
@@ -74,46 +81,42 @@ export function ChatView({ settings }: { settings: AppSettings }) {
     setModel(next);
   }); };
 
-  return <div className={`chat-layout${showList ? " chat-list-open" : ""}`}>
-    <aside className="chat-sidebar" aria-label="Chats">
+  return <BrowserDock searchUrl={settings.browser?.searchUrl} onInterrupt={() => chatRequest("stop", { threadId: chat.active }).then(() => {})}><div className={`chat-layout${showList ? " chat-list-open" : ""}`}>
+    <aside className="sidebar chat-sidebar" aria-label="Chats">
       <ModeSwitcher />
-      <button className="chat-new" disabled={busy} onClick={() => { chat.setActive(null); clearDraft(); setNewWeb(false); setModel(defaultModel || modelKey(settings.agentPolicy?.defaultModel) || models[0]?.key || ""); setTrash(false); setShowList(false); }}>＋ New chat</button>
+      <button className="ghost sidebar-labeled-button mode-new" disabled={busy} onClick={() => { chat.setActive(null); clearDraft(); setNewWeb(false); setModel(defaultModel || modelKey(settings.agentPolicy?.defaultModel) || models[0]?.key || ""); setTrash(false); setShowList(false); }}><Plus size={14} aria-hidden />New chat</button>
       <input type="search" aria-label="Search chats" placeholder="Search chats" value={search} onChange={e => setSearch(e.target.value)} />
       <div className="chat-list">
         {Object.entries(chatGroups(chat.chats, search, trash)).map(([group, entries]) => entries.length > 0 && <section key={group} aria-label={group}>
-          <h2>{group}</h2>
-          {entries.map(entry => <div className={`chat-list-row${chat.active === entry.id ? " selected" : ""}`} key={entry.id}>
+          <h2 className="sidebar-section-header"><span className="sidebar-section-title">{group}</span></h2>
+          {entries.map(entry => <RowMenu key={entry.id} label={chatTitle(entry)} actions={trash ? [{ label: "Restore", disabled: busy || Date.now() / 1000 - (entry.chat.deletedAt ?? 0) > 30 * 86400, onClick: () => { void mutate("restore", entry.id); } }] : [
+            { label: entry.chat.pinned ? "Unpin" : "Pin", disabled: busy, onClick: () => { void mutate("pin", entry.id, { pinned: !entry.chat.pinned }); } },
+            { label: "Rename", disabled: busy, onClick: () => { setRename(entry.id); setName(chatTitle(entry)); } },
+            { label: "Delete", disabled: busy || entry.running, onClick: () => { void mutate("trash", entry.id); } },
+          ]}>
             {rename === entry.id ? <form onSubmit={e => { e.preventDefault(); void mutate("rename", entry.id, { title: name }).then(success => { if (success) setRename(null); }); }}>
               <input autoFocus aria-label="Chat title" maxLength={200} value={name} onChange={e => setName(e.target.value)} /><button disabled={busy || !name.trim()}>Save</button><button type="button" onClick={() => setRename(null)}>Cancel</button>
-            </form> : <>
-              <button className="chat-list-title" aria-current={chat.active === entry.id ? "page" : undefined} disabled={busy || trash} onClick={() => { void run(async () => { await chat.open(entry.id); clearDraft(); setShowList(false); }); }}>{entry.running && <span aria-label="Running">● </span>}{chatTitle(entry)}</button>
-              <div className="chat-row-actions">
-                {trash ? <><small>Restore within 30 days</small><button disabled={busy || Date.now() / 1000 - (entry.chat.deletedAt ?? 0) > 30 * 86400} onClick={() => { void mutate("restore", entry.id); }}>Restore</button></> : <>
-                  <button disabled={busy} aria-label={`${entry.chat.pinned ? "Unpin" : "Pin"} ${chatTitle(entry)}`} onClick={() => { void mutate("pin", entry.id, { pinned: !entry.chat.pinned }); }}>{entry.chat.pinned ? "Unpin" : "Pin"}</button>
-                  <button disabled={busy} onClick={() => { setRename(entry.id); setName(chatTitle(entry)); }}>Rename</button>
-                  <button disabled={busy || entry.running} onClick={() => { void mutate("trash", entry.id); }}>Delete</button>
-                </>}
-              </div>
-            </>}
-          </div>)}
+            </form> : <button className={`thread-row has-secondary-line${chat.active === entry.id ? " active" : ""}${entry.chat.pinned ? " is-pinned" : ""}`} aria-label={chatTitle(entry)} aria-current={chat.active === entry.id ? "page" : undefined} disabled={busy || trash} onClick={() => { void run(async () => { await chat.open(entry.id); clearDraft(); setShowList(false); }); }}>
+              <span className={`thread-status ${entry.running ? "processing" : "ready"}`} aria-label={entry.running ? "Running" : "Ready"} />
+              <span className="thread-content"><span className="thread-name">{chatTitle(entry)}</span><span className="thread-details">{trash ? "Restore within 30 days" : entry.model || "Chat"}</span></span>
+            </button>}
+          </RowMenu>)}
         </section>)}
         {!chat.chats.length && <p className="chat-muted">Your conversations will appear here.</p>}
       </div>
-      <button aria-pressed={trash} onClick={() => setTrash(!trash)}>{trash ? "Back to chats" : "Trash"}</button>
+      <SidebarBottomRail onOpenSettings={onOpenSettings} onOpenDebug={() => {}} showDebugButton={false}><button className="ghost sidebar-utility-button" aria-label={trash ? "Back to chats" : "Trash"} title={trash ? "Back to chats" : "Trash"} aria-pressed={trash} onClick={() => setTrash(!trash)}><Trash size={14} aria-hidden /></button></SidebarBottomRail>
     </aside>
     <main className="chat-main">
-      <header className="chat-header">
-        <button className="chat-list-toggle" aria-expanded={showList} onClick={() => setShowList(!showList)}>☰ Chats</button>
-        <strong>{active ? chatTitle(active) : "New chat"}</strong>
-        {active && <button disabled={busy} onClick={() => { void run(async () => { await exportMarkdownFile(chatMarkdown(chatTitle(active), chat.messages), "chat.md", "Export chat as Markdown"); }); }}>Export as Markdown</button>}
-      </header>
+      <ModeHeader title={active ? chatTitle(active) : "New chat"} navigation={<button className="ghost main-header-action chat-list-toggle" aria-expanded={showList} onClick={() => setShowList(!showList)}>☰ Chats</button>}>
+        {active && <button className="ghost main-header-action" title="Export as Markdown" aria-label="Export as Markdown" disabled={busy} onClick={() => { void run(async () => { await exportMarkdownFile(chatMarkdown(chatTitle(active), chat.messages), "chat.md", "Export chat as Markdown"); }); }}><Download size={14} aria-hidden /></button>}
+      </ModeHeader>
       <div className="chat-scroll" role="log" aria-label="Conversation" aria-live="polite">
         <div className="chat-column">
           {!chat.messages.length && <div className="chat-empty"><span className="chat-eyebrow">A little room to think</span><h1>What’s on your mind?</h1><p>Ask a question, explore an idea, or bring something to read.</p><div className="chat-examples">{examples.map(example => <button key={example} onClick={() => setDraft(example)}>{example}<span aria-hidden>↗</span></button>)}</div></div>}
-          {chat.messages.map(message => <article className={`chat-message ${message.role}`} key={message.id}>
+          {chat.messages.map(message => <article className={`message chat-message ${message.role}`} key={message.id}>
             <h2>{message.role === "user" ? "You" : "Assistant"}</h2>
             {message.images?.map((url, index) => <img key={index} src={url} alt={`Attachment ${index + 1}`} />)}
-            <Markdown value={message.text} codeBlock showFilePath={false} />
+            <Markdown codeBlockStyle="message" className="markdown" value={message.text} showFilePath={false} />
             {message.id === lastUser?.id && <button disabled={disabled} onClick={() => { setDraft(message.text); setAttachments(message.images?.map((url, i) => ({ name: `Image ${i + 1}`, url })) ?? []); setEditing(message.id); }}>Edit and resend</button>}
           </article>)}
           {lastUser && <button disabled={disabled} onClick={() => { void run(() => chat.send(lastUser.text, lastUser.images ?? [], model || null, lastUser.id)); }}>Regenerate last answer</button>}
@@ -142,5 +145,5 @@ export function ChatView({ settings }: { settings: AppSettings }) {
         </div>
       </form>
     </main>
-  </div>;
+  </div></BrowserDock>;
 }

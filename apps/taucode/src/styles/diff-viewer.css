@@ -21,7 +21,7 @@
   padding: 16px;
   border-radius: 14px;
   border: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-strong) 84%, transparent);
+  background: color-mix(in srgb, var(--surface-strong) 84%, var(--surface-app));
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
 }
 
@@ -128,7 +128,7 @@
   text-transform: uppercase;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(242, 153, 74, 0.16);
+  background: color-mix(in srgb, rgb(242, 153, 74) 16%, var(--surface-app));
   color: #f2994a;
   border: 1px solid rgba(242, 153, 74, 0.4);
 }
@@ -202,7 +202,7 @@
   top: 4px;
   bottom: 4px;
   width: 2px;
-  background: color-mix(in srgb, var(--border-strong) 40%, transparent);
+  background: color-mix(in srgb, var(--surface-border-strong) 40%, var(--surface-app));
 }
 
 .diff-viewer-pr-timeline-item {
@@ -228,7 +228,7 @@
   min-width: 0;
   padding: 10px 12px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-strong) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-strong) 78%, var(--surface-app));
   border: 1px solid var(--border-subtle);
 }
 
@@ -306,7 +306,7 @@
 
 .diff-viewer-item.active {
   border-color: var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-active) 35%, transparent);
+  background: color-mix(in srgb, var(--surface-active) 35%, var(--surface-app));
   box-shadow: none;
 }
 
@@ -334,7 +334,7 @@
   gap: 6px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-card) 88%, transparent);
+  background: color-mix(in srgb, var(--surface-card) 88%, var(--surface-app));
 }
 
 .diff-viewer-review-action {
@@ -361,8 +361,6 @@
 }
 
 .diff-viewer-header-sticky {
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   pointer-events: auto;
 }
 
@@ -380,19 +378,19 @@
 .diff-viewer-status[data-status="A"] {
   color: #47d488;
   border-color: rgba(71, 212, 136, 0.4);
-  background: rgba(71, 212, 136, 0.12);
+  background: color-mix(in srgb, rgb(71, 212, 136) 12%, var(--surface-app));
 }
 
 .diff-viewer-status[data-status="M"] {
   color: #f5c363;
   border-color: rgba(245, 195, 99, 0.4);
-  background: rgba(245, 195, 99, 0.12);
+  background: color-mix(in srgb, rgb(245, 195, 99) 12%, var(--surface-app));
 }
 
 .diff-viewer-status[data-status="D"] {
   color: #ff6b6b;
   border-color: rgba(255, 107, 107, 0.45);
-  background: rgba(255, 107, 107, 0.12);
+  background: color-mix(in srgb, rgb(255, 107, 107) 12%, var(--surface-app));
 }
 
 .diff-viewer-status[data-status="R"],
@@ -458,7 +456,7 @@
 }
 
 .diff-viewer-header-action--discard:hover {
-  background: rgba(255, 107, 107, 0.14);
+  background: color-mix(in srgb, rgb(255, 107, 107) 14%, var(--surface-app));
   border-color: rgba(255, 107, 107, 0.35);
   color: #ff6b6b;
 }
@@ -535,12 +533,12 @@
 }
 
 .diff-line.is-selectable:hover {
-  background: color-mix(in srgb, var(--surface-active) 55%, transparent);
+  background: color-mix(in srgb, var(--surface-active) 55%, var(--surface-app));
   box-shadow: inset 3px 0 0 var(--border-accent-soft);
 }
 
 .diff-line.is-selected {
-  background: color-mix(in srgb, var(--surface-active) 75%, transparent);
+  background: color-mix(in srgb, var(--surface-active) 75%, var(--surface-app));
   position: relative;
   box-shadow: inset 3px 0 0 var(--border-accent);
 }
@@ -552,7 +550,7 @@
   top: 0;
   bottom: 0;
   width: 3px;
-  background: var(--border-accent);
+  background: var(--surface-border-accent);
 }
 
 .diff-line.is-selected .diff-gutter {
@@ -694,11 +692,11 @@
 }
 
 .diff-viewer-raw-line-add {
-  background: rgba(46, 160, 67, 0.25);
+  background: color-mix(in srgb, rgb(46, 160, 67) 25%, var(--surface-app));
 }
 
 .diff-viewer-raw-line-del {
-  background: rgba(248, 81, 73, 0.25);
+  background: color-mix(in srgb, rgb(248, 81, 73) 25%, var(--surface-app));
 }
 
 .diff-line-hunk {
@@ -711,11 +709,11 @@
 }
 
 .diff-line-add {
-  background: rgba(46, 160, 67, 0.25);
+  background: color-mix(in srgb, rgb(46, 160, 67) 25%, var(--surface-app));
 }
 
 .diff-line-del {
-  background: rgba(248, 81, 73, 0.25);
+  background: color-mix(in srgb, rgb(248, 81, 73) 25%, var(--surface-app));
 }
 
 .diff-line-meta {
@@ -805,8 +803,8 @@
   background:
     radial-gradient(
       ellipse at center,
-      color-mix(in srgb, var(--border-accent-soft) 32%, transparent) 0%,
-      transparent 72%
+      color-mix(in srgb, var(--surface-border-accent-soft) 32%, var(--surface-app)) 0%,
+      var(--surface-app) 72%
     );
   filter: blur(14px);
   pointer-events: none;
@@ -822,7 +820,7 @@
   justify-content: center;
   color: var(--text-emphasis);
   border: 1px solid color-mix(in srgb, var(--border-accent-soft) 56%, transparent);
-  background: color-mix(in srgb, var(--surface-active) 70%, transparent);
+  background: color-mix(in srgb, var(--surface-active) 70%, var(--surface-app));
 }
 
 .diff-viewer-empty-title {

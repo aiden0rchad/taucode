@@ -97,7 +97,7 @@ export default defineConfig(async ({ mode }) => ({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.test.mjs"],
     setupFiles: ["src/test/vitest.setup.ts"],
   },
 

@@ -191,18 +191,13 @@ const createUpdateResult = () => ({
 const renderDisplaySection = (
   options: {
     appSettings?: Partial<AppSettings>;
-    reduceTransparency?: boolean;
     onUpdateAppSettings?: ComponentProps<typeof SettingsView>["onUpdateAppSettings"];
-    onToggleTransparency?: ComponentProps<typeof SettingsView>["onToggleTransparency"];
   } = {},
 ) => {
   cleanup();
   const onUpdateAppSettings =
     options.onUpdateAppSettings ?? vi.fn().mockResolvedValue(undefined);
-  const onToggleTransparency = options.onToggleTransparency ?? vi.fn();
   const props: ComponentProps<typeof SettingsView> = {
-    reduceTransparency: options.reduceTransparency ?? false,
-    onToggleTransparency,
     appSettings: { ...baseSettings, ...options.appSettings },
     openAppIconById: {},
     onUpdateAppSettings,
@@ -232,7 +227,6 @@ const renderDisplaySection = (
   render(<SettingsView {...props} />);
   fireEvent.click(screen.getByRole("button", { name: "Display & Sound" }));
 
-  return { onUpdateAppSettings, onToggleTransparency };
 };
 
 const renderComposerSection = (
@@ -245,8 +239,6 @@ const renderComposerSection = (
   const onUpdateAppSettings =
     options.onUpdateAppSettings ?? vi.fn().mockResolvedValue(undefined);
   const props: ComponentProps<typeof SettingsView> = {
-    reduceTransparency: false,
-    onToggleTransparency: vi.fn(),
     appSettings: { ...baseSettings, ...options.appSettings },
     openAppIconById: {},
     onUpdateAppSettings,
@@ -293,8 +285,6 @@ const renderAboutSection = (
   const onToggleAutomaticAppUpdateChecks =
     options.onToggleAutomaticAppUpdateChecks ?? vi.fn();
   const props: ComponentProps<typeof SettingsView> = {
-    reduceTransparency: false,
-    onToggleTransparency: vi.fn(),
     appSettings: { ...baseSettings, ...options.appSettings },
     openAppIconById: {},
     onUpdateAppSettings,
@@ -365,8 +355,6 @@ const renderFeaturesSection = (
     },
   );
   const props: ComponentProps<typeof SettingsView> = {
-    reduceTransparency: false,
-    onToggleTransparency: vi.fn(),
     appSettings: { ...baseSettings, ...options.appSettings },
     openAppIconById: {},
     onUpdateAppSettings,
@@ -467,8 +455,6 @@ const renderEnvironmentsSection = (
       groupedWorkspaces?: ComponentProps<typeof SettingsView>["groupedWorkspaces"];
     } = {},
   ): ComponentProps<typeof SettingsView> => ({
-    reduceTransparency: false,
-    onToggleTransparency: vi.fn(),
     appSettings: { ...baseSettings, ...options.appSettings, ...nextOptions.appSettings },
     openAppIconById: {},
     onUpdateAppSettings,
@@ -573,28 +559,6 @@ describe("SettingsView Display", () => {
     });
   });
 
-  it("toggles reduce transparency", async () => {
-    const onToggleTransparency = vi.fn();
-    renderDisplaySection({ onToggleTransparency, reduceTransparency: false });
-
-    const row = screen
-      .getByText("Reduce transparency")
-      .closest(".settings-toggle-row") as HTMLElement | null;
-    if (!row) {
-      throw new Error("Expected reduce transparency row");
-    }
-    const toggle = row.querySelector(
-      "button.settings-toggle",
-    ) as HTMLButtonElement | null;
-    if (!toggle) {
-      throw new Error("Expected reduce transparency toggle");
-    }
-    fireEvent.click(toggle);
-
-    await waitFor(() => {
-      expect(onToggleTransparency).toHaveBeenCalledWith(true);
-    });
-  });
 
   it("commits interface scale on blur and enter with clamping", async () => {
     const onUpdateAppSettings = vi.fn().mockResolvedValue(undefined);
@@ -1062,8 +1026,6 @@ describe("SettingsView Codex section", () => {
         onMoveWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onDeleteWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onAssignWorkspaceGroup={vi.fn().mockResolvedValue(null)}
-        reduceTransparency={false}
-        onToggleTransparency={vi.fn()}
         appSettings={baseSettings}
         openAppIconById={{}}
         onUpdateAppSettings={onUpdateAppSettings}
@@ -1114,8 +1076,6 @@ describe("SettingsView Codex section", () => {
         onMoveWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onDeleteWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onAssignWorkspaceGroup={vi.fn().mockResolvedValue(null)}
-        reduceTransparency={false}
-        onToggleTransparency={vi.fn()}
         appSettings={{
           ...baseSettings,
           backendMode: "local",
@@ -1189,8 +1149,6 @@ describe("SettingsView Codex section", () => {
           onMoveWorkspaceGroup={vi.fn().mockResolvedValue(null)}
           onDeleteWorkspaceGroup={vi.fn().mockResolvedValue(null)}
           onAssignWorkspaceGroup={vi.fn().mockResolvedValue(null)}
-          reduceTransparency={false}
-          onToggleTransparency={vi.fn()}
           appSettings={{
             ...baseSettings,
             backendMode: "local",
@@ -1292,8 +1250,6 @@ describe("SettingsView Codex section", () => {
           onMoveWorkspaceGroup={vi.fn().mockResolvedValue(null)}
           onDeleteWorkspaceGroup={vi.fn().mockResolvedValue(null)}
           onAssignWorkspaceGroup={vi.fn().mockResolvedValue(null)}
-          reduceTransparency={false}
-          onToggleTransparency={vi.fn()}
           appSettings={{
             ...baseSettings,
             remoteBackendProvider: "tcp",
@@ -1513,8 +1469,6 @@ describe("SettingsView Codex defaults", () => {
         onMoveWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onDeleteWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onAssignWorkspaceGroup={vi.fn().mockResolvedValue(null)}
-        reduceTransparency={false}
-        onToggleTransparency={vi.fn()}
         appSettings={baseSettings}
         openAppIconById={{}}
         onUpdateAppSettings={onUpdateAppSettings}
@@ -1610,8 +1564,6 @@ describe("SettingsView Codex defaults", () => {
         onMoveWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onDeleteWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onAssignWorkspaceGroup={vi.fn().mockResolvedValue(null)}
-        reduceTransparency={false}
-        onToggleTransparency={vi.fn()}
         appSettings={baseSettings}
         openAppIconById={{}}
         onUpdateAppSettings={onUpdateAppSettings}
@@ -1892,8 +1844,6 @@ describe("SettingsView mobile layout", () => {
           onMoveWorkspaceGroup={vi.fn().mockResolvedValue(null)}
           onDeleteWorkspaceGroup={vi.fn().mockResolvedValue(null)}
           onAssignWorkspaceGroup={vi.fn().mockResolvedValue(null)}
-          reduceTransparency={false}
-          onToggleTransparency={vi.fn()}
           appSettings={baseSettings}
           openAppIconById={{}}
           onUpdateAppSettings={vi.fn().mockResolvedValue(undefined)}
@@ -1995,8 +1945,6 @@ describe("SettingsView Shortcuts", () => {
         onMoveWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onDeleteWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onAssignWorkspaceGroup={vi.fn().mockResolvedValue(null)}
-        reduceTransparency={false}
-        onToggleTransparency={vi.fn()}
         appSettings={baseSettings}
         openAppIconById={{}}
         onUpdateAppSettings={vi.fn().mockResolvedValue(undefined)}
@@ -2039,8 +1987,6 @@ describe("SettingsView Shortcuts", () => {
         onMoveWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onDeleteWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onAssignWorkspaceGroup={vi.fn().mockResolvedValue(null)}
-        reduceTransparency={false}
-        onToggleTransparency={vi.fn()}
         appSettings={baseSettings}
         openAppIconById={{}}
         onUpdateAppSettings={vi.fn().mockResolvedValue(undefined)}
@@ -2081,8 +2027,6 @@ describe("SettingsView Shortcuts", () => {
         onMoveWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onDeleteWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onAssignWorkspaceGroup={vi.fn().mockResolvedValue(null)}
-        reduceTransparency={false}
-        onToggleTransparency={vi.fn()}
         appSettings={baseSettings}
         openAppIconById={{}}
         onUpdateAppSettings={vi.fn().mockResolvedValue(undefined)}
@@ -2127,8 +2071,6 @@ describe("SettingsView Shortcuts", () => {
         onMoveWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onDeleteWorkspaceGroup={vi.fn().mockResolvedValue(null)}
         onAssignWorkspaceGroup={vi.fn().mockResolvedValue(null)}
-        reduceTransparency={false}
-        onToggleTransparency={vi.fn()}
         appSettings={baseSettings}
         openAppIconById={{}}
         onUpdateAppSettings={vi.fn().mockResolvedValue(undefined)}

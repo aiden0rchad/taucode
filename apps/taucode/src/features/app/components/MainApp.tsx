@@ -11,7 +11,6 @@ import { MainAppShell } from "@app/components/MainAppShell";
 import { useThreads } from "@threads/hooks/useThreads";
 import { usePullRequestComposer } from "@/features/git/hooks/usePullRequestComposer";
 import { useAutoExitEmptyDiff } from "@/features/git/hooks/useAutoExitEmptyDiff";
-import { isMissingRepo } from "@/features/git/utils/repoErrors";
 import { useModels } from "@/features/models/hooks/useModels";
 import { modelsForThread } from "@/features/models/utils/modelListResponse";
 import { useCollaborationModes } from "@/features/collaboration/hooks/useCollaborationModes";
@@ -84,6 +83,7 @@ import { useAppShellOrchestration } from "@app/orchestration/useLayoutOrchestrat
 import { normalizeCodexArgsInput } from "@/utils/codexArgsInput";
 import { subscribeTrayOpenThread } from "@services/events";
 import { BrowserDock } from "@/features/browser/BrowserDock";
+import { AppModals } from "./AppModals";
 
 const SettingsView = lazy(() =>
   import("@settings/components/SettingsView").then((module) => ({
@@ -91,7 +91,7 @@ const SettingsView = lazy(() =>
   })),
 );
 
-export default function MainApp() {
+export default function MainApp({ settingsOnly = false, onCloseModeSettings }: { settingsOnly?: boolean; onCloseModeSettings?: () => void } = {}) {
   const [selectedEngine, setSelectedEngine] = useState<import("@/types").EngineKind | undefined>();
   const {
     appSettings,
@@ -99,8 +99,6 @@ export default function MainApp() {
     doctor,
     codexUpdate,
     appSettingsLoading,
-    reduceTransparency,
-    setReduceTransparency,
     scaleShortcutTitle,
     scaleShortcutText,
     queueSaveSettings,
@@ -123,7 +121,6 @@ export default function MainApp() {
     addDebugEntry,
     handleCopyDebug,
     clearDebugEntries,
-    shouldReduceTransparency,
   } = useAppBootstrapOrchestration();
   useModeSettings(appSettings);
   const {
@@ -611,7 +608,6 @@ export default function MainApp() {
     selectedCommitSha,
     diffSource,
     setDiffSource,
-    gitStatus,
     gitLogEntries,
     gitLogAheadEntries,
     gitLogBehindEntries,
@@ -997,8 +993,6 @@ export default function MainApp() {
       moveWorkspaceGroup,
       deleteWorkspaceGroup,
       assignWorkspaceGroup,
-      reduceTransparency,
-      setReduceTransparency,
       appSettings,
       openAppIconById,
       queueSaveSettings,
@@ -1369,7 +1363,6 @@ export default function MainApp() {
     isTablet,
     sidebarCollapsed,
     rightPanelCollapsed,
-    shouldReduceTransparency,
     isWorkspaceDropActive,
     centerMode,
     selectedDiffPath,
@@ -1457,11 +1450,6 @@ export default function MainApp() {
     Boolean(activeWorkspace?.connected) &&
     appSettings.backendMode === "remote" &&
     remoteThreadConnectionState === "polling";
-  const gitRootOverride = activeWorkspace?.settings.gitRoot;
-  const hasGitRootOverride =
-    typeof gitRootOverride === "string" && gitRootOverride.trim().length > 0;
-  const showGitInitBanner =
-    Boolean(activeWorkspace) && !hasGitRootOverride && isMissingRepo(gitStatus.error);
   const displayNodes = useMainAppDisplayNodes({
     showCompactCodexThreadActions,
     handleMobileThreadRefresh,
@@ -1475,7 +1463,7 @@ export default function MainApp() {
     workspaceHomeProps: activeWorkspace
       ? {
           workspace: activeWorkspace,
-          showGitInitBanner,
+          showGitInitBanner: false,
           initGitRepoLoading,
           onInitGitRepo: modalActions.openInitGitRepoPrompt,
           runs: workspaceRuns,
@@ -1790,9 +1778,10 @@ export default function MainApp() {
       },
       mainHeaderProps: layoutSurfaces.primary.mainHeaderProps ? {
         ...layoutSurfaces.primary.mainHeaderProps,
-        extraActionsNode: <>{layoutSurfaces.primary.mainHeaderProps.extraActionsNode}
+        extraActionsNode: <>
           {activeThreadId && <span title={sideChats.disabledReason}><button className="ghost" disabled={sideChats.creating || Boolean(sideChats.disabledReason)} onClick={() => void sideChats.create()} title={sideChats.disabledReason ?? "Side chat (⌘⇧K)"}>Side chat</button></span>}
           {sideChats.error && <span role="alert">{sideChats.error}</span>}
+          {layoutSurfaces.primary.mainHeaderProps.extraActionsNode}
         </>,
       } : null,
       messagesProps: {
@@ -1914,6 +1903,7 @@ export default function MainApp() {
   });
 
   const agentDetails = useMemo(() => agentThreadDetails(Object.values(threadsByWorkspace).flat(), threadStatusById, tokenUsageByThread), [threadsByWorkspace, threadStatusById, tokenUsageByThread]);
+  if (settingsOnly) return <div className="mode-settings-host" style={mainAppShellProps.appStyle}><AppModals {...mainAppShellProps.appModalsProps} settingsOpen onCloseSettings={onCloseModeSettings ?? mainAppShellProps.appModalsProps.onCloseSettings} /></div>;
   return <AgentsContext.Provider value={{ details: agentDetails, workspaceId: activeWorkspaceId, threadId: activeThreadId, itemsByThread,
     policy: appSettings.agentPolicy ? { ...appSettings.agentPolicy.subagents, ...activeWorkspace?.settings.agentPolicy?.subagents } : undefined }}>
     <Checkpoints running={threadStatusById} onChanged={async (workspace, thread, text) => {

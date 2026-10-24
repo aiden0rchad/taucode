@@ -24,6 +24,7 @@ import { useComposerMobileActions } from "../hooks/useComposerMobileActions";
 import type { ReviewPromptState, ReviewPromptStep } from "../../threads/hooks/useReviewPrompt";
 
 type ComposerInputProps = {
+  engine?: import("@/types").EngineKind;
   text: string;
   disabled: boolean;
   sendLabel: string;
@@ -82,6 +83,7 @@ type ComposerInputProps = {
 };
 
 export function ComposerInput({
+  engine = "codex",
   text,
   disabled,
   sendLabel,
@@ -276,7 +278,7 @@ export function ComposerInput({
             placeholder={
               disabled
                 ? "Review in progress. Chat will re-enable when it completes."
-                : "Ask Codex to do something..."
+                : `Ask ${{ pi: "taucode", codex: "Codex", claude: "Claude Code" }[engine]} to do something…`
             }
             value={text}
             onChange={handleTextareaChange}

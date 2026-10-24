@@ -31,12 +31,13 @@ export function modeShortcut(event: KeyboardEvent, settings: AppSettings): AppMo
   return modes[Number(event.key) - 1];
 }
 
-export function ModeShell({ children }: { children: ReactNode }) {
+export function ModeShell({ children, renderSettings }: { children: ReactNode; renderSettings?: (onClose: () => void) => ReactNode }) {
   const label = useWindowLabel();
   const [mode, setMode] = useState<AppMode>("code");
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   useThemePreference(settings?.theme ?? "system");
   useEffect(() => {
     let cancelled = false;
@@ -66,7 +67,8 @@ export function ModeShell({ children }: { children: ReactNode }) {
   return <ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings }}>
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
     {mode === "code" && children}
-    {mode === "chat" && settings && <ChatView settings={settings} />}
-    {mode === "work" && settings && <WorkView settings={settings} />}
+    {mode === "chat" && settings && <ChatView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
+    {mode === "work" && settings && <WorkView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
+    {settingsOpen && renderSettings?.(() => { setSettingsOpen(false); void getAppSettings().then(setSettings).catch(e => setError(String(e))); })}
   </ModeContext.Provider>;
 }

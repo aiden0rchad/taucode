@@ -588,7 +588,7 @@ export function GitDiffPanel({
             : [{ key: "pullRequests", message: pullRequestsError }];
 
     return options
-      .filter((entry) => Boolean(entry.message))
+      .filter((entry) => Boolean(entry.message) && !isMissingRepo(entry.message))
       .map((entry) => ({
         ...entry,
         signature: `${errorScope}:${entry.key}:${entry.message}`,

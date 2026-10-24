@@ -1,8 +1,9 @@
 :root {
+  --surface-app: #121212;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   color: var(--text-primary);
-  background-color: transparent;
+  background-color: var(--surface-app);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   color-scheme: light dark;
@@ -11,6 +12,7 @@
   --code-font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Menlo,
     Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --code-font-size: 11px;
+  --ui-font-size: 13px;
   --code-font-weight: 400;
   --code-line-height: 1.28;
   --text-primary: #e6e7ea;
@@ -23,34 +25,34 @@
   --text-faint: rgba(255, 255, 255, 0.5);
   --text-fainter: rgba(255, 255, 255, 0.45);
   --text-dim: rgba(255, 255, 255, 0.35);
-  --surface-sidebar: rgba(18, 18, 18, 0.5);
+  --surface-sidebar: #121212;
   --surface-sidebar-opaque: rgb(18, 18, 18);
-  --surface-topbar: rgba(10, 14, 20, 0.45);
-  --surface-right-panel: rgba(9, 12, 20, 0.4);
-  --surface-composer: rgba(10, 14, 20, 0.45);
-  --surface-messages: rgba(8, 10, 16, 0.45);
-  --surface-card: rgba(255, 255, 255, 0.04);
-  --surface-card-strong: rgba(255, 255, 255, 0.12);
-  --surface-card-muted: rgba(255, 255, 255, 0.06);
-  --surface-item: rgba(255, 255, 255, 0.02);
-  --surface-control: rgba(255, 255, 255, 0.08);
-  --surface-control-hover: rgba(255, 255, 255, 0.14);
-  --surface-control-disabled: rgba(255, 255, 255, 0.05);
-  --surface-hover: rgba(255, 255, 255, 0.05);
-  --surface-active: rgba(100, 200, 255, 0.14);
-  --surface-approval: rgba(12, 16, 26, 0.6);
-  --surface-debug: rgba(10, 14, 20, 0.55);
-  --surface-command: rgba(10, 12, 18, 0.7);
-  --surface-diff-card: rgba(10, 14, 20, 0.32);
-  --surface-bubble: rgba(255, 255, 255, 0.12);
-  --surface-bubble-user: rgba(77, 153, 255, 0.45);
-  --surface-context-core: rgba(10, 14, 20, 0.9);
-  --surface-popover: rgba(10, 14, 20, 0.995);
-  --surface-review: rgba(255, 144, 200, 0.1);
+  --surface-topbar: #0e1013;
+  --surface-right-panel: #0e1013;
+  --surface-composer: #0e1013;
+  --surface-messages: #0e0e11;
+  --surface-card: #1b1b1b;
+  --surface-card-strong: #2e2e2e;
+  --surface-card-muted: #202020;
+  --surface-item: #171717;
+  --surface-control: #252525;
+  --surface-control-hover: #333333;
+  --surface-control-disabled: #1e1e1e;
+  --surface-hover: #1e1e1e;
+  --surface-active: #1d2b33;
+  --surface-approval: #0e1117;
+  --surface-debug: #0e1013;
+  --surface-command: #0c0e12;
+  --surface-diff-card: #0f1113;
+  --surface-bubble: #2e2e2e;
+  --surface-bubble-user: #2d4f7d;
+  --surface-context-core: #0b0e14;
+  --surface-popover: #0a0e14;
+  --surface-review: #2a1f24;
   --border-review: rgba(255, 144, 200, 0.35);
-  --surface-review-active: rgba(255, 144, 200, 0.18);
+  --surface-review-active: #3d2933;
   --text-review-active: rgba(255, 195, 226, 0.95);
-  --surface-review-done: rgba(120, 255, 200, 0.18);
+  --surface-review-done: #243d33;
   --text-review-done: rgba(170, 255, 220, 0.95);
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-muted: rgba(255, 255, 255, 0.06);
@@ -77,16 +79,20 @@
   --select-caret: rgba(255, 255, 255, 0.6);
   --tabbar-height: 56px;
   --ui-scale: 1;
+  --surface-text-accent: #788eb8;
+  --surface-text-muted: #b8b8b8;
+  --surface-border-subtle: #252525;
+  --surface-border-strong: #333333;
+  --surface-border-accent: #437fa0;
+  --surface-border-accent-soft: #2b4959;
+  --surface-text-dim: #656565;
+  --surface-status-error: #f36969;
+  --surface-status-success: #73e0b5;
+  --surface-status-warning: #f3a752;
+  --surface-status-unknown: #595959;
+  --surface-border-muted: #202020;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-}
-
-:root[data-theme="dark"] .app.is-windows:not(.reduced-transparency) {
-  --surface-sidebar: rgba(18, 18, 18, 0.15);
-  --surface-right-panel: rgba(9, 12, 20, 0.1);
-  --surface-topbar: rgba(10, 14, 20, 0.15);
-  --surface-messages: rgba(8, 10, 16, 1);
-  --surface-composer: rgba(10, 14, 20, 1);
 }

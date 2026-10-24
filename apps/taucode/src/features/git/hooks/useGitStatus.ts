@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { GitFileStatus, WorkspaceInfo } from "../../../types";
 import { getGitStatus } from "../../../services/tauri";
 
+import { isMissingRepo } from "../utils/repoErrors";
+
 type GitStatusState = {
   branchName: string;
   files: GitFileStatus[];
@@ -70,7 +72,6 @@ export function useGitStatus(activeWorkspace: WorkspaceInfo | null) {
         cachedStatusRef.current.set(workspaceId, nextStatus);
       })
       .catch((err) => {
-        console.error("Failed to load git status", err);
         if (
           requestIdRef.current !== requestId ||
           workspaceIdRef.current !== workspaceId
@@ -79,7 +80,8 @@ export function useGitStatus(activeWorkspace: WorkspaceInfo | null) {
         }
         const message = err instanceof Error ? err.message : String(err);
         const cached = cachedStatusRef.current.get(workspaceId);
-        const nextStatus = cached
+        if (!isMissingRepo(message)) console.error("Failed to load git status", err);
+        const nextStatus = isMissingRepo(message) ? { ...emptyStatus, error: message } : cached
           ? { ...cached, error: message }
           : { ...emptyStatus, branchName: "unknown", error: message };
         setStatus(nextStatus);

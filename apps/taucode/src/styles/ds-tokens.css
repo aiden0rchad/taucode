@@ -12,7 +12,7 @@
   --ds-text-subtle: var(--text-subtle);
   --ds-text-faint: var(--text-faint);
 
-  --ds-modal-backdrop: rgba(6, 8, 12, 0.55);
+  --ds-modal-backdrop: color-mix(in srgb, rgb(6, 8, 12) 55%, var(--surface-app));
   --ds-modal-card-bg: var(--ds-surface-card);
   --ds-modal-card-border: var(--ds-border-strong);
   --ds-modal-focus-ring: color-mix(in srgb, var(--border-accent) 70%, transparent);
@@ -33,10 +33,10 @@
   --ds-popover-item-text: var(--text-muted);
   --ds-popover-item-text-active: var(--text-stronger);
 
-  --ds-diff-lib-bg-light: rgba(255, 255, 255, 0.35);
-  --ds-diff-lib-bg-dark: rgba(10, 12, 16, 0.35);
-  --ds-diff-lib-bg-system-light: rgba(255, 255, 255, 0.35);
-  --ds-diff-lib-bg-system-dark: rgba(10, 12, 16, 0.35);
+  --ds-diff-lib-bg-light: color-mix(in srgb, rgb(255, 255, 255) 35%, var(--surface-app));
+  --ds-diff-lib-bg-dark: color-mix(in srgb, rgb(10, 12, 16) 35%, var(--surface-app));
+  --ds-diff-lib-bg-system-light: color-mix(in srgb, rgb(255, 255, 255) 35%, var(--surface-app));
+  --ds-diff-lib-bg-system-dark: color-mix(in srgb, rgb(10, 12, 16) 35%, var(--surface-app));
 
   /* Global layer scale (keep numeric so it works with z-index + calc()). */
   --ds-layer-modal: 10000;

@@ -15,8 +15,8 @@ vi.mock("./ModeShell", () => ({ ModeSwitcher: () => <nav aria-label="App mode" /
 const settings = { providers: [{ id: "p", name: "Local", enabled: true, models: [{ id: "one", enabled: true }, { id: "two", enabled: true, supportsImages: false }] }], agentPolicy: { defaultModel: { providerId: "p", modelId: "one" } }, mcpServers: [] } as unknown as AppSettings;
 let rows: Chat[];
 const thread = (id: string) => ({ id, model: "one", modelProvider: "p", turns: [{ id: "turn", items: [
-  { id: "user", type: "userMessage", content: [{ type: "text", text: "Original question" }] },
-  { id: "assistant", type: "agentMessage", text: "Original answer" },
+  { id: "user", type: "userMessage", content: [{ type: "text", text: "**Original question**" }] },
+  { id: "assistant", type: "agentMessage", text: "## Original answer" },
 ] }] });
 beforeEach(() => {
   rows = [{ id: "chat", model: "one", modelProvider: "p", createdAt: 1, updatedAt: Date.now() / 1000, chat: { title: "My conversation", pinned: false, deletedAt: null } }];
@@ -40,6 +40,15 @@ async function open() {
   await waitFor(() => expect(screen.getByRole("button", { name: "Regenerate last answer" })).not.toHaveProperty("disabled", true));
 }
 describe("Chat UI", () => {
+  it("renders user and assistant markdown and shared shell controls", async () => {
+    const onOpenSettings = vi.fn();
+    render(<ChatView settings={settings} onOpenSettings={onOpenSettings} />); await open();
+    expect(screen.getByRole("heading", { level: 2, name: "Original answer" })).toBeTruthy();
+    expect(screen.getByText("Original question").tagName).toBe("STRONG");
+    expect(screen.getByRole("button", { name: "Browser" }).closest(".main-header-actions")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
+    expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
   it("inlines native Tauri drops before sending, without giving paths to the model", async () => {
     vi.mocked(readChatAttachment).mockResolvedValue({ name: "native.txt", text: "Dropped text" });
     render(<ChatView settings={settings} />); await open();
@@ -52,15 +61,19 @@ describe("Chat UI", () => {
   });
   it("pins, searches, trashes and restores local conversations", async () => {
     render(<ChatView settings={settings} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Pin My conversation" }));
+    expect(screen.queryByRole("menuitem", { name: "Pin" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for My conversation" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pin" }));
     expect(await screen.findByRole("region", { name: "Pinned" })).toBeTruthy();
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "missing" } });
     expect(screen.queryByRole("button", { name: "My conversation" })).toBeNull();
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.contextMenu(screen.getByRole("button", { name: "My conversation" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: "My conversation" })).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "Trash" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for My conversation" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Restore" }));
     await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("restore", { threadId: "chat" }));
   });
   it("forks before edit-resend and model changes; exports local markdown", async () => {
@@ -80,7 +93,7 @@ describe("Chat UI", () => {
   it("regenerates on a fork, streams text, and stops only the active chat", async () => {
     render(<ChatView settings={settings} />); await open();
     fireEvent.click(screen.getByRole("button", { name: "Regenerate last answer" }));
-    await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("send", { threadId: "fork", input: [{ type: "text", text: "Original question" }] }));
+    await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("send", { threadId: "fork", input: [{ type: "text", text: "**Original question**" }] }));
     await waitFor(() => expect(screen.getByLabelText("Chat model")).not.toHaveProperty("disabled", true));
     act(() => {
       listener({ workspace_id: "chats", message: { method: "turn/started", params: { threadId: "fork" } } });

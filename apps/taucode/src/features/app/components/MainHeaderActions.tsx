@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { BrowserToggle } from "@/features/browser/BrowserDock";
 import AlignLeft from "lucide-react/dist/esm/icons/align-left";
 import Columns2 from "lucide-react/dist/esm/icons/columns-2";
 import type { SidebarToggleProps } from "../../layout/components/SidebarToggleControls";
@@ -58,6 +59,7 @@ export const MainHeaderActions = memo(function MainHeaderActions({
           </button>
         </div>
       )}
+      <BrowserToggle />
       {!isCompact ? (
         rightPanelCollapsed ? (
           <RightPanelExpandButton {...sidebarToggleProps} />
