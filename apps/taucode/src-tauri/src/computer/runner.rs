@@ -85,6 +85,25 @@ fn post(
     let current = env.event_context(&event)?;
     control.post(event, c, || Ok(current))
 }
+fn verify_app(check: &str, before: &Context, after: &Context) -> Result<(), String> {
+    if before.app != after.app {
+        return Err(format!(
+            "{check}; app before={} after={}; action cancelled",
+            before.app, after.app
+        ));
+    }
+    Ok(())
+}
+fn verify_policy_target(check: &str, before: &Target, after: &Target) -> Result<(), String> {
+    if before != after {
+        // Never log labels, pane titles, field values, or typed text.
+        return Err(format!("{check}; role before={} after={}, secure before={} after={}, label_changed={}, pane_changed={}; action cancelled",
+            before.role, after.role, before.secure, after.secure,
+            before.label != after.label,
+            before.window_title != after.window_title || before.selected_rows != after.selected_rows));
+    }
+    Ok(())
+}
 async fn execute(
     env: &impl Environment,
     control: &Control,
@@ -92,14 +111,15 @@ async fn execute(
     action: &Action,
     target: Option<&str>,
     policy_target: &Target,
+    grounded: bool,
 ) -> Result<(), String> {
     let epoch = control.epoch();
     let verify_typing = || -> Result<(), String> {
         if matches!(action, Action::Type { .. }) {
-            let focused = env.policy_target(&Action::Hotkey { keys: vec![] })?;
-            if focused != *policy_target {
-                return Err("Typing field changed before input; action cancelled".into());
-            }
+            env.verify_target()?;
+            let focused = Action::Hotkey { keys: vec![] };
+            let current = env.policy_target(if grounded { action } else { &focused })?;
+            verify_policy_target("Typing field changed before input", policy_target, &current)?;
         }
         Ok(())
     };
@@ -326,13 +346,18 @@ pub async fn run(
     let work = async {
         for step in 0..settings.max_steps {
             control.checkpoint().await?;
-            let context = env.context()?;
+            let context = env
+                .context()
+                .map_err(|e| format!("Pre-flight context: {e}"))?;
             if (settings.mode == "background" || context.app != "dev.taucode.desktop")
                 && !app_allowed(&context.app, settings, apps)
             {
                 return Err(format!("App blocked: {}", context.app));
             }
-            let frame = control.until(env.capture()).await?;
+            let frame = control
+                .until(env.capture())
+                .await
+                .map_err(|e| format!("Pre-flight capture: app={}, {e}", context.app))?;
             let scoped = format!("{instruction}\n\nHost policy: allowed application bundle IDs: {}. {}: {}. {} Never interact with taucode itself.", apps.join(", "), env.capture_description(), context.app, if settings.mode == "background" { "This run is bound to this app. Coordinates refer only to its captured window. Do not switch to another app." } else { "If taucode is frontmost, first use switch_applications with an allowed bundle ID." });
             phase = "predictMs";
             phase_start = Instant::now();
@@ -391,62 +416,68 @@ pub async fn run(
                 None => action.clone(),
             };
             let current = env.context()?;
-            if current != context {
-                return Err("Focus changed while planning; action cancelled".into());
-            }
-            let policy_context = Context {
+            verify_app("Target binding changed while planning", &context, &current)?;
+            let mut policy_context = Context {
                 secure: current.secure || secure,
                 ..current.clone()
             };
             env.verify_target()?;
             let policy_target = env.policy_target(&action)?;
-            match decide(
-                &policy_action,
-                &description,
-                &policy_context,
-                &policy_target,
-                settings,
-                apps,
-                step,
-                start.elapsed(),
-            ) {
-                Decision::Deny(reason) => return Err(reason),
-                Decision::Confirm(reason) => {
-                    let entry = pending.as_mut().unwrap();
-                    entry["kind"] = json!("approval_wait");
-                    entry["reason"] = json!(reason);
-                    env.progress(entry.clone())?;
-                    let approved = control.until(env.approve(reason, &action, &current)).await;
-                    let entry = pending.as_mut().unwrap();
-                    entry["waitMs"] = json!(phase_start.elapsed().as_millis() as u64);
-                    entry["error"] = json!(approved.as_ref().err());
-                    env.progress(entry.clone())?;
-                    approved?;
-                    entry.as_object_mut().unwrap().remove("kind");
-                    entry.as_object_mut().unwrap().remove("reason");
+            let after = loop {
+                match decide(
+                    &policy_action,
+                    &description,
+                    &policy_context,
+                    &policy_target,
+                    settings,
+                    apps,
+                    step,
+                    start.elapsed(),
+                ) {
+                    Decision::Deny(reason) => return Err(reason),
+                    Decision::Confirm(reason) => {
+                        let entry = pending.as_mut().unwrap();
+                        entry["kind"] = json!("approval_wait");
+                        entry["reason"] = json!(reason);
+                        env.progress(entry.clone())?;
+                        let approved = control.until(env.approve(reason, &action, &current)).await;
+                        let entry = pending.as_mut().unwrap();
+                        entry["waitMs"] = json!(phase_start.elapsed().as_millis() as u64);
+                        entry["error"] = json!(approved.as_ref().err());
+                        env.progress(entry.clone())?;
+                        approved?;
+                        entry.as_object_mut().unwrap().remove("kind");
+                        entry.as_object_mut().unwrap().remove("reason");
+                    }
+                    Decision::Allow => (),
                 }
-                Decision::Allow => (),
-            }
-            control.checkpoint().await?;
-            let after = env.context()?;
-            if after != current {
-                return Err("Focus changed after approval; action cancelled".into());
-            }
-            if env.policy_target(&action)? != policy_target {
-                return Err("AX policy target changed after approval; action cancelled".into());
-            }
-            if let Decision::Deny(reason) = decide(
-                &policy_action,
-                &description,
-                &after,
-                &policy_target,
-                settings,
-                apps,
-                step,
-                start.elapsed(),
-            ) {
-                return Err(reason);
-            }
+                control.checkpoint().await?;
+                let after = env.context()?;
+                verify_app("Target binding changed after approval", &current, &after)?;
+                verify_policy_target(
+                    "AX policy target changed after approval",
+                    &policy_target,
+                    &env.policy_target(&action)?,
+                )?;
+                // A new fail-closed sample adds a confirmation, never a focus cancellation.
+                if after.secure && !policy_context.secure && matches!(action, Action::Type { .. }) {
+                    policy_context.secure = true;
+                    continue;
+                }
+                if let Decision::Deny(reason) = decide(
+                    &policy_action,
+                    &description,
+                    &after,
+                    &policy_target,
+                    settings,
+                    apps,
+                    step,
+                    start.elapsed(),
+                ) {
+                    return Err(reason);
+                }
+                break after;
+            };
             pending.as_mut().unwrap()["waitMs"] = json!(phase_start.elapsed().as_millis() as u64);
             phase = if matches!(action, Action::Wait { .. }) {
                 "waitMs"
@@ -472,9 +503,11 @@ pub async fn run(
                 env.progress(entry.clone())?;
                 control.until(env.approve(reason, &action, &after)).await?;
                 control.checkpoint().await?;
-                if env.context()? != after {
-                    return Err("Target changed after fallback approval".into());
-                }
+                verify_app(
+                    "Target changed after fallback approval",
+                    &after,
+                    &env.context()?,
+                )?;
                 if let Decision::Deny(reason) = decide(
                     &policy_action,
                     &description,
@@ -488,9 +521,11 @@ pub async fn run(
                     return Err(reason);
                 }
                 env.verify_target()?;
-                if env.policy_target(&action)? != policy_target {
-                    return Err("AX policy target changed after fallback approval".into());
-                }
+                verify_policy_target(
+                    "AX policy target changed after fallback approval",
+                    &policy_target,
+                    &env.policy_target(&action)?,
+                )?;
                 env.begin_foreground(control, &after)?;
                 entry["waitMs"] = json!(
                     entry["waitMs"].as_u64().unwrap_or(0)
@@ -508,8 +543,12 @@ pub async fn run(
                     })
                     .await?;
             }
-            if preparation != Preparation::Handled && env.policy_target(&action)? != policy_target {
-                return Err("AX policy target changed before input".into());
+            if preparation != Preparation::Handled {
+                verify_policy_target(
+                    "AX policy target changed before input",
+                    &policy_target,
+                    &env.policy_target(&action)?,
+                )?;
             }
             let outcome = if preparation == Preparation::Handled {
                 Ok(())
@@ -521,6 +560,7 @@ pub async fn run(
                     &action,
                     target.as_deref(),
                     &policy_target,
+                    prediction.element_target()?.is_some(),
                 )
                 .await
             };

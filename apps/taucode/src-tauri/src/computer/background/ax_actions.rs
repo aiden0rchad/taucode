@@ -52,6 +52,14 @@ impl Drop for Element {
 fn string(s: &NSString) -> Ref {
     (s as *const NSString).cast()
 }
+// Only reads use this helper. Mutations must never be retried after a timeout.
+fn metadata_read<T>(name: &str, mut read: impl FnMut(f32) -> Result<T, i32>) -> Result<T, String> {
+    let result = match read(0.05) {
+        Err(-25204) => read(0.25), // kAXErrorCannotComplete
+        result => result,
+    };
+    result.map_err(|status| format!("{name}: ax_error({status})"))
+}
 impl Element {
     fn owned(ptr: Ref) -> Option<Self> {
         if ptr.is_null() {
@@ -88,15 +96,25 @@ impl Element {
         self.attr_result(name).ok()
     }
     fn attr_result(&self, name: &str) -> Result<Self, String> {
-        let mut result = std::ptr::null();
-        let status = unsafe {
-            AXUIElementCopyAttributeValue(self.0, string(&NSString::from_str(name)), &mut result)
-        };
-        if status == 0 {
-            Self::owned_value(result).ok_or_else(|| format!("{name}: null attribute"))
-        } else {
-            Err(format!("{name}: ax_error({status})"))
-        }
+        metadata_read(name, |seconds| {
+            self.with_timeout(seconds, || {
+                let mut result = std::ptr::null();
+                let status = unsafe {
+                    AXUIElementCopyAttributeValue(
+                        self.0,
+                        string(&NSString::from_str(name)),
+                        &mut result,
+                    )
+                };
+                let value = Self::owned_value(result);
+                if status == 0 {
+                    Ok(value)
+                } else {
+                    Err(status)
+                }
+            })
+        })?
+        .ok_or_else(|| format!("{name}: null attribute; ax_error(0)"))
     }
     // Attribute results may be strings/arrays/AXValues, not AXUIElements.
     fn owned_value(ptr: Ref) -> Option<Self> {
@@ -121,28 +139,42 @@ impl Element {
         self.window_id_result().ok()
     }
     fn window_id_result(&self) -> Result<u32, String> {
-        let mut id = 0;
-        let status = unsafe { _AXUIElementGetWindow(self.0, &mut id) };
-        if status == 0 && id != 0 {
+        let id = metadata_read("_AXUIElementGetWindow", |seconds| {
+            self.with_timeout(seconds, || {
+                let mut id = 0;
+                let status = unsafe { _AXUIElementGetWindow(self.0, &mut id) };
+                if status == 0 {
+                    Ok(id)
+                } else {
+                    Err(status)
+                }
+            })
+        })?;
+        if id != 0 {
             Ok(id)
         } else {
-            Err(format!(
-                "_AXUIElementGetWindow: ax_error({status}), id={id}"
-            ))
+            Err("_AXUIElementGetWindow: ax_error(0), id=0".into())
         }
     }
     pub(super) fn text(&self, name: &str) -> Option<String> {
-        let value = self.attr(name)?;
+        self.text_result(name).ok()
+    }
+    fn text_result(&self, name: &str) -> Result<String, String> {
+        let value = self.attr_result(name)?;
         unsafe {
             let kind = CFGetTypeID(value.0);
             if kind != CFStringGetTypeID()
                 && kind != CFNumberGetTypeID()
                 && kind != CFBooleanGetTypeID()
             {
-                return None;
+                return Err(format!(
+                    "{name}: unexpected attribute type={kind}; ax_error(0)"
+                ));
             }
             let text: *const NSString = msg_send![value.0 as *const AnyObject, description];
-            text.as_ref().map(|s| s.to_string())
+            text.as_ref()
+                .map(|s| s.to_string())
+                .ok_or_else(|| format!("{name}: null text; ax_error(0)"))
         }
     }
     pub(super) fn children(&self, name: &str, limit: usize) -> Vec<Self> {
@@ -299,15 +331,43 @@ fn row_label(row: &Element) -> String {
     }
     labels.join(" ")
 }
+fn pane_root<H>(mut read: impl FnMut(&str) -> Result<Option<H>, String>) -> Result<H, String> {
+    let mut observed = vec![];
+    for attribute in ["AXFocusedWindow", "AXMainWindow", "AXWindows"] {
+        match read(attribute) {
+            Ok(Some(root)) => return Ok(root),
+            Ok(None) => observed.push(format!("{attribute}=none")),
+            Err(error) => observed.push(error),
+        }
+    }
+    Err(format!(
+        "System Settings read-only access: cannot inspect current pane; {}",
+        observed.join(", ")
+    ))
+}
 pub fn pane_info(pid: i32, window: Option<u32>) -> Result<super::super::policy::Target, String> {
     let root = if let Some(id) = window {
-        window_element(pid, id).0
+        let (root, lookup) = window_element(pid, id);
+        root.ok_or_else(|| {
+            format!("System Settings read-only access: cannot inspect current pane; {lookup}")
+        })?
     } else {
-        Element::app(pid).and_then(|a| a.attr("AXFocusedWindow"))
-    }
-    .ok_or("System Settings read-only access: cannot inspect current pane")?;
+        let app = Element::app(pid)
+            .ok_or_else(|| format!("Pane root: pid={pid}, AXUIElementCreateApplication=null"))?;
+        pane_root(|attribute| {
+            if attribute == "AXWindows" {
+                app.children_result(attribute, 1)
+                    .map(|windows| windows.into_iter().next())
+            } else {
+                app.attr_result(attribute).map(Some)
+            }
+        })
+        .map_err(|e| format!("{e}; pid={pid}"))?
+    };
     let mut info = super::super::policy::Target {
-        window_title: root.text("AXTitle").unwrap_or_default(),
+        window_title: root
+            .text_result("AXTitle")
+            .map_err(|e| format!("Pane title: pid={pid}, window={window:?}, {e}"))?,
         ..Default::default()
     };
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
@@ -317,9 +377,11 @@ pub fn pane_info(pid: i32, window: Option<u32>) -> Result<super::super::policy::
             break;
         };
         if std::time::Instant::now() >= deadline || depth > 25 {
-            return Err("System Settings read-only access: incomplete pane inspection".into());
+            return Err(format!("System Settings read-only access: incomplete pane inspection; pid={pid}, window={window:?}, depth={depth}, pending={}, budget=1s", pending.len()));
         }
-        let role = e.text("AXRole").unwrap_or_default();
+        let role = e
+            .text_result("AXRole")
+            .map_err(|e| format!("Pane role: pid={pid}, window={window:?}, depth={depth}, {e}"))?;
         if role == "AXSheet" {
             info.window_title
                 .push_str(&format!(" {}", field_info(|a| e.text(a)).label));
@@ -340,12 +402,12 @@ pub fn pane_info(pid: i32, window: Option<u32>) -> Result<super::super::policy::
         );
     }
     if !pending.is_empty() {
-        return Err("System Settings read-only access: pane inspection limit reached".into());
+        return Err(format!("System Settings read-only access: pane inspection limit reached; pid={pid}, window={window:?}, pending={}, limit=512", pending.len()));
     }
     if matches!(info.window_title.trim(), "" | "System Settings")
         && info.selected_rows.trim().is_empty()
     {
-        return Err("System Settings read-only access: cannot identify current pane".into());
+        return Err(format!("System Settings read-only access: cannot identify current pane; pid={pid}, window={window:?}, title=empty_or_generic, selected_rows=empty"));
     }
     Ok(info)
 }
@@ -437,6 +499,17 @@ pub fn policy_target(
 }
 pub fn focused_window(pid: i32) -> Option<u32> {
     Element::app(pid)?.attr("AXFocusedWindow")?.window_id()
+}
+pub(super) fn minimized(pid: i32, id: u32) -> Result<bool, String> {
+    let (window, lookup) = window_element(pid, id);
+    let window = window.ok_or_else(|| format!("Window minimized check: {lookup}"))?;
+    match window.text_result("AXMinimized")?.as_str() {
+        "1" => Ok(true),
+        "0" => Ok(false),
+        _ => Err(format!(
+            "Window minimized check: pid={pid}, window={id}, AXMinimized=invalid"
+        )),
+    }
 }
 
 pub fn restore_window(pid: i32, id: u32) {
@@ -758,6 +831,82 @@ mod element_tests {
     use super::super::ax_tree::{Node, Provider, Snapshot, SNAPSHOT_BUDGET};
     use super::*;
     use std::{cell::RefCell, rc::Rc};
+
+    #[test]
+    fn metadata_timeout_retries_once_and_preserves_error_code() {
+        for statuses in [vec![-25204, 0], vec![-25204, -25204], vec![-25202], vec![0]] {
+            let mut calls = vec![];
+            let mut statuses = statuses.into_iter();
+            let result = metadata_read("AXRole", |timeout| {
+                calls.push(timeout);
+                let status = statuses.next().expect("no extra retry");
+                if status == 0 {
+                    Ok("AXTextField")
+                } else {
+                    Err(status)
+                }
+            });
+            assert_eq!(calls[0], 0.05);
+            if calls.len() == 2 {
+                assert_eq!(calls[1], 0.25);
+            }
+            let info = field_info(|attribute| {
+                if attribute == "AXRole" {
+                    result.as_ref().ok().map(|role| role.to_string())
+                } else {
+                    None
+                }
+            });
+            assert_eq!(info.secure, result.is_err());
+            match result {
+                Ok(role) => assert_eq!(role, "AXTextField"),
+                Err(error) => {
+                    assert!(
+                        error == "AXRole: ax_error(-25204)" || error == "AXRole: ax_error(-25202)"
+                    );
+                }
+            }
+            assert!(statuses.next().is_none());
+        }
+    }
+
+    #[test]
+    fn pane_root_uses_focused_main_then_first_window_and_fails_closed() {
+        for available in 0..=3 {
+            let mut calls = vec![];
+            let result = pane_root(|attribute| {
+                calls.push(attribute.to_owned());
+                if calls.len() == available + 1 {
+                    Ok(Some(73))
+                } else {
+                    Ok(None)
+                }
+            });
+            assert_eq!(
+                calls,
+                ["AXFocusedWindow", "AXMainWindow", "AXWindows"][..(available + 1).min(3)]
+            );
+            if available < 3 {
+                assert_eq!(result, Ok(73));
+            } else {
+                assert!(result.unwrap_err().contains("cannot inspect current pane"));
+            }
+        }
+        let error = pane_root::<u32>(|a| Err(format!("{a}: ax_error(-25204)"))).unwrap_err();
+        assert!(error.contains("AXFocusedWindow: ax_error(-25204)"));
+        assert!(error.contains("AXMainWindow: ax_error(-25204)"));
+        assert!(error.contains("AXWindows: ax_error(-25204)"));
+        assert_eq!(
+            pane_root(|attribute| {
+                if attribute == "AXFocusedWindow" {
+                    Err("AXFocusedWindow: ax_error(-25204)".into())
+                } else {
+                    Ok(Some(73))
+                }
+            }),
+            Ok(73)
+        );
+    }
 
     #[test]
     fn policy_metadata_includes_placeholder_and_identifier_even_with_a_benign_title() {

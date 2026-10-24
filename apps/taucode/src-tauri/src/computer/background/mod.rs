@@ -69,7 +69,6 @@ pub fn screenshot(bundle: &str) -> Result<super::native::Frame, String> {
             .find(|a| !a.isTerminated())
             .map(|a| a.processIdentifier())
             .ok_or("Target app is not running")?;
-    ax_actions::check_pane(pid, bundle, None)?;
     let (frame, window) = capture::capture(pid)?;
     ax_actions::check_pane(pid, bundle, Some(window.id))?;
     Ok(frame)
@@ -164,7 +163,12 @@ impl Session {
         Ok(())
     }
     pub fn context(&self) -> Result<Context, String> {
-        self.check()?;
+        self.check().map_err(|e| {
+            format!(
+                "Process identity check: pid={}, bundle={}, {e}",
+                self.pid, self.bundle
+            )
+        })?;
         Ok(Context {
             app: self.bundle.clone(),
             secure: ax_actions::secure(self.pid),
@@ -200,9 +204,9 @@ impl Session {
     }
     pub fn capture(&self) -> Result<super::native::Frame, String> {
         self.check()?;
-        ax_actions::check_pane(self.pid, &self.bundle, None)?;
         let (frame, window) = capture::capture(self.pid)?;
         ax_actions::check_pane(self.pid, &self.bundle, Some(window.id))?;
+        self.overlay.set_visible(window.on_screen);
         self.ax_fallback.store(false, Ordering::SeqCst);
         *self.fallback_reason.lock().unwrap() = None;
         *self.observed.lock().unwrap() = Some(Sha256::digest(frame.png.as_bytes()).into());
@@ -221,13 +225,14 @@ impl Session {
     }
     pub fn window(&self) -> Result<Window, String> {
         self.check()?;
-        let expected = self
+        let mut expected = self
             .window
             .lock()
             .unwrap()
             .clone()
             .ok_or("Capture a target window first")?;
-        windows::validate(&expected, self.pid)?;
+        expected.on_screen = windows::validate(&expected, self.pid)?;
+        self.overlay.set_visible(expected.on_screen);
         Ok(expected)
     }
     pub fn snapshot_json(&self) -> serde_json::Value {
@@ -248,7 +253,7 @@ impl Session {
         let snapshot = self.snapshot.lock().unwrap();
         let (node, element) = snapshot.resolve(id, index)?;
         if !element.belongs_to(self.pid, window.id) {
-            return Err("AX element left target window".into());
+            return Err(format!("AX element binding check: pid={}, window={}, snapshot={id}, index={index}, belongs_to=false", self.pid, window.id));
         }
         let [x, y, w, h] = node.frame.ok_or("AX element has no frame")?;
         let point = super::policy::map_point(
@@ -309,7 +314,9 @@ impl Session {
             || prior.frame != current.frame
             || !current.enabled
         {
-            return Err("AX target changed after planning; capture again".into());
+            return Err(format!("AX target changed after planning: snapshot={id}, index={index}, role before={} after={}, label_changed={}, secure before={} after={}, frame before={:?} after={:?}, enabled={}; capture again",
+                prior.role, current.role, prior.label != current.label, prior.secure, current.secure,
+                prior.frame, current.frame, current.enabled));
         }
         Ok(())
     }

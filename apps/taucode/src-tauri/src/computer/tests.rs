@@ -250,6 +250,9 @@ fn stop_releases_keys_buttons_and_prevents_late_input() {
 }
 struct Fake {
     policy_evidence: Target,
+    policy_reads: std::cell::Cell<usize>,
+    policy_change: Option<(usize, Target)>,
+    contexts: std::cell::RefCell<std::collections::VecDeque<Context>>,
     typing_focus_changes: bool,
     element_label: String,
     element_secure: bool,
@@ -360,6 +363,12 @@ fn stop_releases_target_input_before_overlay_cleanup_and_rejects_late_work() {
 }
 impl Environment for Fake {
     fn policy_target(&self, action: &Action) -> Result<Target, String> {
+        self.policy_reads.set(self.policy_reads.get() + 1);
+        if let Some((after, target)) = &self.policy_change {
+            if self.policy_reads.get() > *after {
+                return Ok(target.clone());
+            }
+        }
         let mut target = self.policy_evidence.clone();
         if (self.typing_focus_changes && matches!(action, Action::Hotkey { .. }))
             || (self.target_changes && self.approved > 0)
@@ -414,7 +423,11 @@ impl Environment for Fake {
         Box::pin(async { self.predictions.pop_front().ok_or("No fake action".into()) })
     }
     fn context(&self) -> Result<Context, String> {
-        Ok(self.focus.clone())
+        Ok(self
+            .contexts
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| self.focus.clone()))
     }
     fn approve<'a>(
         &'a mut self,
@@ -454,6 +467,9 @@ impl Environment for Fake {
 fn fake(actions: Vec<Value>) -> Fake {
     Fake {
         policy_evidence: Target::default(),
+        policy_reads: std::cell::Cell::new(0),
+        policy_change: None,
+        contexts: Default::default(),
         typing_focus_changes: false,
         element_label: String::new(),
         element_secure: false,
@@ -1026,4 +1042,147 @@ async fn changed_sensitive_metadata_after_approval_cancels_before_input() {
     assert!(error.contains("AX policy target changed"));
     assert_eq!(env.approved, 1);
     assert!(input.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn secure_samples_change_confirmation_without_cancelling_planning() {
+    for (samples, approvals) in [
+        (vec![false, true, false], 1),
+        (vec![true, false, false], 0),
+        (vec![false, false, true, false], 1),
+    ] {
+        let mut env = fake(vec![
+            json!({"kind":"type","text":"hello","overwrite":false,"enter":false}),
+            json!({"kind":"done","summary":"done"}),
+        ]);
+        env.policy_evidence.role = "AXTextArea".into();
+        *env.contexts.borrow_mut() = samples
+            .into_iter()
+            .map(|secure| Context {
+                secure,
+                ..context()
+            })
+            .collect();
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let mut s = settings();
+        s.mode = "background".into();
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(env.approved, approvals);
+        assert_eq!(
+            input
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|e| matches!(e, Event::Text(_)))
+                .count(),
+            5
+        );
+        if approvals > 0 {
+            assert!(env
+                .steps
+                .iter()
+                .any(|step| step["reason"] == "Typing into a secure text field"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn planning_app_change_cancels_with_binding_diagnostics() {
+    let mut env = fake(vec![
+        json!({"kind":"type","text":"private text","overwrite":false,"enter":false}),
+    ]);
+    *env.contexts.borrow_mut() = [
+        context(),
+        Context {
+            app: "com.apple.Finder".into(),
+            secure: false,
+        },
+    ]
+    .into();
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let s = settings();
+    let error = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap_err();
+    assert!(error.contains("app before=com.apple.TextEdit after=com.apple.Finder"));
+    assert!(!error.contains("private text"));
+    assert!(input.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn grounded_typing_rechecks_selected_metadata_instead_of_focus() {
+    for changed in [None, Some("role"), Some("label"), Some("secure")] {
+        let mut env = fake(vec![
+            json!({"kind":"type","text":"hello","overwrite":false,"enter":false,"snapshot_id":1,"element_index":0}),
+            json!({"kind":"done","summary":"done"}),
+        ]);
+        env.policy_evidence.role = "AXTextArea".into();
+        env.policy_evidence.label = "Document".into();
+        env.typing_focus_changes = true; // Focused field differs from the grounded field.
+        if let Some(field) = changed {
+            let mut target = env.policy_evidence.clone();
+            match field {
+                "role" => target.role = "AXTextField".into(),
+                "label" => target.label = "private label".into(),
+                "secure" => target.secure = true,
+                _ => unreachable!(),
+            }
+            env.policy_change = Some((3, target)); // Immediately before the first input.
+        }
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let s = settings();
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
+        if changed.is_some() {
+            let error = result.unwrap_err();
+            assert!(
+                error.contains("Typing field changed before input"),
+                "{error}"
+            );
+            assert!(!error.contains("private label"));
+            assert!(input.0.lock().unwrap().is_empty());
+        } else {
+            assert!(result.is_ok(), "{result:?}");
+            assert_eq!(
+                input
+                    .0
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|e| matches!(e, Event::Text(_)))
+                    .count(),
+                5
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn grounded_secure_and_sensitive_fields_still_require_confirmation() {
+    for secure in [false, true] {
+        let mut env = fake(vec![
+            json!({"kind":"type","text":"hello","overwrite":false,"enter":false,"snapshot_id":1,"element_index":0}),
+            json!({"kind":"done","summary":"done"}),
+        ]);
+        env.policy_evidence.role = "AXTextField".into();
+        env.policy_evidence.secure = secure;
+        env.policy_evidence.label = if secure { "Document" } else { "Password" }.into();
+        env.typing_focus_changes = true;
+        let control = Control::new(FakeInput::default());
+        control.start();
+        let s = settings();
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(env.approved, 1);
+    }
 }
