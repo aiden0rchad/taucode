@@ -4,8 +4,14 @@ import { computerRequest, computerRequestPermissions } from "@services/tauri";
 import { defaultComputerSettings, type ComputerRun, type ComputerSettings } from "@/features/computer/computer";
 import { modelKey, modelRef } from "@settings/registry";
 import "@/features/computer/computer.css";
+function allowedApps(entries: (string | ComputerSettings["allowedApps"][number])[]): ComputerSettings["allowedApps"] {
+  return entries.map(entry => {
+    const app = typeof entry === "string" ? { bundleId: entry, access: "full" as const } : entry;
+    return { ...app, access: app.bundleId.trim().toLowerCase() === "com.apple.systempreferences" ? "read-only" : app.access };
+  });
+}
 export function SettingsComputerSection({ appSettings, onUpdateAppSettings }: { appSettings: AppSettings; onUpdateAppSettings: (s: AppSettings) => Promise<void> }) {
-  const [draft, setDraft] = useState({ ...defaultComputerSettings, ...appSettings.computer });
+  const [draft, setDraft] = useState({ ...defaultComputerSettings, ...appSettings.computer, allowedApps: allowedApps(appSettings.computer?.allowedApps ?? []) });
   const [status, setStatus] = useState<ComputerRun>({ steps: [] });
   const [busy, setBusy] = useState(false);
   const [requesting, setRequesting] = useState(false);
@@ -34,7 +40,7 @@ export function SettingsComputerSection({ appSettings, onUpdateAppSettings }: { 
     try {
       if (draft.enabled && (!draft.planner || !draft.grounding)) throw new Error("Select planner and grounding models");
       if (draft.enabled) { setStatus(s => ({ ...s, setup: "Preparing Python 3.12 environment…" })); await computerRequest({ action: "prepare" }); }
-      await onUpdateAppSettings({ ...appSettings, computer: { ...draft, allowedApps: draft.allowedApps.map(s => s.trim()).filter(Boolean), deniedApps: draft.deniedApps.map(s => s.trim()).filter(Boolean) } });
+      await onUpdateAppSettings({ ...appSettings, computer: { ...draft, allowedApps: allowedApps(draft.allowedApps.map(a => ({ ...a, bundleId: a.bundleId.trim() })).filter(a => a.bundleId)), deniedApps: draft.deniedApps.map(s => s.trim()).filter(Boolean) } });
       await refresh();
     } catch (e) { setError(String(e)); } finally { setBusy(false); }
   };
@@ -50,9 +56,14 @@ export function SettingsComputerSection({ appSettings, onUpdateAppSettings }: { 
       {(["planner", "grounding"] as const).map(role => <label key={role}>{role === "planner" ? "Vision planner model" : "Grounding model"}<select value={modelKey(draft[role])} onChange={e => update({ [role]: modelRef(e.target.value) })}><option value="">Select a registry model</option>{options}</select></label>)}
       <label>Grounding mode<select value={draft.groundingMode} onChange={e => update({ groundingMode: e.target.value as ComputerSettings["groundingMode"] })}><option value="elements">Accessibility elements (recommended)</option><option value="pixels">Vision model — pixel coordinates</option><option value="ui-tars">UI-TARS — preset coordinates</option></select></label>
       {draft.groundingMode === "ui-tars" && <label>Grounding coordinates<select value={`${draft.groundingWidth}x${draft.groundingHeight}`} onChange={e => { const [groundingWidth, groundingHeight] = e.target.value.split("x").map(Number); update({ groundingWidth, groundingHeight }); }}><option value="1920x1080">UI-TARS-1.5-7B · 1920 × 1080</option><option value="1000x1000">UI-TARS-72B · 1000 × 1000</option></select></label>}
-      <label>Allowed app bundle IDs (one per line)<textarea value={draft.allowedApps.join("\n")} onChange={e => update({ allowedApps: e.target.value.split("\n") })} /></label>
+      <label>Typing confirmation<select value={draft.confirmTyping} onChange={e => update({ confirmTyping: e.target.value as ComputerSettings["confirmTyping"] })}><option value="sensitive">Sensitive fields and risky actions</option><option value="always">Always</option></select></label>
+      <p>Sensitive mode allows typing in ordinary text fields of full-access apps. Secure or sensitive fields, Enter, and other shortcuts require approval. Safe shortcuts: ⌘N, ⌘F, ⌘A, ⌘C, ⌘V, ⌘Z, ⌘⇧Z, arrows, Tab, Escape. ⌘S also requires approval, including saving a new document.</p>
+      <label>Allowed app bundle IDs (one per line)<textarea value={draft.allowedApps.map(a => a.bundleId).join("\n")} onChange={e => update({ allowedApps: allowedApps(e.target.value.split("\n").map(bundleId => draft.allowedApps.find(a => a.bundleId === bundleId) ?? { bundleId, access: "full" })) })} /></label>
+      {draft.allowedApps.map((app, index) => app.bundleId.trim() && <label key={index}>Access for {app.bundleId}<select disabled={app.bundleId.trim().toLowerCase() === "com.apple.systempreferences"} value={app.access} onChange={e => update({ allowedApps: draft.allowedApps.map((a, i) => i === index ? { ...a, access: e.target.value as typeof a.access } : a) })}><option value="full">Full</option><option value="read-only">Read-only</option></select></label>)}
+      <p>Read-only apps allow navigation clicks, scrolling and opening the app. Typing, shortcuts, setting controls, risky clicks and dragging are blocked.</p>
       <label>Additional denied app bundle IDs (one per line)<textarea value={draft.deniedApps.join("\n")} onChange={e => update({ deniedApps: e.target.value.split("\n") })} /></label>
-      <p>Password managers, Keychain, System Settings, terminal apps and known banking apps are always blocked. The run allowlist can only narrow this list.</p>
+      <p>Password managers, Keychain, terminal apps and known banking apps are always blocked. The run allowlist can only narrow this list.</p>
+      <p>System Settings is locked to read-only. Blocked panes: Privacy &amp; Security, Users &amp; Groups, Passwords, Login Password, Lock Screen, Touch ID &amp; Password, Wallet &amp; Apple Pay, Login Items &amp; Extensions, Sharing, Network, and Battery → Options.</p>
       <label>Maximum steps<input type="number" min={1} max={500} value={draft.maxSteps} onChange={e => update({ maxSteps: Number(e.target.value) })} /></label>
       <label>Maximum seconds<input type="number" min={1} max={3600} value={draft.maxSeconds} onChange={e => update({ maxSeconds: Number(e.target.value) })} /></label>
       <label>Stop shortcut<input value={draft.shortcut} onChange={e => update({ shortcut: e.target.value })} /></label>

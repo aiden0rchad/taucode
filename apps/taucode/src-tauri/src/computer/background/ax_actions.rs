@@ -250,9 +250,190 @@ fn target(pid: i32, point: Option<[f64; 2]>) -> Option<Element> {
     Some(element)
 }
 pub fn secure(pid: i32) -> bool {
-    target(pid, None)
-        .and_then(|e| e.attr("AXSubrole"))
-        .is_none_or(|s| s.equals("AXSecureTextField"))
+    target(pid, None).is_none_or(|e| {
+        let role = e.text("AXRole").unwrap_or_default();
+        role.is_empty()
+            || super::super::policy::secure_field(&role, &e.text("AXSubrole").unwrap_or_default())
+    })
+}
+fn field_info(mut read: impl FnMut(&str) -> Option<String>) -> super::super::policy::Target {
+    let role = read("AXRole").unwrap_or_default();
+    let static_label = if role == "AXStaticText" {
+        read("AXValue").unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let mut info = super::super::policy::Target {
+        secure: role.is_empty()
+            || super::super::policy::secure_field(&role, &read("AXSubrole").unwrap_or_default()),
+        role,
+        label: [
+            "AXTitle",
+            "AXDescription",
+            "AXHelp",
+            "AXIdentifier",
+            "AXPlaceholderValue",
+        ]
+        .iter()
+        .filter_map(|a| read(a))
+        .collect::<Vec<_>>()
+        .join(" "),
+        ..Default::default()
+    };
+    info.label.push_str(&format!(" {static_label}"));
+    info.label = info.label.trim().to_owned();
+    info
+}
+// Inspect only AX metadata, never field values.
+fn row_label(row: &Element) -> String {
+    let mut labels = vec![field_info(|a| row.text(a)).label];
+    let mut pending = row.children("AXChildren", 32);
+    for _ in 0..64 {
+        let Some(e) = pending.pop() else {
+            break;
+        };
+        labels.push(field_info(|a| e.text(a)).label);
+        if pending.len() < 64 {
+            pending.extend(e.children("AXChildren", 16));
+        }
+    }
+    labels.join(" ")
+}
+pub fn pane_info(pid: i32, window: Option<u32>) -> Result<super::super::policy::Target, String> {
+    let root = if let Some(id) = window {
+        window_element(pid, id).0
+    } else {
+        Element::app(pid).and_then(|a| a.attr("AXFocusedWindow"))
+    }
+    .ok_or("System Settings read-only access: cannot inspect current pane")?;
+    let mut info = super::super::policy::Target {
+        window_title: root.text("AXTitle").unwrap_or_default(),
+        ..Default::default()
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    let mut pending = vec![(root, 0)];
+    for _ in 0..512 {
+        let Some((e, depth)) = pending.pop() else {
+            break;
+        };
+        if std::time::Instant::now() >= deadline || depth > 25 {
+            return Err("System Settings read-only access: incomplete pane inspection".into());
+        }
+        let role = e.text("AXRole").unwrap_or_default();
+        if role == "AXSheet" {
+            info.window_title
+                .push_str(&format!(" {}", field_info(|a| e.text(a)).label));
+        }
+        if matches!(role.as_str(), "AXRow" | "AXOutlineRow" | "AXCell")
+            && e.text("AXSelected").as_deref() == Some("1")
+        {
+            info.selected_rows.push_str(&format!(" {}", row_label(&e)));
+        }
+        for row in e.children("AXSelectedRows", 32) {
+            info.selected_rows
+                .push_str(&format!(" {}", row_label(&row)));
+        }
+        pending.extend(
+            e.children("AXChildren", 512)
+                .into_iter()
+                .map(|child| (child, depth + 1)),
+        );
+    }
+    if !pending.is_empty() {
+        return Err("System Settings read-only access: pane inspection limit reached".into());
+    }
+    if matches!(info.window_title.trim(), "" | "System Settings")
+        && info.selected_rows.trim().is_empty()
+    {
+        return Err("System Settings read-only access: cannot identify current pane".into());
+    }
+    Ok(info)
+}
+pub fn check_pane(pid: i32, bundle: &str, window: Option<u32>) -> Result<(), String> {
+    if bundle.eq_ignore_ascii_case(super::super::policy::SYSTEM_SETTINGS) {
+        super::super::policy::check_pane(bundle, &pane_info(pid, window)?)?;
+    }
+    Ok(())
+}
+pub fn policy_target(
+    pid: i32,
+    window: Option<u32>,
+    action: &Action,
+    selected: Option<&Element>,
+) -> Result<super::super::policy::Target, String> {
+    let hit = target(pid, action_point(action));
+    let element = selected.or(hit.as_ref());
+    let insertion = element.and_then(|e| window.and_then(|w| focused_insertion(pid, w, e, action)));
+    let effective = insertion.as_ref().or(element);
+    if let (Some(e), Some(id)) = (effective, window) {
+        if !e.belongs_to(pid, id) {
+            return Err("AX policy target left the captured window".into());
+        }
+    }
+    let mut info = effective
+        .map(|e| field_info(|a| e.text(a)))
+        .unwrap_or_default();
+    // A static-text child of a setting control must inherit the control's restriction.
+    if matches!(action, Action::Click { .. }) {
+        let mut parent = effective.and_then(|e| e.attr("AXParent"));
+        for _ in 0..8 {
+            let Some(e) = parent else {
+                break;
+            };
+            let role = e.text("AXRole").unwrap_or_default();
+            if matches!(
+                role.as_str(),
+                "AXCheckBox"
+                    | "AXSwitch"
+                    | "AXRadioButton"
+                    | "AXSlider"
+                    | "AXIncrementor"
+                    | "AXPopUpButton"
+                    | "AXComboBox"
+                    | "AXTextField"
+                    | "AXTextArea"
+            ) {
+                info.role = role.clone();
+            }
+            if matches!(role.as_str(), "AXRow" | "AXOutlineRow" | "AXCell") {
+                info.label.push_str(&format!(" {}", row_label(&e)));
+                break;
+            }
+            if role == "AXWindow" {
+                break;
+            }
+            info.label
+                .push_str(&format!(" {}", field_info(|a| e.text(a)).label));
+            parent = e.attr("AXParent");
+        }
+        if let Some(e) =
+            effective.filter(|_| matches!(info.role.as_str(), "AXRow" | "AXOutlineRow" | "AXCell"))
+        {
+            info.label.push_str(&format!(" {}", row_label(e)));
+        }
+    }
+    let app = objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+        .and_then(|a| a.bundleIdentifier())
+        .ok_or("Target application unavailable")?
+        .to_string();
+    if app.eq_ignore_ascii_case(super::super::policy::SYSTEM_SETTINGS) {
+        let mut pane = pane_info(pid, window)?;
+        if window.is_none() {
+            if let Some(id) = element.and_then(|e| {
+                e.window_id()
+                    .or_else(|| e.attr("AXWindow").and_then(|w| w.window_id()))
+            }) {
+                let pointed = pane_info(pid, Some(id))?;
+                pane.window_title
+                    .push_str(&format!(" {}", pointed.window_title));
+                pane.selected_rows
+                    .push_str(&format!(" {}", pointed.selected_rows));
+            }
+        }
+        info.window_title = pane.window_title;
+        info.selected_rows = pane.selected_rows;
+    }
+    Ok(info)
 }
 pub fn focused_window(pid: i32) -> Option<u32> {
     Element::app(pid)?.attr("AXFocusedWindow")?.window_id()
@@ -578,6 +759,40 @@ mod element_tests {
     use super::*;
     use std::{cell::RefCell, rc::Rc};
 
+    #[test]
+    fn policy_metadata_includes_placeholder_and_identifier_even_with_a_benign_title() {
+        for sensitive_attribute in [
+            "AXDescription",
+            "AXHelp",
+            "AXIdentifier",
+            "AXPlaceholderValue",
+        ] {
+            let target = field_info(|attribute| match attribute {
+                "AXRole" => Some("AXTextField".into()),
+                "AXTitle" => Some("Document".into()),
+                a if a == sensitive_attribute => Some("PIN".into()),
+                "AXValue" => panic!("must never read editable field values"),
+                _ => None,
+            });
+            assert!(target.label.contains("Document"));
+            assert!(target.label.contains("PIN"));
+            assert!(!target.secure);
+        }
+        assert!(
+            field_info(|a| match a {
+                "AXRole" => Some("AXTextField".into()),
+                "AXSubrole" => Some("AXSecureEntry".into()),
+                _ => None,
+            })
+            .secure
+        );
+        let row = field_info(|a| match a {
+            "AXRole" => Some("AXStaticText".into()),
+            "AXValue" => Some("Privacy & Security".into()),
+            _ => None,
+        });
+        assert_eq!(row.label, "Privacy & Security");
+    }
     struct FakeElement {
         token: usize,
         advertised: Vec<String>,

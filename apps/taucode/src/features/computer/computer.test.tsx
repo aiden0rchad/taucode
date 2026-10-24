@@ -11,6 +11,28 @@ vi.mock("@services/tauri", () => ({ computerRequest: vi.fn(), computerRequestPer
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const step = { step: 1, thumbnail: "aGVsbG8=", action: { kind: "click" }, reflection: "Found button" };
 describe("computer use", () => {
+  it("persists typing confirmation and app access, migrating strings and locking System Settings", async () => {
+    vi.mocked(computerRequest).mockResolvedValue({ steps: [] });
+    const save = vi.fn().mockResolvedValue(undefined);
+    const computer = { ...defaultComputerSettings, allowedApps: ["com.apple.TextEdit", { bundleId: "com.apple.systempreferences", access: "full" }] };
+    render(<SettingsComputerSection appSettings={{ computer } as AppSettings} onUpdateAppSettings={save} />);
+    expect((screen.getByLabelText("Typing confirmation") as HTMLSelectElement).value).toBe("sensitive");
+    expect(screen.getByText(/Safe shortcuts: ⌘N, ⌘F, ⌘A, ⌘C, ⌘V, ⌘Z, ⌘⇧Z, arrows, Tab, Escape/)).toBeTruthy();
+    const locked = screen.getByLabelText("Access for com.apple.systempreferences") as HTMLSelectElement;
+    expect(locked.disabled).toBe(true);
+    expect(locked.value).toBe("read-only");
+    expect(screen.getByText(/System Settings is locked to read-only.*Battery → Options/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Typing confirmation"), { target: { value: "always" } });
+    fireEvent.change(screen.getByLabelText("Access for com.apple.TextEdit"), { target: { value: "read-only" } });
+    fireEvent.change(screen.getByLabelText("Allowed app bundle IDs (one per line)"), { target: { value: "com.apple.TextEdit\ncom.apple.systempreferences\ncom.apple.Preview" } });
+    expect((screen.getByLabelText("Access for com.apple.Preview") as HTMLSelectElement).value).toBe("full");
+    fireEvent.click(screen.getByText("Save Computer Use"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ computer: expect.objectContaining({ confirmTyping: "always", allowedApps: [
+      { bundleId: "com.apple.TextEdit", access: "read-only" },
+      { bundleId: "com.apple.systempreferences", access: "read-only" },
+      { bundleId: "com.apple.Preview", access: "full" },
+    ] }) })));
+  });
   it("shows grounding decisions independently of the input route", () => {
     render(<ComputerRunItem run={{ running: false, paused: false, steps: [{ ...step,
       path: "pixel-skylight", action: { kind: "click", element_index: 0, snapshot_id: 3 },

@@ -147,7 +147,7 @@ impl Computer {
                         && !app_allowed(
                             &current.app,
                             &settings.computer,
-                            &settings.computer.allowed_apps,
+                            &settings.computer.app_ids(),
                         )
                     {
                         return Err("Screenshot blocked by app policy".into());
@@ -158,10 +158,10 @@ impl Computer {
                 {
                     let allowed: Vec<_> = settings
                         .computer
-                        .allowed_apps
+                        .app_ids()
                         .iter()
                         .filter(|a| {
-                            app_allowed(a, &settings.computer, &settings.computer.allowed_apps)
+                            app_allowed(a, &settings.computer, &settings.computer.app_ids())
                         })
                         .cloned()
                         .collect();
@@ -234,7 +234,7 @@ impl Computer {
                 limits.max_steps = n as u32;
             }
             let apps: Vec<String> = match p.get("apps") {
-                None => limits.allowed_apps.clone(),
+                None => limits.app_ids(),
                 Some(v) => {
                     serde_json::from_value(v.clone()).map_err(|_| "Expected app bundle IDs")?
                 }
@@ -469,6 +469,17 @@ impl runner::Environment for Live {
             Some(s) => s.select_element(target, action),
             None if target.is_none() => Ok((String::new(), false)),
             None => Err("Element snapshots unavailable".into()),
+        }
+    }
+    fn policy_target(&self, action: &Action) -> Result<policy::Target, String> {
+        match &self.session {
+            Some(s) => s.policy_target(action),
+            None => {
+                let front = objc2_app_kit::NSWorkspace::sharedWorkspace()
+                    .frontmostApplication()
+                    .ok_or("Cannot identify frontmost app")?;
+                background::ax_actions::policy_target(front.processIdentifier(), None, action, None)
+            }
         }
     }
     fn verify_target(&self) -> Result<(), String> {

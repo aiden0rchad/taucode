@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Cua AI, Inc.
 // SPDX-License-Identifier: MIT
 // Background routing adapted from input/mouse.rs and input/keyboard.rs; see NOTICE.
-mod ax_actions;
+pub(super) mod ax_actions;
 mod ax_tree;
 use ax_tree::Provider;
 mod bezier;
@@ -69,7 +69,10 @@ pub fn screenshot(bundle: &str) -> Result<super::native::Frame, String> {
             .find(|a| !a.isTerminated())
             .map(|a| a.processIdentifier())
             .ok_or("Target app is not running")?;
-    capture::capture(pid).map(|(frame, _)| frame)
+    ax_actions::check_pane(pid, bundle, None)?;
+    let (frame, window) = capture::capture(pid)?;
+    ax_actions::check_pane(pid, bundle, Some(window.id))?;
+    Ok(frame)
 }
 
 pub struct Session {
@@ -197,7 +200,9 @@ impl Session {
     }
     pub fn capture(&self) -> Result<super::native::Frame, String> {
         self.check()?;
+        ax_actions::check_pane(self.pid, &self.bundle, None)?;
         let (frame, window) = capture::capture(self.pid)?;
+        ax_actions::check_pane(self.pid, &self.bundle, Some(window.id))?;
         self.ax_fallback.store(false, Ordering::SeqCst);
         *self.fallback_reason.lock().unwrap() = None;
         *self.observed.lock().unwrap() = Some(Sha256::digest(frame.png.as_bytes()).into());
@@ -270,6 +275,22 @@ impl Session {
         }
         *self.selected.lock().unwrap() = target;
         Ok((format!("{} {}", node.role, node.label), node.secure))
+    }
+    pub fn policy_target(&self, action: &Action) -> Result<super::policy::Target, String> {
+        let window = self.window()?;
+        let selected = if matches!(
+            action,
+            Action::Click { .. } | Action::Type { .. } | Action::Scroll { .. }
+        ) {
+            *self.selected.lock().unwrap()
+        } else {
+            None
+        };
+        let snapshot = self.snapshot.lock().unwrap();
+        let element = selected
+            .map(|(id, index)| snapshot.resolve(id, index).map(|(_, e)| e))
+            .transpose()?;
+        ax_actions::policy_target(self.pid, Some(window.id), action, element)
     }
     pub fn verify_element(&self) -> Result<(), String> {
         let Some((id, index)) = *self.selected.lock().unwrap() else {

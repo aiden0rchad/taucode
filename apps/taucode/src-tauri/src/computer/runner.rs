@@ -38,6 +38,9 @@ pub trait Environment {
         }
         Ok((String::new(), false))
     }
+    fn policy_target(&self, _: &Action) -> Result<Target, String> {
+        Ok(Target::default())
+    }
     fn verify_target(&self) -> Result<(), String> {
         Ok(())
     }
@@ -88,9 +91,22 @@ async fn execute(
     c: &Context,
     action: &Action,
     target: Option<&str>,
+    policy_target: &Target,
 ) -> Result<(), String> {
     let epoch = control.epoch();
+    let verify_typing = || -> Result<(), String> {
+        if matches!(action, Action::Type { .. }) {
+            let focused = env.policy_target(&Action::Hotkey { keys: vec![] })?;
+            if focused != *policy_target {
+                return Err("Typing field changed before input; action cancelled".into());
+            }
+        }
+        Ok(())
+    };
     let key = |name: &str, down| {
+        if down {
+            verify_typing()?;
+        }
         post(
             env,
             control,
@@ -171,6 +187,7 @@ async fn execute(
                 for ch in text.chars() {
                     tokio::task::yield_now().await;
                     control.checkpoint().await?;
+                    verify_typing()?;
                     post(env, control, c, epoch, Event::Text(ch.to_string()))?;
                 }
                 if *enter {
@@ -362,6 +379,13 @@ pub async fn run(
                 Action::SwitchApp { app } => Some(env.target(app)?),
                 _ => None,
             };
+            if let (Action::Open { app_or_file }, Some(app)) = (&action, &target) {
+                if app_or_file != app && access(app, settings) == Access::ReadOnly {
+                    return Err(
+                        "App has read-only access: open the app by bundle ID, not a file".into(),
+                    );
+                }
+            }
             let policy_action = match &target {
                 Some(app) => Action::SwitchApp { app: app.clone() },
                 None => action.clone(),
@@ -375,10 +399,12 @@ pub async fn run(
                 ..current.clone()
             };
             env.verify_target()?;
+            let policy_target = env.policy_target(&action)?;
             match decide(
                 &policy_action,
                 &description,
                 &policy_context,
+                &policy_target,
                 settings,
                 apps,
                 step,
@@ -406,10 +432,14 @@ pub async fn run(
             if after != current {
                 return Err("Focus changed after approval; action cancelled".into());
             }
+            if env.policy_target(&action)? != policy_target {
+                return Err("AX policy target changed after approval; action cancelled".into());
+            }
             if let Decision::Deny(reason) = decide(
                 &policy_action,
                 &description,
                 &after,
+                &policy_target,
                 settings,
                 apps,
                 step,
@@ -449,6 +479,7 @@ pub async fn run(
                     &policy_action,
                     &description,
                     &after,
+                    &policy_target,
                     settings,
                     apps,
                     step,
@@ -457,6 +488,9 @@ pub async fn run(
                     return Err(reason);
                 }
                 env.verify_target()?;
+                if env.policy_target(&action)? != policy_target {
+                    return Err("AX policy target changed after fallback approval".into());
+                }
                 env.begin_foreground(control, &after)?;
                 entry["waitMs"] = json!(
                     entry["waitMs"].as_u64().unwrap_or(0)
@@ -474,10 +508,21 @@ pub async fn run(
                     })
                     .await?;
             }
+            if preparation != Preparation::Handled && env.policy_target(&action)? != policy_target {
+                return Err("AX policy target changed before input".into());
+            }
             let outcome = if preparation == Preparation::Handled {
                 Ok(())
             } else {
-                execute(env, control, &after, &action, target.as_deref()).await
+                execute(
+                    env,
+                    control,
+                    &after,
+                    &action,
+                    target.as_deref(),
+                    &policy_target,
+                )
+                .await
             };
             env.end_action();
             let outcome = outcome.and_then(|()| {

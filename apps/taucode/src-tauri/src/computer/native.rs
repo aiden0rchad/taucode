@@ -30,12 +30,6 @@ extern "C" {
     fn AXIsProcessTrusted() -> bool;
     fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
     static kAXTrustedCheckOptionPrompt: *const c_void;
-    fn AXUIElementCreateApplication(pid: i32) -> *const c_void;
-    fn AXUIElementCopyAttributeValue(
-        element: *const c_void,
-        attribute: *const c_void,
-        value: *mut *const c_void,
-    ) -> i32;
     fn AXUIElementSetMessagingTimeout(element: *const c_void, seconds: f32) -> i32;
     fn AXUIElementCreateSystemWide() -> *const c_void;
     fn AXUIElementCopyElementAtPosition(
@@ -97,42 +91,7 @@ pub fn context() -> Result<Context, String> {
         .bundleIdentifier()
         .ok_or("Frontmost app has no bundle ID")?
         .to_string();
-    // Unknown AX focus is treated as secure, never as evidence that typing is safe.
-    let secure = unsafe {
-        let root = AXUIElementCreateApplication(front.processIdentifier());
-        if root.is_null() {
-            true
-        } else {
-            AXUIElementSetMessagingTimeout(root, 0.02);
-            let mut focus = std::ptr::null();
-            let attr = NSString::from_str("AXFocusedUIElement");
-            let status =
-                AXUIElementCopyAttributeValue(root, (&*attr as *const NSString).cast(), &mut focus);
-            CFRelease(root);
-            if status != 0 || focus.is_null() {
-                true
-            } else {
-                AXUIElementSetMessagingTimeout(focus, 0.02);
-                let mut role = std::ptr::null();
-                let attr = NSString::from_str("AXSubrole");
-                let status = AXUIElementCopyAttributeValue(
-                    focus,
-                    (&*attr as *const NSString).cast(),
-                    &mut role,
-                );
-                CFRelease(focus);
-                if status != 0 || role.is_null() {
-                    true
-                } else {
-                    let expected = NSString::from_str("AXSecureTextField");
-                    let equal: bool =
-                        msg_send![role as *const AnyObject, isEqualToString:&*expected];
-                    CFRelease(role);
-                    equal
-                }
-            }
-        }
-    };
+    let secure = super::background::ax_actions::secure(front.processIdentifier());
     Ok(Context { app, secure })
 }
 pub fn target(app_or_file: &str) -> Result<(String, Retained<NSURL>), String> {
@@ -234,6 +193,12 @@ pub fn capture(allowed: &[String]) -> Result<Frame, String> {
                 a.process_id() == std::process::id() as i32
                     || a.bundle_identifier() == "dev.taucode.desktop"
                     || !allowed.contains(&a.bundle_identifier())
+                    || super::background::ax_actions::check_pane(
+                        a.process_id(),
+                        &a.bundle_identifier(),
+                        Some(w.window_id()),
+                    )
+                    .is_err()
             })
         })
         .collect();

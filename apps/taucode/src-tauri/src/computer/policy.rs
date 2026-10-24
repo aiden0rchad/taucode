@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
 
-pub(crate) use crate::types::ComputerSettings as Settings;
+pub(crate) use crate::types::{
+    ComputerAccess as Access, ComputerSettings as Settings, ConfirmTyping,
+};
 
 pub fn validate(s: &Settings) -> Result<(), String> {
     if !matches!(s.mode.as_str(), "background" | "foreground") {
@@ -20,6 +22,7 @@ pub fn validate(s: &Settings) -> Result<(), String> {
             .is_err()
         || s.allowed_apps
             .iter()
+            .map(|a| &a.bundle_id)
             .chain(&s.denied_apps)
             .any(|a| a.is_empty() || a.contains(char::is_whitespace) || a.contains('\0'))
     {
@@ -230,7 +233,6 @@ pub const ALWAYS_DENIED: &[&str] = &[
     "com.apple.keychainaccess",
     "com.apple.Passwords",
     "com.keepassxc.keepassxc",
-    "com.apple.systempreferences",
     "com.apple.Terminal",
     "com.googlecode.iterm2",
     "dev.warp.Warp-Stable",
@@ -246,6 +248,95 @@ pub struct Context {
     pub app: String,
     pub secure: bool,
 }
+// Host AX evidence only; never populate this from planner text.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Target {
+    pub role: String,
+    pub label: String,
+    pub secure: bool,
+    pub window_title: String,
+    pub selected_rows: String,
+}
+pub const SYSTEM_SETTINGS: &str = "com.apple.systempreferences";
+pub fn access(app: &str, s: &Settings) -> Access {
+    if app.eq_ignore_ascii_case(SYSTEM_SETTINGS)
+        || s.allowed_apps
+            .iter()
+            .any(|a| a.bundle_id == app && a.access == Access::ReadOnly)
+    {
+        Access::ReadOnly
+    } else {
+        Access::Full
+    }
+}
+pub fn secure_field(role: &str, subrole: &str) -> bool {
+    role.to_ascii_lowercase().contains("secure") || subrole.to_ascii_lowercase().contains("secure")
+}
+pub fn denied_pane(title: &str, sidebar: &str) -> Option<&'static str> {
+    let text = format!("{title} {sidebar}")
+        .to_lowercase()
+        .replace('&', "and");
+    [
+        "Privacy & Security",
+        "Users & Groups",
+        "Passwords",
+        "Login Password",
+        "Lock Screen",
+        "Touch ID & Password",
+        "Wallet & Apple Pay",
+        "Login Items & Extensions",
+        "Sharing",
+        "Network",
+    ]
+    .into_iter()
+    .find(|pane| text.contains(&pane.to_lowercase().replace('&', "and")))
+    .or_else(|| {
+        (text.contains("battery") && text.contains("options")).then_some("Battery → Options")
+    })
+}
+pub fn check_pane(app: &str, target: &Target) -> Result<(), String> {
+    if app.eq_ignore_ascii_case(SYSTEM_SETTINGS) {
+        if let Some(pane) = denied_pane(&target.window_title, &target.selected_rows) {
+            return Err(format!(
+                "System Settings read-only access: pane blocked: {pane}"
+            ));
+        }
+    }
+    Ok(())
+}
+fn sensitive_field(label: &str) -> bool {
+    label
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .any(|word| {
+            [
+                "password", "passcode", "pin", "otp", "card", "cvv", "ssn", "iban", "routing",
+            ]
+            .iter()
+            .any(|s| word.eq_ignore_ascii_case(s))
+        })
+}
+fn safe_hotkey(keys: &[String]) -> bool {
+    let Some(mut keys) = keys.iter().map(|k| keycode(k)).collect::<Option<Vec<_>>>() else {
+        return false;
+    };
+    keys.sort_unstable();
+    matches!(
+        keys.as_slice(),
+        [0, 55]
+            | [3, 55]
+            | [6, 55]
+            | [6, 55, 56]
+            | [8, 55]
+            | [9, 55]
+            | [45, 55]
+            | [48]
+            | [53]
+            | [123]
+            | [124]
+            | [125]
+            | [126]
+    )
+}
 #[derive(Debug, PartialEq)]
 pub enum Decision {
     Allow,
@@ -257,13 +348,14 @@ pub fn app_allowed(app: &str, s: &Settings, apps: &[String]) -> bool {
         && app != "dev.taucode.desktop"
         && !ALWAYS_DENIED.iter().any(|a| a.eq_ignore_ascii_case(app))
         && !s.denied_apps.iter().any(|a| a.eq_ignore_ascii_case(app))
-        && s.allowed_apps.iter().any(|a| a == app)
+        && s.allowed_apps.iter().any(|a| a.bundle_id == app)
         && apps.iter().any(|a| a == app)
 }
 pub fn decide(
     a: &Action,
     description: &str,
     c: &Context,
+    target_info: &Target,
     s: &Settings,
     apps: &[String],
     steps: u32,
@@ -288,18 +380,110 @@ pub fn decide(
     {
         return Decision::Deny("Target app is not allowed; use an allowed bundle ID".into());
     }
-    if matches!(a, Action::Type { .. }) && c.secure {
+    if let Err(reason) = check_pane(&c.app, target_info) {
+        return Decision::Deny(reason);
+    }
+    if c.app.eq_ignore_ascii_case(SYSTEM_SETTINGS) && matches!(a, Action::Click { .. }) {
+        if let Some(pane) = denied_pane(
+            &format!("{} {}", target_info.label, description),
+            &format!("{} {}", target_info.window_title, target_info.selected_rows),
+        ) {
+            return Decision::Deny(format!(
+                "System Settings read-only access: navigation to pane blocked: {pane}"
+            ));
+        }
+    }
+    if access(&c.app, s) == Access::ReadOnly && !bootstrap {
+        let allowed = match a {
+            Action::Click {
+                button,
+                clicks,
+                hold_keys,
+                ..
+            } => {
+                button == "left"
+                    && *clicks == 1
+                    && hold_keys.is_empty()
+                    && matches!(
+                        target_info.role.as_str(),
+                        "AXButton"
+                            | "AXRow"
+                            | "AXCell"
+                            | "AXOutlineRow"
+                            | "AXLink"
+                            | "AXTab"
+                            | "AXMenuItem"
+                            | "AXDisclosureTriangle"
+                            | "AXStaticText"
+                    )
+                    && !risky_target(description)
+                    && !risky_target(&target_info.label)
+            }
+            Action::Scroll { .. }
+            | Action::Open { .. }
+            | Action::SwitchApp { .. }
+            | Action::Wait { .. }
+            | Action::Done { .. }
+            | Action::Fail { .. } => true,
+            _ => false,
+        };
+        if !allowed {
+            return Decision::Deny("App has read-only access: only navigation clicks, scrolling and opening the app are allowed".into());
+        }
+    }
+    if let Action::Click { hold_keys, .. } | Action::Drag { hold_keys, .. } = a {
+        if hold_keys
+            .iter()
+            .any(|k| !matches!(keycode(k), Some(55 | 56 | 58 | 59)))
+        {
+            return Decision::Confirm("Confirm keyboard presses held during pointer action");
+        }
+    }
+    if matches!(a, Action::Type { .. }) && (c.secure || target_info.secure) {
         return Decision::Confirm("Typing into a secure text field");
     }
-    if matches!(a, Action::Click { .. }) && risky_target(description) {
+    if matches!(a, Action::Click { .. })
+        && (risky_target(description) || risky_target(&target_info.label))
+    {
         return Decision::Confirm("Potential submit, send, purchase or destructive click");
     }
-    // A target field can change focus, and keyboard shortcuts can submit without a click.
     if matches!(
         a,
         Action::Type { .. } | Action::Hotkey { .. } | Action::HoldAndPress { .. }
     ) {
-        return Decision::Confirm("Confirm typing or keyboard action");
+        if s.confirm_typing == ConfirmTyping::Always {
+            return Decision::Confirm("Confirm typing or keyboard action");
+        }
+        if sensitive_field(&target_info.label) {
+            return Decision::Confirm("Typing or keyboard action in a sensitive field");
+        }
+        let safe = match a {
+            Action::Type { enter, text, .. } => {
+                !enter
+                    && !text.contains(['\r', '\n'])
+                    && matches!(
+                        target_info.role.as_str(),
+                        "AXTextField" | "AXTextArea" | "AXComboBox"
+                    )
+            }
+            Action::Hotkey { keys } => safe_hotkey(keys) && !target_info.secure && !c.secure,
+            Action::HoldAndPress { hold, press } => {
+                !press.is_empty()
+                    && press.iter().all(|key| {
+                        let mut keys = hold.clone();
+                        keys.push(key.clone());
+                        safe_hotkey(&keys)
+                    })
+                    && !target_info.secure
+                    && !c.secure
+            }
+            _ => false,
+        };
+        if !safe {
+            return Decision::Confirm(
+                "Confirm typing, Enter or potentially unsafe keyboard action",
+            );
+        }
     }
     Decision::Allow
 }
@@ -408,4 +592,442 @@ pub fn keycode(key: &str) -> Option<u16> {
         "up" => 126,
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod refinements {
+    use super::*;
+
+    fn settings() -> Settings {
+        Settings {
+            allowed_apps: vec!["com.apple.TextEdit".into(), SYSTEM_SETTINGS.into()],
+            ..Default::default()
+        }
+    }
+    fn field(role: &str, label: &str) -> Target {
+        Target {
+            role: role.into(),
+            label: label.into(),
+            ..Default::default()
+        }
+    }
+    fn decision(action: &Action, target: &Target, settings: &Settings, app: &str) -> Decision {
+        decide(
+            action,
+            "ordinary target",
+            &Context {
+                app: app.into(),
+                secure: false,
+            },
+            target,
+            settings,
+            &settings.app_ids(),
+            0,
+            Duration::ZERO,
+        )
+    }
+    fn typing(enter: bool) -> Action {
+        Action::Type {
+            text: "hello".into(),
+            x: None,
+            y: None,
+            overwrite: false,
+            enter,
+        }
+    }
+    fn click() -> Action {
+        Action::Click {
+            x: 0.,
+            y: 0.,
+            button: "left".into(),
+            clicks: 1,
+            hold_keys: vec![],
+        }
+    }
+    fn keys(keys: &[&str]) -> Vec<String> {
+        keys.iter().map(|k| (*k).into()).collect()
+    }
+    fn confirmed(d: Decision) {
+        assert!(matches!(d, Decision::Confirm(_)), "{d:?}");
+    }
+    fn denied(d: Decision) {
+        assert!(
+            matches!(d, Decision::Deny(ref reason) if reason.contains("read-only")),
+            "{d:?}"
+        );
+    }
+
+    #[test]
+    fn typing_modes_roles_secure_fields_and_enter() {
+        let mut s = settings();
+        for role in ["AXTextField", "AXTextArea", "AXComboBox"] {
+            let target = field(role, "Document");
+            assert_eq!(
+                decision(&typing(false), &target, &s, "com.apple.TextEdit"),
+                Decision::Allow
+            );
+            confirmed(decision(&typing(true), &target, &s, "com.apple.TextEdit"));
+            for text in ["hello\nworld", "hello\rworld"] {
+                let mut action = typing(false);
+                if let Action::Type { text: value, .. } = &mut action {
+                    *value = text.into();
+                }
+                confirmed(decision(&action, &target, &s, "com.apple.TextEdit"));
+            }
+            s.confirm_typing = ConfirmTyping::Always;
+            confirmed(decision(&typing(false), &target, &s, "com.apple.TextEdit"));
+            s.confirm_typing = ConfirmTyping::Sensitive;
+        }
+        for (role, subrole) in [
+            ("AXSecureTextField", ""),
+            ("AXTextField", "AXSecureTextField"),
+            ("AXTextField", "AXSecureEntry"),
+        ] {
+            assert!(secure_field(role, subrole));
+            let target = Target {
+                secure: secure_field(role, subrole),
+                ..field(role, "Document")
+            };
+            for mode in [ConfirmTyping::Always, ConfirmTyping::Sensitive] {
+                s.confirm_typing = mode;
+                confirmed(decision(&typing(false), &target, &s, "com.apple.TextEdit"));
+            }
+        }
+        assert!(!secure_field("AXTextField", "AXSearchField"));
+        confirmed(decision(
+            &typing(false),
+            &Target::default(),
+            &s,
+            "com.apple.TextEdit",
+        ));
+    }
+
+    #[test]
+    fn sensitive_metadata_uses_whole_words_case_insensitively() {
+        let s = settings();
+        for word in [
+            "password", "passcode", "pin", "otp", "card", "cvv", "ssn", "iban", "routing",
+        ] {
+            for label in [
+                word.to_uppercase(),
+                format!("Enter ({word}) here"),
+                format!("account-{word}"),
+            ] {
+                confirmed(decision(
+                    &typing(false),
+                    &field("AXTextField", &label),
+                    &s,
+                    "com.apple.TextEdit",
+                ));
+            }
+        }
+        for label in [
+            "spinning",
+            "postcard",
+            "routingNumber",
+            "passwordless",
+            "card_number",
+            "Document",
+        ] {
+            assert_eq!(
+                decision(
+                    &typing(false),
+                    &field("AXTextField", label),
+                    &s,
+                    "com.apple.TextEdit"
+                ),
+                Decision::Allow,
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn keyboard_decision_table_including_aliases_and_held_keys() {
+        let mut s = settings();
+        let target = field("AXTextArea", "Document");
+        for held in [
+            &["enter"][..],
+            &["return"],
+            &["cmd", "delete"],
+            &["cmd", "q"],
+        ] {
+            let mut action = click();
+            if let Action::Click { hold_keys, .. } = &mut action {
+                *hold_keys = keys(held);
+            }
+            confirmed(decision(&action, &target, &s, "com.apple.TextEdit"));
+            confirmed(decision(
+                &Action::Drag {
+                    from: [0., 0.],
+                    to: [1., 1.],
+                    hold_keys: keys(held),
+                },
+                &target,
+                &s,
+                "com.apple.TextEdit",
+            ));
+        }
+        let safe: &[&[&str]] = &[
+            &["cmd", "n"],
+            &["command", "f"],
+            &["super", "a"],
+            &["cmd", "c"],
+            &["cmd", "v"],
+            &["cmd", "z"],
+            &["cmd", "shift", "z"],
+            &["left"],
+            &["right"],
+            &["up"],
+            &["down"],
+            &["tab"],
+            &["escape"],
+        ];
+        let risky: &[&[&str]] = &[
+            &["cmd", "q"],
+            &["cmd", "w"],
+            &["cmd", "backspace"],
+            &["cmd", "option", "backspace"],
+            &["cmd", "shift", "backspace"],
+            &["cmd", "option", "esc"],
+            &["cmd", "s"],
+            &["ctrl", "cmd", "q"],
+            &["cmd", "delete"],
+            &["cmd", "shift", "delete"],
+            &["cmd", "alt", "delete"],
+            &["command", "tab"],
+            &["enter"],
+            &["return"],
+            &["shift", "return"],
+            &["f5"],
+            &["a"],
+            &[],
+            &["cmd", "n", "q"],
+        ];
+        for (table, allow) in [(safe, true), (risky, false)] {
+            for chord in table {
+                let mut actions = vec![Action::Hotkey { keys: keys(chord) }];
+                if let Some((press, hold)) = chord.split_last() {
+                    actions.push(Action::HoldAndPress {
+                        hold: keys(hold),
+                        press: keys(&[*press]),
+                    });
+                }
+                for action in actions {
+                    s.confirm_typing = ConfirmTyping::Sensitive;
+                    let result = decision(&action, &target, &s, "com.apple.TextEdit");
+                    if allow {
+                        assert_eq!(result, Decision::Allow, "{chord:?}");
+                    } else {
+                        confirmed(result);
+                    }
+                    s.confirm_typing = ConfirmTyping::Always;
+                    confirmed(decision(&action, &target, &s, "com.apple.TextEdit"));
+                }
+            }
+        }
+        s.confirm_typing = ConfirmTyping::Sensitive;
+        confirmed(decision(
+            &Action::HoldAndPress {
+                hold: keys(&["cmd"]),
+                press: keys(&["n", "q"]),
+            },
+            &target,
+            &s,
+            "com.apple.TextEdit",
+        ));
+    }
+
+    #[test]
+    fn read_only_role_and_action_table() {
+        let mut s = settings();
+        s.allowed_apps[0].access = Access::ReadOnly;
+        for role in [
+            "AXButton",
+            "AXRow",
+            "AXCell",
+            "AXOutlineRow",
+            "AXLink",
+            "AXTab",
+            "AXMenuItem",
+            "AXDisclosureTriangle",
+            "AXStaticText",
+        ] {
+            assert_eq!(
+                decision(&click(), &field(role, "General"), &s, "com.apple.TextEdit"),
+                Decision::Allow,
+                "{role}"
+            );
+            for word in [
+                "submit",
+                "send",
+                "buy",
+                "purchase",
+                "pay",
+                "checkout",
+                "confirm",
+                "order",
+                "delete",
+                "transfer",
+                "remove",
+                "erase",
+                "unsubscribe",
+                "publish",
+                "post",
+            ] {
+                denied(decision(
+                    &click(),
+                    &field(role, word),
+                    &s,
+                    "com.apple.TextEdit",
+                ));
+            }
+        }
+        for role in [
+            "AXCheckBox",
+            "AXSwitch",
+            "AXRadioButton",
+            "AXSlider",
+            "AXIncrementor",
+            "AXPopUpButton",
+            "AXComboBox",
+            "AXTextField",
+            "AXTextArea",
+            "AXGroup",
+            "",
+        ] {
+            denied(decision(
+                &click(),
+                &field(role, "General"),
+                &s,
+                "com.apple.TextEdit",
+            ));
+        }
+        let target = field("AXTextArea", "Document");
+        for action in [
+            typing(false),
+            typing(true),
+            Action::Type {
+                text: "replace".into(),
+                x: None,
+                y: None,
+                overwrite: true,
+                enter: false,
+            },
+            Action::Hotkey {
+                keys: keys(&["cmd", "c"]),
+            },
+            Action::HoldAndPress {
+                hold: keys(&["cmd"]),
+                press: keys(&["n"]),
+            },
+            Action::Drag {
+                from: [0., 0.],
+                to: [1., 1.],
+                hold_keys: vec![],
+            },
+        ] {
+            denied(decision(&action, &target, &s, "com.apple.TextEdit"));
+        }
+        for action in [
+            Action::Scroll {
+                x: 0.,
+                y: 0.,
+                clicks: 1,
+                shift: false,
+            },
+            Action::Open {
+                app_or_file: "com.apple.TextEdit".into(),
+            },
+            Action::SwitchApp {
+                app: "com.apple.TextEdit".into(),
+            },
+        ] {
+            assert_eq!(
+                decision(&action, &target, &s, "com.apple.TextEdit"),
+                Decision::Allow
+            );
+        }
+    }
+
+    #[test]
+    fn system_settings_force_read_only_and_deny_panes_by_title_sidebar_and_destination() {
+        let mut s = settings();
+        s.allowed_apps[1].access = Access::Full;
+        denied(decision(
+            &typing(false),
+            &field("AXTextField", "Search"),
+            &s,
+            SYSTEM_SETTINGS,
+        ));
+        assert_eq!(
+            decision(&click(), &field("AXRow", "General"), &s, SYSTEM_SETTINGS),
+            Decision::Allow
+        );
+        for pane in [
+            "Privacy & Security",
+            "Users & Groups",
+            "Passwords",
+            "Login Password",
+            "Lock Screen",
+            "Touch ID & Password",
+            "Wallet & Apple Pay",
+            "Login Items & Extensions",
+            "Sharing",
+            "Network",
+            "Battery → Options",
+        ] {
+            for target in [
+                Target {
+                    window_title: pane.into(),
+                    ..field("AXButton", "General")
+                },
+                Target {
+                    selected_rows: pane.into(),
+                    ..field("AXButton", "General")
+                },
+                field("AXRow", pane),
+            ] {
+                denied(decision(&click(), &target, &s, SYSTEM_SETTINGS));
+            }
+        }
+        let battery = Target {
+            selected_rows: "Battery".into(),
+            window_title: "System Settings".into(),
+            ..field("AXButton", "Options…")
+        };
+        denied(decision(&click(), &battery, &s, SYSTEM_SETTINGS));
+        assert_eq!(denied_pane("Options", "Battery"), Some("Battery → Options"));
+        assert_eq!(denied_pane("Battery", "Battery"), None);
+        assert_eq!(
+            denied_pane("privacy and security", ""),
+            Some("Privacy & Security")
+        );
+        for app in ALWAYS_DENIED {
+            s.allowed_apps.push((*app).into());
+            assert!(!app_allowed(app, &s, &s.app_ids()));
+        }
+    }
+
+    #[test]
+    fn settings_migrate_strings_and_reject_invalid_modes_or_access() {
+        let s: Settings = serde_json::from_value(serde_json::json!({"allowedApps": ["com.apple.TextEdit", {"bundleId": "com.apple.Preview", "access": "read-only"}, {"bundleId": SYSTEM_SETTINGS, "access": "full"}]})).unwrap();
+        assert_eq!(s.confirm_typing, ConfirmTyping::Sensitive);
+        assert_eq!(s.allowed_apps[0].access, Access::Full);
+        assert_eq!(s.allowed_apps[1].access, Access::ReadOnly);
+        assert_eq!(s.allowed_apps[2].access, Access::ReadOnly);
+        let value = serde_json::to_value(&s).unwrap();
+        assert_eq!(
+            value["allowedApps"][0],
+            serde_json::json!({"bundleId":"com.apple.TextEdit","access":"full"})
+        );
+        assert_eq!(value["confirmTyping"], "sensitive");
+        for invalid in [
+            serde_json::json!({"confirmTyping":"never"}),
+            serde_json::json!({"allowedApps":[{"bundleId":"app","access":"all"}]}),
+            serde_json::json!({"allowedApps":[{"bundleId":"app"}]}),
+        ] {
+            assert!(serde_json::from_value::<Settings>(invalid).is_err());
+        }
+    }
 }

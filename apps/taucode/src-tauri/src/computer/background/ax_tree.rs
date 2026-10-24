@@ -9,7 +9,7 @@ pub const MAX_ELEMENTS: usize = 250;
 pub const SNAPSHOT_BUDGET: Duration = Duration::from_secs(1);
 
 fn secure_field(role: &str, subrole: Option<&str>) -> bool {
-    role == "AXSecureTextField" || subrole == Some("AXSecureTextField")
+    super::super::policy::secure_field(role, subrole.unwrap_or_default())
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq)]

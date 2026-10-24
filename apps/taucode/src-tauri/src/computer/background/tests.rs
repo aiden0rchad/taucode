@@ -269,7 +269,7 @@ fn background_policy_checks_bound_app_and_never_bootstraps_taucode() {
     assert!(!settings.allow_foreground_fallback);
     assert!(settings.virtual_cursor);
     let context = Context {
-        app: settings.allowed_apps[0].clone(),
+        app: settings.allowed_apps[0].bundle_id.clone(),
         secure: false,
     };
     let action = Action::Click {
@@ -284,8 +284,9 @@ fn background_policy_checks_bound_app_and_never_bootstraps_taucode() {
             &action,
             "document",
             &context,
+            &super::super::policy::Target::default(),
             &settings,
-            &settings.allowed_apps,
+            &settings.app_ids(),
             0,
             Duration::ZERO
         ),
@@ -294,19 +295,20 @@ fn background_policy_checks_bound_app_and_never_bootstraps_taucode() {
     assert!(matches!(
         decide(
             &Action::SwitchApp {
-                app: settings.allowed_apps[1].clone()
+                app: settings.allowed_apps[1].bundle_id.clone()
             },
             "",
             &context,
+            &super::super::policy::Target::default(),
             &settings,
-            &settings.allowed_apps,
+            &settings.app_ids(),
             0,
             Duration::ZERO
         ),
         Decision::Deny(_)
     ));
     for app in ALWAYS_DENIED {
-        assert!(!app_allowed(app, &settings, &settings.allowed_apps));
+        assert!(!app_allowed(app, &settings, &settings.app_ids()));
     }
     assert!(matches!(
         decide(
@@ -316,8 +318,9 @@ fn background_policy_checks_bound_app_and_never_bootstraps_taucode() {
                 app: "dev.taucode.desktop".into(),
                 secure: false
             },
+            &super::super::policy::Target::default(),
             &settings,
-            &settings.allowed_apps,
+            &settings.app_ids(),
             0,
             Duration::ZERO
         ),

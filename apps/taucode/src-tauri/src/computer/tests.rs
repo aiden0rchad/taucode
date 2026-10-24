@@ -125,15 +125,25 @@ fn policy_denylist_secure_submit_limits() {
             &a,
             "Click document",
             &c,
+            &super::policy::Target::default(),
             &s,
-            &s.allowed_apps,
+            &s.app_ids(),
             0,
             Duration::ZERO
         ),
         Decision::Allow
     );
     assert!(matches!(
-        decide(&a, "BUY now", &c, &s, &s.allowed_apps, 0, Duration::ZERO),
+        decide(
+            &a,
+            "BUY now",
+            &c,
+            &super::policy::Target::default(),
+            &s,
+            &s.app_ids(),
+            0,
+            Duration::ZERO
+        ),
         Decision::Confirm(_)
     ));
     let text = Action::Type {
@@ -151,15 +161,25 @@ fn policy_denylist_secure_submit_limits() {
                 secure: true,
                 ..c.clone()
             },
+            &super::policy::Target::default(),
             &s,
-            &s.allowed_apps,
+            &s.app_ids(),
             0,
             Duration::ZERO
         ),
         Decision::Confirm("Typing into a secure text field")
     );
     assert!(matches!(
-        decide(&a, "", &c, &s, &s.allowed_apps, s.max_steps, Duration::ZERO),
+        decide(
+            &a,
+            "",
+            &c,
+            &super::policy::Target::default(),
+            &s,
+            &s.app_ids(),
+            s.max_steps,
+            Duration::ZERO
+        ),
         Decision::Deny(_)
     ));
     assert!(matches!(
@@ -167,23 +187,33 @@ fn policy_denylist_secure_submit_limits() {
             &a,
             "",
             &c,
+            &super::policy::Target::default(),
             &s,
-            &s.allowed_apps,
+            &s.app_ids(),
             0,
             Duration::from_secs(s.max_seconds)
         ),
         Decision::Deny(_)
     ));
     assert!(matches!(
-        decide(&a, "", &c, &s, &[], 0, Duration::ZERO),
+        decide(
+            &a,
+            "",
+            &c,
+            &super::policy::Target::default(),
+            &s,
+            &[],
+            0,
+            Duration::ZERO
+        ),
         Decision::Deny(_)
     ));
     for app in ALWAYS_DENIED {
         s.allowed_apps.push((*app).into());
-        assert!(!app_allowed(app, &s, &s.allowed_apps));
+        assert!(!app_allowed(app, &s, &s.app_ids()));
     }
     s.denied_apps.push(c.app.clone());
-    assert!(!app_allowed(&c.app, &s, &s.allowed_apps));
+    assert!(!app_allowed(&c.app, &s, &s.app_ids()));
 }
 #[test]
 fn stop_releases_keys_buttons_and_prevents_late_input() {
@@ -219,6 +249,8 @@ fn stop_releases_keys_buttons_and_prevents_late_input() {
         .is_err());
 }
 struct Fake {
+    policy_evidence: Target,
+    typing_focus_changes: bool,
     element_label: String,
     element_secure: bool,
     target_changes: bool,
@@ -327,6 +359,15 @@ fn stop_releases_target_input_before_overlay_cleanup_and_rejects_late_work() {
         .is_err());
 }
 impl Environment for Fake {
+    fn policy_target(&self, action: &Action) -> Result<Target, String> {
+        let mut target = self.policy_evidence.clone();
+        if (self.typing_focus_changes && matches!(action, Action::Hotkey { .. }))
+            || (self.target_changes && self.approved > 0)
+        {
+            target.label = "Password".into();
+        }
+        Ok(target)
+    }
     fn ground_target(&self, _: &Prediction, _: &mut Action) -> Result<(String, bool), String> {
         Ok((self.element_label.clone(), self.element_secure))
     }
@@ -412,6 +453,8 @@ impl Environment for Fake {
 }
 fn fake(actions: Vec<Value>) -> Fake {
     Fake {
+        policy_evidence: Target::default(),
+        typing_focus_changes: false,
         element_label: String::new(),
         element_secure: false,
         target_changes: false,
@@ -450,15 +493,8 @@ async fn fallback_requires_setting_and_fresh_approval_before_any_input() {
         let input = FakeInput::default();
         let control = Control::new(input.clone());
         control.start();
-        let result = runner::run(
-            &mut env,
-            &control,
-            &s,
-            &s.allowed_apps,
-            "test",
-            Instant::now(),
-        )
-        .await;
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
         let allowed = enabled && approved && !changed;
         assert_eq!(result.is_ok(), allowed);
         assert_eq!(env.takeovers.get(), usize::from(allowed));
@@ -479,16 +515,9 @@ async fn loop_fake_capture_planner_input_and_progress() {
     let control = Control::new(input.clone());
     control.start();
     let s = settings();
-    let result = runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now(),
-    )
-    .await
-    .unwrap();
+    let result = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap();
     assert_eq!(result["summary"], "Complete");
     assert_eq!(env.steps.len(), 2);
     assert_eq!(env.captures, 3);
@@ -512,16 +541,11 @@ async fn declined_approval_and_changed_focus_never_type() {
         let control = Control::new(input.clone());
         control.start();
         let s = settings();
-        assert!(runner::run(
-            &mut env,
-            &control,
-            &s,
-            &s.allowed_apps,
-            "test",
-            Instant::now()
-        )
-        .await
-        .is_err());
+        assert!(
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+                .await
+                .is_err()
+        );
         assert_eq!(env.approved, 1);
         assert!(input.0.lock().unwrap().is_empty());
     }
@@ -572,16 +596,9 @@ async fn bootstrap_can_only_switch_to_allowed_app_and_step_limit_stops() {
         ..settings()
     };
     assert_eq!(
-        runner::run(
-            &mut env,
-            &control,
-            &s,
-            &s.allowed_apps,
-            "test",
-            Instant::now()
-        )
-        .await
-        .unwrap_err(),
+        runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+            .await
+            .unwrap_err(),
         "Maximum steps reached"
     );
     assert_eq!(env.steps.len(), 1);
@@ -597,8 +614,9 @@ async fn bootstrap_can_only_switch_to_allowed_app_and_step_limit_stops() {
             &click,
             "",
             &env.focus,
+            &super::policy::Target::default(),
             &s,
-            &s.allowed_apps,
+            &s.app_ids(),
             0,
             Duration::ZERO
         ),
@@ -612,8 +630,9 @@ async fn bootstrap_can_only_switch_to_allowed_app_and_step_limit_stops() {
             &terminal,
             "",
             &env.focus,
+            &super::policy::Target::default(),
             &s,
-            &s.allowed_apps,
+            &s.app_ids(),
             0,
             Duration::ZERO
         ),
@@ -654,32 +673,20 @@ async fn wall_limit_cancels_wait_and_denied_app_is_never_captured() {
     };
     let mut env = fake(vec![json!({"kind":"wait","seconds":10})]);
     assert_eq!(
-        runner::run(
-            &mut env,
-            &control,
-            &s,
-            &s.allowed_apps,
-            "test",
-            Instant::now()
-        )
-        .await
-        .unwrap_err(),
+        runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+            .await
+            .unwrap_err(),
         "Maximum wall time reached"
     );
     assert!(control.stopped());
     control.start();
     env.focus.app = "com.apple.Terminal".into();
     env.captures = 0;
-    assert!(runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now()
-    )
-    .await
-    .is_err());
+    assert!(
+        runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+            .await
+            .is_err()
+    );
     assert_eq!(env.captures, 0);
     assert!(input.0.lock().unwrap().is_empty());
 }
@@ -719,16 +726,9 @@ async fn prediction_error_is_logged_without_input() {
     let control = Control::new(input.clone());
     control.start();
     let s = settings();
-    let error = runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now(),
-    )
-    .await
-    .unwrap_err();
+    let error = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap_err();
     assert_eq!(error, "No fake action");
     assert_eq!(env.steps.len(), 1);
     assert_eq!(env.steps[0]["error"], error);
@@ -762,7 +762,7 @@ async fn click_policy_uses_target_not_agent_s_plan_or_reflection() {
             &mut env,
             &control,
             &s,
-            &s.allowed_apps,
+            &s.app_ids(),
             "12 × 7",
             Instant::now(),
         )
@@ -811,8 +811,9 @@ fn risky_clicks_match_whole_words_case_insensitively() {
                         &click,
                         &target,
                         &context(),
+                        &super::policy::Target::default(),
                         &s,
-                        &s.allowed_apps,
+                        &s.app_ids(),
                         0,
                         Duration::ZERO
                     ),
@@ -832,8 +833,9 @@ fn risky_clicks_match_whole_words_case_insensitively() {
                     &click,
                     &target,
                     &context(),
+                    &super::policy::Target::default(),
                     &s,
-                    &s.allowed_apps,
+                    &s.app_ids(),
                     0,
                     Duration::ZERO
                 ),
@@ -865,16 +867,9 @@ async fn approval_timeout_logs_reason_target_and_wait_duration_without_input() {
         max_seconds: 1,
         ..settings()
     };
-    let error = runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now(),
-    )
-    .await
-    .unwrap_err();
+    let error = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap_err();
     assert_eq!(error, "Timed out waiting for approval: Potential submit, send, purchase or destructive click (Delete account)");
     assert_eq!(env.steps.len(), 1);
     assert_eq!(env.steps[0]["kind"], "approval_wait");
@@ -912,16 +907,9 @@ async fn grounding_diagnostics_and_index_zero_survive_approval_and_final_progres
     let control = Control::new(FakeInput::default());
     control.start();
     let s = settings();
-    runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now(),
-    )
-    .await
-    .unwrap();
+    runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap();
     assert_eq!(env.approved, 1);
     let entries: Vec<_> = env.steps.iter().filter(|s| s["step"] == 1).collect();
     assert!(entries.len() >= 2);
@@ -943,16 +931,11 @@ async fn element_label_policy_cannot_be_bypassed_by_benign_description() {
     let control = Control::new(input.clone());
     control.start();
     let s = settings();
-    assert!(runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now()
-    )
-    .await
-    .is_err());
+    assert!(
+        runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+            .await
+            .is_err()
+    );
     assert_eq!(env.approved, 1);
     assert!(input.0.lock().unwrap().is_empty());
 }
@@ -968,20 +951,79 @@ async fn changed_element_after_approval_cancels_input() {
     let control = Control::new(input.clone());
     control.start();
     let s = settings();
-    assert!(runner::run(
-        &mut env,
-        &control,
-        &s,
-        &s.allowed_apps,
-        "test",
-        Instant::now()
-    )
-    .await
-    .is_err());
+    assert!(
+        runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+            .await
+            .is_err()
+    );
     assert_eq!(env.approved, 1);
     assert!(env
         .steps
         .iter()
         .any(|step| step["reason"] == "Typing into a secure text field"));
+    assert!(input.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn typing_policy_runs_before_events_and_rechecks_the_focused_field() {
+    for (mode, access, changed, approvals, succeeds) in [
+        (ConfirmTyping::Sensitive, Access::Full, false, 0, true),
+        (ConfirmTyping::Always, Access::Full, false, 1, true),
+        (ConfirmTyping::Sensitive, Access::ReadOnly, false, 0, false),
+        (ConfirmTyping::Sensitive, Access::Full, true, 0, false),
+    ] {
+        let mut env = fake(vec![
+            json!({"kind":"type","text":"hello","overwrite":false,"enter":false}),
+            json!({"kind":"done","summary":"done"}),
+        ]);
+        env.policy_evidence = Target {
+            role: "AXTextArea".into(),
+            label: "Document".into(),
+            ..Default::default()
+        };
+        env.typing_focus_changes = changed;
+        let mut s = settings();
+        s.confirm_typing = mode;
+        s.allowed_apps[0].access = access;
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
+        assert_eq!(result.is_ok(), succeeds, "{result:?}");
+        assert_eq!(env.approved, approvals);
+        assert_eq!(
+            input
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|e| matches!(e, Event::Text(_)))
+                .count(),
+            if succeeds { 5 } else { 0 }
+        );
+    }
+}
+#[tokio::test]
+async fn changed_sensitive_metadata_after_approval_cancels_before_input() {
+    let mut env = fake(vec![
+        json!({"kind":"type","text":"hello","overwrite":false,"enter":false}),
+    ]);
+    env.policy_evidence = Target {
+        role: "AXTextArea".into(),
+        label: "Document".into(),
+        ..Default::default()
+    };
+    env.target_changes = true;
+    let mut s = settings();
+    s.confirm_typing = ConfirmTyping::Always;
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let error = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap_err();
+    assert!(error.contains("AX policy target changed"));
+    assert_eq!(env.approved, 1);
     assert!(input.0.lock().unwrap().is_empty());
 }
