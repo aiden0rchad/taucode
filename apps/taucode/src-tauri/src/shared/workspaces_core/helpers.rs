@@ -93,7 +93,7 @@ pub(crate) async fn list_workspaces_core(
     let workspaces = workspaces.lock().await;
     let sessions = sessions.lock().await;
     let mut result = Vec::new();
-    for entry in workspaces.values() {
+    for entry in workspaces.values().filter(|w| !matches!(w.kind, crate::types::WorkspaceKind::Work)) {
         result.push(WorkspaceInfo {
             id: entry.id.clone(),
             name: entry.name.clone(),

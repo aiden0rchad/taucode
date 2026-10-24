@@ -1232,3 +1232,17 @@ export function getSubagentTranscript(workspaceId: string, threadId: string, nod
 export function createSideChat(workspaceId: string, threadId: string, atItemId?: string) {
   return invoke<{ result: { thread: Record<string, unknown> & { id: string } } }>("create_side_chat", { workspaceId, threadId, atItemId });
 }
+
+export async function workRequest<T = unknown>(action: string, params: Record<string, unknown> = {}): Promise<T> {
+  return invoke<T>("work_request", { action, params });
+}
+export async function workAttachment(spaceId: string, path: string): Promise<string> {
+  return invoke<string>("work_attachment", { spaceId, path });
+}
+export async function workOutput(taskId: string, path: string, action: "open" | "reveal" | "preview"): Promise<void> {
+  return invoke("work_output", { taskId, path, action });
+}
+export async function pickWorkAttachments(): Promise<string[]> {
+  const selection = await open({ directory: false, multiple: true });
+  return selection ? Array.isArray(selection) ? selection : [selection] : [];
+}

@@ -3,6 +3,9 @@ mod repository;
 mod tests;
 use crate::backend::events::{AppServerEvent, EventSink, TerminalExit, TerminalOutput};
 use repository::Repository;
+pub(crate) fn validate_space(data: &std::path::Path, workspace: &str, root: &std::path::Path) -> Result<(), String> {
+    Repository::new(data, workspace, root).map(|_| ())
+}
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -44,6 +47,16 @@ pub struct Checkpoints {
     emit: Arc<dyn Fn(AppServerEvent) + Send + Sync>,
 }
 impl Checkpoints {
+    pub async fn outputs(&self, workspace: &str, thread: &str) -> Result<Vec<String>, String> {
+        let _operation = self.operation.lock().await;
+        let repo = self.repo(workspace)?;
+        let thread = thread.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let rows = repo.list(&thread)?;
+            let before = rows.iter().rev().find(|r| r.metadata["kind"] == "before" && r.commit.is_some()).ok_or("No before checkpoint available")?;
+            Ok(repo.diff(&thread, &before.id)?.into_iter().filter(|c| c.status != "deleted since").map(|c| c.path).collect())
+        }).await.map_err(|e| e.to_string())?
+    }
     pub fn new(
         data: PathBuf,
         workspace: String,

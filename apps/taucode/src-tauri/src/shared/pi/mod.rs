@@ -38,6 +38,8 @@ struct Session {
 pub(crate) struct PiEngine {
     pub(super) data: Option<PathBuf>,
     chat: bool,
+    work: bool,
+    pub read_only_folders: Mutex<HashMap<String, Vec<String>>>,
     pub paths: Mutex<HashMap<String, String>>,
     sessions: Mutex<HashMap<String, Session>>,
     registry: Mutex<HashMap<String, (Vec<ProviderEntry>, AgentPolicy)>>,
@@ -47,13 +49,15 @@ pub(crate) struct PiEngine {
     idle: Duration,
     keys: Arc<dyn KeyStore>,
     #[cfg(test)]
-    fake: bool,
+    pub(super) fake: bool,
 }
 impl Default for PiEngine {
     fn default() -> Self {
         Self {
             data: None,
             chat: false,
+            work: false,
+            read_only_folders: Mutex::new(HashMap::new()),
             paths: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
             registry: Mutex::new(HashMap::new()),
@@ -85,6 +89,9 @@ impl PiEngine {
     }
     pub fn chat(data: PathBuf, sink: Sink) -> Self {
         Self { data: Some(data), chat: true, sink, ..Self::default() }
+    }
+    pub fn work(data: PathBuf, workspace: String, cwd: String, sink: Sink) -> Self {
+        Self { work: true, ..Self::new(data, workspace, cwd, None, sink) }
     }
     fn chat_scratch(&self, id: &str) -> Result<PathBuf, String> {
         uuid::Uuid::parse_str(id).map_err(|_| "Invalid chat ID")?;
@@ -355,6 +362,15 @@ impl PiEngine {
         }
         config::write_policy(&home, registry, policy)?;
         config::write_access(&home, &id, None)?;
+        if self.work {
+            let file = home.join("taucode/threads").join(format!("{id}.json"));
+            let mut access: Value = serde_json::from_slice(&std::fs::read(&file).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+            access["kind"] = json!("work");
+            access["workspace"] = s.thread["cwd"].clone();
+            access["readOnlyFolders"] = json!(self.read_only_folders.lock().await.get(&s.workspace).cloned().unwrap_or_default());
+            if let Ok(root) = super::engine_runtime::source("work", None) { access["skillRoot"] = json!(root); }
+            config::write_json(&file, &access)?;
+        }
         env.insert("TAUCODE_SESSION_KEY".into(), id.clone());
         env.insert(
             "TAUCODE_WORKSPACE".into(),
@@ -414,6 +430,17 @@ impl PiEngine {
         } else {
             command.env_remove("TAUCODE_CHAT").env_remove("TAUCODE_CHAT_WEB").arg("-e").arg(home.join("extensions/taucode-subagents.ts"))
                 .args(["-e", "builtin:mcp"]);
+        }
+        command.env_remove("TAUCODE_WORK").env_remove("TAUCODE_WORK_PYTHON");
+        if self.work {
+            let source = super::engine_runtime::source("work", None)?;
+            #[cfg(not(test))]
+            let installed = super::engine_runtime::prepare(self.data.as_ref().unwrap(), "work", None).await.ok();
+            #[cfg(test)]
+            let installed: Option<PathBuf> = None;
+            let python = installed.map(|p| p.join(if cfg!(windows) { ".venv/Scripts/python.exe" } else { ".venv/bin/python" }));
+            command.arg("-e").arg(home.join("extensions/taucode-work.ts"));
+            work_profile(&mut command, &source, python.as_deref());
         }
         command.args([
                 "--no-approve",
@@ -484,7 +511,7 @@ impl PiEngine {
                 true
             }
         };
-        if require_extensions && p.extensions.lock().await.len() != if self.chat { 1 } else { 2 } {
+        if require_extensions && p.extensions.lock().await.len() != if self.chat { 1 } else if self.work { 3 } else { 2 } {
             let _ = p.shutdown().await;
             return Err("Pi policy extensions did not load; refusing to run without the approval gate and subagent policy".into());
         }
@@ -1224,4 +1251,12 @@ fn rewind_session(file: &Path, thread: &str, user_item: Option<&str>, leaf: Opti
     writeln!(output, "{}{}", if bytes.ends_with('\n') { "" } else { "\n" }, marker).map_err(|e| e.to_string())?;
     output.sync_all().map_err(|e| e.to_string())?;
     Ok(previous)
+}
+
+const WORK_PROMPT: &str = "You are doing knowledge work in the selected space. Use ask_user when you need clarification or a user decision; do not assume an answer. Plan first with a Markdown checklist (- [ ] step); update it with - [x] as you progress. Keep outputs in outputs/ unless told otherwise. Ask before deleting or overwriting user files outside outputs/, regardless of access mode. Never write outside this space; extra folders are read-only. Shell commands require approval and must respect these same boundaries. Use the bundled document skills and TAUCODE_WORK_PYTHON; if unavailable explain that document libraries are unavailable and offer Markdown/CSV instead. Summarize what was produced with relative file paths. Do not schedule recurring tasks.";
+fn work_profile(command: &mut Command, source: &Path, python: Option<&Path>) {
+    command.env("TAUCODE_WORK", "1")
+        .args(["--no-skills", "--no-context-files", "--no-prompt-templates", "--tools", "read,write,edit,ls,find,grep,bash,subagent,ask_user,mcp__*", "--append-system-prompt", WORK_PROMPT])
+        .arg("--skill").arg(source.join("skills"));
+    if let Some(python) = python { command.env("TAUCODE_WORK_PYTHON", python); }
 }

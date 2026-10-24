@@ -1051,3 +1051,50 @@ fn rewind_tree_excludes_user_message_and_undo_retains_old_branch() {
     assert!(read_session(&file, &[]).unwrap().1.turns.is_empty());
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn work_spawn_profile_loads_only_bundled_skills_and_preserves_connectors_and_subagents() {
+    let mut command = Command::new("node");
+    work_profile(&mut command, Path::new("/synthetic/work"), Some(Path::new("/synthetic/work/.venv/bin/python")));
+    let args: Vec<_> = command.as_std().get_args().map(|s| s.to_string_lossy().into_owned()).collect();
+    assert!(args.contains(&"read,write,edit,ls,find,grep,bash,subagent,ask_user,mcp__*".into()));
+    assert!(args.contains(&"/synthetic/work/skills".into()));
+    assert!(args.contains(&"--no-context-files".into()));
+    assert!(args.contains(&"--no-skills".into()));
+    assert!(args.contains(&WORK_PROMPT.into()));
+    assert!(WORK_PROMPT.contains("outputs/") && WORK_PROMPT.contains("Ask before deleting or overwriting"));
+    assert!(command.as_std().get_envs().any(|(k, v)| k == "TAUCODE_WORK" && v == Some(std::ffi::OsStr::new("1"))));
+}
+#[test]
+fn markdown_checklists_translate_to_plan_items_and_updates() {
+    let mut translator = Translator::new("task", "/synthetic/space");
+    translator.apply(&json!({"type":"agent_start"}));
+    let mut plans = vec![];
+    for (timestamp, text) in [(1, "- [ ] Read notes\n- [ ] Write brief"), (2, "- [x] Read notes\n- [ ] Write brief")] {
+        translator.apply(&json!({"type":"message_start","message":{"role":"assistant","timestamp":timestamp}}));
+        plans.extend(translator.apply(&json!({"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":text}]}})).into_iter().filter(|e| e["method"] == "item/completed" && e["params"]["item"]["type"] == "plan"));
+    }
+    assert_eq!(plans.len(), 2);
+    assert_eq!(plans[1]["params"]["item"]["plan"][0]["status"], "completed");
+    assert_eq!(plans[1]["params"]["item"]["plan"][1]["status"], "pending");
+}
+#[tokio::test]
+async fn real_pi_work_starts_offline_with_work_policy_and_skills() {
+    let dir = temp();
+    let space = dir.join("space");
+    std::fs::create_dir(&space).unwrap();
+    let engine = PiEngine::work(dir.join("data"), "workspace".into(), space.to_string_lossy().into_owned(), Arc::new(|_, _| {}));
+    let provider: ProviderEntry = serde_json::from_value(json!({"id":"local","name":"Offline","kind":"ollama","enabled":true,"auth":{"type":"none"},"models":[{"id":"offline","enabled":true}]})).unwrap();
+    engine.configure("workspace", vec![provider], AgentPolicy::default()).await;
+    let response = engine.request("workspace", "thread/start", json!({"model":"local/offline"})).await.unwrap();
+    let id = response["result"]["thread"]["id"].as_str().unwrap();
+    let access: Value = serde_json::from_slice(&std::fs::read(dir.join("data/pi/agent/workspace/taucode/threads").join(format!("{id}.json"))).unwrap()).unwrap();
+    assert_eq!(access["kind"], "work");
+    assert_eq!(access["accessMode"], "ask");
+    assert_eq!(access["workspace"], json!(space));
+    engine.request("workspace", "thread/accessMode/set", json!({"threadId":id,"accessMode":"full-access"})).await.unwrap();
+    let access: Value = serde_json::from_slice(&std::fs::read(dir.join("data/pi/agent/workspace/taucode/threads").join(format!("{id}.json"))).unwrap()).unwrap();
+    assert_eq!(access["kind"], "work");
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}

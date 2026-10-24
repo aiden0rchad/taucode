@@ -61,7 +61,7 @@ export type WorkspaceGroup = {
   copiesFolder?: string | null;
 };
 
-export type WorkspaceKind = "main" | "worktree";
+export type WorkspaceKind = "main" | "worktree" | "work";
 
 export type WorktreeInfo = {
   branch: string;
@@ -773,3 +773,18 @@ export type CheckpointResponse = {
   text?: string;
   error?: string | null;
 };
+
+export type WorkSpace = {
+  id: string; name: string; path: string; kind: "work"; readOnlyFolders: string[];
+};
+export type WorkStatus = "queued" | "running" | "needs-input" | "done" | "failed" | "stopped";
+export type WorkRequest = {
+  id: string; method: string;
+  params: { reason?: string; command?: string; diffPreview?: string; questions?: { question: string; options?: { label: string }[] }[] };
+};
+export type WorkTask = {
+  id: string; spaceId: string; threadId: string | null; title: string; brief: string;
+  attachments: string[]; model: string; accessMode: "ask" | "read-only" | "full-access"; status: WorkStatus;
+  plan: TurnPlanStep[]; outputs: string[]; pending: WorkRequest[]; error: string | null;
+};
+export type WorkState = { spaces: WorkSpace[]; tasks: WorkTask[]; concurrency: number };

@@ -210,6 +210,10 @@ pub(super) fn prepare(
             include_str!("../../../../engines/pi/extensions/taucode-subagents.ts"),
         ),
         (
+            "taucode-work.ts",
+            include_str!("../../../../engines/pi/extensions/taucode-work.ts"),
+        ),
+        (
             "lib/policy.ts",
             include_str!("../../../../engines/pi/extensions/lib/policy.ts"),
         ),

@@ -1,0 +1,543 @@
+use super::{checkpoints::Checkpoints, engines::{EngineBackend, WorkspaceSession}, pi::{config, PiEngine}};
+use crate::{backend::events::{AppServerEvent, EventSink}, types::{AppSettings, WorkspaceKind}};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::{collections::HashMap, path::{Path, PathBuf}, sync::Arc};
+use tokio::sync::{mpsc, Mutex};
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Space {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub kind: WorkspaceKind,
+    pub read_only_folders: Vec<String>,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Task {
+    id: String,
+    space_id: String,
+    thread_id: Option<String>,
+    title: String,
+    brief: String,
+    attachments: Vec<String>,
+    model: String,
+    access_mode: String,
+    status: String,
+    plan: Vec<Value>,
+    outputs: Vec<String>,
+    pending: Vec<Value>,
+    error: Option<String>,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Store {
+    spaces: Vec<Space>,
+    tasks: Vec<Task>,
+    concurrency: usize,
+}
+impl Default for Store {
+    fn default() -> Self { Self { spaces: vec![], tasks: vec![], concurrency: 2 } }
+}
+struct State {
+    store: Store,
+    sessions: HashMap<String, Arc<WorkspaceSession>>,
+    settings: AppSettings,
+    loaded: bool,
+}
+pub(crate) struct Work {
+    data: PathBuf,
+    state: Mutex<State>,
+    emit: Arc<dyn Fn(AppServerEvent) + Send + Sync>,
+    tx: mpsc::UnboundedSender<AppServerEvent>,
+    rx: Mutex<Option<mpsc::UnboundedReceiver<AppServerEvent>>>,
+}
+fn occupied(status: &str) -> bool { matches!(status, "running" | "needs-input") }
+fn next_task(store: &Store) -> Option<usize> {
+    if store.tasks.iter().filter(|t| occupied(&t.status)).count() >= store.concurrency { return None; }
+    // A single writer per space makes checkpoint attribution and rewind deterministic.
+    store.tasks.iter().position(|t| t.status == "queued" && !store.tasks.iter().any(|other| other.space_id == t.space_id && occupied(&other.status)))
+}
+fn directory(value: &str) -> Result<String, String> {
+    let path = Path::new(value).canonicalize().map_err(|e| e.to_string())?;
+    if !path.is_dir() || path.parent().is_none() { return Err("Choose a folder".into()); }
+    Ok(path.to_string_lossy().into_owned())
+}
+fn contained(root: &str, path: &str) -> Result<PathBuf, String> {
+    let root = Path::new(root).canonicalize().map_err(|e| e.to_string())?;
+    let path = root.join(path).canonicalize().map_err(|e| e.to_string())?;
+    if !path.starts_with(&root) || !path.is_file() { return Err("File must be inside this space".into()); }
+    Ok(path)
+}
+fn merge_outputs(task: &mut Task, space: &Space, paths: impl IntoIterator<Item = String>) {
+    for path in paths {
+        if let Ok(path) = contained(&space.path, &path) {
+            let root = Path::new(&space.path);
+            if let Ok(relative) = path.strip_prefix(root) {
+                let name = relative.to_string_lossy().into_owned();
+                if !name.starts_with(".taucode/") && !task.outputs.contains(&name) { task.outputs.push(name); }
+            }
+        }
+    }
+    task.outputs.sort();
+}
+impl Work {
+    pub fn new(data: PathBuf, sink: impl EventSink) -> Arc<Self> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        Arc::new(Self {
+            data, state: Mutex::new(State { store: Store::default(), sessions: HashMap::new(), settings: AppSettings::default(), loaded: false }),
+            emit: Arc::new(move |event| sink.emit_app_server_event(event)), tx, rx: Mutex::new(Some(rx)),
+        })
+    }
+    fn save(&self, store: &Store) -> Result<(), String> {
+        let path = self.data.join("work/state.json");
+        std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+        config::write_json(&path, &json!(store))
+    }
+    fn publish(&self, state: &State, task: Option<&Task>, previous: Option<&str>) {
+        let needs = state.store.tasks.iter().filter(|t| t.status == "needs-input").count();
+        (self.emit)(AppServerEvent { workspace_id: "work".into(), message: json!({
+            "method":"work/updated","params":{"task":task,"needsInput":needs,
+                "notify":state.settings.system_notifications_enabled && task.is_some_and(|t| previous != Some(&t.status) && matches!(t.status.as_str(),"done"|"needs-input"|"failed"))}
+        }) });
+    }
+    async fn initialize(self: &Arc<Self>, state: &mut State) -> Result<(), String> {
+        if !state.loaded {
+            state.store = match std::fs::read(self.data.join("work/state.json")) {
+                Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| e.to_string())?,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Store::default(),
+                Err(e) => return Err(e.to_string()),
+            };
+            for task in &mut state.store.tasks {
+                if occupied(&task.status) {
+                    task.status = "stopped".into();
+                    task.error = Some("Interrupted by app restart. Start a new task to continue.".into());
+                    task.pending.clear();
+                }
+            }
+            self.save(&state.store)?;
+            state.loaded = true;
+        }
+        if let Some(mut rx) = self.rx.lock().await.take() {
+            let weak = Arc::downgrade(self);
+            tokio::spawn(async move {
+                while let Some(event) = rx.recv().await {
+                    let Some(this) = weak.upgrade() else { break };
+                    let mut state = this.state.lock().await;
+                    if let Err(error) = this.observe(&mut state, &event).await {
+                        (this.emit)(AppServerEvent { workspace_id: "work".into(), message: json!({"method":"work/error","params":{"message":error}}) });
+                    }
+                    (this.emit)(event);
+                    this.pump(&mut state).await;
+                }
+            });
+        }
+        Ok(())
+    }
+    async fn session(&self, state: &mut State, space: &Space) -> Arc<WorkspaceSession> {
+        if let Some(session) = state.sessions.get(&space.id) {
+            session.pi.configure(&space.id, state.settings.providers.clone(), state.settings.agent_policy.clone()).await;
+            return session.clone();
+        }
+        let mut session = WorkspaceSession::lazy(
+            Box::new(|| Box::pin(async { Err("Work tasks use pi".into()) })),
+            state.settings.providers.clone(), state.settings.agent_policy.clone(), None, None, space.id.clone(),
+        );
+        let tx = self.tx.clone();
+        session.pi = PiEngine::work(self.data.clone(), space.id.clone(), space.path.clone(), Arc::new(move |workspace, message| {
+            let _ = tx.send(AppServerEvent { workspace_id: workspace.into(), message });
+        }));
+        #[cfg(test)] { session.pi.fake = true; }
+        session.pi.configure(&space.id, state.settings.providers.clone(), state.settings.agent_policy.clone()).await;
+        session.pi.read_only_folders.lock().await.insert(space.id.clone(), space.read_only_folders.clone());
+        session.checkpoints = Some(Checkpoints::new(self.data.clone(), space.id.clone(), space.path.clone(), self.emit.clone()));
+        let session = Arc::new(session);
+        state.sessions.insert(space.id.clone(), session.clone());
+        session
+    }
+    async fn pump(&self, state: &mut State) {
+        while let Some(index) = next_task(&state.store) {
+            state.store.tasks[index].status = "running".into();
+            if let Err(error) = self.save(&state.store) {
+                state.store.tasks[index].status = "failed".into();
+                state.store.tasks[index].error = Some(error);
+                self.publish(state, Some(&state.store.tasks[index]), Some("queued"));
+                break;
+            }
+            let result = self.start(state, index).await;
+            if let Err(error) = result {
+                state.store.tasks[index].status = "failed".into();
+                state.store.tasks[index].error = Some(error);
+            }
+            if let Err(error) = self.save(&state.store) {
+                state.store.tasks[index].error = Some(error);
+            }
+            self.publish(state, Some(&state.store.tasks[index]), Some("queued"));
+        }
+    }
+    async fn start(&self, state: &mut State, index: usize) -> Result<(), String> {
+        let task = state.store.tasks[index].clone();
+        let space = state.store.spaces.iter().find(|s| s.id == task.space_id).ok_or("Unknown space")?.clone();
+        let session = self.session(state, &space).await;
+        let response = session.pi.request(&space.id, "thread/start", json!({"model":task.model})).await?;
+        let thread = response["result"]["thread"]["id"].as_str().ok_or("Missing task thread")?.to_owned();
+        state.store.tasks[index].thread_id = Some(thread.clone());
+        self.save(&state.store)?;
+        let text = format!("{}\n\nAttached files (inside this space):\n{}\n\nRead-only folders:\n{}", task.brief, task.attachments.join("\n"), space.read_only_folders.join("\n"));
+        let params = json!({"threadId":thread,"accessMode":task.access_mode,"input":[{"type":"text","text":text}]});
+        let checkpoints = session.checkpoints.as_ref().unwrap();
+        checkpoints.before(&space.id, &thread, "pi", &params).await?;
+        if let Err(error) = session.pi.request(&space.id, "turn/start", params).await {
+            if let Some(finish) = checkpoints.complete(&space.id, &thread) { let _ = finish.await; }
+            return Err(error);
+        }
+        Ok(())
+    }
+    async fn observe(&self, state: &mut State, event: &AppServerEvent) -> Result<(), String> {
+        let params = &event.message["params"];
+        let Some(index) = state.store.tasks.iter().position(|t| t.space_id == event.workspace_id && t.thread_id.as_deref() == params["threadId"].as_str()) else { return Ok(()) };
+        let session = state.sessions.get(&event.workspace_id).ok_or("Missing work session")?;
+        if let Some(finish) = session.checkpoints.as_ref().unwrap().observe(event) { let _ = finish.await; }
+        let space = state.store.spaces.iter().find(|s| s.id == event.workspace_id).unwrap().clone();
+        let task = &mut state.store.tasks[index];
+        let previous = task.status.clone();
+        let method = event.message["method"].as_str().unwrap_or("");
+        if occupied(&task.status) {
+            if method.ends_with("/requestApproval") || method == "item/tool/requestUserInput" {
+                if !task.pending.iter().any(|p| p["id"] == event.message["id"]) { task.pending.push(event.message.clone()); }
+                task.status = "needs-input".into();
+            }
+            if method == "turn/completed" {
+                task.status = match params["turn"]["status"].as_str() { Some("failed") => "failed", Some("interrupted") => "stopped", _ => "done" }.into();
+                task.error = params["turn"]["error"]["message"].as_str().map(str::to_owned);
+                task.pending.clear();
+            }
+        }
+        if method == "serverRequest/resolved" {
+            task.pending.retain(|p| p["id"] != params["requestId"]);
+            if task.status == "needs-input" && task.pending.is_empty() { task.status = "running".into(); }
+        }
+        if method == "item/completed" || method == "item/started" {
+            let item = &params["item"];
+            if item["type"] == "plan" { task.plan = item["plan"].as_array().cloned().unwrap_or_default(); }
+            if item["type"] == "fileChange" && method == "item/completed" && item["status"] == "completed" {
+                merge_outputs(task, &space, item["changes"].as_array().into_iter().flatten().filter_map(|c| c["path"].as_str().map(str::to_owned)));
+            }
+        }
+        if method == "turn/completed" && previous != "stopped" {
+            match session.checkpoints.as_ref().unwrap().outputs(&space.id, task.thread_id.as_deref().unwrap()).await {
+                Ok(paths) => merge_outputs(task, &space, paths),
+                Err(error) => task.error = Some(format!("{}Checkpoint outputs unavailable: {error}", task.error.as_ref().map(|e| format!("{e}\n")).unwrap_or_default())),
+            }
+        }
+        self.save(&state.store)?;
+        if previous != state.store.tasks[index].status || matches!(method, "item/completed" | "turn/completed") {
+            self.publish(state, Some(&state.store.tasks[index]), Some(&previous));
+        }
+        Ok(())
+    }
+    pub async fn request(self: &Arc<Self>, settings: &AppSettings, action: &str, params: Value) -> Result<Value, String> {
+        let mut state = self.state.lock().await;
+        self.initialize(&mut state).await?;
+        state.settings = settings.clone();
+        let result = self.action(&mut state, action, params).await;
+        self.save(&state.store)?;
+        if !matches!(action, "list" | "read" | "checkpoint") { self.publish(&state, None, None); }
+        // Launch after returning to the caller; the queue belongs to Rust, not a view.
+        if next_task(&state.store).is_some() {
+            let this = self.clone();
+            tokio::spawn(async move { let mut state = this.state.lock().await; this.pump(&mut state).await; });
+        }
+        result
+    }
+    async fn action(&self, state: &mut State, action: &str, params: Value) -> Result<Value, String> {
+        match action {
+            "list" => return Ok(json!(state.store)),
+            "add-space" => {
+                let path = directory(params["path"].as_str().ok_or("Choose a folder")?)?;
+                if state.store.spaces.iter().any(|s| s.path == path) { return Err("This folder is already a space".into()); }
+                let folders: Vec<String> = serde_json::from_value(params["readOnlyFolders"].clone()).map_err(|_| "Invalid read-only folders")?;
+                if folders.len() > 20 { return Err("Choose at most 20 read-only folders".into()); }
+                let folders = folders.iter().map(|p| directory(p)).collect::<Result<Vec<_>, _>>()?;
+                let space = Space { id: uuid::Uuid::new_v4().to_string(), name: Path::new(&path).file_name().unwrap().to_string_lossy().into_owned(), path, kind: WorkspaceKind::Work, read_only_folders: folders };
+                // Validate checkpoint support before accepting the space.
+                super::checkpoints::validate_space(&self.data, &space.id, Path::new(&space.path))?;
+                state.store.spaces.push(space.clone());
+                return Ok(json!(space));
+            }
+            "concurrency" => {
+                let count = params["count"].as_u64().filter(|n| (1..=8).contains(n)).ok_or("Concurrency must be 1–8")?;
+                state.store.concurrency = count as usize;
+                return Ok(json!({}));
+            }
+            "create" => {
+                let space_id = params["spaceId"].as_str().ok_or("Choose a space")?;
+                let space = state.store.spaces.iter().find(|s| s.id == space_id).ok_or("Unknown space")?;
+                let brief = params["brief"].as_str().unwrap_or("").trim();
+                if brief.is_empty() || brief.len() > 100_000 { return Err("Brief must be 1–100000 bytes".into()); }
+                let mode = params["accessMode"].as_str().unwrap_or("ask");
+                if !["ask", "read-only", "full-access"].contains(&mode) { return Err("Invalid access mode".into()); }
+                let attachments: Vec<String> = serde_json::from_value(params["attachments"].clone()).map_err(|_| "Invalid attachments")?;
+                if attachments.len() > 31 { return Err("Attach at most 31 files".into()); }
+                for path in &attachments { contained(&space.path, path)?; }
+                let model = params["model"].as_str().ok_or("Select a model")?;
+                let (provider, model_id) = model.split_once('/').ok_or("Select a registry model")?;
+                if !state.settings.providers.iter().any(|p| p.enabled && p.id == provider && p.models.iter().any(|m| m.enabled && m.id == model_id)) { return Err("Enable this registry model in Settings".into()); }
+                let task = Task { id: uuid::Uuid::new_v4().to_string(), space_id: space_id.into(), thread_id: None, title: brief.lines().next().unwrap().chars().take(100).collect(), brief: brief.into(), attachments, model: model.into(), access_mode: mode.into(), status: "queued".into(), plan: vec![], outputs: vec![], pending: vec![], error: None };
+                let result = json!(task);
+                if params["runNow"] == true { state.store.tasks.insert(0, task); } else { state.store.tasks.push(task); }
+                return Ok(result);
+            }
+            "stop-all" => {
+                let ids = state.store.tasks.iter().filter(|t| occupied(&t.status) || t.status == "queued").map(|t| t.id.clone()).collect::<Vec<_>>();
+                let mut errors = Vec::new();
+                for id in ids {
+                    if let Err(error) = self.stop(state, &id).await { errors.push(error); }
+                }
+                return if errors.is_empty() { Ok(json!({})) } else { Err(errors.join("\n")) };
+            }
+            _ => (),
+        }
+        let id = params["taskId"].as_str().ok_or("Missing task ID")?;
+        if action == "stop" { self.stop(state, id).await?; return Ok(json!({})); }
+        let index = state.store.tasks.iter().position(|t| t.id == id).ok_or("Unknown task")?;
+        let task = state.store.tasks[index].clone();
+        let space = state.store.spaces.iter().find(|s| s.id == task.space_id).unwrap().clone();
+        let thread = task.thread_id.as_deref().ok_or("Task is queued")?;
+        let session = self.session(state, &space).await;
+        match action {
+            "read" => session.pi.request(&space.id, "thread/read", json!({"threadId":thread})).await,
+            "respond" => {
+                let request = task.pending.iter().find(|p| p["id"] == params["requestId"]).ok_or("Input request is no longer pending")?;
+                session.pi.respond_to_server_request(request["id"].clone(), params["answer"].clone()).await?;
+                let task = &mut state.store.tasks[index];
+                task.pending.retain(|p| p["id"] != params["requestId"]);
+                if task.pending.is_empty() { task.status = "running".into(); }
+                Ok(json!({}))
+            }
+            "checkpoint" => {
+                let mut request = params["request"].clone();
+                if !request.is_object() { return Err("Invalid checkpoint request".into()); }
+                request["threadId"] = json!(thread);
+                let result = session.checkpoints.as_ref().unwrap().request(&session, &space.id, request).await?;
+                if result["rewound"] == true || result["conversationChanged"] == true {
+                    state.store.tasks[index].outputs.retain(|path| contained(&space.path, path).is_ok());
+                }
+                Ok(result)
+            }
+            _ => Err("Unknown work action".into()),
+        }
+    }
+    async fn stop(&self, state: &mut State, id: &str) -> Result<(), String> {
+        let index = state.store.tasks.iter().position(|t| t.id == id).ok_or("Unknown task")?;
+        let task = state.store.tasks[index].clone();
+        if occupied(&task.status) {
+            if let (Some(thread), Some(session)) = (&task.thread_id, state.sessions.get(&task.space_id)) {
+                session.pi.request(&task.space_id, "turn/interrupt", json!({"threadId":thread})).await?;
+                let checkpoints = session.checkpoints.as_ref().unwrap();
+                if let Some(finish) = checkpoints.complete(&task.space_id, thread) { let _ = finish.await; }
+                let space = state.store.spaces.iter().find(|s| s.id == task.space_id).unwrap();
+                match checkpoints.outputs(&task.space_id, thread).await {
+                    Ok(paths) => merge_outputs(&mut state.store.tasks[index], space, paths),
+                    Err(error) => state.store.tasks[index].error = Some(error),
+                }
+            }
+        }
+        if occupied(&task.status) || task.status == "queued" {
+            state.store.tasks[index].status = "stopped".into();
+            state.store.tasks[index].pending.clear();
+        }
+        Ok(())
+    }
+    // Explicit local picker/drop ingress only: not available to agents or daemon RPC.
+    pub async fn attachment(self: &Arc<Self>, settings: &AppSettings, space_id: &str, source: &Path) -> Result<String, String> {
+        let mut state = self.state.lock().await;
+        self.initialize(&mut state).await?;
+        state.settings = settings.clone();
+        let space = state.store.spaces.iter().find(|s| s.id == space_id).ok_or("Choose a space")?;
+        let file = std::fs::File::open(source).map_err(|e| e.to_string())?;
+        let metadata = file.metadata().map_err(|e| e.to_string())?;
+        if !metadata.is_file() || metadata.len() > 50 * 1024 * 1024 { return Err("Attach a regular file up to 50 MB".into()); }
+        let name = source.file_name().and_then(|n| n.to_str()).ok_or("Invalid filename")?;
+        let base = Path::new(&space.path).join(".taucode");
+        if base.exists() && !base.canonicalize().map_err(|e| e.to_string())?.starts_with(Path::new(&space.path)) {
+            return Err("Uploads cannot leave the space".into());
+        }
+        let inbox = base.join("uploads");
+        if inbox.exists() && !inbox.canonicalize().map_err(|e| e.to_string())?.starts_with(Path::new(&space.path)) {
+            return Err("Uploads cannot leave the space".into());
+        }
+        std::fs::create_dir_all(&inbox).map_err(|e| e.to_string())?;
+        let inbox = inbox.canonicalize().map_err(|e| e.to_string())?;
+        if !inbox.starts_with(Path::new(&space.path)) { return Err("Uploads cannot leave the space".into()); }
+        let target = inbox.join(format!("{}-{name}", uuid::Uuid::new_v4()));
+        let mut dest = std::fs::OpenOptions::new().write(true).create_new(true).open(&target).map_err(|e| e.to_string())?;
+        use std::io::Read;
+        let count = std::io::copy(&mut file.take(50 * 1024 * 1024 + 1), &mut dest).map_err(|e| e.to_string())?;
+        if count > 50 * 1024 * 1024 { let _ = std::fs::remove_file(&target); return Err("Attachment grew beyond 50 MB".into()); }
+        Ok(target.strip_prefix(&space.path).unwrap().to_string_lossy().into_owned())
+    }
+    pub async fn output(self: &Arc<Self>, settings: &AppSettings, task_id: &str, path: &str) -> Result<PathBuf, String> {
+        let mut state = self.state.lock().await;
+        self.initialize(&mut state).await?;
+        state.settings = settings.clone();
+        let task = state.store.tasks.iter().find(|t| t.id == task_id).ok_or("Unknown task")?;
+        if !task.outputs.iter().any(|p| p == path) { return Err("Unknown task output".into()); }
+        let space = state.store.spaces.iter().find(|s| s.id == task.space_id).unwrap();
+        contained(&space.path, path)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::events::{TerminalExit, TerminalOutput};
+    #[derive(Clone, Default)]
+    struct Sink(Arc<std::sync::Mutex<Vec<AppServerEvent>>>);
+    impl EventSink for Sink {
+        fn emit_app_server_event(&self, event: AppServerEvent) { self.0.lock().unwrap().push(event); }
+        fn emit_terminal_output(&self, _: TerminalOutput) {}
+        fn emit_terminal_exit(&self, _: TerminalExit) {}
+    }
+    fn task(id: &str, space: &str, status: &str) -> Task {
+        Task { id: id.into(), space_id: space.into(), thread_id: Some(id.into()), title: id.into(), brief: "brief".into(), attachments: vec![], model: "local/test".into(), access_mode: "ask".into(), status: status.into(), plan: vec![], outputs: vec![], pending: vec![], error: None }
+    }
+    fn temp() -> PathBuf {
+        let root = std::env::temp_dir().join(format!("work-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+    #[test]
+    fn global_queue_caps_concurrency_and_serializes_each_space() {
+        let mut store = Store::default();
+        store.tasks = vec![task("a", "one", "running"), task("b", "one", "queued"), task("c", "two", "queued")];
+        assert_eq!(next_task(&store), Some(2));
+        store.tasks[2].status = "needs-input".into();
+        assert_eq!(next_task(&store), None);
+        store.tasks[0].status = "done".into();
+        assert_eq!(next_task(&store), Some(1));
+        store.concurrency = 1;
+        assert_eq!(next_task(&store), None);
+        store.tasks[2].status = "stopped".into();
+        assert_eq!(next_task(&store), Some(1));
+    }
+    #[tokio::test]
+    async fn spaces_attachments_queue_and_restart_are_persisted_with_boundaries() {
+        let root = temp();
+        let folder = root.join("folder");
+        let reference = root.join("reference");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::create_dir_all(&reference).unwrap();
+        let service = Work::new(root.join("data"), Sink::default());
+        let settings = AppSettings::default();
+        let space = service.request(&settings, "add-space", json!({"path":folder,"readOnlyFolders":[reference]})).await.unwrap();
+        let id = space["id"].as_str().unwrap();
+        assert_eq!(space["kind"], "work");
+        let source = reference.join("brief.pdf");
+        std::fs::write(&source, "synthetic PDF").unwrap();
+        let attachment = service.attachment(&settings, id, &source).await.unwrap();
+        assert!(attachment.starts_with(".taucode/uploads/"));
+        assert_eq!(std::fs::read(folder.join(&attachment)).unwrap(), b"synthetic PDF");
+        assert_ne!(attachment, service.attachment(&settings, id, &source).await.unwrap());
+        assert!(!service.data.join("workspaces.json").exists());
+        {
+            let mut state = service.state.lock().await;
+            state.store.tasks.push(task("queued", id, "queued"));
+            state.store.tasks.push(task("running", id, "needs-input"));
+            service.stop(&mut state, "queued").await.unwrap();
+            assert_eq!(state.store.tasks[0].status, "stopped");
+            service.save(&state.store).unwrap();
+        }
+        let restarted = Work::new(service.data.clone(), Sink::default());
+        let list = restarted.request(&settings, "list", json!({})).await.unwrap();
+        assert_eq!(list["spaces"][0]["readOnlyFolders"][0], json!(reference.canonicalize().unwrap()));
+        assert_eq!(list["tasks"][1]["status"], "stopped");
+        assert!(restarted.request(&settings, "concurrency", json!({"count":0})).await.is_err());
+        assert!(restarted.request(&settings, "create", json!({"spaceId":id,"brief":"x","model":"none","attachments":["../../escape"]})).await.is_err());
+        #[cfg(unix)] {
+            let outside = root.join("outside");
+            std::fs::create_dir(&outside).unwrap();
+            std::fs::remove_dir_all(folder.join(".taucode")).unwrap();
+            std::os::unix::fs::symlink(&outside, folder.join(".taucode")).unwrap();
+            assert!(restarted.attachment(&settings, id, &source).await.is_err());
+            assert!(!outside.join("uploads").exists());
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    async fn progress_approvals_outputs_checkpoint_diff_and_notifications() {
+        let root = temp();
+        let folder = root.join("space");
+        std::fs::create_dir_all(folder.join("outputs")).unwrap();
+        std::fs::write(folder.join("existing.txt"), "before").unwrap();
+        let sink = Sink::default();
+        let service = Work::new(root.join("data"), sink.clone());
+        let space = Space { id: "space".into(), name: "Space".into(), path: folder.canonicalize().unwrap().to_string_lossy().into_owned(), kind: WorkspaceKind::Work, read_only_folders: vec![] };
+        let mut state = service.state.lock().await;
+        state.store.spaces.push(space.clone());
+        state.store.tasks.push(task("thread", "space", "running"));
+        let session = service.session(&mut state, &space).await;
+        session.checkpoints.as_ref().unwrap().before("space", "thread", "pi", &json!({"input":[]})).await.unwrap();
+        let event = |method: &str, params: Value| AppServerEvent { workspace_id: "space".into(), message: json!({"id":"pi:thread:dialog","method":method,"params":params}) };
+        service.observe(&mut state, &event("item/fileChange/requestApproval", json!({"threadId":"thread","reason":"Overwrite"}))).await.unwrap();
+        assert_eq!(state.store.tasks[0].status, "needs-input");
+        assert_eq!(state.store.tasks[0].pending.len(), 1);
+        assert!(sink.0.lock().unwrap().iter().any(|e| e.message["params"]["notify"] == true && e.message["params"]["needsInput"] == 1));
+        service.observe(&mut state, &event("serverRequest/resolved", json!({"threadId":"thread","requestId":"pi:thread:dialog"}))).await.unwrap();
+        assert_eq!(state.store.tasks[0].status, "running");
+        assert!(state.store.tasks[0].pending.is_empty());
+        service.observe(&mut state, &event("item/completed", json!({"threadId":"thread","item":{"type":"plan","plan":[{"step":"Produce brief","status":"completed"}]}}))).await.unwrap();
+        assert_eq!(state.store.tasks[0].plan[0]["status"], "completed");
+        std::fs::write(folder.join("outputs/report.md"), "report").unwrap();
+        std::fs::write(folder.join("existing.txt"), "after").unwrap();
+        std::fs::write(folder.join("outputs/from-shell.csv"), "shell-created").unwrap();
+        service.observe(&mut state, &event("item/completed", json!({"threadId":"thread","item":{"type":"fileChange","status":"completed","changes":[{"path":"outputs/report.md"},{"path":"../escape"}]}}))).await.unwrap();
+        assert_eq!(state.store.tasks[0].outputs, vec!["outputs/report.md"]);
+        service.observe(&mut state, &event("turn/completed", json!({"threadId":"thread","turn":{"status":"completed"}}))).await.unwrap();
+        assert_eq!(state.store.tasks[0].status, "done");
+        assert_eq!(state.store.tasks[0].outputs, vec!["existing.txt", "outputs/from-shell.csv", "outputs/report.md"]);
+        assert!(sink.0.lock().unwrap().iter().any(|e| e.message["params"]["notify"] == true && e.message["params"]["task"]["status"] == "done"));
+        state.store.tasks[0].status = "running".into();
+        service.observe(&mut state, &event("turn/completed", json!({"threadId":"thread","turn":{"status":"failed","error":{"message":"Provider failed"}}}))).await.unwrap();
+        assert_eq!(state.store.tasks[0].status, "failed");
+        assert!(sink.0.lock().unwrap().iter().any(|e| e.message["params"]["notify"] == true && e.message["params"]["task"]["status"] == "failed"));
+        state.store.tasks[0].status = "stopped".into();
+        service.observe(&mut state, &event("turn/completed", json!({"threadId":"thread","turn":{"status":"completed"}}))).await.unwrap();
+        assert_eq!(state.store.tasks[0].status, "stopped");
+        drop(state);
+        assert!(service.output(&AppSettings::default(), "thread", "../escape").await.is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn queue_runs_two_pi_tasks_and_stop_releases_capacity() {
+        let root = temp();
+        let service = Work::new(root.join("data"), Sink::default());
+        let mut state = service.state.lock().await;
+        state.settings.providers = vec![serde_json::from_value(json!({"id":"local","name":"Synthetic","kind":"ollama","enabled":true,"auth":{"type":"none"},"models":[{"id":"test","enabled":true}]})).unwrap()];
+        for id in ["one", "two", "three"] {
+            let path = root.join(id);
+            std::fs::create_dir(&path).unwrap();
+            state.store.spaces.push(Space { id:id.into(), name:id.into(), path:path.to_string_lossy().into_owned(), kind:WorkspaceKind::Work, read_only_folders:vec![] });
+            let mut entry = task(id, id, "queued");
+            entry.thread_id = None;
+            state.store.tasks.push(entry);
+        }
+        service.pump(&mut state).await;
+        assert_eq!(state.store.tasks.iter().map(|t| t.status.as_str()).collect::<Vec<_>>(), vec!["running","running","queued"], "{:?}", state.store.tasks.iter().map(|t| &t.error).collect::<Vec<_>>());
+        assert!(state.store.tasks[0].thread_id.is_some());
+        assert!(state.store.tasks[1].thread_id.is_some());
+        service.stop(&mut state, "one").await.unwrap();
+        assert_eq!(state.store.tasks[0].status, "stopped");
+        service.pump(&mut state).await;
+        assert_eq!(state.store.tasks[2].status, "running");
+        service.action(&mut state, "stop-all", json!({})).await.unwrap();
+        assert!(state.store.tasks.iter().all(|t| t.status == "stopped"));
+        for session in state.sessions.values() { session.pi.shutdown().await.unwrap(); }
+        drop(state);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

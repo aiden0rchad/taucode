@@ -4,6 +4,7 @@ import { getAppSettings, setWindowMode } from "@services/tauri";
 import { matchesShortcut } from "@utils/shortcuts";
 import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import { useThemePreference } from "@/features/layout/hooks/useThemePreference";
+import { WorkView } from "@/features/work/WorkView";
 import { ChatView } from "./ChatView";
 import "./chat.css";
 
@@ -66,6 +67,6 @@ export function ModeShell({ children }: { children: ReactNode }) {
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
     {mode === "code" && children}
     {mode === "chat" && settings && <ChatView settings={settings} />}
-    {mode === "work" && <div className="chat-layout chat-work"><aside className="chat-sidebar"><ModeSwitcher /></aside><main className="chat-placeholder"><h1>Work</h1><p>Work mode is coming soon.</p></main></div>}
+    {mode === "work" && settings && <WorkView settings={settings} />}
   </ModeContext.Provider>;
 }

@@ -5,6 +5,7 @@ import type { AppSettings } from "@/types";
 import { ModeShell, ModeSwitcher, modeShortcut } from "./ModeShell";
 import { getAppSettings, setWindowMode } from "@services/tauri";
 vi.mock("@services/tauri", () => ({ getAppSettings: vi.fn(), setWindowMode: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@/features/work/WorkView", () => ({ WorkView: () => <><ModeSwitcher /><p>Work content</p></> }));
 vi.mock("./ChatView", () => ({ ChatView: () => <><ModeSwitcher /><p>Chat content</p></> }));
 vi.mock("@/features/layout/hooks/useWindowLabel", () => ({ useWindowLabel: () => "second-window" }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -15,7 +16,7 @@ describe("mode switching", () => {
     expect(await screen.findByText("Chat content")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Work" }));
     await waitFor(() => expect(setWindowMode).toHaveBeenCalledWith("work"));
-    expect(await screen.findByText("Work mode is coming soon.")).toBeTruthy();
+    expect(await screen.findByText("Work content")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Code" }));
     expect(await screen.findByText("Code content")).toBeTruthy();
   });

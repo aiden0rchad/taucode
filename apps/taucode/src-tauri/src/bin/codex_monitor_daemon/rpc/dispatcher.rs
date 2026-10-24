@@ -6,6 +6,10 @@ pub(super) async fn dispatch_rpc_request(
     params: &Value,
     client_version: &str,
 ) -> Result<Value, String> {
+    if method == "work_request" {
+        let settings = state.app_settings.lock().await.clone();
+        return state.work.request(&settings, params["action"].as_str().ok_or("Missing work action")?, params["params"].clone()).await;
+    }
     if method == "chat_request" {
         let settings = state.app_settings.lock().await.clone();
         return state.chats.request(&settings, params["action"].as_str().ok_or("Missing chat action")?, params["params"].clone()).await;

@@ -34,3 +34,5 @@ pub(crate) mod chats;
 pub(crate) mod local_socket;
 
 pub(crate) mod checkpoints;
+
+pub(crate) mod work;

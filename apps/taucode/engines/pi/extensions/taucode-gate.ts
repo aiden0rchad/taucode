@@ -8,7 +8,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => { ctx.ui.setStatus("taucode-gate", "ready"); });
   pi.on("tool_call", async (event, ctx) => {
     if (process.env.TAUCODE_CHAT === "1" && !(process.env.TAUCODE_CHAT_WEB === "1" && ["mcp__taucode_browser__browser_navigate", "mcp__taucode_browser__browser_snapshot", "mcp__taucode_browser__browser_take_screenshot"].includes(event.toolName))) return { block: true, reason: "Tools are disabled in Chat mode" };
-    if (!["bash", "write", "edit"].includes(event.toolName) && !event.toolName.startsWith("mcp__")) return;
+    if (!["bash", "write", "edit", ...(process.env.TAUCODE_WORK === "1" ? ["read", "ls", "find", "grep"] : [])].includes(event.toolName) && !event.toolName.startsWith("mcp__")) return;
     const home = process.env.PI_CODING_AGENT_DIR!;
     const session = process.env.TAUCODE_SESSION_KEY;
     if (!home || !session || !/^[\w-]+$/.test(session)) return { block: true, reason: "Missing taucode thread access policy" };
@@ -38,7 +38,7 @@ export default function (pi: ExtensionAPI) {
     }
     if (decision === "block") return { block: true, reason: "Blocked by taucode access policy (read-only, protected path, or no interactive approval)" };
     const title = "taucode:approval:" + JSON.stringify({ toolCallId: event.toolCallId, ...call, diffPreview: call.tool === "edit" ? JSON.stringify(event.input).slice(0, 4000) : undefined });
-    const answer = await ctx.ui.select(title, ["Allow", "Allow for session", "Block"]);
+    const answer = await ctx.ui.select(title, read().kind === "work" ? ["Allow", "Block"] : ["Allow", "Allow for session", "Block"]);
     // A mode change while the dialog was open must take effect before execution.
     if (decide(read(), call, home, ctx.hasUI, child) === "block") return { block: true, reason: "Thread access changed while awaiting approval" };
     if (answer === "Allow for session") {

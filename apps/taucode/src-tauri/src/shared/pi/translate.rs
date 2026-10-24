@@ -228,6 +228,12 @@ impl Translator {
                                 item["text"] = p["text"].clone();
                             }
                             self.item(item, true, out);
+                            if !thinking {
+                                let plan = markdown_plan(p["text"].as_str().unwrap_or(""));
+                                if !plan.is_empty() {
+                                    self.item(json!({"type":"plan","id":format!("{}:plan:{}",self.turn_id(),self.message),"text":p["text"],"plan":plan}), true, out);
+                                }
+                            }
                         }
                         Some("toolCall") => {
                             self.tools
@@ -732,4 +738,16 @@ pub(super) fn sandbox(mode: &str, cwd: &str) -> Value {
 }
 fn settings_event(id: &str, cwd: &str, provider: &str, model: &str, mode: &str) -> Value {
     json!({"method":"thread/settings/updated","params":{"threadId":id,"threadSettings":{"disabledPluginIds":[],"cwd":cwd,"approvalPolicy":if mode == "full-access" {"never"}else{"on-request"},"approvalsReviewer":"user","sandboxPolicy":sandbox(mode,cwd),"activePermissionProfile":null,"model":model,"modelProvider":provider,"serviceTier":null,"effort":null,"summary":null,"collaborationMode":{"mode":"default","settings":{"model":model,"reasoning_effort":null,"developer_instructions":null}},"multiAgentMode":"explicitRequestOnly","personality":null}}})
+}
+
+pub(super) fn markdown_plan(text: &str) -> Vec<Value> {
+    text.lines().filter_map(|line| {
+        let line = line.trim();
+        let (status, step) = if let Some(step) = line.strip_prefix("- [ ] ").or_else(|| line.strip_prefix("* [ ] ")) {
+            ("pending", step)
+        } else if let Some(step) = line.strip_prefix("- [x] ").or_else(|| line.strip_prefix("- [X] ")).or_else(|| line.strip_prefix("* [x] ")) {
+            ("completed", step)
+        } else { return None };
+        (!step.trim().is_empty()).then(|| json!({"step":step.trim(),"status":status}))
+    }).take(100).collect()
 }

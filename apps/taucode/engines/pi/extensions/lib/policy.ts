@@ -1,10 +1,10 @@
-import { lstatSync, readlinkSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { dirname, basename, resolve, relative, isAbsolute, sep } from "node:path";
 
 export type Role = { name: string; description: string; model?: string; toolAccess: "read-only" | "full"; instructions: string };
 export type Policy = { enabled?: boolean; maxConcurrent: number; maxPerTurn: number; maxDepth: number; allowedModels: string[]; defaultModel?: string; roles: Role[]; models?: Record<string, string> };
 export type Rule = { tool: string; command?: string; path?: string; cwd?: string };
-export type Access = { accessMode: "read-only" | "ask" | "full-access"; sessionAllow: Rule[] };
+export type Access = { accessMode: "read-only" | "ask" | "full-access"; sessionAllow: Rule[]; kind?: "work"; workspace?: string; readOnlyFolders?: string[]; skillRoot?: string };
 export type Call = { tool: string; command?: string; path?: string; cwd: string };
 
 // Resolve existing ancestors too: a new file below a symlink must not escape the workspace.
@@ -48,7 +48,26 @@ export function safeReadOnlyCommand(command: string): string {
   const [_, sub, ...args] = command.trim().split(/\s+/);
   return ["git", "--no-pager", "--no-optional-locks", "-c", "core.fsmonitor=false", sub, ...(["diff", "log"].includes(sub) ? ["--no-ext-diff", "--no-textconv"] : []), ...args].join(" ");
 }
+// Work boundaries also apply to reads and children. Arbitrary shell programs always
+// need fresh approval, including in full access.
+export function workDecision(access: Access, call: Call, interactive: boolean, child = false): "allow" | "ask" | "block" | undefined {
+  if (access.kind !== "work") return;
+  if (!access.workspace || !inside(call.cwd, access.workspace)) return "block";
+  const path = resolve(call.cwd, call.path ?? ".");
+  const readable = (p: string) => [access.workspace!, ...(access.readOnlyFolders ?? []), ...(access.skillRoot ? [access.skillRoot] : [])].some(root => inside(p, root));
+  if (["read", "ls", "find", "grep"].includes(call.tool)) return readable(path) ? "allow" : "block";
+  if (call.tool === "bash") {
+    if (readOnlyCommand(call.command ?? "")) return (call.command ?? "").trim().split(/\s+/).slice(1).filter(p => !p.startsWith("-")).every(p => readable(resolve(call.cwd, p))) ? "allow" : "block";
+    return interactive && !child ? "ask" : "block";
+  }
+  if (!inside(path, access.workspace)) return "block";
+  const outputs = resolve(access.workspace, "outputs");
+  const inOutputs = canonical(outputs) === resolve(canonical(access.workspace), "outputs") && inside(path, outputs);
+  if (existsSync(path) && !inOutputs) return interactive && !child ? "ask" : "block";
+}
 export function decide(access: Access, call: Call, home: string, interactive: boolean, child?: { workspace: string; toolAccess: string }): "allow" | "ask" | "block" {
+  const work = workDecision(access, call, interactive, !!child);
+  if (work) return work;
   const path = resolve(call.cwd, call.path ?? "");
   const readonly = call.tool === "bash" && readOnlyCommand(call.command ?? "");
   if (access.accessMode === "read-only" || child?.toolAccess === "read-only") return readonly ? "allow" : "block";

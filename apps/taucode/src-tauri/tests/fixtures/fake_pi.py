@@ -19,7 +19,8 @@ if args.session_dir:
     assert os.environ["PI_SKIP_VERSION_CHECK"] == "1"
     assert not (pathlib.Path(os.environ["PI_CODING_AGENT_DIR"]) / "auth.json").exists()
     assert "keychain-secret-canary" not in " ".join(sys.argv)
-    assert os.environ["TAUCODE_PROVIDER_FIRST_KEY"] == "keychain-secret-canary"
+    if os.environ.get("TAUCODE_WORK") != "1":
+        assert os.environ["TAUCODE_PROVIDER_FIRST_KEY"] == "keychain-secret-canary"
     if os.environ.get("TAUCODE_CHAT") == "1":
         assert "--no-tools" in sys.argv
         assert "--no-context-files" in sys.argv

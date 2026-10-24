@@ -17,7 +17,7 @@ pub(crate) static RESOURCES: OnceLock<PathBuf> = OnceLock::new();
 fn manifest(engine: &str) -> Result<&'static str, String> {
     match engine {
         "pi" | "browser" | "claude-acp" => Ok("package-lock.json"),
-        "computer" => Ok("uv.lock"),
+        "computer" | "work" => Ok("uv.lock"),
         _ => Err("Unknown engine runtime".into()),
     }
 }
@@ -77,7 +77,7 @@ fn status_file(data: &Path, engine: &str, state: &str, message: &str) -> Result<
 }
 
 pub(crate) async fn status(data: &Path) -> Value {
-    let mut status = json!(["pi", "browser", "computer", "claude-acp"].map(|engine| {
+    let mut status = json!(["pi", "browser", "computer", "claude-acp", "work"].map(|engine| {
         fs::read(data.join("engines").join(format!("{engine}-setup.json"))).ok()
             .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
             .unwrap_or_else(|| json!({"engine":engine,"state":"pending","message":"Ready to set up on first use"}))
@@ -149,14 +149,14 @@ pub(crate) async fn prepare(
         let locked = fs::read(src.join(lock_name)).map_err(|e| e.to_string())?;
         let installed = fs::read(dir.join(".installed-lock")).ok();
         copy_tree(&src, &dir).map_err(|e| e.to_string())?;
-        if engine != "computer" {
+        if !matches!(engine, "computer" | "work") {
             check_node(&std::env::var_os("TAUCODE_NODE").unwrap_or_else(|| "node".into())).await?;
         }
         if installed.as_ref() != Some(&locked) || !dir.join(executable(engine)).is_file() {
             if dir.join(".installed-lock").exists() {
                 fs::remove_file(dir.join(".installed-lock")).map_err(|e| e.to_string())?;
             }
-            let mut command = if engine == "computer" {
+            let mut command = if matches!(engine, "computer" | "work") {
                 status_file(data, engine, "installing", "Installing Python 3.12 dependencies with uv…")?;
                 let mut cmd = Command::new("uv");
                 cmd.args(["sync", "--frozen", "--no-dev", "--python", "3.12"]);
@@ -168,9 +168,9 @@ pub(crate) async fn prepare(
                 cmd
             };
             let output = command.current_dir(&dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true).status().await
-                .map_err(|_| if engine == "computer" { "Install uv to prepare Computer Use" } else { "Install system Node >=22.19 and npm to prepare this runtime" })?;
+                .map_err(|_| if matches!(engine, "computer" | "work") { "Install uv to prepare Computer Use" } else { "Install system Node >=22.19 and npm to prepare this runtime" })?;
             if !output.success() || !dir.join(executable(engine)).is_file() {
-                return Err(format!("{engine} runtime installation failed. Check {} and network access, then retry setup in Settings.", if engine == "computer" { "uv" } else { "Node >=22.19 and npm" }));
+                return Err(format!("{engine} runtime installation failed. Check {} and network access, then retry setup in Settings.", if matches!(engine, "computer" | "work") { "uv" } else { "Node >=22.19 and npm" }));
             }
             fs::write(dir.join(".installed-lock"), locked).map_err(|e| e.to_string())?;
         }
@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn resolves_packaged_daemon_and_debug_paths_without_release_fallback() {
         let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
-        for engine in ["pi", "browser", "computer", "claude-acp"] {
+        for engine in ["pi", "browser", "computer", "claude-acp", "work"] {
             for dir in [
                 root.join("resources/engines"),
                 root.join("bin/engines"),

@@ -11,7 +11,8 @@ export function RewindAction({ workspaceId, threadId, userItemId, running }: Che
   return <button type="button" className="ghost" disabled={running} title={running ? "Finish or interrupt the turn before rewinding" : "Rewind files or conversation"} onClick={() => openCheckpoints({ workspaceId, threadId, userItemId })}>Rewind…</button>;
 }
 
-export function Checkpoints({ running, onChanged }: {
+export function Checkpoints({ running, onChanged, requestCheckpoint = checkpointRequest }: {
+  requestCheckpoint?: typeof checkpointRequest;
   running: Record<string, { isProcessing: boolean }>;
   onChanged: (workspace: string, thread: string, text?: string) => Promise<void>;
 }) {
@@ -45,7 +46,7 @@ export function Checkpoints({ running, onChanged }: {
     setLoadingList(true);
     setConversation(false);
     const params = { threadId: request.threadId };
-    Promise.all([checkpointRequest(request.workspaceId, { ...params, action: "list" }), checkpointRequest(request.workspaceId, { ...params, action: "capabilities" }).catch(() => ({ conversation: false, engine: "" }))]).then(([list, capabilities]) => {
+    Promise.all([requestCheckpoint(request.workspaceId, { ...params, action: "list" }), requestCheckpoint(request.workspaceId, { ...params, action: "capabilities" }).catch(() => ({ conversation: false, engine: "" }))]).then(([list, capabilities]) => {
       if (cancelled) return;
       const checkpoints = list.checkpoints ?? [];
       setRows(checkpoints);
@@ -61,25 +62,25 @@ export function Checkpoints({ running, onChanged }: {
       }
     }).catch((e: unknown) => { if (!cancelled) setError(String(e)); }).finally(() => { if (!cancelled) setLoadingList(false); });
     return () => { cancelled = true; };
-  }, [request]);
+  }, [request, requestCheckpoint]);
   useEffect(() => {
     if (!target || !request) { setLoadingDiff(false); return; }
     let cancelled = false;
     setLoadingDiff(true); setChanges([]); setError("");
     if (target.metadata.kind !== "before") setMode("files");
-    checkpointRequest(request.workspaceId, { threadId: request.threadId, action: "diff", checkpointId: target.id }).then((result) => {
+    requestCheckpoint(request.workspaceId, { threadId: request.threadId, action: "diff", checkpointId: target.id }).then((result) => {
       if (cancelled) return;
       setChanges(result.changes ?? []);
       setSelected(new Set(result.changes?.map((change) => change.path)));
     }).catch((e: unknown) => { if (!cancelled) setError(String(e)); }).finally(() => { if (!cancelled) setLoadingDiff(false); });
     return () => { cancelled = true; };
-  }, [target, request]);
+  }, [target, request, requestCheckpoint]);
   useEffect(() => {
     if (!request) return;
     const previous = document.activeElement as HTMLElement | null;
     content.current?.querySelector<HTMLElement>("button")?.focus();
     return () => previous?.focus();
-  }, [request]);
+  }, [request, requestCheckpoint]);
   const close = () => { if (!busy) setRequest(null); };
   const isRunning = Boolean(request && running[request.threadId]?.isProcessing);
   const allowConversation = conversation && target?.metadata.kind === "before";
@@ -92,7 +93,7 @@ export function Checkpoints({ running, onChanged }: {
     if (!request || !target) return;
     setBusy(true); setError("");
     try {
-      const result = await checkpointRequest(request.workspaceId, { threadId: request.threadId, action: "rewind", checkpointId: target.id, mode, paths: [...selected] });
+      const result = await requestCheckpoint(request.workspaceId, { threadId: request.threadId, action: "rewind", checkpointId: target.id, mode, paths: [...selected] });
       if (result.undoAvailable) setUndo(request);
       if (result.conversationChanged) await onChanged(request.workspaceId, request.threadId, result.text);
       if (result.error) setError(result.error);
@@ -103,7 +104,7 @@ export function Checkpoints({ running, onChanged }: {
     if (!undo) return;
     setBusy(true);
     try {
-      const result = await checkpointRequest(undo.workspaceId, { threadId: undo.threadId, action: "undo" });
+      const result = await requestCheckpoint(undo.workspaceId, { threadId: undo.threadId, action: "undo" });
       if (result.conversationChanged) await onChanged(undo.workspaceId, undo.threadId);
       setUndo(null);
     } catch (e) { setWarning(String(e)); } finally { setBusy(false); }
