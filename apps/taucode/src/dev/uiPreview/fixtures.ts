@@ -64,11 +64,13 @@ export function createFixtures(now = Date.now()) {
     makeThread("thread-notes", "workspace-notes", "Organize project notes", [userMessage("notes-user", "Help organize these notes."), assistantMessage("notes-answer", "Group the notes into **Ideas**, **Decisions**, and **Next steps**.")], now - 86400000),
     { ...makeThread("thread-side", "workspace-atlas", "Why keep the greeting constant?", [userMessage("side-user", "Why use a constant here?"), assistantMessage("side-answer", "It gives the interface and tests one shared source of truth.")], now - 60000), sideOf: { threadId: "thread-rich", workspaceId: "workspace-atlas", atItemId: "code-done" } },
   ];
+  threads.push(makeThread("thread-empty", "workspace-atlas", "New thread"));
   const chats: Chat[] = ["Plan a weekend in Kyoto", "Explain async iterators", "Ideas for a team offsite", "A better morning routine", "Notes on good documentation"].map((title, i) => ({
     id: `chat-${i + 1}`, model: "gpt-5", modelProvider: "openai", createdAt: Math.floor(now / 1000) - [0, 0, 2, 5, 20][i] * 86400,
     updatedAt: Math.floor(now / 1000) - [0, 0, 2, 5, 20][i] * 86400, preview: title,
     chat: { title, pinned: false, deletedAt: null, web: false },
   }));
+  chats.push({ ...chats[0], id: "chat-streaming", running: true, chat: { ...chats[0].chat, title: "Exploring an idea" } });
   const chatThreads = chats.map(chat => makeThread(chat.id, "chats", chat.chat.title!, [
     userMessage(`${chat.id}-user`, chat.chat.title!),
     assistantMessage(`${chat.id}-answer`, "## A starting point\n\nKeep the plan simple and leave room to explore.\n\n- Pick one priority for each day.\n- Save a few ideas for later.\n\n```js\nconst priorities = ['explore', 'learn', 'rest'];\npriorities.forEach(item => console.log(item));\n```"),
@@ -99,3 +101,8 @@ export function createFixtures(now = Date.now()) {
   ], warnings: [] };
   return { settings, workspaces, threads, chats, chatThreads, work, workThreads, checkpoints, imports };
 }
+
+export const composerAttachments = [
+  { name: "sketch.svg", url: "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" rx="12" fill="#94a6ff"/><circle cx="40" cy="40" r="22" fill="#202023"/></svg>') },
+  { name: "brief.md", text: "brief.md\n```\nReview the attached sketch.\n```" },
+];

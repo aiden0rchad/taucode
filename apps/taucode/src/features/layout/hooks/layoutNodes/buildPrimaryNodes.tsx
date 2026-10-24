@@ -36,7 +36,7 @@ export function buildPrimaryNodes(options: PrimaryLayoutNodesOptions): PrimaryLa
 
   const messagesNode = <Messages {...options.messagesProps} />;
 
-  const composerNode = options.composerProps ? <Composer {...options.composerProps} /> : null;
+  const composerNode = options.composerProps ? <Composer {...options.composerProps} isEmpty={!options.messagesProps.items.length && !options.messagesProps.isThinking && !options.messagesProps.isLoadingMessages} context={options.mainHeaderProps ? { worktree: options.mainHeaderProps.workspace.kind === "worktree", branch: options.mainHeaderProps.disableBranchMenu ? undefined : options.mainHeaderProps.branchName, sideChat: Boolean(options.messagesProps.onSendToMain) } : undefined} /> : null;
 
   const approvalToastsNode = <ApprovalToasts {...options.approvalToastsProps} />;
 

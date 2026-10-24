@@ -51,6 +51,7 @@ export function selectConversation(kind: "chat" | "task", select: (id: string) =
   selected.add(kind);
   const entries = kind === "chat" ? preview.state.chats : preview.state.work.tasks;
   const requested = new URLSearchParams(window.location.search).get(kind);
+  if (requested === "new") return;
   const entry = entries.find(e => e.id === requested) ?? entries[0];
   if (entry) select(entry.id);
 }
@@ -63,6 +64,7 @@ export function selectCode(
   if (!preview || selected.has("code") || !workspaces.length) return;
   selected.add("code");
   const query = new URLSearchParams(window.location.search);
+  if (query.get("thread") === "home") return;
   const thread = preview.state.threads.find(t => t.id === query.get("thread")) ?? preview.state.threads[0];
   if (thread && workspaces.some(w => w.id === thread.workspaceId)) select(thread.workspaceId, thread.id);
   const section = query.get("settings");

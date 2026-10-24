@@ -7,6 +7,12 @@ needed. The port is strict: an occupied port fails instead of selecting another.
 
 Direct screenshot URLs:
 
+- `/?mode=code&thread=home` — Code home dashboard.
+- `/?mode=code&thread=thread-empty` — new Code thread and starter pills.
+- `/?mode=chat&chat=new` or `/?mode=work&task=new` — empty states.
+- `/?mode=chat&chat=new&composer=attachments` — image and file attachment chips.
+- `/?mode=chat&chat=new&dictation=ready` or `/?mode=work&task=new&dictation=ready` — available dictation controls.
+- `/?mode=chat&chat=chat-streaming` — responding state and Stop control.
 - `/?mode=code&thread=thread-rich` — messages, plan, command output, diff, agents.
 - `/?mode=code&thread=thread-notes` — the non-git workspace.
 - `/?mode=chat&chat=chat-1` — markdown conversation and dated chat groups.

@@ -9,6 +9,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const state = createFixtures();
   const query = new URLSearchParams(search);
   const mode = query.get("mode");
+  if (query.get("dictation") === "ready") state.settings.dictationEnabled = true;
   state.settings.windowModes = { main: query.has("settings") ? "code" : mode === "chat" || mode === "work" ? mode : "code" };
   const theme = query.get("theme");
   if (theme === "light" || theme === "dark") state.settings.theme = theme;
@@ -65,7 +66,9 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "web": if (entry) entry.chat.web = Boolean(params.web); return null;
       case "trash": case "delete": if (entry) entry.chat.deletedAt = Math.floor(Date.now() / 1000); return null;
       case "restore": if (entry) entry.chat.deletedAt = null; return null;
-      case "stop": return null;
+      case "stop":
+        if (entry) { entry.running = false; publish("chats", "turn/completed", { threadId: entry.id }); }
+        return null;
       default: return unknown(`chat_request:${action}`);
     }
   }
@@ -198,7 +201,8 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "get_github_issues": return { issues: [], total: 0 };
       case "get_github_pull_requests": return { pullRequests: [], total: 0 };
       case "get_git_commit_diff": case "get_github_pull_request_diff": case "get_github_pull_request_comments": return [];
-      case "dictation_model_status": return { state: "missing", progress: null, error: null };
+      case "dictation_request_permission": return true;
+      case "dictation_model_status": return { state: query.get("dictation") === "ready" ? "ready" : "missing", progress: null, error: null };
       case "plugin:window|scale_factor": return 1;
       case "plugin:window|inner_size": case "plugin:window|outer_size": return { width: 1440, height: 1000 };
       case "plugin:window|inner_position": case "plugin:window|outer_position": return { x: 0, y: 0 };

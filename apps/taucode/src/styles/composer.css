@@ -703,7 +703,7 @@
         calc(var(--context-free) * 1%),
       var(--surface-border-strong) 0
     );
-  transition: background 0.2s ease;
+  transition: background 150ms ease;
 }
 
 .composer-context-ring::after {

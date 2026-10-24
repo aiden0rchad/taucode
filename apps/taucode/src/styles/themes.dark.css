@@ -1,5 +1,5 @@
 :root {
-  --surface-app: #121212;
+  --surface-app: #141416;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   color: var(--text-primary);
@@ -7,10 +7,8 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   color-scheme: light dark;
-  --ui-font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-  --code-font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Menlo,
-    Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --ui-font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --code-font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Segoe UI Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --code-font-size: 11px;
   --ui-font-size: 13px;
   --code-font-weight: 400;
@@ -25,15 +23,15 @@
   --text-faint: rgba(255, 255, 255, 0.5);
   --text-fainter: rgba(255, 255, 255, 0.45);
   --text-dim: rgba(255, 255, 255, 0.35);
-  --surface-sidebar: #121212;
-  --surface-sidebar-opaque: rgb(18, 18, 18);
-  --surface-topbar: #0e1013;
+  --surface-sidebar: #1b1b1e;
+  --surface-sidebar-opaque: #1b1b1e;
+  --surface-topbar: #141416;
   --surface-right-panel: #0e1013;
-  --surface-composer: #0e1013;
-  --surface-messages: #0e0e11;
-  --surface-card: #1b1b1b;
-  --surface-card-strong: #2e2e2e;
-  --surface-card-muted: #202020;
+  --surface-composer: #202023;
+  --surface-messages: #141416;
+  --surface-card: #202023;
+  --surface-card-strong: #303034;
+  --surface-card-muted: #202023;
   --surface-item: #171717;
   --surface-control: #252525;
   --surface-control-hover: #333333;
@@ -45,24 +43,24 @@
   --surface-command: #0c0e12;
   --surface-diff-card: #0f1113;
   --surface-bubble: #2e2e2e;
-  --surface-bubble-user: #2d4f7d;
+  --surface-bubble-user: #202023;
   --surface-context-core: #0b0e14;
-  --surface-popover: #0a0e14;
+  --surface-popover: #202023;
   --surface-review: #2a1f24;
   --border-review: rgba(255, 144, 200, 0.35);
   --surface-review-active: #3d2933;
   --text-review-active: rgba(255, 195, 226, 0.95);
   --surface-review-done: #243d33;
   --text-review-done: rgba(170, 255, 220, 0.95);
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-muted: rgba(255, 255, 255, 0.06);
-  --border-strong: rgba(255, 255, 255, 0.14);
+  --border-subtle: #2a2a2e;
+  --border-muted: #252529;
+  --border-strong: #3b3b42;
   --border-stronger: rgba(255, 255, 255, 0.18);
   --border-quiet: rgba(255, 255, 255, 0.2);
-  --border-accent: rgba(100, 200, 255, 0.6);
+  --border-accent: #94a6ff;
   --border-accent-soft: rgba(100, 200, 255, 0.3);
-  --text-accent: rgba(164, 195, 255, 0.7);
-  --message-link-color: rgba(196, 154, 255, 0.96);
+  --text-accent: #94a6ff;
+  --message-link-color: #94a6ff;
   --shadow-accent: rgba(92, 168, 255, 0.28);
   --titlebar-inset-left: 72px;
   --titlebar-height: 24px;

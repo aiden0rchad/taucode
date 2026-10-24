@@ -23,6 +23,11 @@ it.each([
   ["?mode=chat&chat=chat-1&theme=light", "A starting point"],
   ["?mode=work&task=task-needs-input&theme=light", "Approval required"],
   ["?settings=display&theme=light", "Display"],
+  ["?mode=chat&chat=new&composer=attachments", "brief.md"],
+  ["?mode=chat&chat=chat-streaming", "Responding…"],
+  ["?mode=work&task=task-running", "Prepare the launch brief"],
+  ["?mode=work&task=new", "What would you like to make?"],
+  ["?mode=code&thread=thread-empty", "What should we build?"],
 ])("mounts the real app at %s", async (query, text) => {
   vi.stubEnv("MODE", "uipreview");
   window.history.replaceState(null, "", "/" + query);
@@ -38,7 +43,12 @@ it.each([
     expect(browser.closest(".main-header-actions")).toBeTruthy();
     expect(document.querySelector(".browser-toggle")).toBeNull();
     if (query.includes("mode=code")) expect(screen.getByPlaceholderText("Ask taucode to do something…")).toBeTruthy();
-    if (query.includes("mode=chat")) {
+    if (query.includes("composer=attachments")) expect(document.querySelectorAll(".chat-attachments li")).toHaveLength(2);
+    if (query.includes("task=task-running")) {
+      expect(screen.getByRole("img", { name: "Plan: 1 of 3 complete" })).toBeTruthy();
+      expect(screen.getByRole("progressbar", { name: "Plan completion" })).toHaveProperty("value", 1);
+    }
+    if (query.includes("chat=chat-1")) {
       expect(screen.getByRole("heading", { level: 2, name: "A starting point" })).toBeTruthy();
       expect(screen.getByText("options").tagName).toBe("STRONG");
       expect(screen.getByRole("button", { name: "Copy code block" }).closest(".message .markdown .markdown-codeblock")).toBeTruthy();
@@ -111,6 +121,41 @@ it("sends a chat through real IPC and event subscriptions", async () => {
   await screen.findByText(/A starting point/);
   const input = screen.getByRole("textbox", { name: "Message" });
   fireEvent.change(input, { target: { value: "A preview question" } });
-  fireEvent.click(screen.getByRole("button", { name: "Send ↑" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByText(/Preview response:/);
+});
+
+it.each(["chat", "work"])("keeps %s controls in two groups and shows available dictation", async mode => {
+  vi.stubEnv("MODE", "uipreview");
+  window.history.replaceState(null, "", `/?mode=${mode}&chat=new&task=new&dictation=ready`);
+  installUiPreview();
+  render(<App />);
+  const mic = await screen.findByRole("button", { name: "Start dictation" });
+  const right = mic.closest(".composer-shell-actions");
+  expect(right).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: mode === "chat" ? "Chat model" : "Work model" }).closest(".composer-shell-actions")).toBe(right);
+  expect(document.querySelector(".composer-shell-toolbar")?.children).toHaveLength(2);
+  if (mode === "work") {
+    expect(screen.getByRole("combobox", { name: "Space" }).closest(".composer-shell-left")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Access mode" }).closest(".composer-shell-left")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Queue" }).closest(".composer-shell-actions")).toBe(right);
+    expect(document.querySelector(".work-readonly-folders summary svg.lucide-chevron-down")).toBeTruthy();
+    for (const [name, icon] of [["Organize a folder", "folder-tree"], ["Research brief", "file-search"], ["Spreadsheet from documents", "table"], ["Slide deck from notes", "presentation"], ["Clean up downloads", "trash-2"]]) {
+      expect(screen.getByRole("button", { name }).querySelector(`.lucide-${icon}`)).toBeTruthy();
+    }
+  } else {
+    for (const [name, icon] of [["Explore an idea", "lightbulb"], ["Plan a weekend", "calendar"], ["Write a story", "pen-line"]]) {
+      expect(screen.getByRole("button", { name }).querySelector(`.lucide-${icon}`)).toBeTruthy();
+    }
+  }
+});
+
+it("keeps Chat actions outside the user bubble", async () => {
+  vi.stubEnv("MODE", "uipreview");
+  window.history.replaceState(null, "", "/?mode=chat&chat=chat-1");
+  installUiPreview();
+  render(<App />);
+  const edit = await screen.findByRole("button", { name: "Edit and resend" });
+  expect(edit.closest(".chat-message-body")).toBeNull();
+  expect(edit.closest(".chat-message")?.querySelector(".chat-message-body .markdown")).toBeTruthy();
 });

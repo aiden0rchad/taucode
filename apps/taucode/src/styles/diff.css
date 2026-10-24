@@ -52,7 +52,7 @@
   background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
 .git-panel-select-input option {
@@ -146,7 +146,7 @@
   flex-shrink: 0;
   box-shadow: none;
   transform: none;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
 .diff-branch-refresh:hover:not(:disabled) {
@@ -225,7 +225,7 @@
   color: var(--text-emphasis);
   box-shadow: none;
   transform: none;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
 .git-root-button:hover:not(:disabled),
@@ -298,7 +298,7 @@
   font-size: 12px;
   box-shadow: none;
   transform: none;
-  transition: background 160ms ease;
+  transition: background 150ms ease;
 }
 
 .git-root-item.active {
@@ -456,7 +456,7 @@
   text-align: left;
   box-shadow: none;
   transform: none;
-  transition: background 160ms ease;
+  transition: background 150ms ease;
 }
 
 .per-file-group-row:hover {
@@ -511,7 +511,7 @@
   text-align: left;
   box-shadow: none;
   transform: none;
-  transition: background 160ms ease;
+  transition: background 150ms ease;
 }
 
 .per-file-edit-row:hover {
@@ -646,7 +646,7 @@
   cursor: pointer;
   border: 0;
   background: transparent;
-  transition: background 160ms ease, box-shadow 160ms ease;
+  transition: background 150ms ease, box-shadow 150ms ease;
 }
 
 .diff-row-meta {
@@ -685,8 +685,8 @@
   opacity: 0;
   pointer-events: none;
   transform: translateX(6px);
-  transition: max-width 180ms ease, opacity 140ms ease, transform 140ms ease,
-    margin-left 180ms ease;
+  transition: max-width 150ms ease, opacity 140ms ease, transform 140ms ease,
+    margin-left 150ms ease;
 }
 
 .diff-row:hover .diff-row-actions,
@@ -711,7 +711,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
   position: relative;
 }
 
@@ -988,7 +988,7 @@
   box-shadow: none;
   outline: none;
   transform: none;
-  transition: background 160ms ease, box-shadow 160ms ease;
+  transition: background 150ms ease, box-shadow 150ms ease;
   min-width: 0;
 }
 
@@ -1165,7 +1165,7 @@
   resize: vertical;
   min-height: 56px;
   max-height: 132px;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
 .commit-message-input::placeholder {
@@ -1198,7 +1198,7 @@
   background: var(--cm-surface-panel-soft);
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
 .commit-message-generate-button:hover:not(:disabled) {
@@ -1251,7 +1251,7 @@
   cursor: pointer;
   box-shadow: none;
   transform: none;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
 .commit-button:hover:not(:disabled) {
@@ -1317,7 +1317,7 @@
   cursor: pointer;
   box-shadow: none;
   transform: none;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
 .push-button:hover:not(:disabled) {
@@ -1348,7 +1348,7 @@
   cursor: pointer;
   box-shadow: none;
   transform: none;
-  transition: background 160ms ease, border-color 160ms ease;
+  transition: background 150ms ease, border-color 150ms ease;
 }
 
 .push-button-secondary:hover:not(:disabled) {

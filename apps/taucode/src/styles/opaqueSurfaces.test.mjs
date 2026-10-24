@@ -9,9 +9,9 @@ it("keeps all CSS free of backdrop filters", () => {
 
 it("preserves the font stacks and opaque theme surfaces", () => {
   const dark = String(styles["/src/styles/themes.dark.css"]);
-  expect(dark).toContain("--ui-font-family: system-ui");
+  expect(dark).toContain("--ui-font-family: -apple-system, BlinkMacSystemFont");
   expect(dark).toContain("--code-font-family: ui-monospace");
-  expect(dark).toContain("--surface-card: #1b1b1b");
+  expect(dark).toContain("--surface-card: #202023");
   for (const theme of ["dark", "light", "dim", "system"]) {
     const css = String(styles[`/src/styles/themes.${theme}.css`]);
     expect(css).toContain("--surface-app:");

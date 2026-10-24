@@ -42,10 +42,10 @@
   background: var(--surface-control);
   border: 1px solid var(--border-subtle);
   transition:
-    background 180ms ease-out,
-    border-color 180ms ease-out,
-    box-shadow 180ms ease-out,
-    transform 180ms ease-out;
+    background 150ms ease-out,
+    border-color 150ms ease-out,
+    box-shadow 150ms ease-out,
+    transform 150ms ease-out;
 }
 
 .prompt-row-header {

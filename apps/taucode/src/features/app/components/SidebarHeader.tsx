@@ -1,3 +1,4 @@
+import { NewConversationRow } from "@/features/chat/NewConversationRow";
 import ArrowDownUp from "lucide-react/dist/esm/icons/arrow-down-up";
 import { ModeSwitcher } from "@/features/chat/ModeShell";
 import BetweenHorizontalStart from "lucide-react/dist/esm/icons/between-horizontal-start";
@@ -18,6 +19,8 @@ import {
 import { useMenuController } from "../hooks/useMenuController";
 
 type SidebarHeaderProps = {
+  newThreadShortcut?: string | null;
+  onNewThread?: () => void;
   onSelectHome: () => void;
   onAddWorkspace: () => void;
   onToggleSearch: () => void;
@@ -32,6 +35,7 @@ type SidebarHeaderProps = {
 };
 
 export function SidebarHeader({
+  onNewThread, newThreadShortcut,
   onSelectHome,
   onAddWorkspace,
   onToggleSearch,
@@ -124,6 +128,7 @@ export function SidebarHeader({
 
   return (
     <><ModeSwitcher />
+    {onNewThread && <NewConversationRow label="New thread" onNew={onNewThread} onSearch={onToggleSearch} searchLabel="Toggle search" searchExpanded={isSearchOpen} shortcut={newThreadShortcut} />}
     <div className="sidebar-header">
       <div className="sidebar-header-title">
         <div className="sidebar-title-group">
@@ -255,7 +260,7 @@ export function SidebarHeader({
             aria-hidden
           />
         </button>
-        <button
+        {!onNewThread && (<button
           className={`ghost sidebar-search-toggle ds-tooltip-trigger${isSearchOpen ? " is-active" : ""}`}
           onClick={onToggleSearch}
           data-tauri-drag-region="false"
@@ -267,7 +272,7 @@ export function SidebarHeader({
           type="button"
         >
           <Search aria-hidden />
-        </button>
+        </button>)}
       </div>
     </div></>
   );

@@ -32,7 +32,7 @@ describe("Side chats", () => {
   });
   it("stops only the side chat and distinguishes close from archive", () => {
     const p = props(); render(<SideChatPane {...p} running />);
-    fireEvent.click(screen.getByRole("button", { name: "Stop side chat" }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     expect(p.onInterrupt).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "Close side chat" }));
     expect(p.onClose).toHaveBeenCalledOnce(); expect(p.onDelete).not.toHaveBeenCalled();

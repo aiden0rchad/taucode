@@ -1,3 +1,4 @@
+import { FolderTree, Bug, Hammer, Folder, GitBranch, Cpu, MessagesSquare } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -41,6 +42,8 @@ import { isMacPlatform } from "../../../utils/platformPaths";
 import type { CodexArgsOption } from "../../threads/utils/codexArgsProfiles";
 
 type ComposerProps = {
+  isEmpty?: boolean;
+  context?: { worktree: boolean; branch?: string; sideChat?: boolean };
   onSend: (
     text: string,
     images: string[],
@@ -156,6 +159,7 @@ const DEFAULT_EDITOR_SETTINGS: ComposerEditorSettings = {
 };
 
 export const Composer = memo(function Composer({
+  isEmpty = false, context,
   onSend,
   onStop,
   canStop,
@@ -577,6 +581,29 @@ export const Composer = memo(function Composer({
         </div>
       ) : null}
       <ComposerInput
+        toolbar={<ComposerMetaBar
+        disabled={disabled}
+        collaborationModes={collaborationModes}
+        selectedCollaborationModeId={selectedCollaborationModeId}
+        onSelectCollaborationMode={onSelectCollaborationMode}
+        engine={engine}
+        onSelectEngine={onSelectEngine}
+        models={models}
+        selectedModelId={selectedModelId}
+        onSelectModel={onSelectModel}
+        reasoningOptions={reasoningOptions}
+        selectedEffort={selectedEffort}
+        onSelectEffort={onSelectEffort}
+        selectedServiceTier={selectedServiceTier}
+        reasoningSupported={reasoningSupported}
+        codexArgsOptions={codexArgsOptions}
+        selectedCodexArgsOverride={selectedCodexArgsOverride}
+        onSelectCodexArgsOverride={onSelectCodexArgsOverride}
+        accessMode={accessMode}
+        onSelectAccessMode={onSelectAccessMode}
+        contextUsage={contextUsage}
+      />}
+        addMenu={<><button type="button" onClick={() => applyTextInsertion(`${text}@`, text.length + 1)}>Mention a file</button>{collaborationModes.some(mode => mode.id === "plan") && <button type="button" onClick={() => onSelectCollaborationMode(selectedCollaborationModeId === "plan" ? "default" : "plan")}>Plan mode</button>}</>}
         engine={engine}
         text={text}
         disabled={disabled}
@@ -632,28 +659,9 @@ export const Composer = memo(function Composer({
         onReviewPromptUpdateCustomInstructions={onReviewPromptUpdateCustomInstructions}
         onReviewPromptConfirmCustom={onReviewPromptConfirmCustom}
       />
-      <ComposerMetaBar
-        disabled={disabled}
-        collaborationModes={collaborationModes}
-        selectedCollaborationModeId={selectedCollaborationModeId}
-        onSelectCollaborationMode={onSelectCollaborationMode}
-        engine={engine}
-        onSelectEngine={onSelectEngine}
-        models={models}
-        selectedModelId={selectedModelId}
-        onSelectModel={onSelectModel}
-        reasoningOptions={reasoningOptions}
-        selectedEffort={selectedEffort}
-        onSelectEffort={onSelectEffort}
-        selectedServiceTier={selectedServiceTier}
-        reasoningSupported={reasoningSupported}
-        codexArgsOptions={codexArgsOptions}
-        selectedCodexArgsOverride={selectedCodexArgsOverride}
-        onSelectCodexArgsOverride={onSelectCodexArgsOverride}
-        accessMode={accessMode}
-        onSelectAccessMode={onSelectAccessMode}
-        contextUsage={contextUsage}
-      />
+
+      {context && <div className="composer-context-row"><span><Folder aria-hidden />{context.worktree ? "Worktree" : "Local"}</span>{context.branch && <span><GitBranch aria-hidden />{context.branch}</span>}<span><Cpu aria-hidden />{engine === "claude" ? "Claude Code" : engine}</span>{context.sideChat && <span><MessagesSquare aria-hidden />Side chat</span>}</div>}
+      {isEmpty && <div className="starter-pills">{[{ prompt: "Explore this project", Icon: FolderTree }, { prompt: "Fix a bug", Icon: Bug }, { prompt: "Build a feature", Icon: Hammer }].map(({ prompt, Icon }) => <button key={prompt} type="button" onClick={() => { setComposerText(prompt); textareaRef.current?.focus(); }}><Icon aria-hidden />{prompt}</button>)}</div>}
     </footer>
   );
 });

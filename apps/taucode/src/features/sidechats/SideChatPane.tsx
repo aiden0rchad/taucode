@@ -1,3 +1,5 @@
+import { ArrowLeft, MessagesSquare, Shield } from "lucide-react";
+import { ComposerShell, ComposerSendButton } from "@/features/composer/components/ComposerShell";
 import { useState, type ComponentProps, type ReactNode } from "react";
 import type { AccessMode, ConversationItem, ModelOption } from "@/types";
 import { Messages } from "@/features/messages/components/Messages";
@@ -39,21 +41,21 @@ export function SideChatPane({ chat, items, running, models, messageProps, onSen
     finally { setSending(false); }
   };
   return <>
-    <header className="side-chat-header"><button className="ghost" onClick={onClose} aria-label="Close side chat">← Back</button><strong>{chat.title}</strong><span role="status">{running ? "Running" : "Idle"}</span><button className="ghost" onClick={onDelete}>Archive</button></header>
+    <header className="side-chat-header"><button className="ghost" onClick={onClose} aria-label="Close side chat"><ArrowLeft aria-hidden />Back</button><strong>{chat.title}</strong><span role="status">{running ? "Running" : "Idle"}</span><button className="ghost" onClick={onDelete}>Archive</button></header>
     <Messages {...messageProps} items={items} threadId={chat.id} workspaceId={chat.workspaceId} isThinking={running} onSendToMain={onSendToMain} />
     <form className="side-chat-composer" onSubmit={e => { e.preventDefault(); void send(); }}>
-      <div className="side-chat-controls">
-        <label>Model<select value={model ?? ""} onChange={e => setModel(e.target.value)} disabled={running}>
+      <ComposerShell menu={<button type="button" onClick={onClose}><ArrowLeft aria-hidden />Back to main thread</button>} toolbar={<><span className="composer-chip"><MessagesSquare aria-hidden />Side chat</span><div className="side-chat-controls">
+        <label className="composer-model-chip">Model<select value={model ?? ""} onChange={e => setModel(e.target.value)} disabled={running}>
           {!models.some(m => m.id === model) && <option value={model ?? ""}>{model ?? "Parent model"}</option>}
           {models.filter(m => !m.engines || m.engines.includes(chat.engine)).map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
         </select></label>
-        <label>Access<select value={access} onChange={e => setAccess(e.target.value as AccessMode)} disabled={running}>
+        <label className="composer-chip"><Shield aria-hidden /><select aria-label="Access" value={access} onChange={e => setAccess(e.target.value as AccessMode)} disabled={running}>
           <option value="read-only">Read-only</option><option value="current">Workspace</option><option value="full-access">Full access</option>
         </select></label>
-      </div>
-      <label className="side-chat-prompt">Message<textarea aria-label="Side chat message" value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void send(); } }} /></label>
+      </div></>} actions={<ComposerSendButton running={running} disabled={sending || !draft.trim()} disabledReason={sending ? "Sending message" : "Write a message"} onSend={() => { void send(); }} onStop={() => { void onInterrupt().catch(e => setError(String(e))); }} />}>
+      <label className="side-chat-prompt"><textarea placeholder="Ask anything" aria-label="Side chat message" value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} /></label>
       {error && <p role="alert">{error}</p>}
-      {running ? <button type="button" onClick={() => { void onInterrupt().catch(e => setError(String(e))); }}>Stop side chat</button> : <button type="submit" disabled={sending || !draft.trim()}>Send</button>}
+      </ComposerShell>
     </form>
   </>;
 }

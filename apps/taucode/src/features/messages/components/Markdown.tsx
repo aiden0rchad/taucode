@@ -1,3 +1,4 @@
+import { Copy, Check } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type MouseEvent } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -392,7 +393,7 @@ function CodeBlock({ className, value, copyUseModifier }: CodeBlockProps) {
           aria-label="Copy code block"
           title={copied ? "Copied" : "Copy"}
         >
-          {copied ? "Copied" : "Copy"}
+          {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
         </button>
       </div>
       <pre>

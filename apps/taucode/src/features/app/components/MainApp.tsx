@@ -1766,6 +1766,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
       ...layoutSurfaces.primary,
       sidebarProps: {
         ...layoutSurfaces.primary.sidebarProps,
+        newThreadShortcut: appSettings.newAgentShortcut,
         onSelectThread: (workspaceId, threadId) => {
           const thread = threadsByWorkspace[workspaceId]?.find(t => t.id === threadId);
           if (thread?.sideOf) {

@@ -1,3 +1,4 @@
+import { MessagesSquare, CornerUpLeft, LoaderCircle, CircleAlert, ChevronDown } from "lucide-react";
 import { ComputerApprovalStatus, ComputerRunItem } from "@/features/computer/ComputerRunItem";
 import { parseComputerRun } from "@/features/computer/computer";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -481,10 +482,10 @@ export const MessageRow = memo(function MessageRow({
             onClose={() => setLightboxIndex(null)}
           />
         )}
-        {rewindAction}
+        <div className="message-hover-actions">{rewindAction}
         {item.role === "assistant" && (onSideChat || onSendToMain) && <div className="message-side-actions">
-          {onSideChat && <span title={sideChatDisabledReason}><button type="button" className="ghost" disabled={Boolean(sideChatDisabledReason)} onClick={() => onSideChat(item.id)}>Side chat</button></span>}
-          {onSendToMain && <button type="button" className="ghost" onClick={() => onSendToMain(item.text)}>Send to main</button>}
+          {onSideChat && <span title={sideChatDisabledReason}><button type="button" className="ghost icon-button" aria-label="Side chat" title={sideChatDisabledReason || "Side chat"} disabled={Boolean(sideChatDisabledReason)} onClick={() => onSideChat(item.id)}><MessagesSquare aria-hidden /></button></span>}
+          {onSendToMain && <button type="button" className="ghost icon-button" aria-label="Send to main" title="Send to main" onClick={() => onSendToMain(item.text)}><CornerUpLeft aria-hidden /></button>}
         </div>}
         {onQuote && hasText && (
           <button
@@ -515,6 +516,7 @@ export const MessageRow = memo(function MessageRow({
             <Check className="message-copy-icon-check" size={14} />
           </span>
         </button>
+        </div>
       </div>
     </div>
   );
@@ -813,7 +815,7 @@ export const ToolRow = memo(function ToolRow({
           onClick={() => onToggle(item.id)}
           aria-expanded={isExpanded}
         >
-          <ToolIcon className={`tool-inline-icon ${tone}`} size={14} aria-hidden />
+          {tone === "processing" ? <LoaderCircle className="tool-inline-icon tool-spinner" aria-hidden /> : tone === "failed" ? <CircleAlert className="tool-inline-icon error" aria-hidden /> : <ToolIcon className={`tool-inline-icon ${tone}`} size={16} aria-hidden />}
           {summaryLabel && (
             <span className="tool-inline-label">{summaryLabel}:</span>
           )}
@@ -836,6 +838,7 @@ export const ToolRow = memo(function ToolRow({
               )}
             </span>
           )}
+          <ChevronDown className="tool-chevron" aria-hidden />
           {inlineStatus && (
             <span className="tool-inline-status">{inlineStatus}</span>
           )}

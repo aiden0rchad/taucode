@@ -70,7 +70,7 @@ describe("Work mode", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Task context" })).toBeTruthy();
     expect(screen.getByText("User brief").tagName).toBe("STRONG");
     expect(screen.queryByRole("button", { name: "Rewind…" })).toBeNull();
-    expect(screen.getByText("uploads/notes.txt")).toBeTruthy();
+    expect(screen.getByTitle("uploads/notes.txt")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Quick Look" }));
     await waitFor(() => expect(workOutput).toHaveBeenCalledWith("Cowork report", "outputs/report.pdf", "preview"));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
@@ -96,9 +96,11 @@ describe("Work mode", () => {
   it("queues a task with registry model, attachments, space and Ask default", async () => {
     render(<WorkView settings={settings} />);
     await screen.findByRole("option", { name: "Research" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Space" }), { target: { value: "space" } });
     expect(screen.getByRole("combobox", { name: "Access mode" })).toHaveProperty("value", "ask");
     fireEvent.click(screen.getByRole("button", { name: "Research brief" }));
-    fireEvent.click(screen.getByRole("button", { name: "Attach files…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add attachments and tools" }));
+    fireEvent.click(screen.getByRole("button", { name: "Attach files to space" }));
     await screen.findByText("copied-notes.pdf");
     fireEvent.click(screen.getByRole("button", { name: "Queue" }));
     await waitFor(() => expect(workRequest).toHaveBeenCalledWith("create", expect.objectContaining({ spaceId: "space", model: "local/test", accessMode: "ask", runNow: false, attachments: [".taucode/uploads/copied-notes.pdf"] })));
@@ -113,7 +115,7 @@ describe("Work mode", () => {
     render(<WorkView settings={settings} />);
     const inbox = await screen.findByRole("region", { name: "Needs input inbox" });
     fireEvent.click(within(inbox).getByRole("button", { name: /^Review brief/ }));
-    expect(await screen.findByRole("checkbox", { name: "Write report" })).toHaveProperty("checked", true);
+    expect((await screen.findByRole("checkbox", { name: "Write report" })).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByRole("region", { name: "Research Running" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "Research Queued" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "Research Done" })).toBeTruthy();
@@ -128,6 +130,7 @@ describe("Work mode", () => {
   it("offers five templates, with read-only cleanup and Run now", async () => {
     render(<WorkView settings={settings} />);
     await screen.findByRole("option", { name: "Research" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Space" }), { target: { value: "space" } });
     for (const title of ["Organize a folder", "Research brief", "Spreadsheet from documents", "Slide deck from notes", "Clean up downloads"]) expect(screen.getByRole("button", { name: title })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Clean up downloads" }));
     expect(screen.getByRole("combobox", { name: "Access mode" })).toHaveProperty("value", "read-only");
@@ -141,8 +144,8 @@ describe("Work mode", () => {
     state.tasks[0].plan = [{ step: "Analyze data", status: "pending" }];
     state.tasks[0].outputs = ["outputs/chart.png"];
     events.listener({ workspace_id: "work", message: { method: "work/updated", params: { task: state.tasks[0] } } });
-    expect(await screen.findByRole("checkbox", { name: "Analyze data" })).toHaveProperty("checked", false);
-    expect(screen.getByText("outputs/chart.png")).toBeTruthy();
+    expect((await screen.findByRole("checkbox", { name: "Analyze data" })).getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByTitle("outputs/chart.png")).toBeTruthy();
   });
 });
 

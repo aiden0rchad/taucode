@@ -1,3 +1,4 @@
+import { ArrowLeft, ArrowRight, Plus, RotateCw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { browserRequest, subscribeBrowser } from "@services/tauri";
@@ -78,19 +79,19 @@ export function BrowserPane({ searchUrl = defaultBrowserSettings.searchUrl, agen
     send({ action: "key", type, key: e.key, code: e.code, keyCode: e.keyCode, text: e.key.length === 1 ? e.key : e.key === "Enter" ? "\r" : "", modifiers: modifiers(e), mac: isMacPlatform() });
   };
   return <section className="browser-pane ds-panel" aria-label="Browser">
-    <header className="ds-panel-header"><strong>Browser</strong><button className="ghost" onClick={onClose} aria-label="Close browser pane">×</button></header>
+    <header className="ds-panel-header"><strong>Browser</strong><button className="ghost" onClick={onClose} aria-label="Close browser pane"><X aria-hidden /></button></header>
     {(agentActive || state.agent) && <div className="browser-agent" role="status"><span>Agent is using the browser</span><button className="secondary" onClick={() => { void Promise.resolve(onTakeOver()).catch(e => setError(String(e))); }}>Take over</button></div>}
     <div className="browser-tabs" role="tablist" aria-label="Browser tabs">
       {state.tabs?.map(tab => <div className="browser-tab" key={tab.id}>
         <button role="tab" aria-selected={tab.id === state.active} onClick={() => send({ action: "activate", id: tab.id })}>{tab.favicon && /^(https?:|data:image\/)/.test(tab.favicon) && <img src={tab.favicon} alt="" referrerPolicy="no-referrer" />}<span>{tab.title || "New tab"}</span></button>
-        <button aria-label={`Close ${tab.title || "tab"}`} onClick={() => send({ action: "close", id: tab.id })}>×</button>
+        <button aria-label={`Close ${tab.title || "tab"}`} onClick={() => send({ action: "close", id: tab.id })}><X aria-hidden /></button>
       </div>)}
-      <button className="ghost" aria-label="New browser tab" onClick={() => send({ action: "new" })}>+</button>
+      <button className="ghost" aria-label="New browser tab" onClick={() => send({ action: "new" })}><Plus aria-hidden /></button>
     </div>
     <form className="browser-toolbar" onSubmit={e => { e.preventDefault(); try { send({ action: "navigate", url: normalizeBrowserUrl(url, searchUrl) }); } catch (err) { setError(String(err)); } }}>
-      <button className="ghost" type="button" aria-label="Back" onClick={() => send({ action: "back" })}>←</button>
-      <button className="ghost" type="button" aria-label="Forward" onClick={() => send({ action: "forward" })}>→</button>
-      <button className="ghost" type="button" aria-label={active?.loading ? "Stop loading" : "Reload"} onClick={() => send({ action: active?.loading ? "stop" : "reload" })}>{active?.loading ? "×" : "↻"}</button>
+      <button className="ghost" type="button" aria-label="Back" onClick={() => send({ action: "back" })}><ArrowLeft aria-hidden /></button>
+      <button className="ghost" type="button" aria-label="Forward" onClick={() => send({ action: "forward" })}><ArrowRight aria-hidden /></button>
+      <button className="ghost" type="button" aria-label={active?.loading ? "Stop loading" : "Reload"} onClick={() => send({ action: active?.loading ? "stop" : "reload" })}>{active?.loading ? <X aria-hidden /> : <RotateCw aria-hidden />}</button>
       <input ref={address} aria-label="URL or search" placeholder="Search or enter a URL" value={url} onChange={e => setUrl(e.target.value)} onFocus={e => e.target.select()} />
     </form>
     {(error || state.error) && <div className="browser-error" role="alert">{error || state.error}<button onClick={() => send({ action: "attach", ...size.current })}>Retry</button></div>}

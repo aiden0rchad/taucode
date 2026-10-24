@@ -93,6 +93,14 @@ function ComposerHarness({
 }
 
 describe("Composer send triggers", () => {
+  it("opens Code tools and inserts a file mention", () => {
+    render(<ComposerHarness onSend={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add attachments and tools" }));
+    expect(screen.getByRole("button", { name: "Attach images" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Mention a file" }));
+    expect(screen.getByRole("textbox")).toHaveProperty("value", "@");
+    expect(screen.queryByRole("dialog", { name: "Attachments and tools" })).toBeNull();
+  });
   it.each([['pi', 'taucode'], ['codex', 'Codex'], ['claude', 'Claude Code']] as const)("names the %s engine in the placeholder", (engine, label) => {
     render(<ComposerHarness onSend={vi.fn()} engine={engine} />);
     expect(screen.getByPlaceholderText(`Ask ${label} to do something…`)).toBeTruthy();

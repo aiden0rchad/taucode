@@ -94,6 +94,7 @@ function groupFlatThreadRowsByTimeBucket(
 }
 
 type SidebarProps = {
+  newThreadShortcut?: string | null;
   workspaces: WorkspaceInfo[];
   groupedWorkspaces: WorkspaceGroupSection[];
   hasWorkspaceGroups: boolean;
@@ -149,6 +150,7 @@ type SidebarProps = {
 };
 
 export const Sidebar = memo(function Sidebar({
+  newThreadShortcut,
   workspaces,
   groupedWorkspaces,
   hasWorkspaceGroups,
@@ -842,6 +844,8 @@ export const Sidebar = memo(function Sidebar({
     >
       <div className="sidebar-drag-strip" />
       <SidebarHeader
+        newThreadShortcut={newThreadShortcut}
+        onNewThread={() => { const workspace = workspaces.find(w => w.id === activeWorkspaceId) ?? workspaces[0]; if (workspace) handleCreateThreadInProject(workspace); else onAddWorkspace(); }}
         onSelectHome={onSelectHome}
         onAddWorkspace={onAddWorkspace}
         onToggleSearch={() => setIsSearchOpen((prev) => !prev)}

@@ -68,7 +68,7 @@ describe("checkpoints", () => {
   });
   it("disables rewind while running and expires Undo on the next turn", async () => {
     const view = render(<><RewindAction workspaceId="workspace" threadId="thread" userItemId="user" running /><Checkpoints running={{}} onChanged={changed} /></>);
-    expect((screen.getByText("Rewind…") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Rewind…" }) as HTMLButtonElement).disabled).toBe(true);
     open(); await screen.findByText("This file will be deleted."); fireEvent.click(screen.getByText("Confirm rewind"));
     await screen.findByText("Undo");
     act(() => onEvent({ workspace_id: "workspace", message: { method: "turn/started", params: { threadId: "thread" } } }));

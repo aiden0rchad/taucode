@@ -29,7 +29,7 @@
 
   --ds-popover-bg: var(--surface-popover);
   --ds-popover-border: var(--border-muted);
-  --ds-popover-shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
+  --ds-popover-shadow: 0 4px 12px #0000001a;
   --ds-popover-item-text: var(--text-muted);
   --ds-popover-item-text-active: var(--text-stronger);
 
@@ -44,9 +44,9 @@
 
   /* ── Motion ── */
   --ds-dur-fast: 120ms;
-  --ds-dur-normal: 160ms;
-  --ds-dur-slow: 220ms;
-  --ds-dur-entrance: 200ms;
+  --ds-dur-normal: 150ms;
+  --ds-dur-slow: 150ms;
+  --ds-dur-entrance: 150ms;
 
   --ds-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ds-ease-out-soft: cubic-bezier(0.25, 0.46, 0.45, 0.94);

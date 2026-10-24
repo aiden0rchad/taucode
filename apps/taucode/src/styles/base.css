@@ -29,7 +29,7 @@ body {
   border-radius: 0;
   overflow: hidden;
   position: relative;
-  transition: grid-template-columns 220ms ease;
+  transition: grid-template-columns 150ms ease;
   font-family: var(--ui-font-family);
 }
 
@@ -70,7 +70,7 @@ body {
   -webkit-app-region: no-drag;
   pointer-events: auto;
   transform: translateY(calc(-50% + var(--titlebar-toggle-offset, 0px)));
-  transition: left 180ms ease, right 180ms ease, opacity 160ms ease;
+  transition: left 150ms ease, right 150ms ease, opacity 150ms ease;
   will-change: left, right;
 }
 
@@ -163,7 +163,7 @@ button.window-caption-control:focus-visible,
   width: 8px;
   cursor: col-resize;
   z-index: 3;
-  transition: opacity 160ms ease;
+  transition: opacity 150ms ease;
 }
 
 .sidebar-resizer::after {

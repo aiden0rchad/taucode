@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { engineRuntime } from "@services/tauri";
-import { BrainCog, SlidersHorizontal, Zap } from "lucide-react";
+import { BrainCog, SlidersHorizontal, Zap, ListChecks, Shield } from "lucide-react";
 import type { AccessMode, ServiceTier, ThreadTokenUsage } from "../../../types";
 import type { CodexArgsOption } from "../../threads/utils/codexArgsProfiles";
 
@@ -119,15 +119,7 @@ export function ComposerMetaBar({
                   }
                 />
                 <span className="composer-plan-toggle-icon" aria-hidden>
-                  <svg viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="m6.5 7.5 1 1 2-2M6.5 12.5l1 1 2-2M6.5 17.5l1 1 2-2M11 7.5h7M11 12.5h7M11 17.5h7"
-                      stroke="currentColor"
-                      strokeWidth="1.4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  <ListChecks aria-hidden />
                 </span>
                 <span className="composer-plan-toggle-label">
                   {planMode?.label || "Plan"}
@@ -137,15 +129,7 @@ export function ComposerMetaBar({
           ) : (
             <div className="composer-select-wrap">
             <span className="composer-icon" aria-hidden>
-              <svg viewBox="0 0 24 24" fill="none">
-                <path
-                  d="m6.5 7.5 1 1 2-2M6.5 12.5l1 1 2-2M6.5 17.5l1 1 2-2M11 7.5h7M11 12.5h7M11 17.5h7"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <ListChecks aria-hidden />
             </span>
               <select
                 className="composer-select composer-select--model composer-select--collab"
@@ -167,34 +151,7 @@ export function ComposerMetaBar({
         )}
         <div className="composer-select-wrap composer-select-wrap--model">
           <span className="composer-icon composer-icon--model" aria-hidden>
-            <svg viewBox="0 0 24 24" fill="none">
-              <path
-                d="M12 4v2"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-              <path
-                d="M8 7.5h8a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-2.5 2.5H8A2.5 2.5 0 0 1 5.5 15v-5A2.5 2.5 0 0 1 8 7.5Z"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinejoin="round"
-              />
-              <circle cx="9.5" cy="12.5" r="1" fill="currentColor" />
-              <circle cx="14.5" cy="12.5" r="1" fill="currentColor" />
-              <path
-                d="M9.5 15.5h5"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-              <path
-                d="M5.5 11H4M20 11h-1.5"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-            </svg>
+            <span className="provider-dot">{(selectedModel?.providerName || selectedModel?.providerId || selectedModelLabel)[0]?.toUpperCase()}</span>
           </span>
           {onSelectEngine ? <select aria-label="Engine" value={engine} disabled={disabled} onChange={e => selectEngine(e.target.value as import("@/types").EngineKind)}><option value="pi">pi</option><option value="codex">codex</option><option value="claude" disabled={!!claudeReason} title={claudeReason || undefined}>Claude Code (ACP){claudeReason ? " — " + claudeReason : ""}</option></select> : <span className="engine-badge" aria-label="Thread engine">{engine === "claude" ? "Claude Code (ACP)" : engine}</span>}
           <select
@@ -231,6 +188,7 @@ export function ComposerMetaBar({
           <select
             className="composer-select composer-select--effort"
             aria-label="Thinking mode"
+            title={!reasoningSupported ? "This model does not support reasoning effort" : "Reasoning effort"}
             value={selectedEffort ?? ""}
             onChange={(event) => onSelectEffort(event.target.value)}
             disabled={disabled || !reasoningSupported}
@@ -265,23 +223,9 @@ export function ComposerMetaBar({
             </select>
           </div>
         )}
-        <div className="composer-select-wrap">
+        <div className="composer-select-wrap composer-access-chip">
           <span className="composer-icon" aria-hidden>
-            <svg viewBox="0 0 24 24" fill="none">
-              <path
-                d="M12 4l7 3v5c0 4.5-3 7.5-7 8-4-0.5-7-3.5-7-8V7l7-3z"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M9.5 12.5l1.8 1.8 3.7-4"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <Shield aria-hidden />
           </span>
           <select
             className="composer-select composer-select--approval"
@@ -292,8 +236,8 @@ export function ComposerMetaBar({
               onSelectAccessMode(event.target.value as AccessMode)
             }
           >
-            <option value="read-only">Read only</option>
-            <option value="current">On-Request</option>
+            <option value="read-only">Read-only</option>
+            <option value="current">Ask</option>
             <option value="full-access">Full access</option>
           </select>
         </div>
@@ -317,7 +261,7 @@ export function ComposerMetaBar({
             } as CSSProperties
           }
         >
-          <span className="composer-context-value">●</span>
+          <span className="composer-context-value" />
         </div>
       </div>
     </div>

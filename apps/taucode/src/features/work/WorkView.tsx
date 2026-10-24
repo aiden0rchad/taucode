@@ -1,4 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ComposerDictation } from "@/features/composer/components/ComposerDictation";
+import { NewConversationRow } from "@/features/chat/NewConversationRow";
+import { Folder, Shield, X, PanelLeft, FolderTree, FileSearch, Table, Presentation, Trash2, ListPlus, CheckCircle2, Circle, ExternalLink, FolderOpen, Eye, Copy, Terminal, LoaderCircle, Search, ChevronDown, FilePenLine, Globe, Bot, ListChecks, CircleAlert } from "lucide-react";
+import { ComposerShell, ComposerSendButton } from "@/features/composer/components/ComposerShell";
+import { getFileTypeIconUrl } from "@utils/fileTypeIcons";
+import { createElement, useCallback, useEffect, useRef, useState } from "react";
 import type { AppSettings, WorkRequest, WorkTask } from "@/types";
 import { checkpointRequest, pickWorkspacePath, pickWorkspacePaths, pickWorkAttachments, workAttachment, workOutput, workRequest } from "@services/tauri";
 import { subscribeWindowDragDrop } from "@services/dragDrop";
@@ -14,6 +19,9 @@ import { BrowserDock } from "@/features/browser/BrowserDock";
 import { SidebarBottomRail } from "@app/components/SidebarBottomRail";
 import { ModeHeader } from "@/features/chat/ModeHeader";
 import { RowMenu } from "@/features/chat/RowMenu";
+
+const templateIcons = { "Organize a folder": FolderTree, "Research brief": FileSearch, "Spreadsheet from documents": Table, "Slide deck from notes": Presentation, "Clean up downloads": Trash2 };
+const workToolIcons: Record<string, typeof Terminal> = { commandExecution: Terminal, fileChange: FilePenLine, webSearch: Globe, collabToolCall: Bot, subAgentActivity: Bot, plan: ListChecks };
 
 function InputRequest({ request, busy, respond }: { request: WorkRequest; busy: boolean; respond: (answer: Record<string, unknown>) => void }) {
   const [answer, setAnswer] = useState("");
@@ -32,6 +40,10 @@ function InputRequest({ request, busy, respond }: { request: WorkRequest; busy: 
 
 export function WorkView({ settings, onOpenSettings = () => {} }: { settings: AppSettings; onOpenSettings?: () => void }) {
   const work = useWork();
+  const searchInput = useRef<HTMLInputElement>(null);
+  const [search, setSearch] = useState("");
+  const [collapsedSpaces, setCollapsedSpaces] = useState<string[]>([]);
+  const [dragOver, setDragOver] = useState(false);
   const [brief, setBrief] = useState("");
   const [spaceId, setSpaceId] = useState("");
   const [access, setAccess] = useState<WorkTask["accessMode"]>("ask");
@@ -39,19 +51,20 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [model, setModel] = useState(models[0]?.key ?? "");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [dictating, setDictating] = useState(false);
   const [showList, setShowList] = useState(true);
   const [folder, setFolder] = useState("");
   const [readOnlyFolders, setReadOnlyFolders] = useState<string[]>([]);
   const tasksRef = useRef(work.state.tasks);
   tasksRef.current = work.state.tasks;
   const writableSpaces = work.state.spaces.filter(s => !s.readOnly);
-  const selectedSpace = writableSpaces.find(s => s.id === spaceId)?.id || writableSpaces[0]?.id || "";
+  const selectedSpace = writableSpaces.find(s => s.id === spaceId)?.id || "";
   const needs = work.state.tasks.filter(t => t.status === "needs-input");
   const task = work.task;
-  const continuationSpace = writableSpaces.find(s => s.id === spaceId)?.id || writableSpaces.find(s => s.id === task?.spaceId)?.id || selectedSpace;
+  const continuationSpace = writableSpaces.find(s => s.id === spaceId)?.id || writableSpaces.find(s => s.id === task?.spaceId)?.id || writableSpaces[0]?.id || "";
   const active = task?.status === "running" || task?.status === "needs-input";
   const nativeDrop = useRef<(paths: string[]) => void>(() => {});
-  useEffect(() => subscribeWindowDragDrop(event => { if (event.payload.type === "drop") nativeDrop.current(event.payload.paths ?? []); }), []);
+  useEffect(() => subscribeWindowDragDrop(event => { setDragOver(event.payload.type === "enter" || event.payload.type === "over"); if (event.payload.type === "drop") nativeDrop.current(event.payload.paths ?? []); }), []);
   const run = async (operation: () => Promise<unknown>) => {
     setBusy(true); work.setError("");
     try { await operation(); } catch (error) { work.setError(String(error)); } finally { setBusy(false); }
@@ -65,6 +78,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   });
   nativeDrop.current = paths => { if (!busy && !task) void attach(paths); };
   const create = (runNow: boolean) => run(async () => {
+    if (busy || dictating || !brief.trim() || !selectedSpace || !model) return;
     const created = await work.mutate<WorkTask>("create", { spaceId: selectedSpace, brief, model, accessMode: access, attachments, runNow });
     work.setActive(created.id); setBrief(""); setAttachments([]); setShowList(false);
   });
@@ -72,7 +86,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const taskButton = (entry: WorkTask) => <RowMenu key={entry.id} label={entry.title} actions={[
     { label: "Open task", onClick: () => selectTask(entry.id) },
     ...(["running", "needs-input", "queued"].includes(entry.status) ? [{ label: "Stop task", disabled: busy, onClick: () => { void run(() => work.mutate("stop", { taskId: entry.id })); } }] : []),
-  ]}><button className={`thread-row has-secondary-line is-nested${work.active === entry.id ? " active" : ""}`} aria-label={entry.title} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}><span className={`thread-status ${entry.status === "running" ? "processing" : entry.status === "needs-input" ? "reviewing" : "ready"}`} aria-label={entry.status} /><span className="thread-content"><span className="thread-name">{entry.title}</span><span className="thread-details">{entry.status.replace("-", " ")}</span></span></button></RowMenu>;
+  ]}><button className={`thread-row has-secondary-line is-nested${work.active === entry.id ? " active" : ""}`} aria-label={entry.title} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}>{entry.status === "running" ? <svg className="work-progress-ring" viewBox="0 0 20 20" role="img" aria-label={`Plan: ${entry.plan.filter(p => p.status === "completed").length} of ${entry.plan.length} complete`}><circle cx="10" cy="10" r="8" /><circle cx="10" cy="10" r="8" pathLength="100" strokeDasharray={`${entry.plan.length ? entry.plan.filter(p => p.status === "completed").length / entry.plan.length * 100 : 0} 100`} /></svg> : <span className={`thread-status ${entry.status === "needs-input" ? "reviewing" : "ready"}`} aria-label={entry.status} />}<span className="thread-content"><span className="thread-name">{entry.title}</span><span className="thread-details">{entry.status.replace("-", " ")}</span></span></button></RowMenu>;
   const checkpoints = useCallback<typeof checkpointRequest>((_space, params) => {
     const task = tasksRef.current.find(t => t.threadId === params.threadId);
     return workRequest("checkpoint", { taskId: task?.id, request: params });
@@ -80,16 +94,17 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   return <BrowserDock searchUrl={settings.browser?.searchUrl} onInterrupt={() => work.active ? workRequest("stop", { taskId: work.active }).then(() => {}) : undefined}><div className={"chat-layout work-layout" + (showList ? " chat-list-open" : "")}>
     <aside className="sidebar chat-sidebar" aria-label="Spaces and tasks">
       <ModeSwitcher />
-      <button className="ghost sidebar-labeled-button mode-new" onClick={() => { work.setActive(null); setShowList(false); }}><Plus size={14} aria-hidden />New task</button>
+      <NewConversationRow label="New task" disabled={busy} shortcut={settings.newAgentShortcut} handleShortcut onSearch={() => searchInput.current?.focus()} onNew={() => { work.setActive(null); setShowList(false); }} />
+      <label className="sidebar-search"><Search aria-hidden /><input ref={searchInput} type="search" aria-label="Search tasks" placeholder="Search tasks" value={search} onChange={e => setSearch(e.target.value)} /></label>
       <div className="sidebar-section-header"><span className="sidebar-section-title">Spaces</span><div className="mode-section-actions"><button className="ghost sidebar-title-add" aria-label="Add space…" title="Add space…" disabled={busy} onClick={() => { void run(async () => { const path = await pickWorkspacePath(); if (path) { setFolder(path); setReadOnlyFolders([]); work.setActive(null); setShowList(false); } }); }}><Plus size={14} aria-hidden /></button><details className="mode-section-menu"><summary aria-label="Space options" title="Space options"><Settings2 size={14} aria-hidden /></summary><div className="ds-popover"><label className="work-concurrency">Concurrent tasks <select aria-label="Concurrent tasks" value={work.state.concurrency} disabled={busy} onChange={e => { void run(() => work.mutate("concurrency", { count: Number(e.target.value) })); }}>{[1,2,3,4,5,6,7,8].map(n => <option key={n}>{n}</option>)}</select></label></div></details></div></div>
       <div className="chat-list">
-        <section aria-label="Needs input inbox" className="work-inbox"><h2 className="sidebar-section-header"><span className="sidebar-section-title">Needs input · {needs.length}</span></h2>{needs.map(taskButton)}{!needs.length && <p className="chat-muted">You’re all caught up.</p>}</section>
+        <section aria-label="Needs input inbox" className="work-inbox"><h2 className="sidebar-section-header"><span className="sidebar-section-title">Needs input · {needs.length}</span></h2>{needs.filter(t => t.title.toLowerCase().includes(search.toLowerCase())).map(taskButton)}{!needs.length && <p className="chat-muted">You’re all caught up.</p>}</section>
         {work.state.spaces.map(space => <section className="work-space" key={space.id} aria-label={space.name}>
-          <h2 className="sidebar-section-header" title={space.path}><span className="sidebar-section-title">{space.name}</span></h2>
+          <h2 className="sidebar-section-header" title={space.path}><button className="ghost sidebar-section-title work-space-toggle" aria-expanded={!collapsedSpaces.includes(space.id)} onClick={() => setCollapsedSpaces(current => current.includes(space.id) ? current.filter(id => id !== space.id) : [...current, space.id])}><ChevronDown aria-hidden />{space.name}</button><button type="button" className="ghost sidebar-title-add" aria-label={`New task in ${space.name}`} title={`New task in ${space.name}`} disabled={busy || space.readOnly} onClick={() => { setSpaceId(space.id); work.setActive(null); setShowList(false); }}><Plus aria-hidden /></button></h2>
           {space.readOnly && <p className="chat-muted">Read-only history. Choose an available space to continue.</p>}
-          {!!space.readOnlyFolders.length && <details><summary>{space.readOnlyFolders.length} read-only folders</summary>{space.readOnlyFolders.map(path => <p key={path} className="chat-muted">{path}</p>)}</details>}
-          {workGroups.map(([label, statuses]) => {
-            const entries = work.state.tasks.filter(t => t.spaceId === space.id && (statuses as readonly string[]).includes(t.status));
+          {!!space.readOnlyFolders.length && <details className="work-readonly-folders"><summary><ChevronDown aria-hidden />{space.readOnlyFolders.length} read-only folders</summary>{space.readOnlyFolders.map(path => <p key={path} className="chat-muted">{path}</p>)}</details>}
+          {!collapsedSpaces.includes(space.id) && workGroups.map(([label, statuses]) => {
+            const entries = work.state.tasks.filter(t => t.spaceId === space.id && t.title.toLowerCase().includes(search.toLowerCase()) && (statuses as readonly string[]).includes(t.status));
             return !!entries.length && <section key={label} aria-label={space.name + " " + label}><h3 className="sidebar-section-header"><span className="sidebar-section-title">{label}</span></h3>{entries.map(taskButton)}</section>;
           })}
         </section>)}
@@ -97,7 +112,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       <SidebarBottomRail onOpenSettings={onOpenSettings} onOpenDebug={() => {}} showDebugButton={false} />
     </aside>
     <main className="chat-main">
-      <ModeHeader title={task?.title || "New task"} navigation={<button className="ghost main-header-action chat-list-toggle" aria-expanded={showList} onClick={() => setShowList(!showList)}>☰ Spaces</button>}>
+      <ModeHeader title={task?.title || "New task"} navigation={<button className="ghost main-header-action chat-list-toggle" aria-expanded={showList} onClick={() => setShowList(!showList)} aria-label="Spaces" title="Spaces"><PanelLeft aria-hidden /></button>}>
         {task && <div className="work-actions"><span className={`thread-state-chip ${task.status === "running" ? "processing" : task.status === "needs-input" ? "reviewing" : "ready"}`} role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && <button className="ghost main-header-action" aria-label="Stop task" title="Stop task" disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop</button>}
           {task.threadId && !task.importId && <RewindAction workspaceId={task.spaceId} threadId={task.threadId} running={active} />}
         </div>}
@@ -115,41 +130,41 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           <article className="message chat-message user"><h2>Task brief</h2><Markdown codeBlockStyle="message" className="markdown" value={task.brief} showFilePath={false} /><ul>{task.attachments.map(path => <li key={path}>{path}</li>)}</ul></article>
           {task.pending.map(request => <InputRequest key={request.id} request={request} busy={busy} respond={answer => { void run(() => work.mutate("respond", { taskId: task.id, requestId: request.id, answer })); }} />)}
           {task.error && <p role="alert">{task.error}</p>}
-          {work.items.map(item => item.kind === "message" ? <article className={"message chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown codeBlockStyle="message" className="markdown" value={item.text} showFilePath={false} /></article> : item.kind === "tool" ? <details className="work-tool" key={item.id}><summary>{item.title} · {item.status}</summary><pre>{item.detail}</pre>{item.output && <Markdown codeBlockStyle="message" className="markdown" value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown codeBlockStyle="message" className="markdown" value={item.content || item.summary} showFilePath={false} /></details> : null)}
+          {work.items.map(item => item.kind === "message" ? <article className={"message chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown codeBlockStyle="message" className="markdown" value={item.text} showFilePath={false} /><div className="message-hover-actions"><button className="ghost icon-button" title="Copy message" aria-label="Copy message" onClick={() => { void navigator.clipboard.writeText(item.text).catch(() => work.setError("Could not copy message.")); }}><Copy aria-hidden /></button></div></article> : item.kind === "tool" ? <details className={`work-tool${/fail|error/i.test(item.status ?? "") ? " is-error" : ""}`} key={item.id}><summary>{createElement(/fail|error/i.test(item.status ?? "") ? CircleAlert : item.status === "inProgress" ? LoaderCircle : workToolIcons[item.toolType] ?? Search, { "aria-hidden": true, className: item.status === "inProgress" ? "tool-spinner" : undefined })}{item.title} · {item.status}<ChevronDown aria-hidden /></summary><pre>{item.detail}</pre>{item.output && <Markdown codeBlockStyle="message" className="markdown" value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown codeBlockStyle="message" className="markdown" value={item.content || item.summary} showFilePath={false} /></details> : null)}
           {task.status === "queued" && <p className="chat-muted">Waiting for an available slot. One task runs in each space at a time.</p>}
           {active && <p className="chat-muted">This task keeps running when you switch modes or hide the window.</p>}
           {task.importId ? <section aria-label="Continue imported task">
             <p className="chat-muted">Read-only Cowork history. Continue starts a new task with summarized context and the last 10 messages.</p>
             <label>Space <select aria-label="Continuation space" value={continuationSpace} onChange={e => setSpaceId(e.target.value)} disabled={busy}><option value="" disabled>Choose an available space</option>{writableSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
             <label>Model <select aria-label="Continuation model" value={model} onChange={e => setModel(e.target.value)} disabled={busy}>{!models.length && <option value="">Enable a provider in Code → Settings</option>}{models.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}</select></label>
-            <button disabled={busy || !selectedSpace || !model} onClick={() => { void run(async () => {
+            <button disabled={busy || !continuationSpace || !model} onClick={() => { void run(async () => {
               const created = await work.mutate<WorkTask>("continue", { taskId: task.id, spaceId: continuationSpace, model });
               work.setActive(created.id);
             }); }}>Continue</button>
           </section> : !active && task.status !== "queued" && <button onClick={() => { setBrief("Continue this task:\n" + task.brief + "\n\nReviewed plan:\n" + task.plan.map(p => "- " + p.step).join("\n") + "\n\nAsk before changing any existing files."); setSpaceId(task.spaceId); setAccess("ask"); setModel(task.model); work.setActive(null); }}>Continue as a new task…</button>}
         </div></div>
         <aside className="work-inspector" aria-label="Task details">
-          <section aria-label="Plan"><h2>Plan</h2>{task.plan.length ? <ul className="work-plan">{task.plan.map((step, index) => <li key={index}><input type="checkbox" aria-label={step.step} checked={step.status === "completed"} readOnly /><span>{step.step}</span></li>)}</ul> : <p className="chat-muted">The task’s checklist will appear here.</p>}</section>
+          <section aria-label="Plan"><h2>Plan</h2>{task.plan.length ? <><progress className="plan-progress" aria-label="Plan completion" max={task.plan.length} value={task.plan.filter(step => step.status === "completed").length} /><ul className="work-plan">{task.plan.map((step, index) => <li key={index}><span role="checkbox" aria-label={step.step} aria-checked={step.status === "completed"}>{step.status === "completed" ? <CheckCircle2 aria-hidden /> : <Circle aria-hidden />}</span><span>{step.step}</span></li>)}</ul></> : <p className="chat-muted">The task’s checklist will appear here.</p>}</section>
           <section aria-label="Outputs"><h2>Outputs <small>{task.outputs.length}</small></h2>{!task.outputs.length && <p className="chat-muted">Created and modified files will appear here.</p>}
-            {task.outputs.map(path => <div className="work-output" key={path}><strong>{path}</strong><div className="work-actions">{(["open", "reveal", ...(/\.(png|jpe?g|gif|webp|pdf)$/i.test(path) ? ["preview"] : [])] as const).map(action => <button key={action} disabled={busy} onClick={() => { void run(() => workOutput(task.id, path, action as "open" | "reveal" | "preview")); }}>{action === "open" ? "Open" : action === "reveal" ? "Reveal in Finder" : "Quick Look"}</button>)}</div></div>)}
+            {task.outputs.map(path => <div className="work-output" key={path}><img className="file-type-icon" src={getFileTypeIconUrl(path)} alt="" /><strong title={path}>{path.split("/").pop()}</strong><div className="work-actions">{(["open", "reveal", ...(/\.(png|jpe?g|gif|webp|pdf)$/i.test(path) ? ["preview"] : [])] as const).map(action => <button className="ghost icon-button" key={action} aria-label={action === "open" ? "Open" : action === "reveal" ? "Reveal in Finder" : "Quick Look"} title={action === "open" ? "Open" : action === "reveal" ? "Reveal in Finder" : "Quick Look"} disabled={busy} onClick={() => { void run(() => workOutput(task.id, path, action as "open" | "reveal" | "preview")); }}>{action === "open" ? <ExternalLink aria-hidden /> : action === "reveal" ? <FolderOpen aria-hidden /> : <Eye aria-hidden />}</button>)}</div></div>)}
           </section>
         </aside>
       </div> : <div className="chat-scroll"><div className="chat-column">
         <div className="chat-empty work-empty"><span className="chat-eyebrow">A space for getting things done</span><h1>What would you like to make?</h1><p>Bring a folder and a brief. Follow the plan, review requests, and find the finished files here.</p>
-          <div className="chat-examples work-templates">{templates.map(template => <button key={template.title} onClick={() => { setBrief(template.brief); setAccess(template.access); }}>{template.title}<span aria-hidden>↗</span></button>)}</div>
+
         </div>
-        <form className="work-composer" aria-label="New task" onSubmit={e => { e.preventDefault(); void create(true); }} onDragOver={e => e.preventDefault()}>
-          <div className="work-fields"><label>Space <select aria-label="Space" value={selectedSpace} disabled={busy} onChange={e => { setSpaceId(e.target.value); setAttachments([]); }}><option value="" disabled>Choose a space</option>{writableSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
-            <label>Model <select aria-label="Work model" value={model} disabled={busy} onChange={e => setModel(e.target.value)}>{!models.length && <option value="">Enable a provider in Code → Settings</option>}{models.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}</select></label>
-            <label>Access <select aria-label="Access mode" value={access} onChange={e => setAccess(e.target.value as WorkTask["accessMode"])}><option value="ask">Ask</option><option value="read-only">Read only</option><option value="full-access">Full access</option></select></label>
-          </div>
-          <label className="work-brief">Task brief<textarea aria-label="Task brief" placeholder="Describe the result you want…" value={brief} onChange={e => setBrief(e.target.value)} /></label>
-          <p className="chat-muted">Drop attachments here. Files are copied into this space. Replacing existing files outside outputs/ always needs approval.</p>
-          <ul className="chat-attachments">{attachments.map(path => <li key={path}>{path.split("/").pop()}<button type="button" aria-label={"Remove " + path} onClick={() => setAttachments(current => current.filter(p => p !== path))}>×</button></li>)}</ul>
-          <div className="work-actions"><button type="button" disabled={busy || !selectedSpace} onClick={() => { void run(async () => { const paths = await pickWorkAttachments(); if (paths.length) await attach(paths); }); }}>Attach files…</button><span />
-            <button type="button" disabled={busy || !brief.trim() || !selectedSpace || !model} onClick={() => { void create(false); }}>Queue</button><button type="submit" disabled={busy || !brief.trim() || !selectedSpace || !model}>Run now</button>
-          </div>
+        <form className="work-composer" aria-label="New task" onSubmit={e => { e.preventDefault(); void create(true); }} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }} onDrop={e => { e.preventDefault(); setDragOver(false); }}>
+          <ComposerShell toolbar={<div className="work-fields"><label className="composer-chip"><Folder aria-hidden /><select aria-label="Space" value={selectedSpace} disabled={busy} onChange={e => { setSpaceId(e.target.value); setAttachments([]); }}><option value="" disabled>Choose a space</option>{writableSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+
+            <label className="composer-chip"><Shield aria-hidden /><select aria-label="Access mode" disabled={busy} value={access} onChange={e => setAccess(e.target.value as WorkTask["accessMode"])}><option value="ask">Ask</option><option value="read-only">Read only</option><option value="full-access">Full access</option></select></label>
+          </div>} menu={<button type="button" disabled={busy || !selectedSpace} title={!selectedSpace ? "Choose a space first" : "Attach files to this space"} onClick={() => { void run(async () => { const paths = await pickWorkAttachments(); if (paths.length) await attach(paths); }); }}>Attach files to space</button>} controls={<label className="composer-model-chip"><span className="provider-dot" aria-hidden>{model[0]?.toUpperCase() || "M"}</span><select aria-label="Work model" value={model} disabled={busy} onChange={e => setModel(e.target.value)}>{!models.length && <option value="">Enable a provider in Code → Settings</option>}{models.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}</select></label>} actions={<><ComposerDictation settings={settings} disabled={busy} onBusyChange={setDictating} onTranscript={text => setBrief(current => current + (current && !/\s$/.test(current) ? " " : "") + text)} onError={work.setError} onOpenSettings={onOpenSettings} /><button className="ghost icon-button" type="button" aria-label="Queue" title={!selectedSpace ? "Choose a space first" : !brief.trim() ? "Describe the task to queue" : "Queue task"} disabled={busy || dictating || !brief.trim() || !selectedSpace || !model} onClick={() => { void create(false); }}><ListPlus aria-hidden /></button><ComposerSendButton label="Run now" disabled={busy || dictating || !brief.trim() || !selectedSpace || !model} disabledReason={dictating ? "Finish dictation first" : busy ? "Please wait" : !selectedSpace ? "Choose a space first" : !model ? "Choose a model in Settings" : "Describe the result you want"} onSend={() => { void create(true); }} /></>}>
+          {dragOver && <div className="composer-drop-overlay">Drop attachments into this space</div>}
+          <ul className="chat-attachments">{attachments.map(path => <li key={path}><img src={getFileTypeIconUrl(path)} alt="" />{path.split("/").pop()}<button type="button" aria-label={"Remove " + path} onClick={() => setAttachments(current => current.filter(p => p !== path))}><X aria-hidden /></button></li>)}</ul>
+          <label className="work-brief"><textarea aria-label="Task brief" placeholder="Describe the result you want…" rows={1} value={brief} disabled={busy} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void create(true); } }} onChange={e => setBrief(e.target.value)} /></label>
+
+          </ComposerShell>
         </form>
+          <div className="chat-examples work-templates starter-pills">{templates.map(template => <button key={template.title} onClick={() => { setBrief(template.brief); setAccess(template.access); }}>{createElement(templateIcons[template.title], { "aria-hidden": true })}{template.title}</button>)}</div>
       </div></div>}
     </main>
     <Checkpoints requestCheckpoint={checkpoints} running={Object.fromEntries(work.state.tasks.filter(t => t.threadId).map(t => [t.threadId!, { isProcessing: ["running","needs-input"].includes(t.status) }]))} onChanged={async (_space, thread) => { const task = tasksRef.current.find(t => t.threadId === thread); if (task) await work.read(task); await work.refresh(); }} />

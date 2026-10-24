@@ -10,7 +10,7 @@
   min-height: 0;
   overflow: hidden;
   position: relative;
-  transition: opacity 200ms ease, transform 200ms ease, padding-top 180ms ease;
+  transition: opacity 150ms ease, transform 150ms ease, padding-top 150ms ease;
 }
 
 .sidebar-drag-strip {
@@ -46,7 +46,7 @@
   background: color-mix(in srgb, rgb(10, 12, 16) 40%, var(--surface-app));
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s ease;
+  transition: opacity 150ms ease;
 }
 
 .workspace-drop-overlay.is-active {
@@ -637,10 +637,10 @@
   opacity: 1;
   transform: translateY(0);
   transition:
-    grid-template-rows 0.2s ease,
-    opacity 0.2s ease,
-    transform 0.2s ease,
-    margin-top 0.2s ease;
+    grid-template-rows 150ms ease,
+    opacity 150ms ease,
+    transform 150ms ease,
+    margin-top 150ms ease;
 }
 
 .workspace-group-content {
@@ -704,9 +704,9 @@
   opacity: 1;
   transform: translateY(0);
   transition:
-    grid-template-rows 0.2s ease,
-    opacity 0.2s ease,
-    transform 0.2s ease;
+    grid-template-rows 150ms ease,
+    opacity 150ms ease,
+    transform 150ms ease;
 }
 
 .workspace-card-content-inner {
@@ -736,7 +736,7 @@
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: background-color 150ms ease;
   -webkit-app-region: no-drag;
   overflow-x: hidden;
   position: relative;
@@ -754,9 +754,9 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.02),
     inset 0 0 0 0 rgba(255, 255, 255, 0);
   transition:
-    background 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
+    background 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
   z-index: -1;
 }
 
@@ -1043,10 +1043,10 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.02),
     inset 0 0 0 0 rgba(255, 255, 255, 0);
   transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    transform 0.18s ease;
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
 }
 
 .thread-row::before {
@@ -1479,9 +1479,9 @@
   opacity: 1;
   transform: translateY(0);
   transition:
-    grid-template-rows 0.2s ease,
-    opacity 0.2s ease,
-    transform 0.2s ease;
+    grid-template-rows 150ms ease,
+    opacity 150ms ease,
+    transform 150ms ease;
 }
 
 .worktree-card-content-inner {
@@ -1519,9 +1519,9 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.02),
     inset 0 0 0 0 rgba(255, 255, 255, 0);
   transition:
-    background-color 0.2s ease,
-    box-shadow 0.2s ease,
-    transform 0.2s ease;
+    background-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
   -webkit-app-region: no-drag;
   overflow-x: hidden;
   position: relative;

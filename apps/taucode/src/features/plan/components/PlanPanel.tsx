@@ -1,3 +1,4 @@
+import { CheckCircle2, Circle, LoaderCircle } from "lucide-react";
 import type { TurnPlan } from "../../../types";
 
 type PlanPanelProps = {
@@ -14,16 +15,6 @@ function formatProgress(plan: TurnPlan) {
   return `${completed}/${total}`;
 }
 
-function statusLabel(status: TurnPlan["steps"][number]["status"]) {
-  if (status === "completed") {
-    return "[x]";
-  }
-  if (status === "inProgress") {
-    return "[>]";
-  }
-  return "[ ]";
-}
-
 export function PlanPanel({ plan, isProcessing }: PlanPanelProps) {
   const progress = plan ? formatProgress(plan) : "";
   const steps = plan?.steps ?? [];
@@ -36,6 +27,7 @@ export function PlanPanel({ plan, isProcessing }: PlanPanelProps) {
         <span>Plan</span>
         {progress && <span className="plan-progress">{progress}</span>}
       </div>
+      {steps.length > 0 && <progress className="plan-progress" aria-label="Plan completion" max={steps.length} value={steps.filter(step => step.status === "completed").length} />}
       {plan?.explanation && (
         <div className="plan-explanation">{plan.explanation}</div>
       )}
@@ -46,7 +38,7 @@ export function PlanPanel({ plan, isProcessing }: PlanPanelProps) {
           {steps.map((step, index) => (
             <li key={`${step.step}-${index}`} className={`plan-step ${step.status}`}>
               <span className="plan-step-status" aria-hidden>
-                {statusLabel(step.status)}
+                {step.status === "completed" ? <CheckCircle2 /> : step.status === "inProgress" ? <LoaderCircle /> : <Circle />}
               </span>
               <span className="plan-step-text">{step.step}</span>
             </li>

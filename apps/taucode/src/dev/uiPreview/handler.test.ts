@@ -27,13 +27,15 @@ describe("UI preview IPC", () => {
     const fixtures = createFixtures();
     expect(fixtures.settings.providers).toHaveLength(2);
     expect(fixtures.workspaces).toHaveLength(2);
-    expect(fixtures.threads).toHaveLength(4);
+    expect(fixtures.threads).toHaveLength(5);
+    expect(fixtures.threads.find(t => t.id === "thread-empty")?.turns).toEqual([]);
+    expect(fixtures.chats.find(c => c.id === "chat-streaming")?.running).toBe(true);
     const items = buildItemsFromThread(fixtures.threads[0]);
     expect(items.filter(i => i.kind === "tool").map(i => i.toolType)).toEqual(["plan", "commandExecution", "fileChange", "collabToolCall"]);
     expect(items.find(i => i.kind === "tool" && i.agentsTree)).toMatchObject({ agentsTree: [{ id: "agent-review", children: [{ id: "agent-tests" }] }] });
     expect(fixtures.threads[3].sideOf?.threadId).toBe("thread-rich");
     expect(fixtures.checkpoints.map(c => c.metadata.kind)).toEqual(["before", "after"]);
-    expect(Object.fromEntries(Object.entries(chatGroups(fixtures.chats, "", false)).map(([key, value]) => [key, value.length]))).toEqual({ Pinned: 0, Today: 2, "Previous 7 days": 2, Older: 1 });
+    expect(Object.fromEntries(Object.entries(chatGroups(fixtures.chats, "", false)).map(([key, value]) => [key, value.length]))).toEqual({ Pinned: 0, Today: 3, "Previous 7 days": 2, Older: 1 });
     expect(fixtures.work.tasks.map(t => t.status)).toEqual(["running", "needs-input", "queued", "done"]);
   });
 
@@ -49,7 +51,7 @@ describe("UI preview IPC", () => {
     expect(publish).toHaveBeenLastCalledWith("workspace-atlas", "turn/completed", expect.objectContaining({ threadId: "thread-rich" }));
     handler("chat_request", { action: "rename", params: { threadId: "chat-1", title: "Chat renamed" } });
     handler("chat_request", { action: "start", params: {} });
-    expect(state.chats).toHaveLength(6);
+    expect(state.chats).toHaveLength(7);
     expect(state.chats.find(c => c.id === "chat-1")?.chat.title).toBe("Chat renamed");
     handler("work_request", { action: "respond", params: { taskId: "task-needs-input", answer: { decision: "accept" } } });
     expect(state.work.tasks[1]).toMatchObject({ pending: [], status: "running" });

@@ -17,7 +17,7 @@
   background: transparent;
   color: var(--text-subtle);
   box-shadow: none;
-  transition: background 160ms ease, color 160ms ease;
+  transition: background 150ms ease, color 150ms ease;
 }
 
 .panel-tab:hover:not(:disabled) {

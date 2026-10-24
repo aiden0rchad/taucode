@@ -10,7 +10,7 @@
   min-width: 0;
   --main-panel-padding: 24px;
   --conversation-column-width: 900px;
-  transition: grid-template-columns 220ms ease;
+  transition: grid-template-columns 150ms ease;
 }
 
 .main-header {
@@ -350,7 +350,7 @@
 .main-header-icon svg {
   position: absolute;
   inset: 0;
-  transition: opacity 160ms ease, transform 160ms ease, filter 160ms ease;
+  transition: opacity 150ms ease, transform 150ms ease, filter 150ms ease;
 }
 
 .main-header-icon-copy {
@@ -392,7 +392,7 @@
   top: 0;
   z-index: 3;
   min-height: var(--main-topbar-height);
-  transition: padding-left 180ms ease, padding-right 180ms ease;
+  transition: padding-left 150ms ease, padding-right 150ms ease;
 }
 
 .app.sidebar-collapsed .main-topbar {
@@ -1009,7 +1009,7 @@
   width: 8px;
   cursor: col-resize;
   z-index: 2;
-  transition: opacity 160ms ease;
+  transition: opacity 150ms ease;
 }
 
 .content-split-resizer::after {
@@ -1060,7 +1060,7 @@
   grid-row: 1 / -1;
   min-height: 0;
   overflow: hidden;
-  transition: opacity 200ms ease, transform 200ms ease;
+  transition: opacity 150ms ease, transform 150ms ease;
 }
 
 .right-panel-drag-strip {
@@ -1084,7 +1084,7 @@
 
 .right-panel-top .ds-panel {
   padding-top: var(--right-panel-top-padding, 12px);
-  transition: padding-top 180ms ease;
+  transition: padding-top 150ms ease;
 }
 
 .right-panel-divider {
@@ -1143,7 +1143,7 @@
   width: 8px;
   cursor: col-resize;
   z-index: 2;
-  transition: opacity 160ms ease;
+  transition: opacity 150ms ease;
 }
 
 .right-panel-resizer::after {

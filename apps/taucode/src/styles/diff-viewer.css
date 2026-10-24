@@ -441,7 +441,7 @@
   justify-content: center;
   cursor: pointer;
   flex: 0 0 auto;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
 .diff-viewer-header-action:hover {

@@ -1,3 +1,4 @@
+import { ArrowLeft } from "lucide-react";
 import { useContext, useEffect, useState } from "react";
 import type { AgentNode, ConversationItem } from "@/types";
 import { getSubagentTranscript } from "@services/tauri";
@@ -70,7 +71,7 @@ export function AgentsPanel({ onSelect }: { onSelect: (tab: PanelTabId) => void 
   return <PanelShell filePanelMode="agents" onFilePanelModeChange={onSelect}>
     <div className="agents-panel">
       {selected ? <>
-        <button className="ghost" onClick={() => { setSelected(null); setError(null); }}>← Back to agents</button>
+        <button className="ghost" onClick={() => { setSelected(null); setError(null); }}><ArrowLeft aria-hidden />Back to agents</button>
         <h3>{selected.agent || "Agent"}</h3>
         {error && <p role="alert">{error}</p>}
         {!transcript && !error && <p role="status">Loading transcript…</p>}
