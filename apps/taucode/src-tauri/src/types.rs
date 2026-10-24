@@ -1437,9 +1437,11 @@ mod tests {
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum EngineKind {
-    #[default]
-    Pi,
     Codex,
+    Claude,
+    #[default]
+    #[serde(other)]
+    Pi,
 }
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -1503,6 +1505,8 @@ pub(crate) struct ProviderEntry {
     pub id: String,
     pub name: String,
     pub kind: ProviderKind,
+    #[serde(default)]
+    pub anthropic_compatible: bool,
     pub base_url: Option<String>,
     pub api_style: Option<ApiStyle>,
     #[serde(default)]

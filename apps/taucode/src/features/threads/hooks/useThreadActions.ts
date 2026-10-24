@@ -22,6 +22,7 @@ import {
 import { extractThreadCodexMetadata } from "@threads/utils/threadCodexMetadata";
 import {
   buildThreadSummaryFromThread,
+  extractEngineCapabilities,
   extractThreadFromResponse,
 } from "@threads/utils/threadSummary";
 import { asString } from "@threads/utils/threadNormalize";
@@ -200,7 +201,7 @@ export function useThreadActions({
         if (threadId) {
           dispatch({ type: "ensureThread", workspaceId, threadId });
           const thread = extractThreadFromResponse(response);
-          dispatch({ type: "mergeThreadSummary", workspaceId, threadId, patch: { engine: thread?.engine === "pi" ? "pi" : "codex", modelProvider: String(thread?.modelProvider ?? "") } });
+          dispatch({ type: "mergeThreadSummary", workspaceId, threadId, patch: { ...extractEngineCapabilities(thread), engine: thread?.engine === "claude" ? "claude" : thread?.engine === "pi" ? "pi" : "codex", modelProvider: String(thread?.modelProvider ?? "") } });
           if (shouldActivate) {
             dispatch({ type: "setActiveThreadId", workspaceId, threadId });
           }
@@ -400,6 +401,10 @@ export function useThreadActions({
       if (!threadId) {
         return null;
       }
+      if (threadsByWorkspace[workspaceId]?.find(t => t.id === threadId)?.capabilities?.fork === false) {
+        onDebug?.({ id: `${Date.now()}-client-thread-fork-error`, timestamp: Date.now(), source: "error", label: "thread/fork error", payload: "Fork is unsupported for this engine" });
+        return null;
+      }
       const shouldActivate = options?.activate !== false;
       onDebug?.({
         id: `${Date.now()}-client-thread-fork`,
@@ -449,6 +454,7 @@ export function useThreadActions({
       loadedThreadsRef,
       onDebug,
       resumeThreadForWorkspace,
+      threadsByWorkspace,
     ],
   );
 

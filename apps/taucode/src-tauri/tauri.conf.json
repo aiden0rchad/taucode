@@ -61,6 +61,8 @@
       "infoPlist": "./Info.plist"
     },
     "resources": {
+      "../engines/claude-acp/package-lock.json": "engines/claude-acp/package-lock.json",
+      "../engines/claude-acp/package.json": "engines/claude-acp/package.json",
       "../engines/pi/no-accounts.mjs": "engines/pi/no-accounts.mjs",
       "../engines/pi/package-lock.json": "engines/pi/package-lock.json",
       "../engines/pi/package.json": "engines/pi/package.json",

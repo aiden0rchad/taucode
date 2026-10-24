@@ -42,6 +42,9 @@ pub(crate) fn codex_usable(p: &ProviderEntry) -> bool {
         ProviderKind::Openai | ProviderKind::Openrouter | ProviderKind::Ollama
     ) || (p.kind == ProviderKind::OpenaiCompatible && p.api_style == Some(ApiStyle::Responses))
 }
+pub(crate) fn claude_usable(p: &ProviderEntry) -> bool {
+    p.kind == ProviderKind::Anthropic || p.anthropic_compatible
+}
 pub(crate) fn valid_slug(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 32
@@ -205,7 +208,7 @@ pub(crate) fn catalog(providers: &[ProviderEntry]) -> Value {
         "id": format!("{}/{}",p.id,m.id), "model": format!("{}/{}",p.id,m.id),
         "providerId": p.id, "providerName": p.name, "modelId": m.id,
         "displayName": m.display_name.as_ref().unwrap_or(&m.id), "description": p.name,
-        "engines": if codex_usable(p) { vec!["pi", "codex"] } else { vec!["pi"] },
+        "engines": ([Some("pi"), codex_usable(p).then_some("codex"), claude_usable(p).then_some("claude")].into_iter().flatten().collect::<Vec<_>>()),
         "supportedReasoningEfforts": [], "defaultReasoningEffort": null, "isDefault": false,
         "contextWindow": m.context_window
     }))).collect::<Vec<_>>() } })

@@ -17,6 +17,19 @@ function Providers({ initial = [] }: { initial?: ProviderEntry[] }) {
 describe("provider registry settings", () => {
   afterEach(cleanup);
   beforeEach(() => { vi.resetAllMocks(); vi.mocked(providerHasApiKey).mockResolvedValue(false); });
+  it("saves Anthropic compatibility and enables the Claude default engine", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(<SettingsProvidersSection appSettings={{ providers: [provider] } as AppSettings} onUpdateAppSettings={save} />);
+    fireEvent.click(screen.getByText("Edit Local"));
+    fireEvent.click(screen.getByLabelText("Anthropic-compatible (/v1/messages)"));
+    fireEvent.click(screen.getByText("Save provider"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ providers: [expect.objectContaining({ anthropicCompatible: true })] })));
+    rerender(<SettingsAgentPolicySection appSettings={{ providers: [{ ...provider, anthropicCompatible: true }] } as AppSettings} onUpdateAppSettings={save} />);
+    expect((screen.getByRole("option", { name: "Claude Code (ACP)" }) as HTMLOptionElement).disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText("Default engine"), { target: { value: "claude" } });
+    fireEvent.click(screen.getByText("Save policy"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ agentPolicy: expect.objectContaining({ defaultEngine: "claude" }) })));
+  });
   it("defaults auth commands to 15 seconds and saves a provider override", async () => {
     const save = vi.fn().mockResolvedValue(undefined);
     const commandProvider: ProviderEntry = { ...provider, auth: { type: "command", command: "/bin/key", args: [] } };

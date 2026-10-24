@@ -151,6 +151,7 @@ pub(crate) struct WorkspaceSession {
     pub codex_args: Option<String>,
     pub owner_workspace_id: String,
     pub pi: PiEngine,
+    pub claude: super::acp::ClaudeAcpEngine,
     pub owners: Mutex<HashMap<String, EngineKind>>,
     pub thread_providers: Mutex<HashMap<String, String>>,
     pub providers: Vec<ProviderEntry>,
@@ -181,6 +182,7 @@ impl WorkspaceSession {
             factory: None,
             checkpoints: None,
             pi: PiEngine::default(),
+            claude: super::acp::ClaudeAcpEngine::default(),
             owners: Mutex::new(HashMap::new()),
             thread_providers: Mutex::new(HashMap::new()),
             providers,
@@ -209,6 +211,7 @@ impl WorkspaceSession {
             codex_args,
             owner_workspace_id,
             pi: PiEngine::default(),
+            claude: super::acp::ClaudeAcpEngine::default(),
             owners: Mutex::new(HashMap::new()),
             thread_providers: Mutex::new(HashMap::new()),
             providers,
@@ -243,6 +246,7 @@ impl WorkspaceSession {
         // Reload child environment on the next request, after active turns finish.
         *self.configuration.lock().await = Some(String::new());
         self.pi.credentials_changed().await;
+        self.claude.credentials_changed().await;
     }
     async fn backend(&self, refresh: bool) -> Result<Arc<CodexEngine>, String> {
         let mut backend = self.codex.lock().await;
@@ -290,11 +294,13 @@ impl WorkspaceSession {
             let _ = c.shutdown().await;
         }
         let _ = self.pi.shutdown().await;
+        let _ = self.claude.shutdown().await;
     }
     pub async fn register_workspace_with_path(&self, id: &str, path: Option<&str>) {
         if let Some(path) = path {
             if let Some(checkpoints) = &self.checkpoints { checkpoints.register(id, path); }
             self.pi.paths.lock().await.insert(id.into(), path.into());
+            self.claude.paths.lock().await.insert(id.into(), path.into());
         }
         if let Some(c) = self.codex.lock().await.as_ref() {
             c.register_workspace_with_path(id, path).await;
@@ -329,10 +335,17 @@ impl WorkspaceSession {
         self.pi
             .configure(workspace, providers.clone(), policy.clone())
             .await;
+        self.claude.configure(workspace, providers.clone(), policy.clone()).await;
         if method == "thread/sidechat" {
             return super::sidechats::create(self, workspace, params).await;
         }
+        let claude_thread = if let Some(id) = params["threadId"].as_str() {
+            self.claude.owns(workspace, id).await
+        } else { false };
         if method == "model/list" {
+            if claude_thread || params["engine"] == "claude" {
+                return self.claude.request(workspace, method, params).await;
+            }
             return Ok(providers::catalog(&providers));
         }
         let thread_id = params
@@ -357,7 +370,9 @@ impl WorkspaceSession {
             thread_id
                 .as_ref()
                 .and_then(|id| owners.get(id).copied())
-                .unwrap_or(if pi_thread {
+                .unwrap_or(if claude_thread {
+                    EngineKind::Claude
+                } else if pi_thread {
                     EngineKind::Pi
                 } else {
                     EngineKind::Codex
@@ -366,6 +381,13 @@ impl WorkspaceSession {
         drop(owners);
         if let Some(obj) = params.as_object_mut() {
             obj.remove("engine");
+        }
+        if engine == EngineKind::Claude && method != "thread/list" {
+            let response = self.claude.request(workspace, method, params).await?;
+            if let Some(id) = response.pointer("/result/thread/id").and_then(Value::as_str) {
+                self.owners.lock().await.insert(id.into(), EngineKind::Claude);
+            }
+            return Ok(response);
         }
         if engine == EngineKind::Pi {
             let mut response = self.pi.request(workspace, method, params).await?;
@@ -470,7 +492,13 @@ impl WorkspaceSession {
             })
             && self.codex.lock().await.is_none()
         {
-            return self.pi.request(workspace, method, params).await;
+            let mut response = self.pi.request(workspace, method, params).await?;
+            let claude = self.claude.request(workspace, method, json!({})).await?;
+            if let Some(data) = response.pointer_mut("/result/data").and_then(Value::as_array_mut) {
+                data.extend(claude["result"]["data"].as_array().into_iter().flatten().cloned());
+                data.sort_by_key(|t| std::cmp::Reverse(t["updatedAt"].as_i64().unwrap_or(0)));
+            }
+            return Ok(response);
         }
         let backend = self
             .backend(!matches!(method, "turn/interrupt" | "turn/steer"))
@@ -537,6 +565,7 @@ impl WorkspaceSession {
         }
         if method == "thread/list" {
             let pi = self.pi.request(workspace, method, json!({})).await?;
+            let claude = self.claude.request(workspace, method, json!({})).await?;
             if let Some(data) = response
                 .pointer_mut("/result/data")
                 .and_then(Value::as_array_mut)
@@ -556,6 +585,7 @@ impl WorkspaceSession {
                         .cloned()
                         .unwrap_or_default(),
                 );
+                data.extend(claude["result"]["data"].as_array().into_iter().flatten().cloned());
                 data.sort_by_key(|t| {
                     std::cmp::Reverse(t.get("updatedAt").and_then(Value::as_i64).unwrap_or(0))
                 });
@@ -565,6 +595,9 @@ impl WorkspaceSession {
         Ok(response)
     }
     pub async fn send_response(&self, id: Value, result: Value) -> Result<(), String> {
+        if id.as_str().is_some_and(|id| id.starts_with("claude:")) {
+            return self.claude.respond_to_server_request(id, result).await;
+        }
         if id.as_str().is_some_and(|id| id.starts_with("pi:")) {
             return self.pi.respond_to_server_request(id, result).await;
         }

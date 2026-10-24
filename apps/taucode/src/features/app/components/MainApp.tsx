@@ -12,6 +12,7 @@ import { usePullRequestComposer } from "@/features/git/hooks/usePullRequestCompo
 import { useAutoExitEmptyDiff } from "@/features/git/hooks/useAutoExitEmptyDiff";
 import { isMissingRepo } from "@/features/git/utils/repoErrors";
 import { useModels } from "@/features/models/hooks/useModels";
+import { modelsForThread } from "@/features/models/utils/modelListResponse";
 import { useCollaborationModes } from "@/features/collaboration/hooks/useCollaborationModes";
 import { useCollaborationModeSelection } from "@/features/collaboration/hooks/useCollaborationModeSelection";
 import { useSkills } from "@/features/skills/hooks/useSkills";
@@ -1656,7 +1657,7 @@ export default function MainApp() {
     launchScriptsState,
     engine: (activeThreadId ? threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.engine : undefined) ?? selectedEngine ?? activeWorkspace?.settings.agentPolicy?.defaultEngine ?? appSettings.agentPolicy?.defaultEngine ?? "pi",
     onSelectEngine: activeThreadId ? undefined : setSelectedEngine,
-    models,
+    models: modelsForThread(models, threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)),
     selectedModelId,
     onSelectModel: handleSelectModel,
     collaborationModes,

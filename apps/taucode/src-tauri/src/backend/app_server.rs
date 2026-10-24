@@ -1013,6 +1013,13 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
     );
     session.checkpoints = Some(checkpoints);
     let pi_sink = sink.clone();
+    let claude_sink = sink.clone();
+    session.claude = crate::shared::acp::ClaudeAcpEngine::new(
+        pi_data.clone(), workspace_id.clone(), pi_cwd.clone(), session.codegraph.clone(),
+        Arc::new(move |workspace, message| {
+            claude_sink.emit_app_server_event(AppServerEvent { workspace_id: workspace.into(), message })
+        }),
+    );
     session.pi = crate::shared::pi::PiEngine::new(
         pi_data,
         workspace_id.clone(),

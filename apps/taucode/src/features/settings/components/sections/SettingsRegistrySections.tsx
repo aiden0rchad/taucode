@@ -51,6 +51,7 @@ export function SettingsProvidersSection({ appSettings, onUpdateAppSettings }: P
       <label>Kind<select value={draft.kind} onChange={e => { const kind = e.target.value as ProviderKind; setDraft({ ...draft, kind, baseUrl: null, apiStyle: kind === "openai-compatible" ? "chat-completions" : null, auth: { type: kind === "ollama" || kind === "lmstudio" ? "none" : "apiKey" } }); }}>{kinds.map(k => <option key={k}>{k}</option>)}</select></label>
       <label>Base URL<input type="url" required={draft.kind === "openai-compatible"} placeholder={draft.kind === "openai-compatible" ? "https://your-server/v1" : "Use provider default"} value={draft.baseUrl ?? ""} onChange={e => setDraft({ ...draft, baseUrl: e.target.value || null })} /></label>
       {draft.kind === "openai-compatible" && <label>API style<select value={draft.apiStyle ?? "chat-completions"} onChange={e => setDraft({ ...draft, apiStyle: e.target.value as "responses" | "chat-completions" })}><option value="chat-completions">Chat completions</option><option value="responses">Responses</option></select></label>}
+      <label><input type="checkbox" checked={draft.anthropicCompatible ?? false} onChange={e => setDraft({ ...draft, anthropicCompatible: e.target.checked })} />Anthropic-compatible (/v1/messages)</label>
       <p>Engines: {providerEngines(draft).join(" / ")}</p>
       <label>Authentication<select value={draft.auth.type} onChange={e => setDraft({ ...draft, auth: auth(e.target.value as ProviderAuth["type"]) })}><option value="none">None</option><option value="apiKey">API key</option><option value="env">Environment variable</option><option value="command">Command</option></select></label>
       {draft.auth.type === "apiKey" && <>
@@ -85,7 +86,8 @@ export function AgentPolicyEditor({ policy, providers, onChange }: { policy: Age
   const modelSelect = (label: string, value: string, change: (value: string) => void) => <label>{label}<select value={value} onChange={e => change(e.target.value)}><option value="">Inherit</option>{models.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</select></label>;
   return <div className="registry-policy">
     <p>Engine enforcement: pi enforces every field. Codex enforces max concurrent, max depth, default subagent model, and roles.</p>
-    <label>Default engine<select value={policy.defaultEngine} onChange={e => onChange({ ...policy, defaultEngine: e.target.value as AgentPolicy["defaultEngine"] })}><option value="pi">pi</option><option value="codex">codex</option></select></label>
+    <label>Default engine<select value={policy.defaultEngine} onChange={e => onChange({ ...policy, defaultEngine: e.target.value as AgentPolicy["defaultEngine"] })}><option value="pi">pi</option><option value="codex">codex</option><option value="claude" disabled={!providers.some(p => p.enabled && providerEngines(p).includes("claude") && p.models.some(m => m.enabled))}>Claude Code (ACP)</option></select></label>
+    {!providers.some(p => p.enabled && providerEngines(p).includes("claude") && p.models.some(m => m.enabled)) && <small>Claude Code needs an enabled Anthropic or Anthropic-compatible provider and model.</small>}
     {modelSelect("Default model", modelKey(policy.defaultModel), v => onChange({ ...policy, defaultModel: modelRef(v) }))}
     <small>Enable subagents: pi</small>
     <label><input type="checkbox" checked={sub.enabled} onChange={e => onChange({ ...policy, subagents: { ...sub, enabled: e.target.checked } })} />Enable subagents</label>
