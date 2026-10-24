@@ -236,8 +236,9 @@ async fn lifecycle_binds_engine_ids_and_snapshots_after_completion() {
     checkpoints.observe(&AppServerEvent {
         workspace_id: "workspace".into(),
         message: json!({"method":"turn/completed","params":{"threadId":"thread"}}),
-    });
-    let rows = wait_for_rows(&f.repo, 2).await;
+    }).unwrap().await.unwrap();
+    let rows = f.repo.list("thread").unwrap();
+    assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].metadata["userItemId"], "real-user");
     assert_eq!(rows[0].metadata["turnId"], "real-turn");
     assert_eq!(rows[1].metadata["kind"], "after");
@@ -247,21 +248,6 @@ async fn lifecycle_binds_engine_ids_and_snapshots_after_completion() {
         .output()
         .unwrap();
     assert!(String::from_utf8_lossy(&output.stdout).contains("real-user"));
-}
-async fn wait_for_rows(repo: &Repository, count: usize) -> Vec<Checkpoint> {
-    let deadline = Instant::now() + Duration::from_secs(8);
-    loop {
-        if let Ok(rows) = repo.list("thread") {
-            if rows.len() == count {
-                return rows;
-            }
-        }
-        assert!(
-            Instant::now() < deadline,
-            "Checkpoint operation did not finish"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
 }
 #[tokio::test]
 async fn before_timeout_proceeds_and_is_unavailable_but_after_still_runs() {
@@ -289,9 +275,11 @@ async fn before_timeout_proceeds_and_is_unavailable_but_after_still_runs() {
         .any(|e| e.message["params"]["warning"]
             .as_str()
             .is_some_and(|s| s.contains("unavailable"))));
-    checkpoints.complete("workspace", "thread");
+    let completion = checkpoints.complete("workspace", "thread").unwrap();
     drop(operation);
-    let rows = wait_for_rows(&f.repo, 2).await;
+    completion.await.unwrap();
+    let rows = f.repo.list("thread").unwrap();
+    assert_eq!(rows.len(), 2);
     assert!(rows[0].commit.is_none());
     assert!(rows[0].warning.as_ref().unwrap().contains("unavailable"));
     assert!(rows[1].commit.is_some());

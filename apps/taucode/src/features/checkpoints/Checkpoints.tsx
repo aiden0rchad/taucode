@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Checkpoint, CheckpointChange } from "@/types";
+import { CLAUDE_REWIND_REASON, engineCapabilities } from "@threads/utils/engineCapabilities";
 import { checkpointRequest } from "@services/tauri";
 import { openCheckpoints, subscribeAppServerEvents, subscribeCheckpointOpen, type CheckpointOpen } from "@services/events";
 import { ModalShell } from "@/features/design-system/components/modal/ModalShell";
@@ -48,9 +49,10 @@ export function Checkpoints({ running, onChanged }: {
       if (cancelled) return;
       const checkpoints = list.checkpoints ?? [];
       setRows(checkpoints);
-      setConversation(Boolean(capabilities.conversation));
+      const supportsConversation = Boolean(capabilities.conversation) && engineCapabilities(capabilities.engine === "claude" ? "claude" : capabilities.engine === "pi" ? "pi" : "codex").conversationRewind;
+      setConversation(supportsConversation);
       setEngine(capabilities.engine ?? "");
-      setMode(capabilities.conversation ? "both" : "files");
+      setMode(supportsConversation ? "both" : "files");
       if (list.undoAvailable) setUndo(request);
       if (request.userItemId) {
         const row = checkpoints.find((row) => row.metadata.kind === "before" && row.metadata.userItemId === request.userItemId);
@@ -81,6 +83,7 @@ export function Checkpoints({ running, onChanged }: {
   const close = () => { if (!busy) setRequest(null); };
   const isRunning = Boolean(request && running[request.threadId]?.isProcessing);
   const allowConversation = conversation && target?.metadata.kind === "before";
+  const conversationDisabledReason = !allowConversation ? engine === "claude" ? CLAUDE_REWIND_REASON : "Conversation rewind is unsupported by this engine or checkpoint" : undefined;
   const checked = changes.filter((change) => selected.has(change.path));
   const deletes = checked.filter((change) => change.status === "added since").length;
   const preview = target?.metadata.preview?.slice(0, 70) || "this message";
@@ -132,11 +135,11 @@ export function Checkpoints({ running, onChanged }: {
           <button type="button" className="ghost" disabled={!row.commit || busy || isRunning} onClick={() => setTarget(row)}>Rewind to here</button>
         </article>)}</div> : <>
           <label className="checkpoint-mode">Mode <select value={mode} disabled={busy || isRunning} onChange={(event) => setMode(event.target.value)}>
-            <option value="both" disabled={!allowConversation} title={!allowConversation ? "Conversation rewind is unsupported by this engine or checkpoint" : undefined}>Files and conversation</option>
+            <option value="both" disabled={!allowConversation} title={conversationDisabledReason}>Files and conversation</option>
             <option value="files">Files only</option>
-            <option value="conversation" disabled={!allowConversation} title={!allowConversation ? "Conversation rewind is unsupported by this engine or checkpoint" : undefined}>Conversation only</option>
+            <option value="conversation" disabled={!allowConversation} title={conversationDisabledReason}>Conversation only</option>
           </select></label>
-          {!allowConversation && <p title="The running engine does not support conversation rollback for this checkpoint">Conversation rewind unavailable. Use Files only.</p>}
+          {!allowConversation && <p title={conversationDisabledReason}>Conversation rewind unavailable. Use Files only.</p>}
           {engine === "codex" && mode !== "files" && <p>Undo restores files. Codex conversation rollback cannot be undone.</p>}
           {target.skipped.length > 0 && <p>Skipped files: {target.skipped.join(", ")}</p>}
           <div className="checkpoint-files">{changes.map((change) => <div key={change.path} className="checkpoint-file">

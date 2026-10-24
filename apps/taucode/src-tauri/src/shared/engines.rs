@@ -10,6 +10,11 @@ use tokio::sync::{broadcast, Mutex};
 
 /// Engine adapters exchange canonical app-server envelopes. History is paged
 /// through thread/turns/list; server requests retain their original IDs.
+/// Capability matrix (frontend: threads/utils/engineCapabilities.ts):
+/// Engine | fork latest | fork item | conversation rewind | side chats | tree | checkpoints | steer | compact
+/// Pi     | yes         | yes       | yes                 | yes        | yes  | yes         | yes   | yes
+/// Codex  | yes         | no        | rollback probe      | latest     | yes  | yes         | yes   | yes
+/// Claude | advertised  | no        | no (latest fork only)| advertised | Task | yes         | advertised | no
 #[allow(dead_code)]
 pub(crate) trait EngineBackend: Send + Sync {
     fn list_models<'a>(
@@ -315,7 +320,7 @@ impl WorkspaceSession {
         let thread = params["threadId"].as_str().unwrap_or("").to_owned();
         if method == "turn/start" {
             if let Some(checkpoints) = &self.checkpoints {
-                let engine = if self.pi.owns(workspace, &thread).await { "pi" } else { "codex" };
+                let engine = if self.claude.owns(workspace, &thread).await { "claude" } else if self.pi.owns(workspace, &thread).await { "pi" } else { "codex" };
                 checkpoints.before(workspace, &thread, engine, &params).await?;
             }
         }
@@ -383,7 +388,8 @@ impl WorkspaceSession {
             obj.remove("engine");
         }
         if engine == EngineKind::Claude && method != "thread/list" {
-            let response = self.claude.request(workspace, method, params).await?;
+            let mut response = self.claude.request(workspace, method, params).await?;
+            if matches!(method, "thread/read" | "thread/resume" | "thread/fork" | "thread/start") { super::sidechats::enrich(self, workspace, &mut response)?; }
             if let Some(id) = response.pointer("/result/thread/id").and_then(Value::as_str) {
                 self.owners.lock().await.insert(id.into(), EngineKind::Claude);
             }
@@ -498,6 +504,7 @@ impl WorkspaceSession {
                 data.extend(claude["result"]["data"].as_array().into_iter().flatten().cloned());
                 data.sort_by_key(|t| std::cmp::Reverse(t["updatedAt"].as_i64().unwrap_or(0)));
             }
+            super::sidechats::enrich(self, workspace, &mut response)?;
             return Ok(response);
         }
         let backend = self

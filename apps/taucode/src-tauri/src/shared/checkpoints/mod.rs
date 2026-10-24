@@ -137,10 +137,10 @@ impl Checkpoints {
         }
         Ok(())
     }
-    pub fn observe(self: &Arc<Self>, event: &AppServerEvent) {
+    pub fn observe(self: &Arc<Self>, event: &AppServerEvent) -> Option<tokio::task::JoinHandle<()>> {
         let p = &event.message["params"];
         let Some(thread) = p["threadId"].as_str() else {
-            return;
+            return None;
         };
         let key = (event.workspace_id.clone(), thread.into());
         let method = event.message["method"].as_str().unwrap_or("");
@@ -157,17 +157,18 @@ impl Checkpoints {
             }
         }
         if method == "turn/completed" {
-            self.complete(&key.0, &key.1);
+            return self.complete(&key.0, &key.1);
         }
+        None
     }
-    pub fn complete(self: &Arc<Self>, workspace: &str, thread: &str) {
+    pub fn complete(self: &Arc<Self>, workspace: &str, thread: &str) -> Option<tokio::task::JoinHandle<()>> {
         let key = (workspace.to_owned(), thread.to_owned());
         let active = self.state.lock().unwrap().active.remove(&key);
         let Some(mut active) = active else {
-            return;
+            return None;
         };
         let this = self.clone();
-        tokio::spawn(async move {
+        Some(tokio::spawn(async move {
             let _operation = this.operation.lock().await;
             let result = async {
                 let repo = this.repo(&key.0)?;
@@ -198,7 +199,7 @@ impl Checkpoints {
                 Err(e) => Some(e),
             };
             this.notify(&key.0, &key.1, warning.as_deref());
-        });
+        }))
     }
     pub async fn request(
         &self,
@@ -239,9 +240,13 @@ impl Checkpoints {
             return Err("Finish or interrupt the turn before rewinding".into());
         }
         let pi = session.pi.owns(workspace, thread).await;
+        let claude = session.claude.owns(workspace, thread).await;
+        let engine = if claude { "claude" } else if pi { "pi" } else { "codex" };
         if action == "capabilities" {
             let supported = if pi {
                 true
+            } else if claude {
+                false
             } else {
                 let backend = session.codex_backend().await?;
                 // A zero-turn rollback is a non-mutating feature probe. Supported
@@ -258,7 +263,7 @@ impl Checkpoints {
                     Err(e) => !unsupported(&e),
                 }
             };
-            return Ok(json!({"conversation":supported,"engine":if pi {"pi"} else {"codex"}}));
+            return Ok(json!({"conversation":supported,"engine":engine}));
         }
         if action == "diff" {
             let thread = thread.to_owned();
@@ -320,10 +325,12 @@ impl Checkpoints {
             .find(|r| r.id == id && r.commit.is_some())
             .ok_or("Checkpoint unavailable")?;
         let conversation = mode != "files";
+        if conversation && claude {
+            return Err("Conversation rewind isn't supported for Claude Code threads yet".into());
+        }
         if conversation && target.metadata["kind"] != "before" {
             return Err("Conversation rewind requires a before checkpoint".into());
         }
-        let engine = if pi { "pi" } else { "codex" };
         let mut rollback = None;
         if conversation && !pi {
             let backend = session.codex_backend().await?;

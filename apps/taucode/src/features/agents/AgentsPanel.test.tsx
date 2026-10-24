@@ -6,6 +6,7 @@ import { AgentsPanel } from "./AgentsPanel";
 import { AgentsContext, agentGroups, runningAgents } from "./agents";
 import { getSubagentTranscript } from "@services/tauri";
 import type { AgentNode, ConversationItem } from "@/types";
+import { buildConversationItem } from "@utils/threadItems";
 
 vi.mock("@services/tauri", () => ({ getSubagentTranscript: vi.fn() }));
 vi.mock("@/features/messages/components/Messages", () => ({ Messages: ({ items }: { items: ConversationItem[] }) => <div>{items.map(i => <p key={i.id}>{i.kind === "message" ? i.text : i.kind === "tool" ? i.output : ""}</p>)}</div> }));
@@ -55,5 +56,17 @@ describe("Agents panel", () => {
     ]);
     expect(groups).toHaveLength(1);
     expect(groups[0].nodes).toHaveLength(2);
+  });
+  it("renders Claude Task metadata and explains the partial transcript", async () => {
+    const task = buildConversationItem({ id: "task", type: "collabAgentToolCall", tool: "spawnAgent", status: "completed", receiverThreadIds: ["claude:agent:task"], agentsTree: [{ id: "claude:agent:task", agent: "Explore", task: "Inspect parser", status: "completed", lastMessage: "Found parser", children: [] }] });
+    expect(task).toBeTruthy();
+    const partial = { messages: [{ role: "assistant", content: "Found parser" }], truncated: true, note: "Claude Code exposes Task tool updates, not a separate subagent transcript." };
+    vi.mocked(getSubagentTranscript).mockResolvedValue(partial);
+    render(view([task!]));
+    expect(screen.getByText("Inspect parser")).toBeTruthy();
+    expect(screen.getByText("Found parser")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Explore/ }));
+    expect(await screen.findByText(partial.note)).toBeTruthy();
+    expect(getSubagentTranscript).toHaveBeenCalledWith("ws", "main", "claude:agent:task");
   });
 });

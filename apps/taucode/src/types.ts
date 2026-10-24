@@ -190,7 +190,7 @@ export type ConversationItem =
 export type ThreadSummary = {
   sideOf?: SideOf;
   engine?: EngineKind;
-  capabilities?: { fork: boolean; rewind: boolean };
+  capabilities?: { fork: boolean; rewind: boolean; steer?: boolean };
   modelProvider?: string;
   id: string;
   name: string;

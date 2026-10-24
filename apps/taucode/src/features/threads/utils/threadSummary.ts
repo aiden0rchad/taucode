@@ -23,7 +23,7 @@ type BuildThreadSummaryFromThreadOptions = {
 export function extractEngineCapabilities(thread: Record<string, unknown> | null | undefined): Pick<ThreadSummary, "capabilities"> {
   if (thread?.engine !== "claude") return {};
   const capabilities = thread.capabilities as Record<string, unknown> | undefined;
-  return { capabilities: { fork: capabilities?.fork === true, rewind: false } };
+  return { capabilities: { fork: capabilities?.fork === true, rewind: false, steer: capabilities?.steer === true } };
 }
 
 export function extractThreadFromResponse(

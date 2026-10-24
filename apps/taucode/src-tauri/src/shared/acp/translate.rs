@@ -92,6 +92,12 @@ impl Translator {
                         "completed"
                     });
                 }
+                for node in item["agentsTree"].as_array_mut().into_iter().flatten() {
+                    node["status"] = json!(if reason == "cancelled" { "aborted" } else if error.is_some() { "failed" } else { "completed" });
+                }
+                for state in item["agentsStates"].as_object_mut().into_iter().flat_map(|s| s.values_mut()) {
+                    state["status"] = json!(if reason == "cancelled" { "aborted" } else if error.is_some() { "failed" } else { "completed" });
+                }
                 self.item(item, true, &mut out);
             }
         }
@@ -249,7 +255,13 @@ impl Translator {
                     tool["content"].as_array_mut().unwrap().extend(diffs);
                 }
                 let tool = tool.clone();
-                let item = tool_item(&tool, &self.thread, &self.cwd);
+                let mut item = tool_item(&tool, &self.thread, &self.cwd);
+                if item["type"] == "collabAgentToolCall" {
+                    let previous = self.turns.last().unwrap()["items"].as_array().unwrap().iter().find(|i| i["id"] == id);
+                    let updates = previous.into_iter().flat_map(|i| i["agentUpdates"].as_array().into_iter().flatten()).cloned()
+                        .chain(std::iter::once(json!({"role":"assistant","content":item["agentsTree"][0]["lastMessage"].as_str().filter(|s| !s.is_empty()).unwrap_or(tool["status"].as_str().unwrap_or("pending"))})));
+                    item["agentUpdates"] = super::super::pi::agents::capped(updates)["messages"].clone();
+                }
                 let old_output = self.turns.last().unwrap()["items"]
                     .as_array()
                     .unwrap()
@@ -328,7 +340,8 @@ pub(super) fn tool_item(tool: &Value, thread: &str, cwd: &str) -> Value {
             .and_then(Value::as_str)
             .map(str::to_string)
             .unwrap_or_else(|| format!("{thread}:agent:{}", id.as_str().unwrap_or("")));
-        return json!({"id":id,"type":"collabAgentToolCall","tool":"spawnAgent","status":status,"senderThreadId":thread,"receiverThreadIds":[receiver],"prompt":input["prompt"],"model":input["model"],"reasoningEffort":null,"agentsStates":{receiver:{"status":if status=="inProgress"{"running"}else{status},"message":text}}});
+        let agent_status = if status == "inProgress" { "running" } else { status };
+        return json!({"id":id,"type":"collabAgentToolCall","tool":"spawnAgent","status":status,"senderThreadId":thread,"receiverThreadIds":[receiver],"prompt":input["prompt"],"model":input["model"],"reasoningEffort":null,"agentsStates":{&receiver:{"status":agent_status,"message":text}},"agentsTree":[{"id":receiver,"agent":input["subagent_type"].as_str().unwrap_or("Agent"),"task":input["description"].as_str().or(input["prompt"].as_str()),"model":input["model"],"status":agent_status,"lastMessage":text,"children":[]}]});
     }
     match tool["kind"].as_str() {
         Some("execute") => {

@@ -26,6 +26,7 @@ import {
   extractThreadFromResponse,
 } from "@threads/utils/threadSummary";
 import { asString } from "@threads/utils/threadNormalize";
+import { engineCapabilities } from "@threads/utils/engineCapabilities";
 import {
   getParentThreadIdFromThread,
   shouldHideSubagentThreadFromSidebar,
@@ -401,7 +402,8 @@ export function useThreadActions({
       if (!threadId) {
         return null;
       }
-      if (threadsByWorkspace[workspaceId]?.find(t => t.id === threadId)?.capabilities?.fork === false) {
+      const parent = threadsByWorkspace[workspaceId]?.find(t => t.id === threadId);
+      if (!engineCapabilities(parent?.engine ?? "codex", parent?.capabilities).forkLatest) {
         onDebug?.({ id: `${Date.now()}-client-thread-fork-error`, timestamp: Date.now(), source: "error", label: "thread/fork error", payload: "Fork is unsupported for this engine" });
         return null;
       }

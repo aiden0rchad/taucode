@@ -64,4 +64,18 @@ describe("checkpoints", () => {
     open(); await screen.findByText("This file will be deleted.");
     expect((screen.getByText("Confirm rewind") as HTMLButtonElement).disabled).toBe(true);
   });
+  it("keeps Claude rewind files-only even if a server reports conversation support", async () => {
+    const original = vi.mocked(checkpointRequest).getMockImplementation()!;
+    vi.mocked(checkpointRequest).mockImplementation((w, p) => p.action === "capabilities" ? Promise.resolve({ conversation: true, engine: "claude" }) : original(w, p));
+    render(<Checkpoints running={{}} onChanged={changed} />); open();
+    await screen.findByText("This file will be deleted.");
+    expect((screen.getByLabelText("Mode") as HTMLSelectElement).value).toBe("files");
+    for (const name of ["Files and conversation", "Conversation only"]) {
+      const option = screen.getByRole("option", { name }) as HTMLOptionElement;
+      expect(option.disabled).toBe(true);
+      expect(option.title).toBe("Conversation rewind isn't supported for Claude Code threads yet");
+    }
+    fireEvent.click(screen.getByText("Confirm rewind"));
+    await waitFor(() => expect(checkpointRequest).toHaveBeenCalledWith("workspace", expect.objectContaining({ mode: "files" })));
+  });
 });

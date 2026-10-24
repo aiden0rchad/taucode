@@ -432,6 +432,8 @@ impl ClaudeAcpEngine {
                 t.loaded == client.id,
             )
         };
+        let capabilities = engine_capabilities(&*client.capabilities.lock().await);
+        self.threads.lock().await.get_mut(id).unwrap().metadata["capabilities"] = capabilities;
         if loaded {
             return Ok(());
         }
@@ -646,6 +648,17 @@ impl ClaudeAcpEngine {
         if method == "thread/read" {
             return Ok(json!({"result":{"thread":current}}));
         }
+        if method == "subagent/transcript" {
+            let node = params["nodeId"].as_str().ok_or("Missing node ID")?;
+            let item = current.as_ref().unwrap()["turns"].as_array().into_iter().flatten()
+                .flat_map(|turn| turn["items"].as_array().into_iter().flatten())
+                .find(|item| item["agentsTree"].as_array().into_iter().flatten().any(|agent| agent["id"] == node))
+                .ok_or("Node is not a child of this thread")?;
+            let mut transcript = super::pi::agents::capped(item["agentUpdates"].as_array().into_iter().flatten().cloned());
+            transcript["truncated"] = json!(true);
+            transcript["note"] = json!("Claude Code exposes Task tool updates, not a separate subagent transcript.");
+            return Ok(transcript);
+        }
         if method == "thread/turns/list" {
             let (data, next) = page(
                 current.as_ref().unwrap()["turns"]
@@ -698,7 +711,7 @@ impl ClaudeAcpEngine {
                 return Err("ACP did not return a session ID".into());
             }
             let now = chrono::Utc::now().timestamp();
-            let metadata = json!({"id":id,"sessionId":result["sessionId"],"engine":"claude","cwd":cwd,"modelProvider":provider.id,"model":model,"preview":"","name":null,"createdAt":now,"updatedAt":now,"status":{"type":"idle"},"turns":[],"source":{"custom":"taucode-claude"},"capabilities":{"fork":client.capabilities.lock().await.pointer("/agentCapabilities/sessionCapabilities/fork").is_some(),"rewind":false}});
+            let metadata = json!({"id":id,"sessionId":result["sessionId"],"engine":"claude","cwd":cwd,"modelProvider":provider.id,"model":model,"preview":"","name":null,"createdAt":now,"updatedAt":now,"status":{"type":"idle"},"turns":[],"source":{"custom":"taucode-claude"},"capabilities":engine_capabilities(&*client.capabilities.lock().await)});
             let mut thread = Thread {
                 workspace: workspace.into(),
                 metadata,
@@ -726,33 +739,30 @@ impl ClaudeAcpEngine {
         self.load(workspace, id, &client, &model).await?;
         let session = self.threads.lock().await[id].metadata["sessionId"].clone();
         if method == "thread/fork" {
-            if client
-                .capabilities
-                .lock()
-                .await
-                .pointer("/agentCapabilities/sessionCapabilities/fork")
-                .is_none()
-            {
-                return Err("Fork is unsupported for this engine".into());
+            if engine_capabilities(&*client.capabilities.lock().await)["fork"] != true {
+                return Err("Claude Code adapter doesn't support forking sessions".into());
             }
-            if params.get("turnId").is_some() {
-                return Err("Conversation rewind is unsupported for this engine".into());
+            if !params["turnId"].is_null() || !params["atItemId"].is_null() {
+                return Err("Claude Code sessions can only fork at the latest point".into());
             }
             let mut fork = self.session_params(workspace, id, &cwd, &model).await?;
             fork["sessionId"] = session;
             let result = client.request("session/fork", fork).await?;
             let new_id = format!("claude-{}", uuid::Uuid::new_v4());
-            let mut metadata = current.unwrap();
+            let mut metadata = self.threads.lock().await[id].metadata.clone();
             metadata["id"] = json!(new_id);
             metadata["sessionId"] = result["sessionId"].clone();
             metadata["forkedFromId"] = json!(id);
+            if let Some(side_of) = params.get("sideOf") {
+                metadata["sideOf"] = side_of.clone();
+            }
             let turns = metadata["turns"].as_array().cloned().unwrap_or_default();
             let mut thread = Thread {
                 workspace: workspace.into(),
                 metadata,
                 history: Translator::new(new_id.clone(), cwd, turns),
                 loaded: String::new(),
-                mode: "ask".into(),
+                mode: if params["sandbox"] == "read-only" { "read-only" } else { "ask" }.into(),
                 capabilities: result,
                 replaying: false,
                 grants: HashSet::new(),
@@ -889,6 +899,11 @@ impl ClaudeAcpEngine {
         });
         Ok(json!({"result":{"turn":turn}}))
     }
+}
+fn engine_capabilities(capabilities: &Value) -> Value {
+    let fork = capabilities.pointer("/agentCapabilities/sessionCapabilities/fork")
+        .is_some_and(|v| v.is_object() || v == &json!(true));
+    json!({"fork":fork,"rewind":false,"steer":capabilities.pointer("/_meta/steering/supported") == Some(&json!(true))})
 }
 impl EngineBackend for ClaudeAcpEngine {
     fn request<'a>(

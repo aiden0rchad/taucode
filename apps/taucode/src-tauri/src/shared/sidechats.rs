@@ -71,6 +71,9 @@ pub(crate) async fn create(
         return Err("Invalid message ID".into());
     }
     let side_of = json!({"threadId":parent,"workspaceId":workspace,"atItemId":params["atItemId"]});
+    if session.claude.owns(workspace, parent).await && params["atItemId"].is_string() {
+        return Err("Message-level side chats aren't supported for Claude Code threads yet".into());
+    }
     // Pi copies the saved branch without switching or stopping the parent's RPC process.
     // Codex currently has no safe item-level fork contract in this adapter.
     if !session.pi.owns(workspace, parent).await && params["atItemId"].is_string() {

@@ -1789,14 +1789,14 @@ export default function MainApp() {
       mainHeaderProps: layoutSurfaces.primary.mainHeaderProps ? {
         ...layoutSurfaces.primary.mainHeaderProps,
         extraActionsNode: <>{layoutSurfaces.primary.mainHeaderProps.extraActionsNode}
-          {activeThreadId && <button className="ghost" disabled={sideChats.creating} onClick={() => void sideChats.create()} title="Side chat (⌘⇧K)">Side chat</button>}
+          {activeThreadId && <span title={sideChats.disabledReason}><button className="ghost" disabled={sideChats.creating || Boolean(sideChats.disabledReason)} onClick={() => void sideChats.create()} title={sideChats.disabledReason ?? "Side chat (⌘⇧K)"}>Side chat</button></span>}
           {sideChats.error && <span role="alert">{sideChats.error}</span>}
         </>,
       } : null,
       messagesProps: {
         ...layoutSurfaces.primary.messagesProps,
         onSideChat: itemId => void sideChats.create(itemId),
-        sideChatDisabledReason: parentEngine === "codex" ? "Codex supports side chats at the latest point only. Use Side chat in the header." : sideChats.creating ? "Creating side chat…" : undefined,
+        sideChatDisabledReason: sideChats.messageDisabledReason ?? (sideChats.creating ? "Creating side chat…" : undefined),
         hasOlderHistory: Boolean(activeThreadId && historyCursorByThread[activeThreadId]),
         isLoadingHistory: Boolean(activeThreadId && historyLoadingByThread[activeThreadId]),
         historyError: activeThreadId ? historyErrorByThread[activeThreadId] : null,

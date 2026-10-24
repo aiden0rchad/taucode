@@ -501,9 +501,96 @@ async fn fake_agent_stream_approval_resume_cancel_auth_and_fork() {
             .request("workspace", "thread/fork", json!({"threadId":id}))
             .await
             .unwrap_err(),
-        "Fork is unsupported for this engine"
+        "Claude Code adapter doesn't support forking sessions"
     );
     restored.shutdown().await.unwrap();
+    std::fs::remove_dir_all(data).unwrap();
+}
+
+#[tokio::test]
+async fn router_checkpoints_sidechats_and_task_transcripts() {
+    use crate::backend::events::AppServerEvent;
+    use crate::shared::{checkpoints::Checkpoints, engines::WorkspaceSession};
+    let data = temp();
+    let root = data.join("workspace");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("file"), "before").unwrap();
+    let checkpoints = Checkpoints::new(data.clone(), "workspace".into(), root.to_string_lossy().into(), Arc::new(|_| {}));
+    let (tx, mut completed) = tokio::sync::mpsc::unbounded_channel();
+    let observer = checkpoints.clone();
+    let mut session = WorkspaceSession::lazy(Box::new(|| Box::pin(async { Err("Codex must not be used".into()) })), vec![provider("anthropic")], AgentPolicy::default(), None, None, "workspace".into());
+    session.checkpoints = Some(checkpoints.clone());
+    session.pi = crate::shared::pi::PiEngine::new(data.clone(), "workspace".into(), root.to_string_lossy().into(), None, Arc::new(|_, _| {}));
+    session.claude = engine(&data);
+    session.claude.sink = Arc::new(move |workspace, message| {
+        if let Some(handle) = observer.observe(&AppServerEvent { workspace_id: workspace.into(), message }) {
+            tx.send(handle).unwrap();
+        }
+    });
+    let start = session.send_request_for_workspace("workspace", "thread/start", json!({"engine":"claude"})).await.unwrap();
+    let id = start["result"]["thread"]["id"].as_str().unwrap();
+    let mut events = session.claude.events();
+    for (prompt, status) in [("hello", "completed"), ("wait", "interrupted"), ("auth", "failed")] {
+        session.send_request_for_workspace("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":prompt}]})).await.unwrap();
+        if prompt != "auth" {
+            let before = checkpoints.request(&session, "workspace", json!({"threadId":id,"action":"list"})).await.unwrap();
+            assert_eq!(before["checkpoints"].as_array().unwrap().last().unwrap()["metadata"]["kind"], "before");
+        }
+        std::fs::write(root.join("file"), prompt).unwrap();
+        if prompt == "hello" {
+            let approval = event(&mut events, "item/commandExecution/requestApproval").await;
+            session.claude.respond_to_server_request(approval["id"].clone(), json!({"decision":"accept"})).await.unwrap();
+        } else if prompt == "wait" {
+            session.send_request_for_workspace("workspace", "turn/interrupt", json!({"threadId":id})).await.unwrap();
+        }
+        assert_eq!(event(&mut events, "turn/completed").await["params"]["turn"]["status"], status);
+        completed.recv().await.unwrap().await.unwrap();
+    }
+    let rows = checkpoints.request(&session, "workspace", json!({"threadId":id,"action":"list"})).await.unwrap();
+    let rows = rows["checkpoints"].as_array().unwrap();
+    assert_eq!(rows.len(), 6);
+    assert!(rows.iter().all(|r| r["commit"].is_string() && r["metadata"]["engine"] == "claude"));
+    let capabilities = checkpoints.request(&session, "workspace", json!({"threadId":id,"action":"capabilities"})).await.unwrap();
+    assert_eq!(capabilities, json!({"engine":"claude","conversation":false}));
+    let rewind = json!({"threadId":id,"action":"rewind","checkpointId":rows[0]["id"],"mode":"conversation","paths":["file"]});
+    assert_eq!(checkpoints.request(&session, "workspace", rewind.clone()).await.unwrap_err(), "Conversation rewind isn't supported for Claude Code threads yet");
+    let mut files = rewind;
+    files["mode"] = json!("files");
+    checkpoints.request(&session, "workspace", files).await.unwrap();
+    assert_eq!(std::fs::read_to_string(root.join("file")).unwrap(), "before");
+    checkpoints.request(&session, "workspace", json!({"threadId":id,"action":"undo"})).await.unwrap();
+    assert_eq!(std::fs::read_to_string(root.join("file")).unwrap(), "auth");
+
+    let side = session.send_request_for_workspace("workspace", "thread/sidechat", json!({"threadId":id})).await.unwrap();
+    let child = side["result"]["thread"]["id"].as_str().unwrap();
+    let read = session.send_request_for_workspace("workspace", "thread/read", json!({"threadId":child})).await.unwrap();
+    assert_eq!(read["result"]["thread"]["sideOf"]["threadId"], id);
+    assert!(session.send_request_for_workspace("workspace", "thread/sidechat", json!({"threadId":id,"atItemId":"message"})).await.unwrap_err().contains("Message-level"));
+    let client = session.claude.runtimes.lock().await["workspace"].client.clone();
+    client.capabilities.lock().await["agentCapabilities"]["sessionCapabilities"] = json!({"fork":false});
+    assert_eq!(session.send_request_for_workspace("workspace", "thread/sidechat", json!({"threadId":id})).await.unwrap_err(), "Claude Code adapter doesn't support forking sessions");
+
+    {
+        let mut threads = session.claude.threads.lock().await;
+        let thread = threads.get_mut(id).unwrap();
+        thread.history.start(Value::Null);
+        thread.history.update(&json!({"sessionUpdate":"tool_call","toolCallId":"task","title":"Task","rawInput":{"subagent_type":"Explore","description":"Inspect parser"},"status":"in_progress"}));
+        thread.history.update(&json!({"sessionUpdate":"tool_call_update","toolCallId":"task","content":[{"type":"content","content":{"type":"text","text":"Found parser"}}],"status":"completed"}));
+        thread.history.finish("end_turn", None);
+        thread.save().unwrap();
+    }
+    let read = session.send_request_for_workspace("workspace", "thread/read", json!({"threadId":id})).await.unwrap();
+    let node = &read["result"]["thread"]["turns"].as_array().unwrap().last().unwrap()["items"][0]["agentsTree"][0];
+    assert_eq!(node["agent"], "Explore");
+    assert_eq!(node["task"], "Inspect parser");
+    assert_eq!(node["status"], "completed");
+    assert_eq!(node["lastMessage"], "Found parser");
+    let transcript = session.send_request_for_workspace("workspace", "subagent/transcript", json!({"threadId":id,"nodeId":node["id"]})).await.unwrap();
+    assert_eq!(transcript["messages"].as_array().unwrap().len(), 2);
+    assert_eq!(transcript["truncated"], true);
+    assert!(transcript["note"].as_str().unwrap().contains("Task tool updates"));
+    assert!(session.send_request_for_workspace("workspace", "subagent/transcript", json!({"threadId":id,"nodeId":"unrelated"})).await.is_err());
+    session.shutdown().await;
     std::fs::remove_dir_all(data).unwrap();
 }
 
