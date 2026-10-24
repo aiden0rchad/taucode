@@ -10,7 +10,7 @@ const sentryDsn =
 
 Sentry.init({
   dsn: sentryDsn,
-  enabled: Boolean(sentryDsn),
+  enabled: import.meta.env.MODE !== "uipreview" && Boolean(sentryDsn),
   release: __APP_VERSION__,
 });
 
@@ -89,8 +89,16 @@ function syncMobileViewportHeight() {
 disableMobileZoomGestures();
 syncMobileViewportHeight();
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+async function mount() {
+  if (import.meta.env.MODE === "uipreview") {
+    const { installUiPreview } = await import("./dev/uiPreview");
+    installUiPreview();
+  }
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+}
+
+void mount();

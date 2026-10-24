@@ -8,6 +8,7 @@
     "postinstall": "npm run sync:material-icons",
     "predev": "npm run sync:material-icons",
     "dev": "vite",
+    "preview:ui": "vite --mode uipreview --port 1421 --strictPort",
     "prebuild": "npm run sync:material-icons",
     "build": "tsc && vite build",
     "build:appimage": "NO_STRIP=1 tauri build --bundles appimage",

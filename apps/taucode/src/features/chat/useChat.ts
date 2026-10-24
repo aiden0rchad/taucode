@@ -27,6 +27,14 @@ export function useChat() {
     return result.result.thread;
   }, []);
   useEffect(() => { void refresh().catch(e => setError(String(e))); }, [refresh]);
+  useEffect(() => {
+    if (import.meta.env.MODE === "uipreview") {
+      void import("@/dev/uiPreview").then(({ selectConversation }) => selectConversation("chat", id => {
+        setActive(id);
+        void read(id).catch(e => setError(String(e)));
+      }));
+    }
+  }, [read]);
   useEffect(() => subscribeAppServerEvents(event => {
     if (event.workspace_id !== "chats") return;
     const method = event.message.method;

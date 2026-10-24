@@ -124,7 +124,7 @@ function normalizeRemoteBackends(settings: AppSettings): {
   };
 }
 
-function buildDefaultSettings(): AppSettings {
+export function buildDefaultSettings(): AppSettings {
   const isMac = isMacPlatform();
   const isMobile = isMobilePlatform();
   const defaultRemote: RemoteBackendTarget = {

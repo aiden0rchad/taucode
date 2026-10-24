@@ -30,6 +30,11 @@ export function useWork() {
     if (activeRef.current?.id === task.id && version === revision.current) setItems(buildItemsFromThread(result.result.thread));
   }, []);
   useEffect(() => { void refresh().catch(e => setError(String(e))); }, [refresh]);
+  useEffect(() => {
+    if (import.meta.env.MODE === "uipreview") {
+      void import("@/dev/uiPreview").then(({ selectConversation }) => selectConversation("task", setActive));
+    }
+  }, []);
   useEffect(() => subscribeImportsChanged(() => { void refresh().catch(e => setError(String(e))); }), [refresh]);
   useEffect(() => {
     setItems([]);

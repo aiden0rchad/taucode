@@ -61,8 +61,20 @@ const appBuildDate = resolveBuildDate();
 const appGitBranch = resolveGitBranch();
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
-  plugins: [react()],
+export default defineConfig(async ({ mode }) => ({
+  plugins: [react(), {
+    name: "exclude-ui-preview-from-production",
+    apply: "build",
+    generateBundle(_options, bundle) {
+      if (mode === "uipreview") return;
+      for (const output of Object.values(bundle)) {
+        if (output.type === "chunk" && (
+          Object.keys(output.modules).some(id => id.includes("/dev/uiPreview/")) ||
+          output.code.includes("uiPreview")
+        )) this.error(`Preview code leaked into ${output.fileName}`);
+      }
+    },
+  }],
   resolve: {
     alias: {
       "@protocol": fileURLToPath(new URL("../../packages/protocol/src", import.meta.url)),
@@ -95,10 +107,10 @@ export default defineConfig(async () => ({
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    port: 1420,
+    port: mode === "uipreview" ? 1421 : 1420,
     strictPort: true,
-    host: host || false,
-    hmr: host
+    host: mode === "uipreview" ? "127.0.0.1" : host || false,
+    hmr: mode !== "uipreview" && host
       ? {
           protocol: "ws",
           host,

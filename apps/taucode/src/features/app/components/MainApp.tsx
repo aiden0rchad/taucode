@@ -1810,6 +1810,14 @@ export default function MainApp() {
   });
 
   const sideChat = sideChats.current;
+  useEffect(() => {
+    if (import.meta.env.MODE === "uipreview") {
+      void import("@/dev/uiPreview").then(({ selectCode }) => selectCode(
+        workspaces, layoutSurfaces.primary.sidebarProps.onSelectThread, modalActions.openSettings,
+      ));
+    }
+  }, [workspaces, layoutSurfaces.primary.sidebarProps.onSelectThread, modalActions.openSettings]);
+
   const mainMessagesNode = showWorkspaceHome ? workspaceHomeNode : sideChat && activeWorkspace ? (
     <SideChatSplit compact={isCompact} main={<>{messagesNode}{composerNode}</>}>
       <SideChatPane key={sideChat.id} chat={sideChat}
