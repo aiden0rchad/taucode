@@ -136,6 +136,7 @@ export function useThreadActions({
       thread: Record<string, unknown>,
       options?: { notifySubagent?: boolean },
     ) => {
+      if (thread.sideOf) dispatch({ type: "mergeThreadSummary", workspaceId, threadId, patch: { sideOf: thread.sideOf as import("@/types").SideOf, isSubagent: false } });
       const codexMetadata = extractThreadCodexMetadata(thread);
       if (codexMetadata.modelId || codexMetadata.effort) {
         onThreadCodexMetadataDetected?.(workspaceId, threadId, codexMetadata);
@@ -143,12 +144,13 @@ export function useThreadActions({
       const sourceParentId = getParentThreadIdFromThread(thread);
       if (sourceParentId) {
         updateThreadParent(sourceParentId, [threadId]);
-        if (options?.notifySubagent) {
+        if (options?.notifySubagent && !thread.sideOf) {
           onSubagentThreadDetected(workspaceId, threadId);
         }
       }
     },
     [
+      dispatch,
       onSubagentThreadDetected,
       onThreadCodexMetadataDetected,
       updateThreadParent,

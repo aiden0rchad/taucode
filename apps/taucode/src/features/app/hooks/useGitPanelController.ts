@@ -50,7 +50,7 @@ export function useGitPanelController({
     "split" | "unified"
   >("split");
   const [filePanelMode, setFilePanelMode] = useState<
-    "git" | "files" | "prompts"
+    "git" | "files" | "prompts" | "agents"
   >("git");
   const [selectedPullRequest, setSelectedPullRequest] =
     useState<GitHubPullRequest | null>(null);

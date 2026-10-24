@@ -51,6 +51,7 @@ export function useThreadRows(threadParentById: Record<string, string>) {
       }
 
       const visibleThreads = threads.filter((thread) => {
+        if (thread.sideOf) return threads.some(parent => parent.id === thread.sideOf?.threadId);
         if (!thread.isSubagent) {
           return true;
         }
@@ -60,7 +61,7 @@ export function useThreadRows(threadParentById: Record<string, string>) {
       const childrenByParent = new Map<string, ThreadSummary[]>();
       const roots: ThreadSummary[] = [];
       const resolveVisibleParentId = (threadId: string) => {
-        let current = threadParentById[threadId];
+        let current = threads.find(t => t.id === threadId)?.sideOf?.threadId ?? threadParentById[threadId];
         const visited = new Set<string>([threadId]);
         while (current && !visited.has(current)) {
           if (threadIds.has(current)) {

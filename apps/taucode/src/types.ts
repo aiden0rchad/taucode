@@ -112,6 +112,21 @@ export type CollabAgentRef = {
   role?: string;
 };
 
+export type AgentNode = {
+  id: string;
+  agent: string;
+  model?: string | null;
+  task?: string;
+  status: "pending" | "running" | "completed" | "failed" | "aborted";
+  startedAt?: number | null;
+  endedAt?: number | null;
+  usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number } | null;
+  lastMessage?: string;
+  errorMessage?: string | null;
+  children: AgentNode[];
+};
+export type SideOf = { threadId: string; workspaceId: string; atItemId: string | null };
+
 export type CollabAgentStatus = CollabAgentRef & {
   status: string;
   message?: string;
@@ -167,9 +182,12 @@ export type ConversationItem =
       collabReceiver?: CollabAgentRef;
       collabReceivers?: CollabAgentRef[];
       collabStatuses?: CollabAgentStatus[];
+      agentsTree?: AgentNode[];
+      turnId?: string;
     };
 
 export type ThreadSummary = {
+  sideOf?: SideOf;
   engine?: EngineKind;
   modelProvider?: string;
   id: string;
@@ -241,6 +259,7 @@ export type FollowUpMessageBehavior = "queue" | "steer";
 export type ComposerSendIntent = "default" | "queue" | "steer";
 export type SendMessageResult = {
   status: "sent" | "blocked" | "steer_failed";
+  threadId?: string;
 };
 
 export type ComposerEditorPreset = "default" | "helpful" | "smart";

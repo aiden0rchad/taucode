@@ -131,6 +131,8 @@ export function getParentThreadIdFromSource(source: unknown): string | null {
 export function getParentThreadIdFromThread(
   thread: Record<string, unknown>,
 ): string | null {
+  const sideOf = thread.sideOf as { threadId?: string } | undefined;
+  if (sideOf?.threadId) return sideOf.threadId;
   const sourceParentId = getParentThreadIdFromSource(thread.source);
   if (sourceParentId) {
     return sourceParentId;

@@ -216,6 +216,16 @@ fn recorded_subagents_stream_states_outputs_and_usage_without_double_counting() 
         .unwrap()
         .clone();
     assert_eq!(item["status"], "completed");
+    let tree = item["agentsTree"].as_array().unwrap();
+    assert_eq!(tree.len(), 2);
+    for node in tree {
+        assert_eq!(node["status"], "completed");
+        assert!(node["startedAt"].is_i64());
+        assert!(node["endedAt"].is_i64());
+        assert!(node["lastMessage"].as_str().unwrap().chars().count() <= 300);
+        assert!(t.transcripts[node["id"].as_str().unwrap()]["messages"].as_array().unwrap().len() > 0);
+        assert!(node.get("messages").is_none());
+    }
     let states = item["agentsStates"].as_object().unwrap();
     assert_eq!(states.len(), 2);
     assert!(states.values().all(|s| s["status"] == "completed"
@@ -252,6 +262,102 @@ fn recorded_subagents_stream_states_outputs_and_usage_without_double_counting() 
         .iter()
         .any(|e| e["method"] == "thread/tokenUsage/updated"
             && e["params"]["tokenUsage"]["total"]["cost"] == t.cost));
+}
+
+#[test]
+fn nested_subagent_snapshots_keep_ids_timestamps_and_aggregate_usage() {
+    let (mut t, _) = replay("rpc_subagents.jsonl");
+    let mut frame: Value = fixture("rpc_subagents.jsonl").lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .find(|r| r["msg"]["type"] == "tool_execution_end" && r["msg"]["toolName"] == "subagent").unwrap()["msg"].clone();
+    let parent_id = format!("{}:agent:0", frame["toolCallId"].as_str().unwrap());
+    let started = t.turns[0]["items"].as_array().unwrap().iter().find(|i|i["id"] == frame["toolCallId"]).unwrap()["agentsTree"][0]["startedAt"].clone();
+    frame["result"]["details"]["results"][0]["messages"].as_array_mut().unwrap().push(json!({
+        "role":"toolResult","toolCallId":"nested","toolName":"subagent","details":{"results":[{
+            "agent":"reviewer","status":"failed","stderr":"fixture error","usage":{"input":17,"output":3,"cost":0.25},
+            "messages":[{"role":"assistant","content":[{"type":"text","text":"Nested transcript"}]}]
+        }]}
+    }));
+    let before = t.cost;
+    t.apply(&frame);
+    let node = t.turns[0]["items"].as_array().unwrap().iter().find(|i|i["id"] == frame["toolCallId"]).unwrap()["agentsTree"][0].clone();
+    assert_eq!(node["id"], parent_id);
+    assert_eq!(node["startedAt"], started);
+    assert_eq!(node["usage"]["input"], frame["result"]["details"]["results"][0]["usage"]["input"].as_u64().unwrap() + 17);
+    assert_eq!(node["children"][0]["id"], format!("{parent_id}/nested:agent:0"));
+    assert_eq!(node["children"][0]["status"], "failed");
+    assert_eq!(node["children"][0]["errorMessage"], "fixture error");
+    assert_eq!(t.cost, before + 0.25);
+    let total = t.total.clone();
+    t.apply(&frame);
+    assert_eq!(t.total, total);
+    let retained = &t.transcripts[&format!("{parent_id}/nested:agent:0")];
+    assert_eq!(retained["messages"][0]["content"][0]["text"], "Nested transcript");
+    assert!(!t.transcripts[&parent_id].to_string().contains("Nested transcript"));
+}
+
+#[test]
+fn transcript_caps_keep_the_latest_messages_and_flag_truncation() {
+    let capped = agents::capped((0..510).map(|i|json!({"id":i,"content":"text"})));
+    assert_eq!(capped["messages"].as_array().unwrap().len(), 500);
+    assert_eq!(capped["messages"][0]["id"], 10);
+    assert_eq!(capped["truncated"], true);
+    let capped = agents::capped([json!({"content":"x".repeat(2 * 1024 * 1024)}), json!({"content":"last"})]);
+    assert_eq!(capped["messages"].as_array().unwrap().len(), 1);
+    assert_eq!(capped["messages"][0]["content"], "last");
+    assert_eq!(capped["truncated"], true);
+    assert_eq!(agents::capped([json!({"content":"small"})])["truncated"], false);
+}
+
+#[tokio::test]
+async fn transcript_command_restores_capped_messages_from_session_file() {
+    let dir = temp();
+    let engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into_owned(), None, Arc::new(|_, _| {}));
+    let sessions = engine.directory("workspace").unwrap();
+    std::fs::create_dir_all(&sessions).unwrap();
+    let entries = [json!({"type":"session","version":3,"id":"parent","cwd":dir}),
+        json!({"type":"message","id":"u","parentId":null,"message":{"role":"user","content":"delegate"}}),
+        json!({"type":"message","id":"a","parentId":"u","message":{"role":"assistant","content":[{"type":"toolCall","id":"spawn","name":"subagent","arguments":{"agent":"reviewer","task":"review"}}],"stopReason":"toolUse"}}),
+        json!({"type":"message","id":"r","parentId":"a","message":{"role":"toolResult","toolCallId":"spawn","toolName":"subagent","details":{"results":[{"agent":"reviewer","status":"completed","messages":(0..505).map(|n|json!({"role":"assistant","content":[{"type":"text","text":format!("message {n}")}]})).collect::<Vec<_>>()}]}}})];
+    std::fs::write(sessions.join("parent.jsonl"), entries.iter().map(Value::to_string).collect::<Vec<_>>().join("\n") + "\n").unwrap();
+    let transcript = engine.request("workspace", "subagent/transcript", json!({"threadId":"parent","nodeId":"spawn:agent:0"})).await.unwrap();
+    assert_eq!(transcript["truncated"], true);
+    assert_eq!(transcript["messages"].as_array().unwrap().len(), 500);
+    assert_eq!(transcript["messages"][0]["content"][0]["text"], "message 5");
+    assert!(engine.request("workspace", "subagent/transcript", json!({"threadId":"parent","nodeId":"missing"})).await.is_err());
+    assert!(engine.request("other", "subagent/transcript", json!({"threadId":"parent","nodeId":"spawn:agent:0"})).await.is_err());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn side_chats_copy_latest_or_message_and_persist_read_only_links() {
+    let dir = temp();
+    let engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into_owned(), None, Arc::new(|_, _| {}));
+    let sessions = engine.directory("workspace").unwrap();
+    std::fs::create_dir_all(&sessions).unwrap();
+    let entries = [json!({"type":"session","version":3,"id":"parent","cwd":dir}),
+        json!({"type":"message","id":"u1","parentId":null,"message":{"role":"user","content":"first","timestamp":1}}),
+        json!({"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","content":[{"type":"text","text":"answer one"}],"timestamp":2,"stopReason":"stop"}}),
+        json!({"type":"message","id":"u2","parentId":"a1","message":{"role":"user","content":"second","timestamp":3}}),
+        json!({"type":"message","id":"a2","parentId":"u2","message":{"role":"assistant","content":[{"type":"text","text":"answer two"}],"timestamp":4,"stopReason":"stop"}})];
+    let source = entries.iter().map(Value::to_string).collect::<Vec<_>>().join("\n") + "\n";
+    std::fs::write(sessions.join("parent.jsonl"), &source).unwrap();
+    for at in [Value::Null, json!("parent:message:2")] {
+        let side_of = json!({"threadId":"parent","workspaceId":"workspace","atItemId":at});
+        let fork = engine.request("workspace", "thread/fork", json!({"threadId":"parent","sideOf":side_of,"atItemId":at})).await.unwrap();
+        let id = fork["result"]["thread"]["id"].as_str().unwrap();
+        assert_eq!(fork["result"]["sandbox"]["type"], "readOnly");
+        let (thread, _) = read_session(&sessions.join(format!("{id}.jsonl")), &[]).unwrap();
+        assert_eq!(thread["sideOf"], side_of);
+        assert_eq!(thread["forkedFromId"], "parent");
+        assert_eq!(thread["turns"].as_array().unwrap().len(), if at.is_null() { 2 } else { 1 });
+        let access: Value = serde_json::from_slice(&std::fs::read(dir.join("pi/agent/workspace/taucode/threads").join(format!("{id}.json"))).unwrap()).unwrap();
+        assert_eq!(access["accessMode"], "read-only");
+    }
+    assert_eq!(std::fs::read_to_string(sessions.join("parent.jsonl")).unwrap(), source);
+    let bad = engine.request("workspace", "thread/fork", json!({"threadId":"parent","sideOf":{"threadId":"parent"},"atItemId":"missing"})).await;
+    assert!(bad.is_err());
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]

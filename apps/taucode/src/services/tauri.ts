@@ -1212,3 +1212,10 @@ export const providerSetApiKey = (id: string, key: string) => invoke<void>("prov
 export const providerHasApiKey = (id: string) => invoke<boolean>("provider_has_api_key", { id });
 export const providerDeleteApiKey = (id: string) => invoke<void>("provider_delete_api_key", { id });
 export const providerTestAndFetch = (id: string) => invoke<{ ok: boolean; latencyMs: number; models: import("../types").ProviderModel[]; error?: string }>("provider_test_and_fetch", { id });
+
+export function getSubagentTranscript(workspaceId: string, threadId: string, nodeId: string) {
+  return invoke<{ messages: Record<string, unknown>[]; truncated: boolean }>("get_subagent_transcript", { workspaceId, threadId, nodeId });
+}
+export function createSideChat(workspaceId: string, threadId: string, atItemId?: string) {
+  return invoke<{ result: { thread: Record<string, unknown> & { id: string } } }>("create_side_chat", { workspaceId, threadId, atItemId });
+}

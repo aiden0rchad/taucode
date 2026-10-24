@@ -57,13 +57,14 @@ export function buildThreadSummaryFromThread({
     return null;
   }
   const subagentMetadata = getSubagentMetadataFromThread(thread);
-  const isSubagent =
+  const isSubagent = !thread.sideOf && (
     isSubagentThreadSource(thread.source) ||
     Boolean(getParentThreadIdFromThread(thread)) ||
-    Boolean(subagentMetadata.nickname || subagentMetadata.role);
+    Boolean(subagentMetadata.nickname || subagentMetadata.role));
   return {
     id,
     name,
+    ...(thread.sideOf ? { sideOf: thread.sideOf as ThreadSummary["sideOf"] } : {}),
     ...(thread.engine === "pi" || thread.engine === "codex" ? { engine: thread.engine } : {}),
     ...(typeof thread.modelProvider === "string" ? { modelProvider: thread.modelProvider } : {}),
     updatedAt: getThreadTimestamp(thread),

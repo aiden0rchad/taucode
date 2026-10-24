@@ -1,3 +1,4 @@
+import { AgentsPanel } from "@/features/agents/AgentsPanel";
 import { FileTreePanel } from "../../../files/components/FileTreePanel";
 import { GitDiffPanel } from "../../../git/components/GitDiffPanel";
 import { GitDiffViewer } from "../../../git/components/GitDiffViewer";
@@ -33,6 +34,7 @@ function buildGitDiffPanelNode(options: GitLayoutNodesOptions) {
       ? options.gitDiffViewerProps.selectedPath
       : null;
 
+  if (options.filePanelMode === "agents") return <AgentsPanel onSelect={options.gitDiffPanelProps.onFilePanelModeChange} />;
   if (options.filePanelMode === "files" && options.fileTreeProps) {
     return <FileTreePanel {...options.fileTreeProps} />;
   }

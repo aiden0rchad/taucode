@@ -51,6 +51,9 @@ type MessagesProps = {
   onPlanSubmitChanges?: (changes: string) => void;
   onOpenThreadLink?: (threadId: string, workspaceId?: string | null) => void;
   onQuoteMessage?: (text: string) => void;
+  onSideChat?: (itemId: string) => void;
+  sideChatDisabledReason?: string;
+  onSendToMain?: (text: string) => void;
 };
 
 export const Messages = memo(function Messages({
@@ -77,7 +80,7 @@ export const Messages = memo(function Messages({
   onPlanAccept,
   onPlanSubmitChanges,
   onOpenThreadLink,
-  onQuoteMessage,
+  onQuoteMessage, onSideChat, sideChatDisabledReason, onSendToMain,
 }: MessagesProps) {
   const activeUserInputRequestId =
     threadId && userInputRequests.length
@@ -164,6 +167,9 @@ export const Messages = memo(function Messages({
           key={item.id}
           item={item}
           isCopied={isCopied}
+          onSideChat={onSideChat}
+          sideChatDisabledReason={sideChatDisabledReason}
+          onSendToMain={onSendToMain}
           onCopy={handleCopyMessage}
           onQuote={onQuoteMessage ? handleQuoteMessage : undefined}
           codeBlockCopyUseModifier={codeBlockCopyUseModifier}

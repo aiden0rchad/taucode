@@ -311,6 +311,9 @@ impl WorkspaceSession {
         self.pi
             .configure(workspace, providers.clone(), policy.clone())
             .await;
+        if method == "thread/sidechat" {
+            return super::sidechats::create(self, workspace, params).await;
+        }
         if method == "model/list" {
             return Ok(providers::catalog(&providers));
         }
@@ -347,7 +350,8 @@ impl WorkspaceSession {
             obj.remove("engine");
         }
         if engine == EngineKind::Pi {
-            let response = self.pi.request(workspace, method, params).await?;
+            let mut response = self.pi.request(workspace, method, params).await?;
+            if matches!(method, "thread/list" | "thread/read" | "thread/resume" | "thread/fork" | "thread/start") { super::sidechats::enrich(self, workspace, &mut response)?; }
             if let Some(id) = response
                 .pointer("/result/thread/id")
                 .and_then(Value::as_str)
@@ -453,6 +457,28 @@ impl WorkspaceSession {
         let backend = self
             .backend(!matches!(method, "turn/interrupt" | "turn/steer"))
             .await?;
+        if method == "subagent/transcript" {
+            let node = params["nodeId"].as_str().ok_or("Missing node ID")?;
+            let parent = thread_id.as_deref().ok_or("Missing parent thread")?;
+            let mut pending = vec![parent.to_owned()];
+            let mut visited = HashSet::new();
+            let mut found = None;
+            while let Some(id) = pending.pop() {
+                if !visited.insert(id.clone()) { continue; }
+                let response = backend.read_thread(workspace, json!({"threadId":id,"includeTurns":true})).await?;
+                if id == node && id != parent { found = Some(response); break; }
+                pending.extend(collab_children(&response));
+            }
+            let response = found.ok_or("Node is not a child of this thread")?;
+            let messages = response.pointer("/result/thread/turns").and_then(Value::as_array)
+                .ok_or("Child thread unavailable")?.iter()
+                .flat_map(|t| t["items"].as_array().into_iter().flatten()).cloned();
+            return Ok(super::pi::agents::capped(messages));
+        }
+        // The engine protocol must not receive taucode-only fork metadata.
+        if engine == EngineKind::Codex {
+            if let Some(params) = params.as_object_mut() { params.remove("sideOf"); params.remove("atItemId"); }
+        }
         if matches!(
             method,
             "turn/start" | "thread/compact/start" | "thread/name/set"
@@ -517,6 +543,7 @@ impl WorkspaceSession {
                 });
             }
         }
+        if matches!(method, "thread/list" | "thread/read" | "thread/resume" | "thread/fork" | "thread/start") { super::sidechats::enrich(self, workspace, &mut response)?; }
         Ok(response)
     }
     pub async fn send_response(&self, id: Value, result: Value) -> Result<(), String> {
@@ -528,6 +555,13 @@ impl WorkspaceSession {
             .respond_to_server_request(id, result)
             .await
     }
+}
+fn collab_children(response: &Value) -> Vec<String> {
+    response.pointer("/result/thread/turns").and_then(Value::as_array).into_iter().flatten()
+        .flat_map(|turn| turn["items"].as_array().into_iter().flatten())
+        .filter(|item| item["type"] == "collabAgentToolCall")
+        .flat_map(|item| item["receiverThreadIds"].as_array().into_iter().flatten())
+        .filter_map(Value::as_str).map(str::to_owned).collect()
 }
 pub(crate) fn quote(s: &str) -> String {
     serde_json::to_string(s).expect("string serialization")
@@ -694,6 +728,15 @@ pub(crate) fn prepare_codex(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_collab_nodes_map_to_real_child_threads() {
+        let response = json!({"result":{"thread":{"turns":[{"items":[
+            {"type":"collabAgentToolCall","receiverThreadIds":["child-a","child-b"]},
+            {"type":"agentMessage","receiverThreadIds":["not-a-child"]}
+        ]}]}}});
+        assert_eq!(collab_children(&response), vec!["child-a", "child-b"]);
+    }
     use crate::backend::app_server::protocol_tests::make_session;
     use std::sync::atomic::{AtomicUsize, Ordering};
     #[tokio::test]

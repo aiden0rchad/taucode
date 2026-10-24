@@ -99,7 +99,14 @@ test("subagents single, parallel, chain, concurrency, per-run limit, depth and a
   process.env.PI_CODING_AGENT_DIR = home;
   process.env.TAUCODE_WORKSPACE = cwd;
   const cli = join(root, "fake-cli.mjs");
-  writeFileSync(cli, `const args = process.argv.slice(2); if (args.at(-1).includes("hang")) { process.on("SIGTERM", () => {}); setInterval(() => {}, 1000); } else setTimeout(() => { console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{type:"text",text:JSON.stringify({args,depth:process.env.TAUCODE_SUBAGENT_DEPTH,access:process.env.TAUCODE_TOOL_ACCESS})}], stopReason:"stop",usage:{input:2,output:3,cost:{total:0.01}} } })); }, 40);`);
+  writeFileSync(cli, `const args = process.argv.slice(2); if (args.at(-1).includes("nested")) {
+    const child = {agent:"scout",task:"nested",status:"running",messages:[],usage:{input:1,output:2,cost:0.01}};
+    console.log(JSON.stringify({type:"tool_execution_update",toolName:"subagent",toolCallId:"nested-call",partialResult:{details:{results:[child]}}}));
+    child.status = "completed";
+    const message = {role:"toolResult",toolName:"subagent",toolCallId:"nested-call",details:{results:[child]}};
+    console.log(JSON.stringify({type:"message_end",message}));
+    console.log(JSON.stringify({type:"tool_execution_end",toolName:"subagent",toolCallId:"nested-call",result:message}));
+  } else if (args.at(-1).includes("hang")) { process.on("SIGTERM", () => {}); setInterval(() => {}, 1000); } else setTimeout(() => { console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{type:"text",text:JSON.stringify({args,depth:process.env.TAUCODE_SUBAGENT_DEPTH,access:process.env.TAUCODE_TOOL_ACCESS})}], stopReason:"stop",usage:{input:2,output:3,cost:{total:0.01}} } })); }, 40);`);
   process.env.TAUCODE_PI_CLI = cli;
   writeFileSync(join(home, "taucode/policy.json"), JSON.stringify(policy));
   let tool: any, reset: any;
@@ -118,6 +125,14 @@ test("subagents single, parallel, chain, concurrency, per-run limit, depth and a
   reset();
   const chain = await tool.execute("chain", { chain: [task, { ...task, task: "previous: {previous}" }] }, undefined, undefined, ctx);
   assert.match(chain.details.results[1].task, /previous:.*args/);
+  reset();
+  let sawRunningNested = false;
+  const nested = await tool.execute("nested", { ...task, task: "nested" }, undefined, (r: any) => {
+    sawRunningNested ||= r.details.results[0].messages.some((m: any) => m.details?.results?.[0]?.status === "running");
+  }, ctx);
+  assert.ok(sawRunningNested);
+  assert.equal(nested.details.results[0].messages.length, 1);
+  assert.equal(nested.details.results[0].messages[0].details.results[0].status, "completed");
   reset(); process.env.TAUCODE_SUBAGENT_DEPTH = "2";
   assert.match((await tool.execute("depth", task, undefined, undefined, ctx)).details.results[0].stderr, /depth/);
   delete process.env.TAUCODE_SUBAGENT_DEPTH;

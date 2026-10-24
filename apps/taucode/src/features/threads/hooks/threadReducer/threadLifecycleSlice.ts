@@ -398,7 +398,7 @@ export function reduceThreadLifecycle(
             ...state.activeThreadIdByWorkspace,
             [action.workspaceId]: activeThreadStillVisible
               ? currentActiveThreadId
-              : (visibleThreads[0]?.id ?? null),
+              : (visibleThreads.find(thread => !thread.sideOf)?.id ?? null),
           },
           threadSortKeyByWorkspace: {
             ...state.threadSortKeyByWorkspace,

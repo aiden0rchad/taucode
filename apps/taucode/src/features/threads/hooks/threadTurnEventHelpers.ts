@@ -19,6 +19,7 @@ export function normalizeThreadStatusType(status: Record<string, unknown>): stri
 }
 
 export function getLiveThreadSubagentSummaryPatch(thread: Record<string, unknown>) {
+  if (thread.sideOf) return null;
   const metadata = getSubagentMetadataFromThread(thread);
   const nickname = asString(metadata.nickname ?? "").trim();
   const role = asString(metadata.role ?? "").trim();

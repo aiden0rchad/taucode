@@ -4,6 +4,23 @@ use std::path::PathBuf;
 use crate::types::{AppSettings, WorkspaceEntry, WorkspaceSettings};
 use serde_json::Value;
 
+pub(crate) fn read_thread_metadata(path: &std::path::Path) -> Result<Value, String> {
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| e.to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(serde_json::json!({})),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub(crate) fn write_thread_metadata(path: &std::path::Path, value: &Value) -> Result<(), String> {
+    std::fs::create_dir_all(path.parent().ok_or("Missing metadata directory")?).map_err(|e|e.to_string())?;
+    let temporary = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+    let bytes = serde_json::to_vec(value).map_err(|e| e.to_string())?;
+    let result = std::fs::write(&temporary, bytes).and_then(|_| std::fs::rename(&temporary, path));
+    if result.is_err() { let _ = std::fs::remove_file(temporary); }
+    result.map_err(|e| e.to_string())
+}
+
 fn normalize_windows_namespace_path(path: &str) -> String {
     if path.is_empty() {
         return String::new();

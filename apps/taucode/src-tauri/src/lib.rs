@@ -256,6 +256,8 @@ pub fn run() {
             codex::generate_agent_description,
             codex::resume_thread,
             codex::read_thread,
+            codex::create_side_chat,
+            codex::get_subagent_transcript,
             codex::list_thread_history,
             codex::thread_live_subscribe,
             codex::thread_live_unsubscribe,

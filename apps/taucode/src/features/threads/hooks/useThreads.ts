@@ -416,7 +416,7 @@ export function useThreads({
         return;
       }
       updateThreadParent(parentThreadId, [threadId]);
-      onSubagentThreadDetected(workspaceId, threadId);
+      if (!thread.sideOf) onSubagentThreadDetected(workspaceId, threadId);
     },
     [onSubagentThreadDetected, threadHandlers, updateThreadParent],
   );
@@ -690,6 +690,7 @@ export function useThreads({
 
   const {
     interruptTurn,
+    interruptThread,
     sendUserMessage,
     sendUserMessageToThread,
     startFork,
@@ -828,6 +829,7 @@ export function useThreads({
     setActiveThreadId,
     hasLocalThreadSnapshot,
     activeItems,
+    itemsByThread: state.itemsByThread,
     approvals: state.approvals,
     userInputRequests: state.userInputRequests,
     threadsByWorkspace: state.threadsByWorkspace,
@@ -845,6 +847,7 @@ export function useThreads({
     lastAgentMessageByThread: state.lastAgentMessageByThread,
     pinnedThreadsVersion,
     interruptTurn,
+    interruptThread,
     removeThread,
     pinThread,
     unpinThread,

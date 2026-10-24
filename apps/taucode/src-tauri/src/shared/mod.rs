@@ -26,6 +26,7 @@ pub(crate) mod browser;
 pub(crate) mod computer;
 pub(crate) mod connectors;
 pub(crate) mod pi;
+pub(crate) mod sidechats;
 
 #[cfg(unix)]
 pub(crate) mod local_socket;

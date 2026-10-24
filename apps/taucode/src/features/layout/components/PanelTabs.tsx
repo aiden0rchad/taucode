@@ -1,9 +1,11 @@
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useRunningAgents } from "@/features/agents/agents";
+import Users from "lucide-react/dist/esm/icons/users";
 import Folder from "lucide-react/dist/esm/icons/folder";
 import GitBranch from "lucide-react/dist/esm/icons/git-branch";
 import ScrollText from "lucide-react/dist/esm/icons/scroll-text";
 
-export type PanelTabId = "git" | "files" | "prompts";
+export type PanelTabId = "git" | "files" | "prompts" | "agents";
 
 type PanelTab = {
   id: PanelTabId;
@@ -21,9 +23,11 @@ const defaultTabs: PanelTab[] = [
   { id: "git", label: "Git", icon: <GitBranch aria-hidden /> },
   { id: "files", label: "Files", icon: <Folder aria-hidden /> },
   { id: "prompts", label: "Prompts", icon: <ScrollText aria-hidden /> },
+  { id: "agents", label: "Agents", icon: <Users aria-hidden /> },
 ];
 
 export function PanelTabs({ active, onSelect, tabs = defaultTabs }: PanelTabsProps) {
+  const running = useRunningAgents();
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const activeIndex = tabs.findIndex((tab) => tab.id === active);
   const focusableIndex = activeIndex >= 0 ? activeIndex : 0;
@@ -88,6 +92,7 @@ export function PanelTabs({ active, onSelect, tabs = defaultTabs }: PanelTabsPro
             <span className="panel-tab-icon" aria-hidden>
               {tab.icon}
             </span>
+            {tab.id === "agents" && running > 0 && <span className="agents-count" aria-label={`${running} running subagents`}>{running}</span>}
           </button>
         );
       })}
