@@ -1,0 +1,9 @@
+{
+  "name": "taucode-engine-claude-acp",
+  "private": true,
+  "description": "Pinned Claude Code ACP adapter used by taucode's ACP engine (API-key auth only, no account login)",
+  "type": "module",
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.89.1"
+  }
+}
