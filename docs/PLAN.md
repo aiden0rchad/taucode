@@ -21,7 +21,8 @@ main on 2026-10-22.
 >   in 8 steps with clicks only, every click on the right button, screenshots containing only
 >   the allowed app, lock screen refused, Stop honoured in 0.02 s. **Background mode verified**: 12 × 7 = 84 with Calculator
 >   behind Finder; the user's cursor and frontmost app unchanged across 99 samples (element-first
->   + activate-without-raise, ported from trycua/cua). Dev builds were ad-hoc
+>   + activate-without-raise, ported from trycua/cua). Final run: every click executed via
+>   Accessibility on the grounded element (11–52 ms each, zero pixel fallbacks). Dev builds were ad-hoc
 >   signed; now signed with a local "taucode Dev" identity
 >   (`apps/taucode/scripts/sign-dev.sh`) so permissions survive rebuilds (Agent-S3 planner vendored, Rust capture/input); live test needs macOS
 >   Screen Recording + Accessibility granted by the user
