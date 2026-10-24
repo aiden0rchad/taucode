@@ -442,6 +442,22 @@ Each milestone ends with a demo and its exit criteria passing.
     plan/outputs panes, document skills (pinned `engines/work` uv lock), and
     approval-before-overwrite.
   - Order: m4d, then m4e ‖ m4f.
+- **Status 2026-10-24:** M4a–M4i merged.
+  - **Live-verified through the daemon against the user's LiteLLM:**
+    - checkpoints: before/after per turn, files rewind and undo
+    - parallel subagent tree with usage, and on-demand transcripts
+    - read-only side chats that keep the parent's context
+    - Chat mode with no tools
+    - the Claude Code ACP engine with API-key only (GLM 5.3 via `/v1/messages`); turns
+      are checkpointed and config stays isolated
+    - a Work task producing `outputs/` with originals untouched
+    - import detection: 17 Codex projects, 94 threads, 42 Claude sessions, 15 Cowork
+      tasks, 4 MCP servers
+  - **Known issues:**
+    - the user's LiteLLM rejects `anthropic-beta` on its Claude routes, so Claude Code
+      can't use Claude models there until that setting changes
+    - the new UI (Agents panel, side-chat split, Chat/Work/Import screens) is
+      unit-tested, not yet visually checked by hand
 
 **M5 — Ship (2 weeks)**
 - Signing + notarization with bundled Python, permission onboarding, auto-update
