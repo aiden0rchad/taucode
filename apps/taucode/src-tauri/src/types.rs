@@ -383,6 +383,10 @@ pub(crate) struct RemoteBackendTarget {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct AppSettings {
+    #[serde(default, rename = "windowModes")]
+    pub(crate) window_modes: std::collections::HashMap<String, String>,
+    #[serde(default, rename = "chatDefaultModel")]
+    pub(crate) chat_default_model: Option<ModelRef>,
     #[serde(default)]
     pub(crate) browser: BrowserSettings,
     #[serde(default)]
@@ -1141,6 +1145,8 @@ impl Default for AppSettings {
             mcp_servers: default_mcp_servers(),
             providers: Vec::new(),
             agent_policy: AgentPolicy::default(),
+            window_modes: Default::default(),
+            chat_default_model: None,
             codegraph_enabled: true,
             codex_bin: None,
             codex_args: None,

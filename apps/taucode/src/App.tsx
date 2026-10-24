@@ -41,6 +41,7 @@ import "./styles/compact-phone.css";
 import "./styles/compact-tablet.css";
 import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import MainApp from "@app/components/MainApp";
+import { ModeShell } from "@/features/chat/ModeShell";
 import { ComputerApprovals } from "@/features/computer/ComputerApprovals";
 
 const AboutView = lazy(() =>
@@ -60,5 +61,5 @@ export default function App() {
     );
   }
 
-  return <><MainApp /><ComputerApprovals /></>;
+  return <><ModeShell><MainApp /></ModeShell><ComputerApprovals /></>;
 }

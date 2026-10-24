@@ -37,6 +37,7 @@ struct Session {
 }
 pub(crate) struct PiEngine {
     pub(super) data: Option<PathBuf>,
+    chat: bool,
     pub paths: Mutex<HashMap<String, String>>,
     sessions: Mutex<HashMap<String, Session>>,
     registry: Mutex<HashMap<String, (Vec<ProviderEntry>, AgentPolicy)>>,
@@ -52,6 +53,7 @@ impl Default for PiEngine {
     fn default() -> Self {
         Self {
             data: None,
+            chat: false,
             paths: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
             registry: Mutex::new(HashMap::new()),
@@ -80,6 +82,19 @@ impl PiEngine {
             sink,
             ..Self::default()
         }
+    }
+    pub fn chat(data: PathBuf, sink: Sink) -> Self {
+        Self { data: Some(data), chat: true, sink, ..Self::default() }
+    }
+    fn chat_scratch(&self, id: &str) -> Result<PathBuf, String> {
+        uuid::Uuid::parse_str(id).map_err(|_| "Invalid chat ID")?;
+        let path = self.data.as_ref().ok_or("Missing app data")?.join("chats/scratch").join(id);
+        std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+        }
+        Ok(path)
     }
     pub async fn is_running(&self, id: &str) -> bool {
         let sessions = self.sessions.lock().await;
@@ -135,7 +150,7 @@ impl PiEngine {
             .data
             .as_ref()
             .ok_or("Pi runtime is not configured")?
-            .join("pi/sessions")
+            .join(if self.chat { "chats/sessions" } else { "pi/sessions" })
             .join(workspace))
     }
     pub async fn owns(&self, workspace: &str, id: &str) -> bool {
@@ -197,7 +212,7 @@ impl PiEngine {
                         {
                             s.thread = thread.clone();
                         } else {
-                            for key in ["modelProvider", "model", "forkedFromId"] {
+                            for key in ["modelProvider", "model", "forkedFromId", "chatWeb"] {
                                 thread[key] = s.thread[key].clone();
                             }
                             if s.process
@@ -284,11 +299,21 @@ impl PiEngine {
         registry: &[ProviderEntry],
         policy: &AgentPolicy,
     ) -> Result<Arc<Process>, String> {
-        let connectors = super::connectors::load(
+        let web = self.chat && s.thread["chatWeb"] == true;
+        let mut connectors = if self.chat && !web { vec![] } else { super::connectors::load(
             self.data.as_ref().ok_or("Pi runtime is not configured")?,
             &s.workspace,
             self.graph.as_ref(),
-        )?;
+        )? };
+        if self.chat {
+            connectors.retain(|c| c.enabled && c.id == "taucode-browser");
+            for connector in &mut connectors {
+                let allowed = ["browser_navigate", "browser_snapshot", "browser_take_screenshot"].into_iter()
+                    .filter(|name| connector.tool_allowlist.as_ref().is_none_or(|list| list.iter().any(|n| n == name)))
+                    .map(str::to_owned).collect();
+                connector.tool_allowlist = Some(allowed);
+            }
+        }
         let fingerprint =
             serde_json::to_string(&(registry, &connectors)).map_err(|e| e.to_string())?;
         if let Some(p) = &s.process {
@@ -303,12 +328,13 @@ impl PiEngine {
             }
         }
         let (provider, model) = Self::model(registry, policy, None, Some(&s.thread))?;
+        let id = s.thread["id"].as_str().ok_or("Pi session missing ID")?.to_owned();
         let home = self
             .data
             .as_ref()
             .ok_or("Pi runtime is not configured")?
-            .join("pi/agent")
-            .join(&s.workspace);
+            .join(if self.chat { "chats/agent" } else { "pi/agent" })
+            .join(if self.chat { &id } else { &s.workspace });
         let mut env = config::prepare(&home, registry, self.graph.as_ref(), self.keys.as_ref())?;
         for p in registry.iter().filter(|p| p.enabled) {
             if matches!(p.auth, crate::types::ProviderAuth::Command { .. }) {
@@ -327,10 +353,9 @@ impl PiEngine {
                 secrets.push(value.clone());
             }
         }
-        let id = s.thread["id"].as_str().ok_or("Pi session missing ID")?;
         config::write_policy(&home, registry, policy)?;
-        config::write_access(&home, id, None)?;
-        env.insert("TAUCODE_SESSION_KEY".into(), id.into());
+        config::write_access(&home, &id, None)?;
+        env.insert("TAUCODE_SESSION_KEY".into(), id.clone());
         env.insert(
             "TAUCODE_WORKSPACE".into(),
             s.thread["cwd"].as_str().ok_or("Missing cwd")?.into(),
@@ -362,6 +387,7 @@ impl PiEngine {
                     .into(),
             );
         }
+        if self.chat { s.thread["cwd"] = json!(self.chat_scratch(&id)?); }
         let mut command = Command::new(node);
         let guard = runtime.as_ref().map(|dir| dir.join("no-accounts.mjs")).unwrap_or_default();
         #[cfg(test)]
@@ -376,14 +402,22 @@ impl PiEngine {
             .env_remove("TAUCODE_TOOL_ACCESS")
             .arg(cli)
             .arg("-e")
-            .arg(home.join("extensions/taucode-gate.ts"))
-            .arg("-e")
-            .arg(home.join("extensions/taucode-subagents.ts"))
-            .args([
+            .arg(home.join("extensions/taucode-gate.ts"));
+        if self.chat {
+            command.env("TAUCODE_CHAT", "1").args([
+                "--no-tools", "--no-skills", "--no-prompt-templates", "--no-context-files",
+                "--system-prompt", "You are a helpful conversational assistant. Answer clearly and honestly.",
+            ]);
+            if web && !connectors.is_empty() {
+                command.env("TAUCODE_CHAT_WEB", "1").args(["-e", "builtin:mcp", "--tools", "mcp__taucode_browser__browser_navigate,mcp__taucode_browser__browser_snapshot,mcp__taucode_browser__browser_take_screenshot"]);
+            } else { command.env_remove("TAUCODE_CHAT_WEB"); }
+        } else {
+            command.env_remove("TAUCODE_CHAT").env_remove("TAUCODE_CHAT_WEB").arg("-e").arg(home.join("extensions/taucode-subagents.ts"))
+                .args(["-e", "builtin:mcp"]);
+        }
+        command.args([
                 "--no-approve",
                 "--no-extensions",
-                "-e",
-                "builtin:mcp",
                 "--mode",
                 "rpc",
                 "--provider",
@@ -450,7 +484,7 @@ impl PiEngine {
                 true
             }
         };
-        if require_extensions && p.extensions.lock().await.len() != 2 {
+        if require_extensions && p.extensions.lock().await.len() != if self.chat { 1 } else { 2 } {
             let _ = p.shutdown().await;
             return Err("Pi policy extensions did not load; refusing to run without the approval gate and subagent policy".into());
         }
@@ -496,22 +530,25 @@ impl PiEngine {
         }
         if method == "thread/start" {
             let (provider, model) = Self::model(&registry, &policy, params.get("model"), None)?;
-            let cwd = params["cwd"]
+            let mut cwd = params["cwd"]
                 .as_str()
                 .map(str::to_owned)
                 .or(self.paths.lock().await.get(workspace).cloned())
+                .or_else(|| self.chat.then(String::new))
                 .ok_or("Missing pi workspace path")?;
             let dir = self.directory(workspace)?;
             std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
             let id = uuid::Uuid::new_v4().to_string();
+            if self.chat { cwd = self.chat_scratch(&id)?.to_string_lossy().into_owned(); }
             let file = dir.join(format!("{id}.jsonl"));
             // A valid pi session header fixes the ID before MCP children start, so
             // TAUCODE_SESSION_KEY always matches pi's sessionId, including on resume.
-            let header = json!({"type":"session","version":3,"id":id,"timestamp":chrono::Utc::now().to_rfc3339(),"cwd":cwd});
+            let header = json!({"type":"session","version":3,"id":id,"timestamp":chrono::Utc::now().to_rfc3339(),"cwd":cwd,"modelProvider":provider.id,"model":model});
             std::fs::write(&file, format!("{header}\n")).map_err(|e| e.to_string())?;
             let mut thread = thread_value(&id, &cwd, &file);
             thread["modelProvider"] = json!(provider.id);
             thread["model"] = json!(model);
+            if self.chat { thread["chatWeb"] = json!(params["web"] == true); }
             let mut session = Session {
                 workspace: workspace.into(),
                 thread: thread.clone(),
@@ -539,6 +576,18 @@ impl PiEngine {
             .get_mut(id)
             .filter(|s| s.workspace == workspace)
             .ok_or("Unknown pi thread")?;
+        if method == "thread/chatWeb/set" && self.chat {
+            let web = params["web"].as_bool().ok_or("Missing Web state")?;
+            if s.thread["chatWeb"] != web {
+                if let Some(p) = &s.process {
+                    if p.running.load(Ordering::SeqCst) || p.translator.lock().await.active { return Err("Stop the chat before changing Web access".into()); }
+                    p.shutdown().await?;
+                }
+                s.thread["chatWeb"] = json!(web);
+                s.configuration.clear();
+            }
+            return Ok(json!({}));
+        }
         if method == "subagent/transcript" {
             let node = params["nodeId"].as_str().ok_or("Missing node ID")?;
             let transcript = if let Some(p) = &s.process {
@@ -557,6 +606,37 @@ impl PiEngine {
                 secrets.extend(super::connectors::delivery(&connectors, self.keys.as_ref())?.secrets);
             }
             return serde_json::from_str(&process::redact(transcript.to_string(), &secrets)).map_err(|e|e.to_string());
+        }
+        if method == "thread/fork" && self.chat {
+            let (provider, model) = Self::model(&registry, &policy, params.get("model"), Some(&s.thread))?;
+            if let Some(p) = &s.process {
+                if p.running.load(Ordering::SeqCst) || p.translator.lock().await.active {
+                    return Err("Finish or interrupt the chat before forking".into());
+                }
+                p.shutdown().await?;
+            }
+            let new_id = uuid::Uuid::new_v4().to_string();
+            let file = self.directory(workspace)?.join(format!("{new_id}.jsonl"));
+            fork_session(&s.file, &file, &new_id, &Value::Null, None)?;
+            if let Some(item) = params["beforeUserItemId"].as_str() {
+                if let Err(e) = rewind_session(&file, id, Some(item), None) {
+                    let _ = std::fs::remove_file(&file); return Err(e);
+                }
+            }
+            let (mut cloned, _) = read_session(&file, &registry)?;
+            cloned["modelProvider"] = json!(provider.id);
+            cloned["model"] = json!(model);
+            cloned["forkedFromId"] = json!(id);
+            cloned["cwd"] = json!(self.chat_scratch(&new_id)?);
+            let bytes = std::fs::read_to_string(&file).map_err(|e| e.to_string())?;
+            let (_, rest) = bytes.split_once('\n').ok_or("Invalid session")?;
+            let header = json!({"type":"session","version":3,"id":new_id,"cwd":cloned["cwd"],"timestamp":chrono::Utc::now().to_rfc3339(),"modelProvider":provider.id,"model":model,"forkedFromId":id});
+            let leaf = rest.lines().last().map(serde_json::from_str::<Value>).transpose().map_err(|e| e.to_string())?
+                .map(|entry| entry["id"].clone()).unwrap_or(Value::Null);
+            let change = json!({"type":"model_change","id":uuid::Uuid::new_v4().to_string(),"parentId":leaf,"timestamp":chrono::Utc::now().to_rfc3339(),"provider":config::provider_id(provider,&registry),"modelId":model});
+            std::fs::write(&file, format!("{header}\n{rest}{change}\n")).map_err(|e| e.to_string())?;
+            sessions.insert(new_id, Session { workspace: workspace.into(), thread: cloned.clone(), file, process: None, configuration: String::new() });
+            return Ok(json!({"result":{"thread":cloned}}));
         }
         if method == "thread/fork" && params.get("sideOf").is_some() {
             let new_id = uuid::Uuid::new_v4().to_string();
@@ -586,8 +666,8 @@ impl PiEngine {
                 .data
                 .as_ref()
                 .ok_or("Pi runtime is not configured")?
-                .join("pi/agent")
-                .join(workspace);
+                .join(if self.chat { "chats/agent" } else { "pi/agent" })
+                .join(if self.chat { id } else { workspace });
             config::write_access(&home, id, mode)?;
             if let (Some(p), Some(mode)) = (&s.process, mode) {
                 p.translator.lock().await.access_mode =
@@ -979,6 +1059,9 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
     let id = header["id"].as_str().ok_or("Missing pi session ID")?;
     let cwd = header["cwd"].as_str().ok_or("Missing pi cwd")?;
     let mut thread = thread_value(id, cwd, file);
+    for key in ["modelProvider", "model", "forkedFromId"] {
+        if !header[key].is_null() { thread[key] = header[key].clone(); }
+    }
     if header.get("sideOf").is_some() {
         thread["sideOf"] = header["sideOf"].clone();
         thread["forkedFromId"] = header["sideOf"]["threadId"].clone();

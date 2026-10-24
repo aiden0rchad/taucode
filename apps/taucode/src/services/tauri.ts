@@ -1,4 +1,13 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
+export function chatRequest<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
+  return invoke<T>("chat_request", { action, params });
+}
+export function setWindowMode(mode: import("@/types").AppMode): Promise<void> {
+  return invoke("set_window_mode", { mode });
+}
+export function readChatAttachment(path: string): Promise<import("@/features/chat/chat").Attachment> {
+  return invoke("read_chat_attachment", { path });
+}
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { Options as NotificationOptions } from "@tauri-apps/plugin-notification";
 import type {
@@ -83,9 +92,10 @@ export async function pickImageFiles(): Promise<string[]> {
 export async function exportMarkdownFile(
   content: string,
   defaultFileName = "plan.md",
+  title = "Export plan as Markdown",
 ): Promise<string | null> {
   const selection = await save({
-    title: "Export plan as Markdown",
+    title,
     defaultPath: defaultFileName,
     filters: [
       {

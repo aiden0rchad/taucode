@@ -1,4 +1,5 @@
 import ArrowDownUp from "lucide-react/dist/esm/icons/arrow-down-up";
+import { ModeSwitcher } from "@/features/chat/ModeShell";
 import BetweenHorizontalStart from "lucide-react/dist/esm/icons/between-horizontal-start";
 import Calendar from "lucide-react/dist/esm/icons/calendar";
 import FolderPlus from "lucide-react/dist/esm/icons/folder-plus";
@@ -122,6 +123,7 @@ export function SidebarHeader({
   };
 
   return (
+    <><ModeSwitcher />
     <div className="sidebar-header">
       <div className="sidebar-header-title">
         <div className="sidebar-title-group">
@@ -267,6 +269,6 @@ export function SidebarHeader({
           <Search aria-hidden />
         </button>
       </div>
-    </div>
+    </div></>
   );
 }
