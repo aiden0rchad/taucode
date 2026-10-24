@@ -326,12 +326,12 @@ impl Guard {
         let key = f.key_pid();
         let started = Instant::now();
         let mut method = f.activate(s.previous, s.window, front);
-        let mut result = verify_activation(f, s.previous, front, started);
+        let mut result = verify_activation(f, s.previous, front, started, 15);
         if result == Some(false) && !s.activation_escalated {
             s.activation_escalated = true;
             f.escalate(s.previous, s.window, front);
             method = "skylight";
-            result = verify_activation(f, s.previous, front, started);
+            result = verify_activation(f, s.previous, front, started, 25);
         }
         // A later theft can be restored again after success, but a failed restore
         // cannot loop and the action never gets a second escalation.
@@ -400,8 +400,15 @@ pub(super) fn front_pid() -> Option<i32> {
 }
 
 // None means the user chose another app (or focus could no longer be observed).
-fn verify_activation(f: &impl Focus, previous: i32, from: i32, started: Instant) -> Option<bool> {
-    for poll in 0..=15 {
+fn verify_activation(
+    f: &impl Focus,
+    previous: i32,
+    from: i32,
+    started: Instant,
+    polls: u32,
+) -> Option<bool> {
+    // Each method gets its own window: 300 ms initially, 500 ms after escalation.
+    for poll in 0..=polls {
         let front = f.front()?;
         if front == previous {
             return Some(true);
@@ -409,7 +416,7 @@ fn verify_activation(f: &impl Focus, previous: i32, from: i32, started: Instant)
         if front != from || f.user_switched_since(started) {
             return None;
         }
-        if poll < 15 {
+        if poll < polls {
             f.wait(Duration::from_millis(20));
         }
     }

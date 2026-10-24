@@ -10,6 +10,7 @@ mod delivery;
 mod focus_guard;
 mod menus;
 mod overlay;
+mod process;
 pub(super) mod skylight;
 mod windows;
 
@@ -72,7 +73,8 @@ pub fn screenshot(bundle: &str) -> Result<super::native::Frame, String> {
             .find(|a| !a.isTerminated())
             .map(|a| a.processIdentifier())
             .ok_or("Target app is not running")?;
-    let (frame, window) = capture::capture(pid)?;
+    let process = process::Binding::bind(pid, bundle)?;
+    let (frame, window) = capture::capture(&process)?;
     ax_actions::check_pane(pid, bundle, Some(window.id))?;
     Ok(frame)
 }
@@ -80,6 +82,7 @@ pub fn screenshot(bundle: &str) -> Result<super::native::Frame, String> {
 pub struct Session {
     pub pid: i32,
     pub bundle: String,
+    process: process::Binding,
     pub window: Mutex<Option<Window>>,
     pub foreground: AtomicBool,
     pub dragging: AtomicBool,
@@ -137,9 +140,11 @@ impl Session {
             }
             pid.ok_or("Target application did not launch in background")?
         };
+        let process = process::Binding::bind(pid, bundle)?;
         let session = Arc::new(Self {
             pid,
             bundle: bundle.into(),
+            process,
             window: Mutex::new(None),
             foreground: AtomicBool::new(false),
             dragging: AtomicBool::new(false),
@@ -164,16 +169,7 @@ impl Session {
         Ok(session)
     }
     pub fn check(&self) -> Result<(), String> {
-        let app = NSRunningApplication::runningApplicationWithProcessIdentifier(self.pid)
-            .ok_or("Target process exited")?;
-        if app.isTerminated()
-            || app
-                .bundleIdentifier()
-                .is_none_or(|id| id.to_string() != self.bundle)
-        {
-            return Err("Target process binding changed".into());
-        }
-        Ok(())
+        self.process.check("session")
     }
     pub fn context(&self) -> Result<Context, String> {
         self.check().map_err(|e| {
@@ -217,7 +213,7 @@ impl Session {
     }
     pub fn capture(&self) -> Result<super::native::Frame, String> {
         self.check()?;
-        let (frame, window) = capture::capture(self.pid)?;
+        let (frame, window) = capture::capture(&self.process)?;
         ax_actions::check_pane(self.pid, &self.bundle, Some(window.id))?;
         self.overlay.set_visible(window.on_screen);
         self.ax_fallback.store(false, Ordering::SeqCst);
@@ -598,9 +594,10 @@ impl Session {
     }
     pub fn begin_foreground(&self) -> Result<(), String> {
         let window = self.window()?;
-        self.foreground.store(true, Ordering::SeqCst);
+        self.process.check("begin_foreground")?;
         let app = NSRunningApplication::runningApplicationWithProcessIdentifier(self.pid)
-            .ok_or("Target process exited")?;
+            .ok_or_else(|| format!("Target activation (begin_foreground): pid={}, NSRunningApplication=nil after successful process check", self.pid))?;
+        self.foreground.store(true, Ordering::SeqCst);
         #[allow(deprecated)]
         if !app.activateWithOptions(objc2_app_kit::NSApplicationActivationOptions(0)) {
             return Err("Target activation failed".into());

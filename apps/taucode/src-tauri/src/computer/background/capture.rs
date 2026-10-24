@@ -9,18 +9,14 @@ use screencapturekit::{
     prelude::*,
 };
 
-pub fn capture(pid: i32) -> Result<(native::Frame, Window), String> {
+pub fn capture(process: &super::process::Binding) -> Result<(native::Frame, Window), String> {
+    let pid = process.pid;
     if native::permissions()["screen"] != true {
         return Err("Grant Screen Recording in System Settings".into());
     }
     let (content, window) = windows::retry_windowless(
         || {
-            let app =
-                objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
-                    .ok_or("Target process exited")?;
-            if app.isTerminated() {
-                return Err("Target process exited".into());
-            }
+            process.check("pre-flight capture")?;
             let content = SCShareableContent::create()
                 .with_on_screen_windows_only(false)
                 .get()
@@ -29,15 +25,13 @@ pub fn capture(pid: i32) -> Result<(native::Frame, Window), String> {
             Ok((content, window))
         },
         || {
+            process.check("windowless capture reopen")?;
             if super::ax_actions::window_count(pid)? != 0 {
                 return Ok(());
             }
-            let app =
-                objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
-                    .ok_or("Target process exited")?;
-            let url = app
-                .bundleURL()
-                .ok_or("Target application URL unavailable")?;
+            let url = objc2_foundation::NSURL::fileURLWithPath(
+                &objc2_foundation::NSString::from_str(&process.bundle_path.to_string_lossy()),
+            );
             let config = objc2_app_kit::NSWorkspaceOpenConfiguration::configuration();
             config.setActivates(false);
             objc2_app_kit::NSWorkspace::sharedWorkspace()

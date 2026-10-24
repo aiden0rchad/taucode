@@ -633,7 +633,7 @@ fn activation_escalates_once_per_action_and_records_actual_verification() {
             }
             assert_eq!(f.activations.get(), 1);
             assert_eq!(f.escalations.get(), 1);
-            assert_eq!(f.waits.get(), if effective { 15 } else { 30 });
+            assert_eq!(f.waits.get(), if effective { 15 } else { 40 });
             let records = guard.drain_restorations();
             assert_eq!(records.len(), 1);
             assert_eq!(records[0]["method"], "skylight");
@@ -646,6 +646,28 @@ fn activation_escalates_once_per_action_and_records_actual_verification() {
             assert_eq!(f.escalations.get(), 2);
             assert_eq!(guard.drain_restorations().len(), 1);
         }
+    }
+}
+
+#[test]
+fn activation_verifies_delayed_escalation_through_its_own_500ms_window() {
+    // 370 ms after escalation is observed at the next 20 ms poll; also test the boundary.
+    for delay in [370u64, 500, 520] {
+        let mut f = FocusWorkspace::new(10, true);
+        f.activation_effective = false;
+        f.activate_on_wait = Some((15 + delay.div_ceil(20) as usize, 10));
+        let guard = focus_guard::Guard::new(20, f.prior());
+        let now = Instant::now();
+        guard.begin_action_with(f.prior(), now);
+        f.front.set(20);
+        guard.tick_with(&f, now + Duration::from_millis(10));
+        guard.tick_with(&f, now + Duration::from_millis(20));
+        assert_eq!(f.escalations.get(), 1);
+        assert_eq!(f.waits.get(), 15 + delay.div_ceil(20).min(25) as usize);
+        let records = guard.drain_restorations();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["method"], "skylight");
+        assert_eq!(records[0]["verified"], delay <= 500);
     }
 }
 
