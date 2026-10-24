@@ -83,6 +83,7 @@ fn prediction(action: Value) -> Prediction {
         action,
         reflection: "checked".into(),
         plan_text: "Click an editable document".into(),
+        grounding: vec![],
     }
 }
 #[test]
@@ -898,6 +899,37 @@ fn element_target_requires_snapshot_and_strict_index() {
     p.action["element_index"] = json!(0);
     assert_eq!(p.element_target().unwrap(), Some((1, 0)));
     assert!(p.validated(display()).is_ok());
+}
+
+#[tokio::test]
+async fn grounding_diagnostics_and_index_zero_survive_approval_and_final_progress() {
+    let mut env = fake(vec![
+        json!({"kind":"click","x":1,"y":1,"button":"left","clicks":1,"hold_keys":[],"snapshot_id":4,"element_index":0,"target":"Buy"}),
+        json!({"kind":"done","summary":"done"}),
+    ]);
+    let diagnostics = json!({"configured_mode":"elements","mode":"elements","usable_elements":6,"snapshot_id":4,"model_result":"index","raw_reply":"0","element_index":0,"pixel_fallback_reason":null});
+    env.predictions[0].grounding = vec![diagnostics.clone()];
+    let control = Control::new(FakeInput::default());
+    control.start();
+    let s = settings();
+    runner::run(
+        &mut env,
+        &control,
+        &s,
+        &s.allowed_apps,
+        "test",
+        Instant::now(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(env.approved, 1);
+    let entries: Vec<_> = env.steps.iter().filter(|s| s["step"] == 1).collect();
+    assert!(entries.len() >= 2);
+    for step in entries {
+        assert_eq!(step["action"]["element_index"], 0);
+        assert_eq!(step["action"]["snapshot_id"], 4);
+        assert_eq!(step["grounding"], json!([diagnostics]));
+    }
 }
 
 #[tokio::test]

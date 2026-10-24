@@ -8,6 +8,12 @@ use std::{
 };
 
 #[test]
+fn ax_hit_test_is_not_reported_as_element_grounding() {
+    assert_eq!(ax_path(true), "ax-element");
+    assert_eq!(ax_path(false), "ax-hit-test");
+}
+
+#[test]
 fn execution_table_uses_fake_ax_and_posting() {
     let actions = [
         (

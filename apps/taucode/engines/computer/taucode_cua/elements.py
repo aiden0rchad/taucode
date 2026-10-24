@@ -23,7 +23,7 @@ def usable_elements(snapshot):
             continue
         if not isinstance(frame, list) or len(frame) != 4 or any(type(n) not in (int, float) or not math.isfinite(n) for n in frame):
             raise ValueError('Invalid element frame')
-        if frame[2] > 0 and frame[3] > 0 and e.get('enabled', True) and (e['actions'] or e.get('value_settable') or e['role'] in ('AXTextField', 'AXTextArea', 'AXComboBox', 'AXSecureTextField', 'AXScrollArea')):
+        if frame[2] > 0 and frame[3] > 0 and e.get('enabled', True) and (e['actions'] or e.get('value_settable') or e['role'] in ('AXButton', 'AXTextField', 'AXTextArea', 'AXComboBox', 'AXSecureTextField', 'AXScrollArea')):
             result.append(e)
     return result
 

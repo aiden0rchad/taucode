@@ -55,6 +55,7 @@ pub struct Sidecar {
     input: ChildStdin,
     output: BufReader<tokio::io::Take<ChildStdout>>,
     id: u64,
+    pub grounding: Vec<Value>,
     log: Arc<Mutex<SidecarLog>>,
     logger: tokio::task::JoinHandle<()>,
     flush: tokio::sync::mpsc::Sender<tokio::sync::oneshot::Sender<()>>,
@@ -273,6 +274,7 @@ impl Sidecar {
             input,
             output,
             id: 0,
+            grounding: vec![],
             log,
             logger,
             flush,
@@ -296,10 +298,18 @@ impl Sidecar {
         }
         result.map_err(|error| self.with_log(error))
     }
+    pub fn log_execution(&self, step: &Value) {
+        let event = json!({"event":"grounding_execution","grounding":step["grounding"],"step":step["step"],"path":step["path"],"element_index":step["action"]["element_index"],"snapshot_id":step["action"]["snapshot_id"],"pixel_fallback_reason":step["executionFallbackReason"]});
+        let mut log = self.log.lock().unwrap();
+        if let Err(error) = log.write(format!("{event}\n").as_bytes(), false) {
+            log.error = Some(error.to_string());
+        }
+    }
     pub fn with_log(&self, error: String) -> String {
         self.log.lock().unwrap().with_error(error)
     }
     async fn exchange(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        self.grounding.clear();
         self.id += 1;
         self.input
             .write_all(
@@ -322,6 +332,15 @@ impl Sidecar {
         }
         let response: Value =
             serde_json::from_str(&line).map_err(|_| "Invalid planner response")?;
+        self.grounding = serde_json::from_value(
+            if response.get("error").is_some() {
+                &response["error"]["data"]["grounding"]
+            } else {
+                &response["result"]["grounding"]
+            }
+            .clone(),
+        )
+        .unwrap_or_default();
         response_result(response, self.id)
     }
 

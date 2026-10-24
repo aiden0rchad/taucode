@@ -6,6 +6,7 @@ use serde::Serialize;
 use std::time::{Duration, Instant};
 
 pub const MAX_ELEMENTS: usize = 250;
+pub const SNAPSHOT_BUDGET: Duration = Duration::from_secs(1);
 
 fn secure_field(role: &str, subrole: Option<&str>) -> bool {
     role == "AXSecureTextField" || subrole == Some("AXSecureTextField")
@@ -26,16 +27,18 @@ pub struct Node {
     pub value_settable: bool,
 }
 
-pub fn label(title: Option<String>, description: Option<String>, help: Option<String>) -> String {
-    [title, description, help]
+pub fn label(mut read: impl FnMut(&str) -> Option<String>) -> String {
+    ["AXTitle", "AXDescription", "AXHelp", "AXIdentifier"]
         .into_iter()
-        .flatten()
-        .find(|s| !s.trim().is_empty())
+        .find_map(|attribute| read(attribute).filter(|s| !s.trim().is_empty()))
         .unwrap_or_default()
 }
 
 pub trait Provider {
     type Handle;
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
     fn read(&self, handle: &Self::Handle) -> Node;
     fn children(&self, handle: &Self::Handle, limit: usize) -> Vec<Self::Handle>;
 }
@@ -43,6 +46,8 @@ pub trait Provider {
 pub struct Snapshot<H> {
     pub id: u64,
     pub elements: Vec<Node>,
+    pub status: &'static str,
+    pub lookup: serde_json::Value,
     handles: Vec<H>,
 }
 impl<H> Default for Snapshot<H> {
@@ -50,6 +55,8 @@ impl<H> Default for Snapshot<H> {
         Self {
             id: 0,
             elements: vec![],
+            status: "missing_window",
+            lookup: serde_json::Value::Null,
             handles: vec![],
         }
     }
@@ -96,11 +103,17 @@ impl<H> Snapshot<H> {
         budget: Duration,
     ) {
         self.id = self.id.checked_add(1).expect("AX snapshot id exhausted");
+        self.lookup = serde_json::Value::Null;
         self.elements.clear();
         self.handles.clear();
-        let deadline = Instant::now() + budget;
+        self.status = if root.is_none() {
+            "missing_window"
+        } else {
+            "complete"
+        };
+        let deadline = provider.now() + budget;
         let mut pending: Vec<_> = root.into_iter().map(|h| (h, None, 0)).collect();
-        while self.elements.len() < cap && Instant::now() < deadline {
+        while self.elements.len() < cap && provider.now() < deadline {
             let Some((handle, parent, depth)) = pending.pop() else {
                 break;
             };
@@ -109,7 +122,7 @@ impl<H> Snapshot<H> {
             node.index = index;
             node.parent_index = parent;
             node.depth = depth;
-            if depth < 25 && Instant::now() < deadline {
+            if depth < 25 && provider.now() < deadline {
                 let remaining = cap.saturating_sub(index + 1 + pending.len());
                 pending.extend(
                     provider
@@ -119,9 +132,22 @@ impl<H> Snapshot<H> {
                         .rev()
                         .map(|h| (h, Some(index), depth + 1)),
                 );
+            } else {
+                self.status = if depth >= 25 {
+                    "depth_cap"
+                } else {
+                    "time_budget"
+                };
             }
             self.elements.push(node);
             self.handles.push(handle);
+        }
+        if self.elements.len() == cap {
+            self.status = "element_cap";
+        } else if !pending.is_empty() {
+            self.status = "time_budget";
+        } else if self.status == "complete" && self.elements.iter().any(|n| n.role.is_empty()) {
+            self.status = "ax_read_error";
         }
     }
 }
@@ -130,38 +156,110 @@ pub struct Native<'a>(pub &'a Window);
 impl Provider for Native<'_> {
     type Handle = Element;
     fn read(&self, e: &Element) -> Node {
-        let role = e.text("AXRole").unwrap_or_default();
-        let secure = secure_field(&role, e.text("AXSubrole").as_deref());
-        Node {
-            label: label(e.text("AXTitle"), e.text("AXDescription"), e.text("AXHelp")),
-            value: if secure {
-                String::new()
-            } else {
-                e.text("AXValue")
-                    .unwrap_or_default()
-                    .chars()
-                    .take(512)
-                    .collect()
-            },
-            actions: e.actions(),
-            frame: e
-                .frame()
-                .map(|[x, y, w, h]| [x - self.0.origin[0], y - self.0.origin[1], w, h]),
-            enabled: e.enabled(),
-            value_settable: e.settable("AXValue"),
-            role,
-            secure,
-            ..Node::default()
-        }
+        // Snapshot reads run off the input lock.
+        e.reading(|| {
+            let role = e.text("AXRole").unwrap_or_default();
+            let secure = secure_field(&role, e.text("AXSubrole").as_deref());
+            // Most nodes have a label before AXHelp/AXIdentifier; avoid extra RPCs.
+            let label = label(|attribute| e.text(attribute));
+            let actions = e.actions();
+            let value_settable = actions.is_empty() && e.settable("AXValue");
+            Node {
+                label,
+                value: if secure {
+                    String::new()
+                } else {
+                    e.text("AXValue")
+                        .unwrap_or_default()
+                        .chars()
+                        .take(512)
+                        .collect()
+                },
+                actions,
+                frame: e
+                    .frame()
+                    .map(|[x, y, w, h]| [x - self.0.origin[0], y - self.0.origin[1], w, h]),
+                enabled: e.enabled(),
+                value_settable,
+                role,
+                secure,
+                ..Node::default()
+            }
+        })
     }
+
     fn children(&self, e: &Element, limit: usize) -> Vec<Element> {
-        e.children("AXChildren", limit)
+        e.reading(|| e.children("AXChildren", limit))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn calculator_reads_survive_latency_and_refresh_after_every_action() {
+        struct Calculator {
+            buttons: Vec<serde_json::Value>,
+            clock: std::cell::Cell<Instant>,
+        }
+        impl Provider for Calculator {
+            type Handle = usize;
+            fn now(&self) -> Instant {
+                self.clock.get()
+            }
+            fn read(&self, handle: &usize) -> Node {
+                // A responsive app can still need >250 ms for a sequence of AX RPCs.
+                self.clock.set(self.now() + Duration::from_millis(60));
+                if *handle == 0 {
+                    return Node {
+                        role: "AXWindow".into(),
+                        ..Node::default()
+                    };
+                }
+                let row = &self.buttons[handle - 1];
+                Node {
+                    role: row["AXRole"].as_str().unwrap().into(),
+                    label: label(|name| row[name].as_str().map(str::to_owned)),
+                    actions: serde_json::from_value(row["actions"].clone()).unwrap(),
+                    frame: serde_json::from_value(row["frame"].clone()).unwrap(),
+                    enabled: true,
+                    ..Node::default()
+                }
+            }
+            fn children(&self, handle: &usize, limit: usize) -> Vec<usize> {
+                if *handle == 0 {
+                    (1..=self.buttons.len()).take(limit).collect()
+                } else {
+                    vec![]
+                }
+            }
+        }
+        let provider = Calculator {
+            buttons: serde_json::from_str(include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../engines/computer/tests/calculator.json"
+            )))
+            .unwrap(),
+            clock: std::cell::Cell::new(Instant::now()),
+        };
+        let mut snapshot = Snapshot::default();
+        snapshot.replace(&provider, Some(0), MAX_ELEMENTS, Duration::from_millis(250));
+        assert_eq!(snapshot.status, "time_budget");
+        assert!(!snapshot.elements.iter().any(|n| n.label == "All Clear"));
+        for expected in ["All Clear", "1", "2", "Multiply", "7", "Equals"] {
+            let old = snapshot.id;
+            snapshot.replace(&provider, Some(0), MAX_ELEMENTS, SNAPSHOT_BUDGET);
+            assert_eq!(snapshot.status, "complete");
+            assert_eq!(snapshot.elements.len(), 7);
+            let selected = snapshot
+                .elements
+                .iter()
+                .find(|n| n.label == expected)
+                .unwrap();
+            assert!(snapshot.resolve(snapshot.id, selected.index).is_ok());
+            assert!(snapshot.resolve(old, selected.index).is_err());
+        }
+    }
     struct Fake(Duration);
     impl Provider for Fake {
         type Handle = usize;
@@ -196,19 +294,23 @@ mod tests {
     }
     #[test]
     fn label_precedence() {
-        assert_eq!(
-            label(
-                Some("title".into()),
-                Some("description".into()),
-                Some("help".into())
-            ),
-            "title"
-        );
-        assert_eq!(
-            label(Some(" ".into()), Some("2".into()), Some("help".into())),
-            "2"
-        );
-        assert_eq!(label(None, Some("".into()), Some("help".into())), "help");
+        for (values, expected) in [
+            (["title", "description", "help", "id"], "title"),
+            ([" ", "2", "help", "id"], "2"),
+            (["", "", "help", "id"], "help"),
+            (["", "", "", "id"], "id"),
+        ] {
+            let mut reads = 0;
+            assert_eq!(
+                label(|_| {
+                    let value = values[reads];
+                    reads += 1;
+                    Some(value.into())
+                }),
+                expected
+            );
+            assert!(reads <= 4);
+        }
     }
 
     #[test]

@@ -82,6 +82,7 @@ pub struct Session {
     pub guard: focus_guard::Guard,
     pub overlay: overlay::Overlay,
     pub path: Mutex<Option<&'static str>>,
+    pub fallback_reason: Mutex<Option<String>>,
     ax_fallback: AtomicBool,
     snapshot: Mutex<ax_tree::Snapshot<ax_actions::Element>>,
     selected: Mutex<Option<(u64, usize)>>,
@@ -136,6 +137,7 @@ impl Session {
             guard: focus_guard::Guard::new(pid, previous),
             overlay: overlay::Overlay::new(app, cursor),
             path: Mutex::new(None),
+            fallback_reason: Mutex::new(None),
             ax_fallback: AtomicBool::new(false),
             snapshot: Mutex::new(ax_tree::Snapshot::default()),
             selected: Mutex::new(None),
@@ -197,16 +199,18 @@ impl Session {
         self.check()?;
         let (frame, window) = capture::capture(self.pid)?;
         self.ax_fallback.store(false, Ordering::SeqCst);
+        *self.fallback_reason.lock().unwrap() = None;
         *self.observed.lock().unwrap() = Some(Sha256::digest(frame.png.as_bytes()).into());
         *self.selected.lock().unwrap() = None;
-        let started = std::time::Instant::now();
-        let root = ax_actions::window_element(self.pid, window.id);
-        self.snapshot.lock().unwrap().replace(
+        let (root, lookup) = ax_actions::window_element(self.pid, window.id);
+        let mut snapshot = self.snapshot.lock().unwrap();
+        snapshot.replace(
             &ax_tree::Native(&window),
             root,
             ax_tree::MAX_ELEMENTS,
-            std::time::Duration::from_millis(250).saturating_sub(started.elapsed()),
+            ax_tree::SNAPSHOT_BUDGET,
         );
+        snapshot.lookup = lookup;
         *self.window.lock().unwrap() = Some(window);
         Ok(frame)
     }
@@ -224,7 +228,7 @@ impl Session {
     pub fn snapshot_json(&self) -> serde_json::Value {
         let snapshot = self.snapshot.lock().unwrap();
         let size = self.window.lock().unwrap().as_ref().map(|w| w.size);
-        serde_json::json!({"snapshot_id":snapshot.id,"elements":snapshot.elements,"size":size})
+        serde_json::json!({"snapshot_id":snapshot.id,"elements":snapshot.elements,"size":size,"status":snapshot.status,"window_lookup":snapshot.lookup})
     }
     pub fn select_element(
         &self,
@@ -292,6 +296,8 @@ impl Session {
         let window = self.window()?;
         self.guard.arm();
         let selected = *self.selected.lock().unwrap();
+        let mut reason = self.fallback_reason.lock().unwrap();
+        *reason = None;
         let handled = if let Some((id, index)) = selected {
             let snapshot = self.snapshot.lock().unwrap();
             let (_, element) = snapshot.resolve(id, index)?;
@@ -317,6 +323,7 @@ impl Session {
                             clicks: 1,
                             hold_keys: vec![],
                         },
+                        &mut reason,
                     )?
                 } else {
                     false
@@ -326,20 +333,30 @@ impl Session {
                     ax_actions::focused_insertion(self.pid, window.id, element, action)
                 {
                     if let Action::Type { text, .. } = action {
-                        focused.set_text("AXSelectedText", text)?
+                        focused.set_text("AXSelectedText", text, &mut reason)?
                     } else {
                         false
                     }
                 } else {
-                    ax_actions::element_action(element, action)?
+                    ax_actions::element_action(element, action, &mut reason)?
                 }
             }
         } else {
             ax_actions::try_action(self.pid, window.id, action)?
         };
         self.ax_fallback.store(!handled, Ordering::SeqCst);
+        if !handled && reason.is_none() {
+            *reason = Some(
+                if selected.is_some() {
+                    "ax_element_action_unavailable"
+                } else {
+                    "ax_hit_test_unavailable_or_rejected"
+                }
+                .into(),
+            );
+        }
         if handled {
-            *self.path.lock().unwrap() = Some("ax-element");
+            *self.path.lock().unwrap() = Some(ax_path(selected.is_some()));
             if let Some(point) = action_point(action) {
                 self.overlay
                     .move_to(point, matches!(action, Action::Click { .. }));
@@ -359,6 +376,10 @@ impl Session {
             .is_some_and(|w| ax_actions::focused_window(self.pid) == Some(w.id))
     }
     pub fn prepare_events(&self, action: &Action) -> bool {
+        self.fallback_reason
+            .lock()
+            .unwrap()
+            .get_or_insert_with(|| "action_requires_pixel_events".into());
         // A fresh AX failure still gets its one requested event attempt, even
         // when the previous step left the screenshot unchanged.
         if self.repeated_without_change(action) && !self.ax_fallback.load(Ordering::SeqCst) {
@@ -443,6 +464,14 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+fn ax_path(selected: bool) -> &'static str {
+    if selected {
+        "ax-element"
+    } else {
+        "ax-hit-test"
     }
 }
 

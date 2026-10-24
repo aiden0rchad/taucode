@@ -11,6 +11,18 @@ vi.mock("@services/tauri", () => ({ computerRequest: vi.fn(), computerRequestPer
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const step = { step: 1, thumbnail: "aGVsbG8=", action: { kind: "click" }, reflection: "Found button" };
 describe("computer use", () => {
+  it("shows grounding decisions independently of the input route", () => {
+    render(<ComputerRunItem run={{ running: false, paused: false, steps: [{ ...step,
+      path: "pixel-skylight", action: { kind: "click", element_index: 0, snapshot_id: 3 },
+      executionFallbackReason: "ax_element_action_unavailable_or_rejected",
+      grounding: [{ mode: "elements", usable_elements: 6, snapshot_id: 3, model_result: "index", raw_reply: "0", element_index: 0 }],
+    }] }} />);
+    expect(screen.getByText("Grounding decisions")).toBeTruthy();
+    expect(screen.getByText("Input: pixel-skylight")).toBeTruthy();
+    expect(screen.getByText(/Pixel fallback: ax_element_action_unavailable_or_rejected/)).toBeTruthy();
+    expect(screen.getByText(/"usable_elements": 6/)).toBeTruthy();
+    expect(screen.getByText(/"kind": "click"/).textContent).toContain('"element_index": 0');
+  });
   it("defaults to background and persists explicit fallback and cursor settings", async () => {
     vi.mocked(computerRequest).mockResolvedValue({ steps: [] });
     const save = vi.fn().mockResolvedValue(undefined);

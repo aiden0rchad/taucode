@@ -474,6 +474,9 @@ impl runner::Environment for Live {
     fn verify_target(&self) -> Result<(), String> {
         self.session.as_ref().map_or(Ok(()), |s| s.verify_element())
     }
+    fn grounding_diagnostics(&self) -> Vec<Value> {
+        self.sidecar.grounding.clone()
+    }
     fn planner_error(&self, error: String) -> String {
         self.sidecar.with_log(error)
     }
@@ -664,11 +667,13 @@ impl runner::Environment for Live {
     fn progress(&mut self, mut step: Value) -> Result<(), String> {
         if let Some(s) = &self.session {
             step["path"] = json!(*s.path.lock().unwrap());
+            step["executionFallbackReason"] = json!(*s.fallback_reason.lock().unwrap());
             step["window"] = json!(*s.window.lock().unwrap());
             step["focusRestorations"] = json!(*s.guard.restorations.lock().unwrap());
         } else {
             step["path"] = json!("foreground");
         }
+        self.sidecar.log_execution(&step);
         self.computer.state.send_modify(|s| {
             let steps = s["steps"].as_array_mut().unwrap();
             if let Some(previous) = steps

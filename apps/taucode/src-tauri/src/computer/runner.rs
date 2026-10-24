@@ -25,6 +25,9 @@ pub trait Environment {
         frame: &'a Frame,
     ) -> BoxFuture<'a, Result<Prediction, String>>;
     fn context(&self) -> Result<Context, String>;
+    fn grounding_diagnostics(&self) -> Vec<Value> {
+        vec![]
+    }
     fn ground_target(
         &self,
         prediction: &Prediction,
@@ -326,10 +329,12 @@ pub async fn run(
                     entry["predictMs"] = json!(phase_start.elapsed().as_millis() as u64);
                     entry["action"] = json!({"kind":"fail","reason":error});
                     entry["error"] = json!(error);
+                    entry["grounding"] = json!(env.grounding_diagnostics());
                     env.progress(entry)?;
                     return Err(error);
                 }
             };
+            pending.as_mut().unwrap()["grounding"] = json!(prediction.grounding);
             let predict_ms = phase_start.elapsed().as_millis() as u64;
             let mut action = prediction
                 .validated(frame.display)
@@ -343,7 +348,7 @@ pub async fn run(
             .trim()
             .to_owned();
             pending = Some(
-                json!({"step":step+1,"thumbnail":frame.thumbnail,"action":action,"target":description,"reflection":prediction.reflection,"planText":prediction.plan_text,"predictMs":predict_ms,"executeMs":0,"waitMs":0}),
+                json!({"step":step+1,"thumbnail":frame.thumbnail,"action":action,"target":description,"reflection":prediction.reflection,"planText":prediction.plan_text,"grounding":prediction.grounding,"predictMs":predict_ms,"executeMs":0,"waitMs":0}),
             );
             if let Some((id, index)) = prediction.element_target()? {
                 pending.as_mut().unwrap()["action"]["snapshot_id"] = json!(id);
