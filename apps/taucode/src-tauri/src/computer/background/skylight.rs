@@ -316,19 +316,6 @@ pub fn key_focus_pid() -> Option<pid_t> {
     Some(pid)
 }
 
-/// Steal key focus for this process's own connection and return the theft id.
-///
-/// WindowServer numbers thefts from one session-wide counter, so the id tells
-/// the caller which id the next theft will get. AppKit uses the same call,
-/// with the same options, when it opens a menu in an app that is not active.
-pub fn steal_key_focus() -> Option<i32> {
-    let steal = steal_key_focus_fn()?;
-    let cid = main_connection_id()?;
-    let mut id = 0i32;
-    let err = unsafe { steal(cid, 0xC80, &mut id) };
-    (err == 0 && id != 0).then_some(id)
-}
-
 /// Release a key-focus theft by id, whichever connection made it.
 /// Returns the CGError (0 on success; 1010 when no such theft is live).
 pub fn release_key_focus(theft_id: i32) -> i32 {
@@ -421,7 +408,40 @@ pub fn get_process_psn_for_window(window_id: u32, pid: libc::pid_t, out_psn: &mu
 }
 
 pub fn key_window_of_pid(pid: i32) -> Option<u32> {
-    super::ax_actions::focused_window(pid).or_else(|| super::windows::order(pid).first().copied())
+    super::ax_actions::focused_window(pid)
+        .or_else(|| super::windows::order(pid).first().copied())
+        .or_else(|| {
+            (pid == std::process::id() as i32)
+                .then(super::focus_guard::host_key_window)
+                .flatten()
+        })
+}
+
+// Reference set_front_process_persistently: restore only the prior process/window,
+// with kCPSNoWindows (0x400) to avoid changing window order.
+pub fn restore_activation(previous: i32, window: Option<u32>, from: i32) -> bool {
+    type SetFrontProcessFn = unsafe extern "C" fn(*const c_void, u32, u32) -> i32;
+    static SET_FRONT: OnceLock<Option<SetFrontProcessFn>> = OnceLock::new();
+    let set_front = *SET_FRONT.get_or_init(|| {
+        find_sym(b"_SLPSSetFrontProcessWithOptions\0")
+            .or_else(|| find_sym(b"SLPSSetFrontProcessWithOptions\0"))
+            .map(|p| unsafe { as_fn(p) })
+    });
+    let window = window.or_else(|| key_window_of_pid(previous));
+    if let (Some(set_front), Some(window)) = (set_front, window) {
+        let mut psn = [0u8; 8];
+        if !get_process_psn_for_window(window, previous, &mut psn) {
+            return false;
+        }
+        unsafe { set_front(psn.as_ptr().cast(), window, 0x400) == 0 }
+    } else {
+        restore_focus_after_without_raise(
+            previous,
+            window,
+            from,
+            key_window_of_pid(from).unwrap_or(0),
+        )
+    }
 }
 
 // Port of restore_focus_after_without_raise: target defocus precedes user focus.

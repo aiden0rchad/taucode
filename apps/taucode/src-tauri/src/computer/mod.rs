@@ -726,7 +726,7 @@ impl runner::Environment for Live {
             step["menuTitle"] = json!(*s.menu_title.lock().unwrap());
             step["menuResolution"] = json!(*s.menu_resolution.lock().unwrap());
             step["window"] = json!(*s.window.lock().unwrap());
-            step["focusRestorations"] = json!(*s.guard.restorations.lock().unwrap());
+            step["focusRestorations"] = json!(s.guard.drain_restorations());
         } else {
             step["path"] = json!("foreground");
         }
