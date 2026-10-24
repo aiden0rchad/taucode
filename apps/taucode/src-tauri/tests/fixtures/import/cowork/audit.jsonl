@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"Write a clock report"}}
+{"type":"future-event","payload":{"detail":"Keep this unknown kind","accountId":"private-account"}}
+unknown synthetic event
+{"type":"assistant","message":{"role":"assistant","content":"Report completed"}}

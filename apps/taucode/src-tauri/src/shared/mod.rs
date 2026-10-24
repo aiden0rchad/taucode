@@ -19,6 +19,7 @@ pub(crate) mod worktree_core;
 
 pub(crate) mod engines;
 pub(crate) mod engine_runtime;
+pub(crate) mod acp;
 
 #[path = "../browser/mod.rs"]
 pub(crate) mod browser;
@@ -26,6 +27,14 @@ pub(crate) mod browser;
 pub(crate) mod computer;
 pub(crate) mod connectors;
 pub(crate) mod pi;
+pub(crate) mod sidechats;
+pub(crate) mod chats;
+#[path = "../import/mod.rs"]
+pub(crate) mod imports;
 
 #[cfg(unix)]
 pub(crate) mod local_socket;
+
+pub(crate) mod checkpoints;
+
+pub(crate) mod work;

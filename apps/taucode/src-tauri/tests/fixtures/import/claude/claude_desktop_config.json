@@ -1,0 +1,1 @@
+{"mcpServers":{"docs":{"command":"fixture-docs","args":["serve"],"env":{"TOKEN":"never-copy-claude-secret","USER":"never-copy-username"}},"mcp-oauth-hidden":{"command":"do-not-import"}}}

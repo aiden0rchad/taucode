@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { parseModelListResponse } from "./modelListResponse";
+import { modelsForThread, parseModelListResponse } from "./modelListResponse";
+
+it("limits Claude thread models to its registry provider", () => {
+  const models = parseModelListResponse({ result: { data: [
+    { id: "a/one", model: "a/one", providerId: "a", engines: ["pi", "claude"] },
+    { id: "b/two", model: "b/two", providerId: "b", engines: ["pi", "claude"] },
+    { id: "a/three", model: "a/three", providerId: "a", engines: ["codex"] },
+  ] } });
+  const thread = { id: "thread", name: "Thread", updatedAt: 1, engine: "claude" as const, modelProvider: "a" };
+  expect(modelsForThread(models, thread).map(m => m.id)).toEqual(["a/one"]);
+  expect(modelsForThread(models, { ...thread, engine: "pi" })).toBe(models);
+  expect(modelsForThread(models, undefined)).toBe(models);
+});
 
 describe("parseModelListResponse", () => {
   it("uses displayName when present", () => {

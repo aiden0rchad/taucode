@@ -15,7 +15,9 @@ export function modelRef(key: string): ModelRef | null {
   return slash < 0 ? null : { providerId: key.slice(0, slash), modelId: key.slice(slash + 1) };
 }
 export function providerEngines(p: ProviderEntry) {
-  return p.kind === "openai" || p.kind === "openrouter" || p.kind === "ollama" || (p.kind === "openai-compatible" && p.apiStyle === "responses") ? ["pi", "codex"] : ["pi"];
+  const engines = p.kind === "openai" || p.kind === "openrouter" || p.kind === "ollama" || (p.kind === "openai-compatible" && p.apiStyle === "responses") ? ["pi", "codex"] : ["pi"];
+  if (p.kind === "anthropic" || p.anthropicCompatible) engines.push("claude");
+  return engines;
 }
 export function policyError(p: AgentPolicy, providers: ProviderEntry[]): string | null {
   const s = p.subagents;

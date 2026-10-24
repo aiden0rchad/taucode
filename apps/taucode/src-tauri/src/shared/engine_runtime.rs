@@ -16,8 +16,8 @@ pub(crate) static RESOURCES: OnceLock<PathBuf> = OnceLock::new();
 
 fn manifest(engine: &str) -> Result<&'static str, String> {
     match engine {
-        "pi" | "browser" => Ok("package-lock.json"),
-        "computer" => Ok("uv.lock"),
+        "pi" | "browser" | "claude-acp" => Ok("package-lock.json"),
+        "computer" | "work" => Ok("uv.lock"),
         _ => Err("Unknown engine runtime".into()),
     }
 }
@@ -59,6 +59,7 @@ fn executable(engine: &str) -> &'static str {
     match engine {
         "pi" => "node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js",
         "browser" => "node_modules/@playwright/mcp/cli.js",
+        "claude-acp" => "node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js",
         _ if cfg!(windows) => ".venv/Scripts/python.exe",
         _ => ".venv/bin/python",
     }
@@ -75,12 +76,19 @@ fn status_file(data: &Path, engine: &str, state: &str, message: &str) -> Result<
     .map_err(|e| e.to_string())
 }
 
-pub(crate) fn status(data: &Path) -> Value {
-    json!(["pi", "browser", "computer"].map(|engine| {
+pub(crate) async fn status(data: &Path) -> Value {
+    let mut status = json!(["pi", "browser", "computer", "claude-acp", "work"].map(|engine| {
         fs::read(data.join("engines").join(format!("{engine}-setup.json"))).ok()
             .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
             .unwrap_or_else(|| json!({"engine":engine,"state":"pending","message":"Ready to set up on first use"}))
-    }))
+    }));
+    if let Err(error) = check_node(&std::env::var_os("TAUCODE_NODE").unwrap_or_else(|| "node".into())).await {
+        if let Some(claude) = status.as_array_mut().and_then(|r| r.iter_mut().find(|r| r["engine"] == "claude-acp")) {
+            claude["state"] = json!("error");
+            claude["message"] = json!(error);
+        }
+    }
+    status
 }
 
 fn supported_node(version: &str) -> bool {
@@ -105,7 +113,7 @@ pub(crate) async fn check_node(node: &std::ffi::OsStr) -> Result<(), String> {
     .map_err(|_| "Node version check timed out")?
     .map_err(|_| "Install system Node >=22.19 (and npm), or set TAUCODE_NODE to its executable")?;
     if !output.status.success() || !supported_node(&String::from_utf8_lossy(&output.stdout)) {
-        return Err("Install system Node >=22.19 (and npm) to run pi and browser tools".into());
+        return Err("Install system Node >=22.19 (and npm) to run pi, Claude Code, and browser tools".into());
     }
     Ok(())
 }
@@ -141,14 +149,14 @@ pub(crate) async fn prepare(
         let locked = fs::read(src.join(lock_name)).map_err(|e| e.to_string())?;
         let installed = fs::read(dir.join(".installed-lock")).ok();
         copy_tree(&src, &dir).map_err(|e| e.to_string())?;
-        if engine != "computer" {
+        if !matches!(engine, "computer" | "work") {
             check_node(&std::env::var_os("TAUCODE_NODE").unwrap_or_else(|| "node".into())).await?;
         }
         if installed.as_ref() != Some(&locked) || !dir.join(executable(engine)).is_file() {
             if dir.join(".installed-lock").exists() {
                 fs::remove_file(dir.join(".installed-lock")).map_err(|e| e.to_string())?;
             }
-            let mut command = if engine == "computer" {
+            let mut command = if matches!(engine, "computer" | "work") {
                 status_file(data, engine, "installing", "Installing Python 3.12 dependencies with uv…")?;
                 let mut cmd = Command::new("uv");
                 cmd.args(["sync", "--frozen", "--no-dev", "--python", "3.12"]);
@@ -160,9 +168,9 @@ pub(crate) async fn prepare(
                 cmd
             };
             let output = command.current_dir(&dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true).status().await
-                .map_err(|_| if engine == "computer" { "Install uv to prepare Computer Use" } else { "Install system Node >=22.19 and npm to prepare this runtime" })?;
+                .map_err(|_| if matches!(engine, "computer" | "work") { "Install uv to prepare Computer Use" } else { "Install system Node >=22.19 and npm to prepare this runtime" })?;
             if !output.success() || !dir.join(executable(engine)).is_file() {
-                return Err(format!("{engine} runtime installation failed. Check {} and network access, then retry setup in Settings.", if engine == "computer" { "uv" } else { "Node >=22.19 and npm" }));
+                return Err(format!("{engine} runtime installation failed. Check {} and network access, then retry setup in Settings.", if matches!(engine, "computer" | "work") { "uv" } else { "Node >=22.19 and npm" }));
             }
             fs::write(dir.join(".installed-lock"), locked).map_err(|e| e.to_string())?;
         }
@@ -264,7 +272,7 @@ mod tests {
     #[test]
     fn resolves_packaged_daemon_and_debug_paths_without_release_fallback() {
         let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
-        for engine in ["pi", "browser", "computer"] {
+        for engine in ["pi", "browser", "computer", "claude-acp", "work"] {
             for dir in [
                 root.join("resources/engines"),
                 root.join("bin/engines"),
@@ -336,7 +344,7 @@ mod tests {
         );
         assert!(!installed.join(".venv/skip").exists());
         assert!(!installed.join("taucode_cua/__pycache__").exists());
-        assert_eq!(status(&data)[2]["state"], "ready");
+        assert_eq!(status(&data).await[2]["state"], "ready");
         fs::remove_dir_all(root).unwrap();
     }
 }

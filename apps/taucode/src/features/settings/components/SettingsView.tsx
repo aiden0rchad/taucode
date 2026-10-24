@@ -1,5 +1,6 @@
 import { SettingsProvidersSection, SettingsAgentPolicySection, ProjectAgentPolicy } from "./sections/SettingsRegistrySections";
 import { SettingsConnectorsSection } from "./sections/SettingsConnectorsSection";
+import { SettingsImportSection } from "./sections/SettingsImportSection";
 import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left";
 import X from "lucide-react/dist/esm/icons/x";
 import type {
@@ -201,6 +202,7 @@ export function SettingsView({
             <div className="settings-content">
               {["agents", "browser", "computer"].includes(activeSection) && <SettingsRuntimeSetup />}
               {activeSection === "computer" ? <SettingsComputerSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> : activeSection === "browser" ? <SettingsBrowserSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
+               activeSection === "import" ? <SettingsImportSection /> :
                activeSection === "providers" ? <SettingsProvidersSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
                activeSection === "connectors" ? <SettingsConnectorsSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} workspace={activeWorkspace} onUpdateWorkspaceSettings={onUpdateWorkspaceSettings} /> :
                activeSection === "agents" ? <SettingsAgentPolicySection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} workspace={activeWorkspace} /> :

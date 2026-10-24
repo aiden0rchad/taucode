@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import * as Sentry from "@sentry/react";
+import { subscribeImportsChanged } from "@services/events";
 import type {
   CollabAgentRef,
   CustomPromptOption,
@@ -416,7 +417,7 @@ export function useThreads({
         return;
       }
       updateThreadParent(parentThreadId, [threadId]);
-      onSubagentThreadDetected(workspaceId, threadId);
+      if (!thread.sideOf) onSubagentThreadDetected(workspaceId, threadId);
     },
     [onSubagentThreadDetected, threadHandlers, updateThreadParent],
   );
@@ -550,6 +551,10 @@ export function useThreads({
     onSubagentThreadDetected,
     onThreadCodexMetadataDetected,
   });
+
+  useEffect(() => subscribeImportsChanged(() => {
+    if (activeWorkspace?.connected) void listThreadsForWorkspace(activeWorkspace);
+  }), [activeWorkspace, listThreadsForWorkspace]);
 
   const ensureWorkspaceRuntimeCodexArgsBestEffort = useCallback(
     async (workspaceId: string, threadId: string | null, phase: string) => {
@@ -690,6 +695,7 @@ export function useThreads({
 
   const {
     interruptTurn,
+    interruptThread,
     sendUserMessage,
     sendUserMessageToThread,
     startFork,
@@ -828,6 +834,7 @@ export function useThreads({
     setActiveThreadId,
     hasLocalThreadSnapshot,
     activeItems,
+    itemsByThread: state.itemsByThread,
     approvals: state.approvals,
     userInputRequests: state.userInputRequests,
     threadsByWorkspace: state.threadsByWorkspace,
@@ -845,6 +852,7 @@ export function useThreads({
     lastAgentMessageByThread: state.lastAgentMessageByThread,
     pinnedThreadsVersion,
     interruptTurn,
+    interruptThread,
     removeThread,
     pinThread,
     unpinThread,

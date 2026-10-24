@@ -10,6 +10,11 @@ use tokio::sync::{broadcast, Mutex};
 
 /// Engine adapters exchange canonical app-server envelopes. History is paged
 /// through thread/turns/list; server requests retain their original IDs.
+/// Capability matrix (frontend: threads/utils/engineCapabilities.ts):
+/// Engine | fork latest | fork item | conversation rewind | side chats | tree | checkpoints | steer | compact
+/// Pi     | yes         | yes       | yes                 | yes        | yes  | yes         | yes   | yes
+/// Codex  | yes         | no        | rollback probe      | latest     | yes  | yes         | yes   | yes
+/// Claude | advertised  | no        | no (latest fork only)| advertised | Task | yes         | advertised | no
 #[allow(dead_code)]
 pub(crate) trait EngineBackend: Send + Sync {
     fn list_models<'a>(
@@ -139,6 +144,7 @@ impl EngineBackend for CodexEngine {
 }
 pub(crate) use super::pi::PiEngine;
 pub(crate) struct WorkspaceSession {
+    pub checkpoints: Option<Arc<super::checkpoints::Checkpoints>>,
     pub codex: Mutex<Option<Arc<CodexEngine>>>,
     configuration: Mutex<Option<String>>,
     reload_threads: Mutex<HashSet<String>>,
@@ -150,6 +156,7 @@ pub(crate) struct WorkspaceSession {
     pub codex_args: Option<String>,
     pub owner_workspace_id: String,
     pub pi: PiEngine,
+    pub claude: super::acp::ClaudeAcpEngine,
     pub owners: Mutex<HashMap<String, EngineKind>>,
     pub thread_providers: Mutex<HashMap<String, String>>,
     pub providers: Vec<ProviderEntry>,
@@ -178,7 +185,9 @@ impl WorkspaceSession {
             configuration: Mutex::new(None),
             reload_threads: Mutex::new(HashSet::new()),
             factory: None,
+            checkpoints: None,
             pi: PiEngine::default(),
+            claude: super::acp::ClaudeAcpEngine::default(),
             owners: Mutex::new(HashMap::new()),
             thread_providers: Mutex::new(HashMap::new()),
             providers,
@@ -202,10 +211,12 @@ impl WorkspaceSession {
             #[cfg(test)]
             test_backend: None,
             factory: Some(factory),
+            checkpoints: None,
             codegraph,
             codex_args,
             owner_workspace_id,
             pi: PiEngine::default(),
+            claude: super::acp::ClaudeAcpEngine::default(),
             owners: Mutex::new(HashMap::new()),
             thread_providers: Mutex::new(HashMap::new()),
             providers,
@@ -240,6 +251,7 @@ impl WorkspaceSession {
         // Reload child environment on the next request, after active turns finish.
         *self.configuration.lock().await = Some(String::new());
         self.pi.credentials_changed().await;
+        self.claude.credentials_changed().await;
     }
     async fn backend(&self, refresh: bool) -> Result<Arc<CodexEngine>, String> {
         let mut backend = self.codex.lock().await;
@@ -287,10 +299,13 @@ impl WorkspaceSession {
             let _ = c.shutdown().await;
         }
         let _ = self.pi.shutdown().await;
+        let _ = self.claude.shutdown().await;
     }
     pub async fn register_workspace_with_path(&self, id: &str, path: Option<&str>) {
         if let Some(path) = path {
+            if let Some(checkpoints) = &self.checkpoints { checkpoints.register(id, path); }
             self.pi.paths.lock().await.insert(id.into(), path.into());
+            self.claude.paths.lock().await.insert(id.into(), path.into());
         }
         if let Some(c) = self.codex.lock().await.as_ref() {
             c.register_workspace_with_path(id, path).await;
@@ -301,7 +316,21 @@ impl WorkspaceSession {
             c.unregister_workspace(id).await;
         }
     }
-    pub async fn send_request_for_workspace(
+    pub async fn send_request_for_workspace(&self, workspace: &str, method: &str, params: Value) -> Result<Value, String> {
+        let thread = params["threadId"].as_str().unwrap_or("").to_owned();
+        if method == "turn/start" {
+            if let Some(checkpoints) = &self.checkpoints {
+                let engine = if self.claude.owns(workspace, &thread).await { "claude" } else if self.pi.owns(workspace, &thread).await { "pi" } else { "codex" };
+                checkpoints.before(workspace, &thread, engine, &params).await?;
+            }
+        }
+        let result = self.request_inner(workspace, method, params).await;
+        if method == "turn/start" && (result.is_err() || result.as_ref().is_ok_and(|r| r.get("error").is_some())) {
+            if let Some(checkpoints) = &self.checkpoints { checkpoints.complete(workspace, &thread); }
+        }
+        result
+    }
+    async fn request_inner(
         &self,
         workspace: &str,
         method: &str,
@@ -311,7 +340,17 @@ impl WorkspaceSession {
         self.pi
             .configure(workspace, providers.clone(), policy.clone())
             .await;
+        self.claude.configure(workspace, providers.clone(), policy.clone()).await;
+        if method == "thread/sidechat" {
+            return super::sidechats::create(self, workspace, params).await;
+        }
+        let claude_thread = if let Some(id) = params["threadId"].as_str() {
+            self.claude.owns(workspace, id).await
+        } else { false };
         if method == "model/list" {
+            if claude_thread || params["engine"] == "claude" {
+                return self.claude.request(workspace, method, params).await;
+            }
             return Ok(providers::catalog(&providers));
         }
         let thread_id = params
@@ -336,7 +375,9 @@ impl WorkspaceSession {
             thread_id
                 .as_ref()
                 .and_then(|id| owners.get(id).copied())
-                .unwrap_or(if pi_thread {
+                .unwrap_or(if claude_thread {
+                    EngineKind::Claude
+                } else if pi_thread {
                     EngineKind::Pi
                 } else {
                     EngineKind::Codex
@@ -346,8 +387,17 @@ impl WorkspaceSession {
         if let Some(obj) = params.as_object_mut() {
             obj.remove("engine");
         }
+        if engine == EngineKind::Claude && method != "thread/list" {
+            let mut response = self.claude.request(workspace, method, params).await?;
+            if matches!(method, "thread/read" | "thread/resume" | "thread/fork" | "thread/start") { super::sidechats::enrich(self, workspace, &mut response)?; }
+            if let Some(id) = response.pointer("/result/thread/id").and_then(Value::as_str) {
+                self.owners.lock().await.insert(id.into(), EngineKind::Claude);
+            }
+            return Ok(response);
+        }
         if engine == EngineKind::Pi {
-            let response = self.pi.request(workspace, method, params).await?;
+            let mut response = self.pi.request(workspace, method, params).await?;
+            if matches!(method, "thread/list" | "thread/read" | "thread/resume" | "thread/fork" | "thread/start") { super::sidechats::enrich(self, workspace, &mut response)?; }
             if let Some(id) = response
                 .pointer("/result/thread/id")
                 .and_then(Value::as_str)
@@ -356,9 +406,42 @@ impl WorkspaceSession {
             }
             return Ok(response);
         }
-        // Codex access is sent with the next turn, as before. Pi re-reads it live.
-        if method == "thread/accessMode/set" {
-            return Ok(json!({"result":{}}));
+        if matches!(method, "turn/start" | "thread/accessMode/set") {
+            let id = thread_id.as_deref().ok_or("Missing thread ID")?;
+            let path = self.pi.data.as_ref().map(|_| super::sidechats::metadata_path(self, workspace, id)).transpose()?;
+            let mut metadata = match &path {
+                Some(path) => crate::storage::read_thread_metadata(path)?,
+                None => json!({}),
+            };
+            if !metadata.is_object() { return Err("Invalid thread metadata".into()); }
+            if params.get("accessMode").is_some_and(|v| !v.is_string())
+                || method == "thread/accessMode/set" && params.get("accessMode").is_none()
+            { return Err("Invalid access mode".into()); }
+            let requested = params["accessMode"].as_str().or_else(|| match params["sandboxPolicy"]["type"].as_str() {
+                Some("readOnly") => Some("read-only"),
+                Some("workspaceWrite") => Some("ask"),
+                Some("dangerFullAccess") => Some("full-access"),
+                _ => None,
+            }).unwrap_or("current");
+            let mode = if requested == "current" {
+                metadata.get("accessMode").map(|v| v.as_str().ok_or("Invalid saved access mode")).transpose()?
+                    .unwrap_or(if metadata.get("sideOf").is_some() { "read-only" } else { "ask" })
+            } else { requested }.to_owned();
+            if !matches!(mode.as_str(), "read-only" | "ask" | "full-access") {
+                return Err("Invalid access mode".into());
+            }
+            metadata["accessMode"] = json!(mode);
+            if let Some(path) = path { crate::storage::write_thread_metadata(&path, &metadata)?; }
+            else if method == "thread/accessMode/set" { return Err("Thread metadata storage unavailable".into()); }
+            if method == "thread/accessMode/set" { return Ok(json!({"result":{}})); }
+            params.as_object_mut().unwrap().remove("accessMode");
+            params["approvalPolicy"] = json!(if mode == "ask" { "on-request" } else { "never" });
+            params["sandboxPolicy"] = match mode.as_str() {
+                "read-only" => json!({"type":"readOnly"}),
+                "full-access" => json!({"type":"dangerFullAccess"}),
+                _ if params["sandboxPolicy"]["type"] == "workspaceWrite" => params["sandboxPolicy"].clone(),
+                _ => json!({"type":"workspaceWrite","writableRoots":params["cwd"].as_str().into_iter().collect::<Vec<_>>(),"networkAccess":true}),
+            };
         }
         if method == "turn/start" && params.get("model").and_then(Value::as_str).is_none() {
             let id = thread_id.as_deref().ok_or("Missing thread ID")?;
@@ -448,11 +531,40 @@ impl WorkspaceSession {
             })
             && self.codex.lock().await.is_none()
         {
-            return self.pi.request(workspace, method, params).await;
+            let mut response = self.pi.request(workspace, method, params).await?;
+            let claude = self.claude.request(workspace, method, json!({})).await?;
+            if let Some(data) = response.pointer_mut("/result/data").and_then(Value::as_array_mut) {
+                data.extend(claude["result"]["data"].as_array().into_iter().flatten().cloned());
+                data.sort_by_key(|t| std::cmp::Reverse(t["updatedAt"].as_i64().unwrap_or(0)));
+            }
+            super::sidechats::enrich(self, workspace, &mut response)?;
+            return Ok(response);
         }
         let backend = self
             .backend(!matches!(method, "turn/interrupt" | "turn/steer"))
             .await?;
+        if method == "subagent/transcript" {
+            let node = params["nodeId"].as_str().ok_or("Missing node ID")?;
+            let parent = thread_id.as_deref().ok_or("Missing parent thread")?;
+            let mut pending = vec![parent.to_owned()];
+            let mut visited = HashSet::new();
+            let mut found = None;
+            while let Some(id) = pending.pop() {
+                if !visited.insert(id.clone()) { continue; }
+                let response = backend.read_thread(workspace, json!({"threadId":id,"includeTurns":true})).await?;
+                if id == node && id != parent { found = Some(response); break; }
+                pending.extend(collab_children(&response));
+            }
+            let response = found.ok_or("Node is not a child of this thread")?;
+            let messages = response.pointer("/result/thread/turns").and_then(Value::as_array)
+                .ok_or("Child thread unavailable")?.iter()
+                .flat_map(|t| t["items"].as_array().into_iter().flatten()).cloned();
+            return Ok(super::pi::agents::capped(messages));
+        }
+        // The engine protocol must not receive taucode-only fork metadata.
+        if engine == EngineKind::Codex {
+            if let Some(params) = params.as_object_mut() { params.remove("sideOf"); params.remove("atItemId"); }
+        }
         if matches!(
             method,
             "turn/start" | "thread/compact/start" | "thread/name/set"
@@ -493,6 +605,7 @@ impl WorkspaceSession {
         }
         if method == "thread/list" {
             let pi = self.pi.request(workspace, method, json!({})).await?;
+            let claude = self.claude.request(workspace, method, json!({})).await?;
             if let Some(data) = response
                 .pointer_mut("/result/data")
                 .and_then(Value::as_array_mut)
@@ -512,14 +625,19 @@ impl WorkspaceSession {
                         .cloned()
                         .unwrap_or_default(),
                 );
+                data.extend(claude["result"]["data"].as_array().into_iter().flatten().cloned());
                 data.sort_by_key(|t| {
                     std::cmp::Reverse(t.get("updatedAt").and_then(Value::as_i64).unwrap_or(0))
                 });
             }
         }
+        if matches!(method, "thread/list" | "thread/read" | "thread/resume" | "thread/fork" | "thread/start") { super::sidechats::enrich(self, workspace, &mut response)?; }
         Ok(response)
     }
     pub async fn send_response(&self, id: Value, result: Value) -> Result<(), String> {
+        if id.as_str().is_some_and(|id| id.starts_with("claude:")) {
+            return self.claude.respond_to_server_request(id, result).await;
+        }
         if id.as_str().is_some_and(|id| id.starts_with("pi:")) {
             return self.pi.respond_to_server_request(id, result).await;
         }
@@ -528,6 +646,13 @@ impl WorkspaceSession {
             .respond_to_server_request(id, result)
             .await
     }
+}
+fn collab_children(response: &Value) -> Vec<String> {
+    response.pointer("/result/thread/turns").and_then(Value::as_array).into_iter().flatten()
+        .flat_map(|turn| turn["items"].as_array().into_iter().flatten())
+        .filter(|item| item["type"] == "collabAgentToolCall")
+        .flat_map(|item| item["receiverThreadIds"].as_array().into_iter().flatten())
+        .filter_map(Value::as_str).map(str::to_owned).collect()
 }
 pub(crate) fn quote(s: &str) -> String {
     serde_json::to_string(s).expect("string serialization")
@@ -694,6 +819,89 @@ pub(crate) fn prepare_codex(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn codex_side_chat_access_survives_current_omission_overrides_and_restart() {
+        use crate::shared::codex_core::{send_user_message_core, set_thread_access_mode_core};
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let data = std::env::temp_dir().join(format!("codex-access-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&data).unwrap();
+        let provider: ProviderEntry = serde_json::from_value(json!({"id":"test","name":"Test","kind":"openai","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"model","enabled":true}]})).unwrap();
+        let backend = make_session().codex_backend().await.unwrap();
+        let session = || {
+            let mut session = WorkspaceSession::new(backend.clone(), vec![provider.clone()], AgentPolicy::default());
+            session.pi = PiEngine::new(data.clone(), "fixture".into(), data.to_string_lossy().into(), None, Arc::new(|_, _| {}));
+            Arc::new(session)
+        };
+        let stdout = backend.child.lock().await.stdout.take().unwrap();
+        let responder = backend.clone();
+        let server = tokio::spawn(async move {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Some(line) = lines.next_line().await.unwrap() {
+                let request: Value = serde_json::from_str(&line).unwrap();
+                let result = match request["method"].as_str().unwrap() {
+                    "thread/fork" => {
+                        assert_eq!(request["params"]["sandbox"], "read-only");
+                        json!({"thread":{"id":"side","modelProvider":"test"}})
+                    }
+                    "thread/read" => json!({"thread":{"id":request["params"]["threadId"],"modelProvider":"test"}}),
+                    "turn/start" => {
+                        assert!(request["params"].get("accessMode").is_none());
+                        json!({"seen":request["params"]})
+                    }
+                    method => panic!("Unexpected Codex request: {method}"),
+                };
+                responder.pending.lock().await.remove(&request["id"].as_u64().unwrap()).unwrap()
+                    .send(json!({"result":result})).unwrap();
+            }
+        });
+        let first = session();
+        first.send_request_for_workspace("fixture", "thread/accessMode/set", json!({"threadId":"parent","accessMode":"full-access"})).await.unwrap();
+        first.send_request_for_workspace("fixture", "thread/sidechat", json!({"threadId":"parent"})).await.unwrap();
+        let path = super::super::sidechats::metadata_path(&first, "fixture", "side").unwrap();
+        assert_eq!(crate::storage::read_thread_metadata(&path).unwrap()["accessMode"], "read-only");
+        let workspaces = Mutex::new(HashMap::from([("fixture".into(), serde_json::from_value(json!({"id":"fixture","name":"Fixture","path":data,"settings":{}})).unwrap())]));
+        let sessions = Mutex::new(HashMap::from([("fixture".into(), session())]));
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            set_thread_access_mode_core(&sessions, "fixture".into(), "side".into(), "current".into()).await.unwrap();
+            for (requested, expected) in [(Some("current"), "readOnly"), (None, "readOnly"), (Some("ask"), "workspaceWrite"), (Some("current"), "workspaceWrite"), (Some("full-access"), "dangerFullAccess"), (None, "dangerFullAccess")] {
+                let response = send_user_message_core(&sessions, &workspaces, "fixture".into(), "side".into(), "hello".into(), None, None, None, requested.map(str::to_owned), None, None).await.unwrap();
+                let params = &response["result"]["seen"];
+                assert_eq!(params["sandboxPolicy"]["type"], expected);
+                assert_eq!(params["approvalPolicy"], if expected == "workspaceWrite" { "on-request" } else { "never" });
+                if expected == "workspaceWrite" { assert_eq!(params["sandboxPolicy"]["writableRoots"], json!([data])); }
+            }
+            for (mode, expected) in [("read-only", "readOnly"), ("ask", "workspaceWrite"), ("full-access", "dangerFullAccess")] {
+                set_thread_access_mode_core(&sessions, "fixture".into(), "side".into(), mode.into()).await.unwrap();
+                sessions.lock().await.insert("fixture".into(), session());
+                let response = send_user_message_core(&sessions, &workspaces, "fixture".into(), "side".into(), "hello".into(), None, None, None, Some("current".into()), None, None).await.unwrap();
+                assert_eq!(response["result"]["seen"]["sandboxPolicy"]["type"], expected);
+                assert_eq!(crate::storage::read_thread_metadata(&path).unwrap()["accessMode"], mode);
+            }
+            set_thread_access_mode_core(&sessions, "fixture".into(), "side".into(), "read-only".into()).await.unwrap();
+            let response = first.send_request_for_workspace("fixture", "turn/start", json!({"threadId":"side","accessMode":"current","sandboxPolicy":{"type":"dangerFullAccess"}})).await.unwrap();
+            assert_eq!(response["result"]["seen"]["sandboxPolicy"]["type"], "readOnly");
+            let response = first.send_request_for_workspace("fixture", "turn/start", json!({"threadId":"side"})).await.unwrap();
+            assert_eq!(response["result"]["seen"]["sandboxPolicy"]["type"], "readOnly");
+            assert!(send_user_message_core(&sessions, &workspaces, "fixture".into(), "side".into(), "hello".into(), None, None, None, Some("invalid".into()), None, None).await.is_err());
+        }).await.unwrap();
+        let saved = crate::storage::read_thread_metadata(&path).unwrap();
+        assert_eq!(saved["accessMode"], "read-only");
+        assert_eq!(saved["sideOf"]["threadId"], "parent");
+        assert_eq!(crate::storage::read_thread_metadata(&super::super::sidechats::metadata_path(&first, "fixture", "parent").unwrap()).unwrap()["accessMode"], "full-access");
+        backend.child.lock().await.kill().await.unwrap();
+        server.await.unwrap();
+        std::fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
+    fn native_collab_nodes_map_to_real_child_threads() {
+        let response = json!({"result":{"thread":{"turns":[{"items":[
+            {"type":"collabAgentToolCall","receiverThreadIds":["child-a","child-b"]},
+            {"type":"agentMessage","receiverThreadIds":["not-a-child"]}
+        ]}]}}});
+        assert_eq!(collab_children(&response), vec!["child-a", "child-b"]);
+    }
     use crate::backend::app_server::protocol_tests::make_session;
     use std::sync::atomic::{AtomicUsize, Ordering};
     #[tokio::test]

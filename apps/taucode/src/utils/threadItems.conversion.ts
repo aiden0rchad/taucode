@@ -310,6 +310,7 @@ export function buildItemsFromThread(thread: Record<string, unknown>) {
     turnItems.forEach((item) => {
       const converted = buildConversationItemFromThreadItem(item);
       if (converted) {
+        if (converted.kind === "tool") converted.turnId = asString(turnRecord.id);
         items.push(converted);
       }
     });

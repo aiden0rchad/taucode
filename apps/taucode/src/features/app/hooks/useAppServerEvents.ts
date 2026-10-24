@@ -421,7 +421,7 @@ export function useAppServerEvents(handlers: AppServerEventHandlers) {
         const threadId = String(params.threadId ?? params.thread_id ?? "");
         const item = params.item as Record<string, unknown> | undefined;
         if (threadId && item) {
-          currentHandlers.onItemCompleted?.(workspace_id, threadId, item);
+          currentHandlers.onItemCompleted?.(workspace_id, threadId, item.type === "collabAgentToolCall" && params.turnId ? { ...item, turnId: params.turnId } : item);
         }
         if (threadId && item?.type === "agentMessage") {
           const itemId = String(item.id ?? "");
@@ -442,7 +442,7 @@ export function useAppServerEvents(handlers: AppServerEventHandlers) {
         const threadId = String(params.threadId ?? params.thread_id ?? "");
         const item = params.item as Record<string, unknown> | undefined;
         if (threadId && item) {
-          currentHandlers.onItemStarted?.(workspace_id, threadId, item);
+          currentHandlers.onItemStarted?.(workspace_id, threadId, item.type === "collabAgentToolCall" && params.turnId ? { ...item, turnId: params.turnId } : item);
         }
         return;
       }

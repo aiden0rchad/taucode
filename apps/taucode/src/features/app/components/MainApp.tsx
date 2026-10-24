@@ -1,3 +1,8 @@
+import { Checkpoints } from "@/features/checkpoints/Checkpoints";
+import { useModeSettings } from "@/features/chat/ModeShell";
+import { AgentsContext, agentThreadDetails } from "@/features/agents/agents";
+import { useSideChats, sideChatQuote } from "@/features/sidechats/useSideChats";
+import { SideChatPane, SideChatSplit } from "@/features/sidechats/SideChatPane";
 import { modelKey } from "@/features/settings/registry";
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import successSoundUrl from "@/assets/success-notification.mp3";
@@ -8,6 +13,7 @@ import { usePullRequestComposer } from "@/features/git/hooks/usePullRequestCompo
 import { useAutoExitEmptyDiff } from "@/features/git/hooks/useAutoExitEmptyDiff";
 import { isMissingRepo } from "@/features/git/utils/repoErrors";
 import { useModels } from "@/features/models/hooks/useModels";
+import { modelsForThread } from "@/features/models/utils/modelListResponse";
 import { useCollaborationModes } from "@/features/collaboration/hooks/useCollaborationModes";
 import { useCollaborationModeSelection } from "@/features/collaboration/hooks/useCollaborationModeSelection";
 import { useSkills } from "@/features/skills/hooks/useSkills";
@@ -119,6 +125,7 @@ export default function MainApp() {
     clearDebugEntries,
     shouldReduceTransparency,
   } = useAppBootstrapOrchestration();
+  useModeSettings(appSettings);
   const {
     threadListSortKey,
     setThreadListSortKey,
@@ -432,6 +439,7 @@ export default function MainApp() {
     historyCursorByThread, historyLoadingByThread, historyErrorByThread, loadOlderHistory,
     activeThreadId,
     activeItems,
+    itemsByThread,
     approvals,
     userInputRequests,
     threadsByWorkspace,
@@ -448,6 +456,7 @@ export default function MainApp() {
     lastAgentMessageByThread,
     pinnedThreadsVersion,
     interruptTurn,
+    interruptThread,
     removeThread,
     pinThread,
     unpinThread,
@@ -1650,7 +1659,7 @@ export default function MainApp() {
     launchScriptsState,
     engine: (activeThreadId ? threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.engine : undefined) ?? selectedEngine ?? activeWorkspace?.settings.agentPolicy?.defaultEngine ?? appSettings.agentPolicy?.defaultEngine ?? "pi",
     onSelectEngine: activeThreadId ? undefined : setSelectedEngine,
-    models,
+    models: modelsForThread(models, threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)),
     selectedModelId,
     onSelectModel: handleSelectModel,
     collaborationModes,
@@ -1734,6 +1743,14 @@ export default function MainApp() {
     handleDebugClick,
   });
 
+  const parentEngine = threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.engine ?? selectedEngine ?? activeWorkspace?.settings.agentPolicy?.defaultEngine ?? appSettings.agentPolicy?.defaultEngine ?? "pi";
+  const sideChats = useSideChats({
+    workspace: activeWorkspace, threadId: activeThreadId,
+    threads: threadsByWorkspace[activeWorkspaceId ?? ""] ?? [],
+    engine: parentEngine, model: resolvedModel,
+    refresh: refreshThread, list: listThreadsForWorkspace,
+  });
+
   const {
     sidebarNode,
     messagesNode,
@@ -1759,8 +1776,29 @@ export default function MainApp() {
     ...layoutSurfaces,
     primary: {
       ...layoutSurfaces.primary,
+      sidebarProps: {
+        ...layoutSurfaces.primary.sidebarProps,
+        onSelectThread: (workspaceId, threadId) => {
+          const thread = threadsByWorkspace[workspaceId]?.find(t => t.id === threadId);
+          if (thread?.sideOf) {
+            layoutSurfaces.primary.sidebarProps.onSelectThread(workspaceId, thread.sideOf.threadId);
+            sideChats.open(thread);
+          } else {
+            layoutSurfaces.primary.sidebarProps.onSelectThread(workspaceId, threadId);
+          }
+        },
+      },
+      mainHeaderProps: layoutSurfaces.primary.mainHeaderProps ? {
+        ...layoutSurfaces.primary.mainHeaderProps,
+        extraActionsNode: <>{layoutSurfaces.primary.mainHeaderProps.extraActionsNode}
+          {activeThreadId && <span title={sideChats.disabledReason}><button className="ghost" disabled={sideChats.creating || Boolean(sideChats.disabledReason)} onClick={() => void sideChats.create()} title={sideChats.disabledReason ?? "Side chat (⌘⇧K)"}>Side chat</button></span>}
+          {sideChats.error && <span role="alert">{sideChats.error}</span>}
+        </>,
+      } : null,
       messagesProps: {
         ...layoutSurfaces.primary.messagesProps,
+        onSideChat: itemId => void sideChats.create(itemId),
+        sideChatDisabledReason: sideChats.messageDisabledReason ?? (sideChats.creating ? "Creating side chat…" : undefined),
         hasOlderHistory: Boolean(activeThreadId && historyCursorByThread[activeThreadId]),
         isLoadingHistory: Boolean(activeThreadId && historyLoadingByThread[activeThreadId]),
         historyError: activeThreadId ? historyErrorByThread[activeThreadId] : null,
@@ -1771,7 +1809,30 @@ export default function MainApp() {
     },
   });
 
-  const mainMessagesNode = showWorkspaceHome ? workspaceHomeNode : messagesNode;
+  const sideChat = sideChats.current;
+  const mainMessagesNode = showWorkspaceHome ? workspaceHomeNode : sideChat && activeWorkspace ? (
+    <SideChatSplit compact={isCompact} main={<>{messagesNode}{composerNode}</>}>
+      <SideChatPane key={sideChat.id} chat={sideChat}
+        items={itemsByThread[sideChat.id] ?? []}
+        running={threadStatusById[sideChat.id]?.isProcessing ?? false}
+        models={models} messageProps={layoutSurfaces.primary.messagesProps}
+        onClose={sideChats.close}
+        onDelete={() => { removeThread(sideChat.workspaceId, sideChat.id); sideChats.close(); }}
+        onInterrupt={() => interruptThread(sideChat.workspaceId, sideChat.id)}
+        onSend={async (text, model, mode) => {
+          const result = await sendUserMessageToThread(activeWorkspace, sideChat.id, text, [], { model, accessMode: mode, collaborationMode: null });
+          if (result.threadId && result.threadId !== sideChat.id) {
+            sideChats.open({ id: result.threadId, name: sideChat.title, updatedAt: Date.now(), engine: sideChat.engine, modelId: model,
+              sideOf: { threadId: sideChat.parentId, workspaceId: sideChat.workspaceId, atItemId: null } });
+          }
+          return result;
+        }}
+        onSendToMain={text => composerWorkspaceState.handleDraftChange(
+          [composerWorkspaceState.activeDraft, sideChatQuote(sideChat.title, text)].filter(Boolean).join("\n\n")
+        )}
+      />
+    </SideChatSplit>
+  ) : messagesNode;
   const compactThreadConnectionState: "live" | "polling" | "disconnected" =
     !activeWorkspace?.connected
       ? "disconnected"
@@ -1813,7 +1874,7 @@ export default function MainApp() {
       activeWorkspace: Boolean(activeWorkspace),
       sidebarNode,
       messagesNode: mainMessagesNode,
-      composerNode,
+      composerNode: sideChat && !showWorkspaceHome ? null : composerNode,
       approvalToastsNode,
       updateToastNode,
       errorToastsNode,
@@ -1844,5 +1905,12 @@ export default function MainApp() {
     },
   });
 
-  return <BrowserDock searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><MainAppShell {...mainAppShellProps} /></BrowserDock>;
+  const agentDetails = useMemo(() => agentThreadDetails(Object.values(threadsByWorkspace).flat(), threadStatusById, tokenUsageByThread), [threadsByWorkspace, threadStatusById, tokenUsageByThread]);
+  return <AgentsContext.Provider value={{ details: agentDetails, workspaceId: activeWorkspaceId, threadId: activeThreadId, itemsByThread,
+    policy: appSettings.agentPolicy ? { ...appSettings.agentPolicy.subagents, ...activeWorkspace?.settings.agentPolicy?.subagents } : undefined }}>
+    <Checkpoints running={threadStatusById} onChanged={async (workspace, thread, text) => {
+    await refreshThread(workspace, thread);
+    if (text !== undefined) composerWorkspaceState.restoreDraftForThread(thread, text);
+    if (text !== undefined && workspace === activeWorkspaceId && thread === activeThreadId) setPrefillDraft({ id: `rewind-${Date.now()}`, text, createdAt: Date.now() });
+  }} /><BrowserDock searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><MainAppShell {...mainAppShellProps} /></BrowserDock></AgentsContext.Provider>;
 }

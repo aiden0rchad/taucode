@@ -732,14 +732,14 @@ describe("useThreadMessaging telemetry", () => {
       "Review abcdef1: Tighten sidebar commit…",
     );
   });
-  it("confirms codex cross-provider forks with the latest token estimate", async () => {
+  it.each([false, true])("confirms provider forks and preserves side chat focus (side=%s)", async (sideChat) => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const fork = vi.fn(async () => "forked");
     const usage = { totalTokens: 1234, inputTokens: 1000, cachedInputTokens: 0, outputTokens: 234, reasoningOutputTokens: 0 };
     const { result } = renderHook(() => useThreadMessaging({
       activeWorkspace: workspace, activeThreadId: "thread-1",
       model: "second/model", steerEnabled: true, customPrompts: [],
-      threadsByWorkspace: { [workspace.id]: [{ id: "thread-1", name: "Thread", updatedAt: 0, engine: "codex", modelProvider: "first" }] },
+      threadsByWorkspace: { [workspace.id]: [{ id: "thread-1", name: "Thread", updatedAt: 0, engine: "codex", modelProvider: "first", ...(sideChat ? { sideOf: { threadId: "main", workspaceId: workspace.id, atItemId: null } } : {}) }] },
       tokenUsageByThread: { "thread-1": { last: usage, total: usage, modelContextWindow: 10000 } },
       threadStatusById: {}, activeTurnIdByThread: {}, pendingInterruptsRef: { current: new Set() },
       dispatch: vi.fn(), getCustomName: vi.fn(), markProcessing: vi.fn(), markReviewing: vi.fn(),
@@ -749,8 +749,11 @@ describe("useThreadMessaging telemetry", () => {
     }));
     await act(async () => { await result.current.sendUserMessage("hello"); });
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("~1,234 tokens re-sent"));
-    expect(fork).toHaveBeenCalledWith(workspace.id, "thread-1", { activate: true, model: "second/model" });
+    expect(fork).toHaveBeenCalledWith(workspace.id, "thread-1", { activate: !sideChat, model: "second/model" });
     expect(sendUserMessageService).toHaveBeenCalledWith(workspace.id, "forked", "hello", expect.objectContaining({ model: "second/model" }));
+    await act(async () => { await result.current.interruptThread(workspace.id, "side-thread"); });
+    expect(interruptTurnService).toHaveBeenCalledWith(workspace.id, "side-thread", "pending");
+    expect(interruptTurnService).not.toHaveBeenCalledWith(workspace.id, "thread-1", expect.anything());
     confirm.mockRestore();
   });
   it("switches pi providers in place on the next turn without a fork dialog", async () => {

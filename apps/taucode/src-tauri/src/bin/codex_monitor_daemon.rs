@@ -166,6 +166,9 @@ struct DaemonConfig {
 }
 
 struct DaemonState {
+    work: Arc<shared::work::Work>,
+    chats: shared::chats::Chats,
+    imports: Arc<shared::imports::Imports>,
     browser: Arc<shared::browser::Browser>,
     codegraph: Arc<shared::codegraph_core::Codegraph>,
     data_dir: PathBuf,
@@ -196,6 +199,9 @@ impl DaemonState {
             .and_then(|path| path.to_str().map(str::to_string));
         Self {
             browser: shared::browser::Browser::new(config.data_dir.clone()),
+            work: shared::work::Work::new(config.data_dir.clone(), event_sink.clone()),
+            chats: shared::chats::Chats::new(config.data_dir.clone(), event_sink.clone()),
+            imports: shared::imports::Imports::new(config.data_dir.clone()),
             codegraph: shared::codegraph_core::Codegraph::new(config.data_dir.clone()),
             data_dir: config.data_dir.clone(),
             workspaces: Mutex::new(workspaces),
@@ -1624,6 +1630,9 @@ mod tests {
         let (tx, _rx) = broadcast::channel::<DaemonEvent>(32);
         DaemonState {
             browser: shared::browser::Browser::new(data_dir.to_path_buf()),
+            work: shared::work::Work::new(data_dir.to_path_buf(), DaemonEventSink { tx: tx.clone() }),
+            chats: shared::chats::Chats::new(data_dir.to_path_buf(), DaemonEventSink { tx: tx.clone() }),
+            imports: shared::imports::Imports::new(data_dir.to_path_buf()),
             codegraph: shared::codegraph_core::Codegraph::new(data_dir.to_path_buf()),
             data_dir: data_dir.to_path_buf(),
             workspaces: Mutex::new(HashMap::new()),

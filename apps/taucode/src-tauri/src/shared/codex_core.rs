@@ -441,13 +441,21 @@ pub(crate) async fn fork_thread_core(
     model: Option<String>,
 ) -> Result<Value, String> {
     let session = get_session_clone(sessions, &workspace_id).await?;
+    let metadata = if session.pi.data.is_some() {
+        crate::storage::read_thread_metadata(&super::sidechats::metadata_path(&session, &workspace_id, &thread_id)?)?
+    } else { Value::Null };
     let mut params = json!({ "threadId": thread_id, "excludeTurns": true });
     if let Some(model) = model {
         params["model"] = json!(model);
     }
-    session
+    if metadata.get("sideOf").is_some() { params["sandbox"] = json!("read-only"); }
+    let mut response = session
         .send_request_for_workspace(&workspace_id, "thread/fork", params)
-        .await
+        .await?;
+    if let Some(side_of) = metadata.get("sideOf") {
+        super::sidechats::persist(&session, &workspace_id, &mut response, side_of.clone())?;
+    }
+    Ok(response)
 }
 
 pub(crate) async fn list_threads_core(
@@ -611,30 +619,13 @@ pub(crate) async fn send_user_message_core(
     let session = get_session_clone(sessions, &workspace_id).await?;
     let workspace_path = resolve_workspace_path_core(workspaces, &workspace_id).await?;
     let access_mode = access_mode.unwrap_or_else(|| "current".to_string());
-    let sandbox_policy = match access_mode.as_str() {
-        "full-access" => json!({ "type": "dangerFullAccess" }),
-        "read-only" => json!({ "type": "readOnly" }),
-        _ => json!({
-            "type": "workspaceWrite",
-            "writableRoots": [workspace_path.clone()],
-            "networkAccess": true
-        }),
-    };
-
-    let approval_policy = if access_mode == "full-access" {
-        "never"
-    } else {
-        "on-request"
-    };
-
     let input = build_turn_input_items(text, images)?;
 
     let mut params = Map::new();
     params.insert("threadId".to_string(), json!(thread_id));
     params.insert("input".to_string(), json!(input));
     params.insert("cwd".to_string(), json!(workspace_path));
-    params.insert("approvalPolicy".to_string(), json!(approval_policy));
-    params.insert("sandboxPolicy".to_string(), json!(sandbox_policy));
+    params.insert("accessMode".to_string(), json!(access_mode));
     params.insert("model".to_string(), json!(model));
     params.insert("effort".to_string(), json!(effort));
     insert_optional_nullable_string(&mut params, "serviceTier", service_tier);
@@ -961,4 +952,12 @@ mod tests {
         assert!(THREAD_LIST_SOURCE_KINDS.contains(&"subAgentCompact"));
         assert!(THREAD_LIST_SOURCE_KINDS.contains(&"subAgentThreadSpawn"));
     }
+}
+
+pub(crate) async fn thread_feature_core(
+    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    workspace_id: String, method: &str, params: Value,
+) -> Result<Value, String> {
+    get_session_clone(sessions, &workspace_id).await?
+        .send_request_for_workspace(&workspace_id, method, params).await
 }

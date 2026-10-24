@@ -8,6 +8,12 @@ import type {
 } from "../types";
 
 export type Unsubscribe = () => void;
+const importListeners = new Set<() => void>();
+export function subscribeImportsChanged(listener: () => void): Unsubscribe {
+  importListeners.add(listener);
+  return () => { importListeners.delete(listener); };
+}
+export function notifyImportsChanged() { for (const listener of importListeners) listener(); }
 
 export type TerminalOutputEvent = {
   workspaceId: string;
@@ -379,4 +385,14 @@ export function subscribeCodegraphStatus(onStatus: (workspaceId: string, status:
       onStatus(event.workspace_id, status as CodegraphStatus);
     }
   });
+}
+
+export type CheckpointOpen = { workspaceId: string; threadId: string; userItemId?: string };
+const checkpointOpenListeners = new Set<(request: CheckpointOpen) => void>();
+export function openCheckpoints(request: CheckpointOpen) {
+  checkpointOpenListeners.forEach((listener) => listener(request));
+}
+export function subscribeCheckpointOpen(listener: (request: CheckpointOpen) => void) {
+  checkpointOpenListeners.add(listener);
+  return () => { checkpointOpenListeners.delete(listener); };
 }

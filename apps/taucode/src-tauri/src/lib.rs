@@ -1,5 +1,6 @@
 mod codegraph;
 mod codegraph_commands;
+mod checkpoint_commands;
 mod connectors;
 mod providers;
 #[cfg(desktop)]
@@ -31,6 +32,9 @@ mod rules;
 mod settings;
 mod shared;
 mod state;
+mod chats;
+mod work;
+mod import_commands;
 mod storage;
 mod tailscale;
 #[cfg(desktop)]
@@ -203,12 +207,20 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
+            work::work_request,
+            work::work_attachment,
+            work::work_output,
+            chats::chat_request,
+            import_commands::import_request,
+            chats::read_chat_attachment,
+            chats::set_window_mode,
             providers::engine_runtime,
             computer_commands::computer_request,
             computer_commands::computer_request_permissions,
             browser_commands::browser_request,
             browser_commands::browser_subscribe,
             browser_commands::browser_unsubscribe,
+            checkpoint_commands::checkpoint_request,
             codegraph_commands::codegraph_status,
             codegraph_commands::codegraph_rebuild,
             providers::provider_set_api_key,
@@ -256,6 +268,8 @@ pub fn run() {
             codex::generate_agent_description,
             codex::resume_thread,
             codex::read_thread,
+            codex::create_side_chat,
+            codex::get_subagent_transcript,
             codex::list_thread_history,
             codex::thread_live_subscribe,
             codex::thread_live_unsubscribe,

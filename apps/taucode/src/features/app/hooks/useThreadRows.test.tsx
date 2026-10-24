@@ -6,6 +6,14 @@ import type { ThreadSummary } from "../../../types";
 import { useThreadRows } from "./useThreadRows";
 
 describe("useThreadRows", () => {
+  it("nests persisted side chats and never promotes an orphan side chat to a root", () => {
+    const parent = { id: "main", name: "Main", updatedAt: 1 };
+    const side = { id: "side", name: "Side", updatedAt: 2, sideOf: { threadId: "main", workspaceId: "ws", atItemId: null } };
+    const { result } = renderHook(() => useThreadRows({}));
+    const rows = result.current.getThreadRows([side, parent], true, "ws", () => null);
+    expect(rows.unpinnedRows.map(r => [r.thread.id, r.depth])).toEqual([["main", 0], ["side", 1]]);
+    expect(result.current.getThreadRows([side], true, "ws", () => null).unpinnedRows).toEqual([]);
+  });
   it("reuses cached results for identical inputs and cache version", () => {
     const threads: ThreadSummary[] = [
       { id: "thread-a", name: "A", updatedAt: 1 },

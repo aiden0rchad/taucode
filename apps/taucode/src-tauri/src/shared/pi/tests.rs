@@ -10,6 +10,56 @@ fn fixture(name: &str) -> String {
     )
     .unwrap()
 }
+
+#[tokio::test]
+async fn chat_profile_is_isolated_and_forks_models_and_last_user_without_changing_parent() {
+    let dir = temp();
+    let mut engine = PiEngine::chat(dir.clone(), Arc::new(|_, _| {}));
+    engine.fake = true;
+    engine.keys = Arc::new(Keys);
+    let providers: Vec<ProviderEntry> = ["first", "second"].iter().map(|id| serde_json::from_value(json!({"id":id,"name":id,"kind":"ollama","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"fake","enabled":true}]})).unwrap()).collect();
+    engine.configure("chats", providers.clone(), AgentPolicy::default()).await;
+    let started = engine.request("chats", "thread/start", json!({"model":"first/fake","cwd":"/must-not-use"})).await.unwrap();
+    let id = started["result"]["thread"]["id"].as_str().unwrap();
+    let file = engine.directory("chats").unwrap().join(format!("{id}.jsonl"));
+    assert!(file.starts_with(dir.join("chats")));
+    assert!(!dir.join("pi/sessions").exists());
+    let spawn: Value = serde_json::from_slice(&std::fs::read(file.with_extension("spawn")).unwrap()).unwrap();
+    assert_eq!(spawn["cwd"], json!(dir.join("chats/scratch").join(id)));
+    assert!(spawn["args"].as_array().unwrap().iter().any(|arg| arg == "--no-tools"));
+    assert_eq!(std::fs::read_dir(dir.join("chats/scratch").join(id)).unwrap().count(), 0);
+    #[cfg(unix)] {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(dir.join("chats/scratch").join(id)).unwrap().permissions().mode() & 0o777, 0o700);
+    }
+    engine.sessions.lock().await[id].process.as_ref().unwrap().shutdown().await.unwrap();
+    use std::io::Write;
+    let mut output = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
+    for entry in [
+        json!({"type":"model_change","id":"model","parentId":null,"provider":"taucode-first","modelId":"fake"}),
+        json!({"type":"message","id":"u1","parentId":"model","message":{"role":"user","timestamp":1,"content":"First"}}),
+        json!({"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","timestamp":2,"content":[{"type":"text","text":"Answer"}]}}),
+        json!({"type":"message","id":"u2","parentId":"a1","message":{"role":"user","timestamp":3,"content":"Second"}}),
+        json!({"type":"message","id":"a2","parentId":"u2","message":{"role":"assistant","timestamp":4,"content":[{"type":"text","text":"Last answer"}]}}),
+    ] { writeln!(output, "{entry}").unwrap(); }
+    drop(output);
+    let original = std::fs::read(&file).unwrap();
+    let fork = engine.request("chats", "thread/fork", json!({"threadId":id,"model":"second/fake","beforeUserItemId":format!("{id}:user:3")})).await.unwrap();
+    let child = fork["result"]["thread"]["id"].as_str().unwrap();
+    let child_file = engine.directory("chats").unwrap().join(format!("{child}.jsonl"));
+    let (thread, history) = read_session(&child_file, &providers).unwrap();
+    assert_eq!(thread["modelProvider"], "second");
+    assert_eq!(thread["forkedFromId"], id);
+    assert_eq!(history.turns.len(), 1);
+    assert!(!json!(history.turns).to_string().contains("Second"));
+    assert_ne!(fork["result"]["thread"]["cwd"], started["result"]["thread"]["cwd"]);
+    assert_eq!(std::fs::read(&file).unwrap(), original);
+    let listed = engine.request("chats", "thread/list", json!({})).await.unwrap();
+    assert_eq!(listed["result"]["data"].as_array().unwrap().iter().find(|t| t["id"] == child).unwrap()["modelProvider"], "second");
+    engine.request("chats", "thread/resume", json!({"threadId":child})).await.unwrap();
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
 fn replay(name: &str) -> (Translator, Vec<Value>) {
     let mut translator = Translator::new("recorded", "/tmp/taucode-fixture");
     let mut events = vec![];
@@ -216,6 +266,16 @@ fn recorded_subagents_stream_states_outputs_and_usage_without_double_counting() 
         .unwrap()
         .clone();
     assert_eq!(item["status"], "completed");
+    let tree = item["agentsTree"].as_array().unwrap();
+    assert_eq!(tree.len(), 2);
+    for node in tree {
+        assert_eq!(node["status"], "completed");
+        assert!(node["startedAt"].is_i64());
+        assert!(node["endedAt"].is_i64());
+        assert!(node["lastMessage"].as_str().unwrap().chars().count() <= 300);
+        assert!(t.transcripts[node["id"].as_str().unwrap()]["messages"].as_array().unwrap().len() > 0);
+        assert!(node.get("messages").is_none());
+    }
     let states = item["agentsStates"].as_object().unwrap();
     assert_eq!(states.len(), 2);
     assert!(states.values().all(|s| s["status"] == "completed"
@@ -252,6 +312,102 @@ fn recorded_subagents_stream_states_outputs_and_usage_without_double_counting() 
         .iter()
         .any(|e| e["method"] == "thread/tokenUsage/updated"
             && e["params"]["tokenUsage"]["total"]["cost"] == t.cost));
+}
+
+#[test]
+fn nested_subagent_snapshots_keep_ids_timestamps_and_aggregate_usage() {
+    let (mut t, _) = replay("rpc_subagents.jsonl");
+    let mut frame: Value = fixture("rpc_subagents.jsonl").lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .find(|r| r["msg"]["type"] == "tool_execution_end" && r["msg"]["toolName"] == "subagent").unwrap()["msg"].clone();
+    let parent_id = format!("{}:agent:0", frame["toolCallId"].as_str().unwrap());
+    let started = t.turns[0]["items"].as_array().unwrap().iter().find(|i|i["id"] == frame["toolCallId"]).unwrap()["agentsTree"][0]["startedAt"].clone();
+    frame["result"]["details"]["results"][0]["messages"].as_array_mut().unwrap().push(json!({
+        "role":"toolResult","toolCallId":"nested","toolName":"subagent","details":{"results":[{
+            "agent":"reviewer","status":"failed","stderr":"fixture error","usage":{"input":17,"output":3,"cost":0.25},
+            "messages":[{"role":"assistant","content":[{"type":"text","text":"Nested transcript"}]}]
+        }]}
+    }));
+    let before = t.cost;
+    t.apply(&frame);
+    let node = t.turns[0]["items"].as_array().unwrap().iter().find(|i|i["id"] == frame["toolCallId"]).unwrap()["agentsTree"][0].clone();
+    assert_eq!(node["id"], parent_id);
+    assert_eq!(node["startedAt"], started);
+    assert_eq!(node["usage"]["input"], frame["result"]["details"]["results"][0]["usage"]["input"].as_u64().unwrap() + 17);
+    assert_eq!(node["children"][0]["id"], format!("{parent_id}/nested:agent:0"));
+    assert_eq!(node["children"][0]["status"], "failed");
+    assert_eq!(node["children"][0]["errorMessage"], "fixture error");
+    assert_eq!(t.cost, before + 0.25);
+    let total = t.total.clone();
+    t.apply(&frame);
+    assert_eq!(t.total, total);
+    let retained = &t.transcripts[&format!("{parent_id}/nested:agent:0")];
+    assert_eq!(retained["messages"][0]["content"][0]["text"], "Nested transcript");
+    assert!(!t.transcripts[&parent_id].to_string().contains("Nested transcript"));
+}
+
+#[test]
+fn transcript_caps_keep_the_latest_messages_and_flag_truncation() {
+    let capped = agents::capped((0..510).map(|i|json!({"id":i,"content":"text"})));
+    assert_eq!(capped["messages"].as_array().unwrap().len(), 500);
+    assert_eq!(capped["messages"][0]["id"], 10);
+    assert_eq!(capped["truncated"], true);
+    let capped = agents::capped([json!({"content":"x".repeat(2 * 1024 * 1024)}), json!({"content":"last"})]);
+    assert_eq!(capped["messages"].as_array().unwrap().len(), 1);
+    assert_eq!(capped["messages"][0]["content"], "last");
+    assert_eq!(capped["truncated"], true);
+    assert_eq!(agents::capped([json!({"content":"small"})])["truncated"], false);
+}
+
+#[tokio::test]
+async fn transcript_command_restores_capped_messages_from_session_file() {
+    let dir = temp();
+    let engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into_owned(), None, Arc::new(|_, _| {}));
+    let sessions = engine.directory("workspace").unwrap();
+    std::fs::create_dir_all(&sessions).unwrap();
+    let entries = [json!({"type":"session","version":3,"id":"parent","cwd":dir}),
+        json!({"type":"message","id":"u","parentId":null,"message":{"role":"user","content":"delegate"}}),
+        json!({"type":"message","id":"a","parentId":"u","message":{"role":"assistant","content":[{"type":"toolCall","id":"spawn","name":"subagent","arguments":{"agent":"reviewer","task":"review"}}],"stopReason":"toolUse"}}),
+        json!({"type":"message","id":"r","parentId":"a","message":{"role":"toolResult","toolCallId":"spawn","toolName":"subagent","details":{"results":[{"agent":"reviewer","status":"completed","messages":(0..505).map(|n|json!({"role":"assistant","content":[{"type":"text","text":format!("message {n}")}]})).collect::<Vec<_>>()}]}}})];
+    std::fs::write(sessions.join("parent.jsonl"), entries.iter().map(Value::to_string).collect::<Vec<_>>().join("\n") + "\n").unwrap();
+    let transcript = engine.request("workspace", "subagent/transcript", json!({"threadId":"parent","nodeId":"spawn:agent:0"})).await.unwrap();
+    assert_eq!(transcript["truncated"], true);
+    assert_eq!(transcript["messages"].as_array().unwrap().len(), 500);
+    assert_eq!(transcript["messages"][0]["content"][0]["text"], "message 5");
+    assert!(engine.request("workspace", "subagent/transcript", json!({"threadId":"parent","nodeId":"missing"})).await.is_err());
+    assert!(engine.request("other", "subagent/transcript", json!({"threadId":"parent","nodeId":"spawn:agent:0"})).await.is_err());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn side_chats_copy_latest_or_message_and_persist_read_only_links() {
+    let dir = temp();
+    let engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into_owned(), None, Arc::new(|_, _| {}));
+    let sessions = engine.directory("workspace").unwrap();
+    std::fs::create_dir_all(&sessions).unwrap();
+    let entries = [json!({"type":"session","version":3,"id":"parent","cwd":dir}),
+        json!({"type":"message","id":"u1","parentId":null,"message":{"role":"user","content":"first","timestamp":1}}),
+        json!({"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","content":[{"type":"text","text":"answer one"}],"timestamp":2,"stopReason":"stop"}}),
+        json!({"type":"message","id":"u2","parentId":"a1","message":{"role":"user","content":"second","timestamp":3}}),
+        json!({"type":"message","id":"a2","parentId":"u2","message":{"role":"assistant","content":[{"type":"text","text":"answer two"}],"timestamp":4,"stopReason":"stop"}})];
+    let source = entries.iter().map(Value::to_string).collect::<Vec<_>>().join("\n") + "\n";
+    std::fs::write(sessions.join("parent.jsonl"), &source).unwrap();
+    for at in [Value::Null, json!("parent:message:2")] {
+        let side_of = json!({"threadId":"parent","workspaceId":"workspace","atItemId":at});
+        let fork = engine.request("workspace", "thread/fork", json!({"threadId":"parent","sideOf":side_of,"atItemId":at})).await.unwrap();
+        let id = fork["result"]["thread"]["id"].as_str().unwrap();
+        assert_eq!(fork["result"]["sandbox"]["type"], "readOnly");
+        let (thread, _) = read_session(&sessions.join(format!("{id}.jsonl")), &[]).unwrap();
+        assert_eq!(thread["sideOf"], side_of);
+        assert_eq!(thread["forkedFromId"], "parent");
+        assert_eq!(thread["turns"].as_array().unwrap().len(), if at.is_null() { 2 } else { 1 });
+        let access: Value = serde_json::from_slice(&std::fs::read(dir.join("pi/agent/workspace/taucode/threads").join(format!("{id}.json"))).unwrap()).unwrap();
+        assert_eq!(access["accessMode"], "read-only");
+    }
+    assert_eq!(std::fs::read_to_string(sessions.join("parent.jsonl")).unwrap(), source);
+    let bad = engine.request("workspace", "thread/fork", json!({"threadId":"parent","sideOf":{"threadId":"parent"},"atItemId":"missing"})).await;
+    assert!(bad.is_err());
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
@@ -302,6 +458,8 @@ fn managed_policy_and_access_files_update_and_preserve_session_rules() {
     .unwrap();
     config::write_access(&home, "thread", Some("read-only")).unwrap();
     assert_eq!(read(&file)["sessionAllow"].as_array().unwrap().len(), 1);
+    assert_eq!(read(&file)["accessMode"], "read-only");
+    config::write_access(&home, "thread", Some("current")).unwrap();
     assert_eq!(read(&file)["accessMode"], "read-only");
     assert!(config::write_access(&home, "../escape", None).is_err());
     assert!(config::write_access(&home, "thread", Some("invalid")).is_err());
@@ -751,6 +909,21 @@ async fn real_pi_offline_startup_preserves_isolation_and_session_identity() {
 }
 
 #[tokio::test]
+async fn real_pi_chat_starts_offline_with_only_the_gate() {
+    let dir = temp();
+    let engine = PiEngine::chat(dir.clone(), Arc::new(|_, _| {}));
+    let provider: ProviderEntry = serde_json::from_value(json!({"id":"local","name":"Offline","kind":"ollama","enabled":true,"auth":{"type":"none"},"models":[{"id":"taucode-offline-test","enabled":true}]})).unwrap();
+    engine.configure("chats", vec![provider], AgentPolicy::default()).await;
+    let response = engine.request("chats", "thread/start", json!({})).await.unwrap();
+    let id = response["result"]["thread"]["id"].as_str().unwrap();
+    let process = engine.sessions.lock().await[id].process.clone().unwrap();
+    assert_eq!(*process.extensions.lock().await, std::collections::HashSet::from(["taucode-gate".to_owned()]));
+    assert!(dir.join("chats/scratch").join(id).is_dir());
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
 async fn recorded_compaction_resets_only_successful_thread_epoch() {
     for (fixture_name, expected) in [("rpc_session.jsonl", 1), ("rpc_compact_too_small.jsonl", 0)] {
         let dir = temp();
@@ -855,5 +1028,163 @@ async fn disk_history_pages_turns_and_items_without_starting_pi() {
         .await
         .values()
         .all(|s| s.process.is_none()));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn rewind_tree_excludes_user_message_and_undo_retains_old_branch() {
+    let dir = std::env::temp_dir().join(format!("pi-rewind-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("session.jsonl");
+    let rows = [
+        json!({"type":"session","id":"thread","cwd":"/tmp","timestamp":"2026-10-23T00:00:00Z"}),
+        json!({"type":"message","id":"u1","parentId":null,"message":{"role":"user","timestamp":1,"content":[{"type":"text","text":"first"}]}}),
+        json!({"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","timestamp":2,"content":[{"type":"text","text":"answer"}]}}),
+        json!({"type":"message","id":"u2","parentId":"a1","message":{"role":"user","timestamp":3,"content":[{"type":"text","text":"second"}]}}),
+    ];
+    std::fs::write(&file, rows.iter().map(|v| format!("{v}\n")).collect::<String>()).unwrap();
+    let leaf = rewind_session(&file, "thread", Some("thread:user:3"), None).unwrap();
+    assert_eq!(leaf, "u2");
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns.len(), 1);
+    assert!(std::fs::read_to_string(&file).unwrap().contains("second"));
+    rewind_session(&file, "thread", None, Some(leaf)).unwrap();
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns.len(), 2);
+    rewind_session(&file, "thread", Some("thread:user:1"), None).unwrap();
+    assert!(read_session(&file, &[]).unwrap().1.turns.is_empty());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn work_spawn_profile_loads_only_bundled_skills_and_preserves_connectors_and_subagents() {
+    let mut command = Command::new("node");
+    work_profile(&mut command, Path::new("/synthetic/work"), Some(Path::new("/synthetic/work/.venv/bin/python")));
+    let args: Vec<_> = command.as_std().get_args().map(|s| s.to_string_lossy().into_owned()).collect();
+    assert!(args.contains(&"read,write,edit,ls,find,grep,bash,subagent,ask_user,mcp__*".into()));
+    assert!(args.contains(&"/synthetic/work/skills".into()));
+    assert!(args.contains(&"--no-context-files".into()));
+    assert!(args.contains(&"--no-skills".into()));
+    assert!(args.contains(&WORK_PROMPT.into()));
+    assert!(WORK_PROMPT.contains("outputs/") && WORK_PROMPT.contains("Ask before deleting or overwriting"));
+    assert!(command.as_std().get_envs().any(|(k, v)| k == "TAUCODE_WORK" && v == Some(std::ffi::OsStr::new("1"))));
+}
+#[test]
+fn markdown_checklists_translate_to_plan_items_and_updates() {
+    let mut translator = Translator::new("task", "/synthetic/space");
+    translator.apply(&json!({"type":"agent_start"}));
+    let mut plans = vec![];
+    for (timestamp, text) in [(1, "- [ ] Read notes\n- [ ] Write brief"), (2, "- [x] Read notes\n- [ ] Write brief")] {
+        translator.apply(&json!({"type":"message_start","message":{"role":"assistant","timestamp":timestamp}}));
+        plans.extend(translator.apply(&json!({"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":text}]}})).into_iter().filter(|e| e["method"] == "item/completed" && e["params"]["item"]["type"] == "plan"));
+    }
+    assert_eq!(plans.len(), 2);
+    assert_eq!(plans[1]["params"]["item"]["plan"][0]["status"], "completed");
+    assert_eq!(plans[1]["params"]["item"]["plan"][1]["status"], "pending");
+}
+#[tokio::test]
+async fn real_pi_work_starts_offline_with_work_policy_and_skills() {
+    let dir = temp();
+    let space = dir.join("space");
+    std::fs::create_dir(&space).unwrap();
+    let engine = PiEngine::work(dir.join("data"), "workspace".into(), space.to_string_lossy().into_owned(), Arc::new(|_, _| {}));
+    let provider: ProviderEntry = serde_json::from_value(json!({"id":"local","name":"Offline","kind":"ollama","enabled":true,"auth":{"type":"none"},"models":[{"id":"offline","enabled":true}]})).unwrap();
+    engine.configure("workspace", vec![provider], AgentPolicy::default()).await;
+    let response = engine.request("workspace", "thread/start", json!({"model":"local/offline"})).await.unwrap();
+    let id = response["result"]["thread"]["id"].as_str().unwrap();
+    let access: Value = serde_json::from_slice(&std::fs::read(dir.join("data/pi/agent/workspace/taucode/threads").join(format!("{id}.json"))).unwrap()).unwrap();
+    assert_eq!(access["kind"], "work");
+    assert_eq!(access["accessMode"], "ask");
+    assert_eq!(access["workspace"], json!(space));
+    engine.request("workspace", "thread/accessMode/set", json!({"threadId":id,"accessMode":"full-access"})).await.unwrap();
+    let access: Value = serde_json::from_slice(&std::fs::read(dir.join("data/pi/agent/workspace/taucode/threads").join(format!("{id}.json"))).unwrap()).unwrap();
+    assert_eq!(access["kind"], "work");
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn side_chat_current_blocks_mutations_and_two_turn_checkpoints_bind_real_items() {
+    use crate::backend::events::AppServerEvent;
+    use crate::shared::{checkpoints::{Checkpoints, CheckpointLimits}, engines::WorkspaceSession};
+    let dir = temp();
+    let root = dir.join("workspace");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("file"), "before").unwrap();
+    let checkpoints = Checkpoints::with_limits(dir.clone(), "workspace".into(), root.to_string_lossy().into(),
+        Arc::new(|_| {}), CheckpointLimits::testing());
+    let observer = checkpoints.clone();
+    let (tx, mut completions) = tokio::sync::mpsc::unbounded_channel();
+    let providers = vec![serde_json::from_value(json!({"id":"first","name":"First","kind":"ollama","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"fake","enabled":true}]})).unwrap()];
+    let mut session = WorkspaceSession::lazy(Box::new(|| Box::pin(async { Err("Codex must not be used".into()) })),
+        providers, AgentPolicy::default(), None, None, "workspace".into());
+    session.checkpoints = Some(checkpoints.clone());
+    session.pi = PiEngine::new(dir.clone(), "workspace".into(), root.to_string_lossy().into(), None,
+        Arc::new(move |workspace, message| {
+            let complete = message["method"] == "turn/completed";
+            if let Some(handle) = observer.observe(&AppServerEvent { workspace_id: workspace.into(), message }) {
+                if complete { tx.send(handle).unwrap(); }
+            }
+        }));
+    session.pi.fake = true;
+    session.pi.keys = Arc::new(Keys);
+    let session = Arc::new(session);
+    let core_sessions = Mutex::new(HashMap::from([("workspace".into(), session.clone())]));
+    let workspaces = Mutex::new(HashMap::from([("workspace".into(), serde_json::from_value(json!({"id":"workspace","name":"Workspace","path":root,"settings":{}})).unwrap())]));
+    let parent = session.send_request_for_workspace("workspace", "thread/start", json!({"engine":"pi","model":"first/fake"})).await.unwrap();
+    let parent = parent["result"]["thread"]["id"].as_str().unwrap();
+    let side = session.send_request_for_workspace("workspace", "thread/sidechat", json!({"threadId":parent})).await.unwrap();
+    let id = side["result"]["thread"]["id"].as_str().unwrap();
+    let home = dir.join("pi/agent/workspace");
+    let access = home.join("taucode/threads").join(format!("{id}.json"));
+    for (text, mode) in [("first", Some("current".into())), ("second", None)] {
+        crate::shared::codex_core::send_user_message_core(&core_sessions, &workspaces, "workspace".into(), id.into(), text.into(), None, None, None, mode, None, None).await.unwrap();
+        session.send_request_for_workspace("workspace", "turn/interrupt", json!({"threadId":id})).await.unwrap();
+        completions.recv().await.unwrap().await.unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&std::fs::read(&access).unwrap()).unwrap()["accessMode"], "read-only");
+        assert_eq!(session.pi.sessions.lock().await[id].process.as_ref().unwrap().translator.lock().await.access_mode, "read-only");
+    }
+    let gate = Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/pi/extensions/taucode-gate.ts");
+    let output = std::process::Command::new("node").args(["--input-type=module", "-e", r#"
+        import assert from 'node:assert/strict';
+        import { pathToFileURL } from 'node:url';
+        const { default: gate } = await import(pathToFileURL(process.argv[1]).href);
+        let handler;
+        gate({ on: (name, fn) => { if (name === 'tool_call') handler = fn; } });
+        const ctx = { cwd: process.argv[2], hasUI: true, ui: { select: () => assert.fail('read-only must not ask for approval') } };
+        for (const [toolName, input] of [
+            ['write', { path: 'file', content: 'changed' }],
+            ['edit', { path: 'file', oldText: 'before', newText: 'changed' }],
+            ['bash', { command: 'touch forbidden' }],
+        ]) assert.equal((await handler({ toolName, toolCallId: toolName, input }, ctx)).block, true);
+    "#]).arg(gate).arg(&root).env("PI_CODING_AGENT_DIR", &home).env("TAUCODE_SESSION_KEY", id)
+        .env_remove("TAUCODE_SUBAGENT_DEPTH").output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let list = checkpoints.request(&session, "workspace", json!({"threadId":id,"action":"list"})).await.unwrap();
+    let rows = list["checkpoints"].as_array().unwrap();
+    assert_eq!(rows.len(), 4);
+    let history = session.send_request_for_workspace("workspace", "thread/read", json!({"threadId":id})).await.unwrap();
+    for (index, pair) in rows.chunks_exact(2).enumerate() {
+        let turn = &history["result"]["thread"]["turns"][index];
+        let user = turn["items"].as_array().unwrap().iter().find(|i| i["type"] == "userMessage").unwrap();
+        for row in pair {
+            assert_eq!(row["metadata"]["turnId"], turn["id"]);
+            assert_eq!(row["metadata"]["userItemId"], user["id"]);
+        }
+    }
+    assert_ne!(rows[0]["metadata"]["userItemId"], rows[2]["metadata"]["userItemId"]);
+    assert_ne!(rows[0]["metadata"]["turnId"], rows[2]["metadata"]["turnId"]);
+    std::fs::write(root.join("file"), "after").unwrap();
+    let rewind = checkpoints.request(&session, "workspace", json!({"threadId":id,"action":"rewind","checkpointId":rows[2]["id"],"mode":"files","paths":["file"]})).await.unwrap();
+    assert_eq!(rewind["conversationChanged"], false);
+    assert_eq!(std::fs::read_to_string(root.join("file")).unwrap(), "before");
+    let undo = checkpoints.request(&session, "workspace", json!({"threadId":id,"action":"undo"})).await.unwrap();
+    assert_eq!(undo["conversationChanged"], false);
+    assert_eq!(std::fs::read_to_string(root.join("file")).unwrap(), "after");
+    for mode in ["ask", "full-access"] {
+        crate::shared::codex_core::send_user_message_core(&core_sessions, &workspaces, "workspace".into(), id.into(), "override".into(), None, None, None, Some(mode.into()), None, None).await.unwrap();
+        session.send_request_for_workspace("workspace", "turn/interrupt", json!({"threadId":id})).await.unwrap();
+        completions.recv().await.unwrap().await.unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&std::fs::read(&access).unwrap()).unwrap()["accessMode"], mode);
+    }
+    session.shutdown().await;
     std::fs::remove_dir_all(dir).unwrap();
 }

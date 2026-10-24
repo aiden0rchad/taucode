@@ -159,7 +159,7 @@ impl Process {
         if m["type"] == "extension_ui_request" {
             let method = m["method"].as_str().unwrap_or("");
             if method == "setStatus" && m["statusText"] == "ready" {
-                if let Some(key @ ("taucode-gate" | "taucode-subagents")) = m["statusKey"].as_str()
+                if let Some(key @ ("taucode-gate" | "taucode-subagents" | "taucode-work")) = m["statusKey"].as_str()
                 {
                     self.extensions.lock().await.insert(key.into());
                     return;
@@ -287,7 +287,7 @@ impl Process {
     }
 }
 
-fn redact(mut text: String, secrets: &[String]) -> String {
+pub(super) fn redact(mut text: String, secrets: &[String]) -> String {
     for secret in secrets.iter().filter(|s| !s.is_empty()) {
         let escaped = serde_json::to_string(secret).unwrap();
         text = text

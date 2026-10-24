@@ -22,9 +22,11 @@ import {
 import { extractThreadCodexMetadata } from "@threads/utils/threadCodexMetadata";
 import {
   buildThreadSummaryFromThread,
+  extractEngineCapabilities,
   extractThreadFromResponse,
 } from "@threads/utils/threadSummary";
 import { asString } from "@threads/utils/threadNormalize";
+import { engineCapabilities } from "@threads/utils/engineCapabilities";
 import {
   getParentThreadIdFromThread,
   shouldHideSubagentThreadFromSidebar,
@@ -136,6 +138,7 @@ export function useThreadActions({
       thread: Record<string, unknown>,
       options?: { notifySubagent?: boolean },
     ) => {
+      if (thread.sideOf) dispatch({ type: "mergeThreadSummary", workspaceId, threadId, patch: { sideOf: thread.sideOf as import("@/types").SideOf, isSubagent: false } });
       const codexMetadata = extractThreadCodexMetadata(thread);
       if (codexMetadata.modelId || codexMetadata.effort) {
         onThreadCodexMetadataDetected?.(workspaceId, threadId, codexMetadata);
@@ -143,12 +146,13 @@ export function useThreadActions({
       const sourceParentId = getParentThreadIdFromThread(thread);
       if (sourceParentId) {
         updateThreadParent(sourceParentId, [threadId]);
-        if (options?.notifySubagent) {
+        if (options?.notifySubagent && !thread.sideOf) {
           onSubagentThreadDetected(workspaceId, threadId);
         }
       }
     },
     [
+      dispatch,
       onSubagentThreadDetected,
       onThreadCodexMetadataDetected,
       updateThreadParent,
@@ -198,7 +202,7 @@ export function useThreadActions({
         if (threadId) {
           dispatch({ type: "ensureThread", workspaceId, threadId });
           const thread = extractThreadFromResponse(response);
-          dispatch({ type: "mergeThreadSummary", workspaceId, threadId, patch: { engine: thread?.engine === "pi" ? "pi" : "codex", modelProvider: String(thread?.modelProvider ?? "") } });
+          dispatch({ type: "mergeThreadSummary", workspaceId, threadId, patch: { ...extractEngineCapabilities(thread), engine: thread?.engine === "claude" ? "claude" : thread?.engine === "pi" ? "pi" : "codex", modelProvider: String(thread?.modelProvider ?? "") } });
           if (shouldActivate) {
             dispatch({ type: "setActiveThreadId", workspaceId, threadId });
           }
@@ -398,6 +402,11 @@ export function useThreadActions({
       if (!threadId) {
         return null;
       }
+      const parent = threadsByWorkspace[workspaceId]?.find(t => t.id === threadId);
+      if (!engineCapabilities(parent?.engine ?? "codex", parent?.capabilities).forkLatest) {
+        onDebug?.({ id: `${Date.now()}-client-thread-fork-error`, timestamp: Date.now(), source: "error", label: "thread/fork error", payload: "Fork is unsupported for this engine" });
+        return null;
+      }
       const shouldActivate = options?.activate !== false;
       onDebug?.({
         id: `${Date.now()}-client-thread-fork`,
@@ -447,6 +456,7 @@ export function useThreadActions({
       loadedThreadsRef,
       onDebug,
       resumeThreadForWorkspace,
+      threadsByWorkspace,
     ],
   );
 

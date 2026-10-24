@@ -173,7 +173,7 @@ pub(super) fn write_access(home: &Path, id: &str, mode: Option<&str>) -> Result<
     }
     std::fs::create_dir_all(home.join("taucode/threads")).map_err(|e| e.to_string())?;
     let file = home.join("taucode/threads").join(format!("{id}.json"));
-    if mode.is_none() && file.exists() {
+    if matches!(mode, None | Some("current")) && file.exists() {
         return Ok(());
     }
     let mode = match mode.unwrap_or("ask") {
@@ -208,6 +208,10 @@ pub(super) fn prepare(
         (
             "taucode-subagents.ts",
             include_str!("../../../../engines/pi/extensions/taucode-subagents.ts"),
+        ),
+        (
+            "taucode-work.ts",
+            include_str!("../../../../engines/pi/extensions/taucode-work.ts"),
         ),
         (
             "lib/policy.ts",

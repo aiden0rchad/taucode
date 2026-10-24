@@ -181,6 +181,8 @@ function chooseRicherItem(remote: ConversationItem, local: ConversationItem) {
       status: remoteStatus ? remote.status : local.status,
       output: hasRemoteOutput ? remoteOutput : localOutput,
       changes: remote.changes ?? local.changes,
+      turnId: remote.turnId ?? local.turnId,
+      agentsTree: remote.agentsTree ?? local.agentsTree,
       collabSender: remote.collabSender ?? local.collabSender,
       collabReceiver: remote.collabReceiver ?? local.collabReceiver,
       collabReceivers:

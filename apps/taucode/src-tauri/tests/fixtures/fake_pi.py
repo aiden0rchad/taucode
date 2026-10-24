@@ -19,7 +19,19 @@ if args.session_dir:
     assert os.environ["PI_SKIP_VERSION_CHECK"] == "1"
     assert not (pathlib.Path(os.environ["PI_CODING_AGENT_DIR"]) / "auth.json").exists()
     assert "keychain-secret-canary" not in " ".join(sys.argv)
-    assert os.environ["TAUCODE_PROVIDER_FIRST_KEY"] == "keychain-secret-canary"
+    if os.environ.get("TAUCODE_WORK") != "1":
+        assert os.environ["TAUCODE_PROVIDER_FIRST_KEY"] == "keychain-secret-canary"
+    if os.environ.get("TAUCODE_CHAT") == "1":
+        assert "--no-tools" in sys.argv
+        assert "--no-context-files" in sys.argv
+        assert "--system-prompt" in sys.argv
+        assert any(arg.endswith("taucode-gate.ts") for arg in sys.argv)
+        assert not any(arg.endswith("taucode-subagents.ts") for arg in sys.argv)
+        if os.environ.get("TAUCODE_CHAT_WEB") != "1":
+            assert "builtin:mcp" not in sys.argv
+            assert json.loads((pathlib.Path(os.environ["PI_CODING_AGENT_DIR"]) / "mcp.json").read_text())["mcpServers"] == {}
+        assert pathlib.Path.cwd() == pathlib.Path(header["cwd"])
+        session.with_suffix(".spawn").write_text(json.dumps({"args": sys.argv, "cwd": str(pathlib.Path.cwd())}))
 
 
 def record(request):
@@ -33,6 +45,7 @@ def emit(value):
 
 
 held = None
+prompt_serial = 0
 for line in sys.stdin:
     request = json.loads(line)
     record(request)
@@ -63,6 +76,10 @@ for line in sys.stdin:
     if kind == "prompt":
         emit(response)
         emit({"type": "agent_start"})
+        prompt_serial += 1
+        message = {"role": "user", "timestamp": prompt_serial, "content": request["message"]}
+        emit({"type": "message_start", "message": message})
+        emit({"type": "message_end", "message": message})
         emit({"type": "message_start", "message": {"role": "assistant"}})
         emit({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": "one\u2028two\u2029three"}})
         if request.get("message") == "crash":

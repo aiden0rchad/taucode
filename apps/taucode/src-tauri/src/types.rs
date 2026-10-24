@@ -280,6 +280,7 @@ pub(crate) struct WorkspaceInfo {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum WorkspaceKind {
+    Work,
     Main,
     Worktree,
 }
@@ -383,6 +384,10 @@ pub(crate) struct RemoteBackendTarget {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct AppSettings {
+    #[serde(default, rename = "windowModes")]
+    pub(crate) window_modes: std::collections::HashMap<String, String>,
+    #[serde(default, rename = "chatDefaultModel")]
+    pub(crate) chat_default_model: Option<ModelRef>,
     #[serde(default)]
     pub(crate) browser: BrowserSettings,
     #[serde(default)]
@@ -1141,6 +1146,8 @@ impl Default for AppSettings {
             mcp_servers: default_mcp_servers(),
             providers: Vec::new(),
             agent_policy: AgentPolicy::default(),
+            window_modes: Default::default(),
+            chat_default_model: None,
             codegraph_enabled: true,
             codex_bin: None,
             codex_args: None,
@@ -1437,9 +1444,11 @@ mod tests {
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum EngineKind {
-    #[default]
-    Pi,
     Codex,
+    Claude,
+    #[default]
+    #[serde(other)]
+    Pi,
 }
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -1503,6 +1512,8 @@ pub(crate) struct ProviderEntry {
     pub id: String,
     pub name: String,
     pub kind: ProviderKind,
+    #[serde(default)]
+    pub anthropic_compatible: bool,
     pub base_url: Option<String>,
     pub api_style: Option<ApiStyle>,
     #[serde(default)]

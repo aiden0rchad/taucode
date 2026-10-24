@@ -23,7 +23,7 @@ export function SettingsRuntimeSetup() {
   };
   return <section className="settings-section">
     <h3>Engine runtimes</h3>
-    <p className="settings-subtitle">Dependencies install into app data on first use. Node ≥22.19 and npm are required for pi and browser tools; uv is required for Computer Use.</p>
+    <p className="settings-subtitle">Dependencies install into app data on first use. Node ≥22.19 and npm are required for pi, Claude Code (ACP), and browser tools; uv is required for Computer Use and Work document tools.</p>
     {runtimes.map(runtime => <div className="settings-row" key={runtime.engine} aria-busy={busy === runtime.engine || ["preparing", "installing"].includes(runtime.state)}>
       <span>{runtime.engine}</span><span role="status">{runtime.message}</span>
       <button type="button" disabled={busy !== null || ["preparing", "installing"].includes(runtime.state)} onClick={() => void prepare(runtime.engine)}>{busy === runtime.engine ? "Preparing…" : `Set up ${runtime.engine}`}</button>

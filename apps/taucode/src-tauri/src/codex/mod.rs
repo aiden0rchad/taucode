@@ -989,3 +989,29 @@ pub(crate) async fn generate_agent_description(
     )
     .await
 }
+
+#[tauri::command]
+pub(crate) async fn create_side_chat(
+    workspace_id: String, thread_id: String, at_item_id: Option<String>,
+    state: State<'_, AppState>, app: AppHandle,
+) -> Result<Value, String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        return remote_backend::call_remote(&*state, app, "create_side_chat",
+            json!({"workspaceId":workspace_id,"threadId":thread_id,"atItemId":at_item_id})).await;
+    }
+    codex_core::thread_feature_core(&state.sessions, workspace_id, "thread/sidechat",
+        json!({"threadId":thread_id,"atItemId":at_item_id})).await
+}
+
+#[tauri::command]
+pub(crate) async fn get_subagent_transcript(
+    workspace_id: String, thread_id: String, node_id: String,
+    state: State<'_, AppState>, app: AppHandle,
+) -> Result<Value, String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        return remote_backend::call_remote(&*state, app, "get_subagent_transcript",
+            json!({"workspaceId":workspace_id,"threadId":thread_id,"nodeId":node_id})).await;
+    }
+    codex_core::thread_feature_core(&state.sessions, workspace_id, "subagent/transcript",
+        json!({"threadId":thread_id,"nodeId":node_id})).await
+}

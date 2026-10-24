@@ -1,3 +1,4 @@
+import { useRunningAgents } from "@/features/agents/agents";
 import type { CSSProperties, MouseEvent } from "react";
 
 import type { ThreadSummary } from "../../../types";
@@ -86,6 +87,7 @@ export function ThreadRow({
   onToggleSubagents,
   showPinnedLabel = true,
 }: ThreadRowProps) {
+  const runningAgents = useRunningAgents(thread.id);
   const relativeTime = getThreadTime(thread);
   const badge = getThreadArgsBadge?.(workspaceId, thread.id) ?? null;
   const modelBadge =
@@ -170,7 +172,7 @@ export function ThreadRow({
       <span className={`thread-status ${statusClass}`} aria-hidden />
       <div className="thread-content">
         <div className="thread-headline">
-          <span className="thread-name">{thread.name}</span><span className="engine-badge">{thread.engine ?? "codex"}</span>
+          <span className="thread-name">{thread.sideOf && <span aria-label="Side chat">⑂ </span>}{thread.name}</span>{runningAgents > 0 && <span className="agents-count" aria-label={`${runningAgents} running subagents`}>{runningAgents}</span>}<span className="engine-badge">{thread.engine ?? "codex"}</span>
         </div>
         {hasDetails && (
           <div className="thread-details">

@@ -149,13 +149,16 @@ pub(super) async fn handle_rpc_request(
     params: Value,
     client_version: String,
 ) -> Result<Value, String> {
+    if method == "checkpoint_request" {
+        return shared::checkpoints::request(&state.sessions, parse_string(&params, "workspaceId")?, params["params"].clone()).await;
+    }
     if method == "engine_runtime" {
         match params["action"].as_str() {
             Some("prepare") => { shared::engine_runtime::prepare(&state.data_dir, params["engine"].as_str().ok_or("Missing engine")?, None).await?; }
             Some("status") => (),
             _ => return Err("Unknown runtime action".into()),
         }
-        return Ok(shared::engine_runtime::status(&state.data_dir));
+        return Ok(shared::engine_runtime::status(&state.data_dir).await);
     }
     if method == "computer_request_permissions" {
         return crate::shared::computer::ipc(&state.data_dir, json!({"action":"requestPermissions"})).await;

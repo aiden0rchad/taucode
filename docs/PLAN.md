@@ -463,6 +463,37 @@ Each milestone ends with a demo and its exit criteria passing.
 - ACP engine adapter with Claude Code as the first ACP engine; cross-engine handoff;
   role routing for side chats and subagents; codegraph symbol mentions, blast radius,
   affected tests.
+- **Wave 1** (in progress 2026-10-23, parallel worktrees `m4a` / `m4b` / `m4c`):
+  - `docs/specs/m4a-agents-tree-and-side-chats.md`
+  - `m4b-checkpoints-rewind.md`
+  - `m4c-acp-claude-engine.md`: `@agentclientprotocol/claude-agent-acp@0.89.1`,
+    `--hide-claude-auth`, isolated `CLAUDE_CONFIG_DIR`, API keys from the registry only
+- **Wave 2** (user request 2026-10-23):
+  - `m4d-simple-chat.md`: Chat mode, a plain chatbot with no project; Code · Chat · Work
+    mode switcher
+  - `m4e-import-claude-codex.md`: import projects, threads, Cowork tasks, MCP servers
+    and chats from Codex desktop/CLI, Claude desktop (Code tab and Cowork), and the
+    claude.ai / ChatGPT exports. Read-only, idempotent, never reads credentials.
+  - `m4f-work-mode.md`: Cowork-style Work mode, with folder spaces, a task queue,
+    plan/outputs panes, document skills (pinned `engines/work` uv lock), and
+    approval-before-overwrite.
+  - Order: m4d, then m4e ‖ m4f.
+- **Status 2026-10-24:** M4a–M4i merged.
+  - **Live-verified through the daemon against the user's LiteLLM:**
+    - checkpoints: before/after per turn, files rewind and undo
+    - parallel subagent tree with usage, and on-demand transcripts
+    - read-only side chats that keep the parent's context
+    - Chat mode with no tools
+    - the Claude Code ACP engine with API-key only (GLM 5.3 via `/v1/messages`); turns
+      are checkpointed and config stays isolated
+    - a Work task producing `outputs/` with originals untouched
+    - import detection: 17 Codex projects, 94 threads, 42 Claude sessions, 15 Cowork
+      tasks, 4 MCP servers
+  - **Known issues:**
+    - the user's LiteLLM rejects `anthropic-beta` on its Claude routes, so Claude Code
+      can't use Claude models there until that setting changes
+    - the new UI (Agents panel, side-chat split, Chat/Work/Import screens) is
+      unit-tested, not yet visually checked by hand
 
 **M5 — Ship (2 weeks)**
 - Signing + notarization with bundled Python, permission onboarding, auto-update

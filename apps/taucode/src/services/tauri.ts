@@ -1,4 +1,20 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
+export function importRequest<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
+  return invoke<T>("import_request", { action, params });
+}
+export async function pickImportExport(): Promise<string | null> {
+  const selected = await open({ multiple: false, filters: [{ name: "Chat exports", extensions: ["zip", "json"] }] });
+  return typeof selected === "string" ? selected : null;
+}
+export function chatRequest<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
+  return invoke<T>("chat_request", { action, params });
+}
+export function setWindowMode(mode: import("@/types").AppMode): Promise<void> {
+  return invoke("set_window_mode", { mode });
+}
+export function readChatAttachment(path: string): Promise<import("@/features/chat/chat").Attachment> {
+  return invoke("read_chat_attachment", { path });
+}
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { Options as NotificationOptions } from "@tauri-apps/plugin-notification";
 import type {
@@ -83,9 +99,10 @@ export async function pickImageFiles(): Promise<string[]> {
 export async function exportMarkdownFile(
   content: string,
   defaultFileName = "plan.md",
+  title = "Export plan as Markdown",
 ): Promise<string | null> {
   const selection = await save({
-    title: "Export plan as Markdown",
+    title,
     defaultPath: defaultFileName,
     filters: [
       {
@@ -1212,3 +1229,27 @@ export const providerSetApiKey = (id: string, key: string) => invoke<void>("prov
 export const providerHasApiKey = (id: string) => invoke<boolean>("provider_has_api_key", { id });
 export const providerDeleteApiKey = (id: string) => invoke<void>("provider_delete_api_key", { id });
 export const providerTestAndFetch = (id: string) => invoke<{ ok: boolean; latencyMs: number; models: import("../types").ProviderModel[]; error?: string }>("provider_test_and_fetch", { id });
+
+export function checkpointRequest(workspaceId: string, params: Record<string, unknown>): Promise<import("@/types").CheckpointResponse> {
+  return invoke("checkpoint_request", { workspaceId, params });
+}
+export function getSubagentTranscript(workspaceId: string, threadId: string, nodeId: string) {
+  return invoke<{ messages: Record<string, unknown>[]; truncated: boolean }>("get_subagent_transcript", { workspaceId, threadId, nodeId });
+}
+export function createSideChat(workspaceId: string, threadId: string, atItemId?: string) {
+  return invoke<{ result: { thread: Record<string, unknown> & { id: string } } }>("create_side_chat", { workspaceId, threadId, atItemId });
+}
+
+export async function workRequest<T = unknown>(action: string, params: Record<string, unknown> = {}): Promise<T> {
+  return invoke<T>("work_request", { action, params });
+}
+export async function workAttachment(spaceId: string, path: string): Promise<string> {
+  return invoke<string>("work_attachment", { spaceId, path });
+}
+export async function workOutput(taskId: string, path: string, action: "open" | "reveal" | "preview"): Promise<void> {
+  return invoke("work_output", { taskId, path, action });
+}
+export async function pickWorkAttachments(): Promise<string[]> {
+  const selection = await open({ directory: false, multiple: true });
+  return selection ? Array.isArray(selection) ? selection : [selection] : [];
+}

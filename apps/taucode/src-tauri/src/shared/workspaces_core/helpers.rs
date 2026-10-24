@@ -93,7 +93,7 @@ pub(crate) async fn list_workspaces_core(
     let workspaces = workspaces.lock().await;
     let sessions = sessions.lock().await;
     let mut result = Vec::new();
-    for entry in workspaces.values() {
+    for entry in workspaces.values().filter(|w| !matches!(w.kind, crate::types::WorkspaceKind::Work)) {
         result.push(WorkspaceInfo {
             id: entry.id.clone(),
             name: entry.name.clone(),
@@ -156,10 +156,7 @@ mod tests {
         workspace_path_to_string, AGENTS_MD_FILE_NAME,
     };
     use std::path::PathBuf;
-    use std::sync::Mutex;
     use uuid::Uuid;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn make_temp_dir() -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("codex-monitor-{}", Uuid::new_v4()));
@@ -209,19 +206,12 @@ mod tests {
 
     #[test]
     fn normalize_workspace_path_input_expands_home_prefix() {
-        let _guard = ENV_LOCK.lock().expect("lock env");
-        let previous_home = std::env::var("HOME").ok();
-        std::env::set_var("HOME", "/tmp/cm-home");
+        let home = std::env::var("HOME").expect("HOME for test process");
 
         assert_eq!(
             normalize_workspace_path_input("~/dev/repo"),
-            PathBuf::from("/tmp/cm-home/dev/repo")
+            PathBuf::from(home).join("dev/repo")
         );
-
-        match previous_home {
-            Some(value) => std::env::set_var("HOME", value),
-            None => std::env::remove_var("HOME"),
-        }
     }
 
     #[test]

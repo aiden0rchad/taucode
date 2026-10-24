@@ -40,6 +40,7 @@ pub(super) struct Translator {
     pub total: Value,
     pub cost: f64,
     pub queue: Value,
+    pub transcripts: HashMap<String, Value>,
     message: String,
     message_count: usize,
     completed: std::collections::HashSet<String>,
@@ -64,6 +65,7 @@ impl Translator {
             total: json!({"totalTokens":0,"inputTokens":0,"cachedInputTokens":0,"cacheWriteInputTokens":0,"outputTokens":0,"reasoningOutputTokens":0}),
             cost: 0.0,
             queue: json!({}),
+            transcripts: HashMap::new(),
             message: String::new(),
             message_count: 0,
             completed: Default::default(),
@@ -144,6 +146,9 @@ impl Translator {
             .clone();
         for mut item in open {
             if !self.completed.contains(item["id"].as_str().unwrap()) {
+                if item.get("agentsTree").is_some() {
+                    super::agents::settle(&mut item["agentsTree"], if aborted { "aborted" } else if self.failure.is_some() { "failed" } else { "completed" });
+                }
                 if item.get("status").is_some() {
                     item["status"] = json!(if aborted || self.failure.is_some() {
                         "failed"
@@ -223,6 +228,12 @@ impl Translator {
                                 item["text"] = p["text"].clone();
                             }
                             self.item(item, true, out);
+                            if !thinking {
+                                let plan = markdown_plan(p["text"].as_str().unwrap_or(""));
+                                if !plan.is_empty() {
+                                    self.item(json!({"type":"plan","id":format!("{}:plan:{}",self.turn_id(),self.message),"text":p["text"],"plan":plan}), true, out);
+                                }
+                            }
                         }
                         Some("toolCall") => {
                             self.tools
@@ -261,7 +272,7 @@ impl Translator {
                     .cloned()
                     .unwrap_or_else(|| vec![a.clone()]);
                 let states: serde_json::Map<String, Value> = tasks.iter().enumerate().map(|(i, task)| (format!("{id}:agent:{i}"), json!({"status":"running","message":task["task"],"task":task["task"],"agent":task["agent"],"model":task["model"],"usage":null}))).collect();
-                json!({"type":"collabAgentToolCall","id":id,"tool":"spawnAgent","status":"inProgress","senderThreadId":self.thread,"receiverThreadIds":states.keys().collect::<Vec<_>>(),"prompt":tasks.iter().filter_map(|t|t["task"].as_str()).collect::<Vec<_>>().join("\n\n"),"model":a["model"],"reasoningEffort":null,"agentsStates":states})
+                json!({"type":"collabAgentToolCall","id":id,"tool":"spawnAgent","status":"inProgress","senderThreadId":self.thread,"receiverThreadIds":states.keys().collect::<Vec<_>>(),"prompt":tasks.iter().filter_map(|t|t["task"].as_str()).collect::<Vec<_>>().join("\n\n"),"model":a["model"],"reasoningEffort":null,"agentsTree":super::agents::tree(id, &tasks, &Value::Null, false, &mut self.transcripts),"agentsStates":states})
             }
             "bash" => {
                 json!({"type":"commandExecution","id":id,"pluginId":null,"scriptPath":null,"command":a["command"].as_str().unwrap_or(""),"cwd":self.cwd,"processId":null,"source":"agent","status":"inProgress","commandActions":[],"aggregatedOutput":"","exitCode":null,"durationMs":null})
@@ -355,6 +366,10 @@ impl Translator {
         }
         match item["type"].as_str().unwrap_or("") {
             "collabAgentToolCall" => {
+                let previous_tree = item["agentsTree"].clone();
+                if let Some(results) = result["details"]["results"].as_array() {
+                    item["agentsTree"] = super::agents::tree(id, results, &item["agentsTree"], done, &mut self.transcripts);
+                }
                 for (i, r) in result["details"]["results"]
                     .as_array()
                     .into_iter()
@@ -386,10 +401,11 @@ impl Translator {
                         .unwrap_or_else(|| r["stderr"].as_str().unwrap_or("").into());
                     // Snapshots contain cumulative usage. Only add the increment, including
                     // updates followed by final tool results and duplicate completion frames.
-                    let old = &item["agentsStates"][&agent_id]["usage"];
+                    let old = &previous_tree[i]["usage"];
+                    let usage = &item["agentsTree"][i]["usage"];
                     let mut delta = json!({});
                     for key in ["input", "output", "cacheRead", "cacheWrite"] {
-                        delta[key] = json!(r["usage"][key]
+                        delta[key] = json!(usage[key]
                             .as_u64()
                             .unwrap_or(0)
                             .saturating_sub(old[key].as_u64().unwrap_or(0)));
@@ -398,13 +414,13 @@ impl Translator {
                         .iter()
                         .map(|k| delta[k].as_u64().unwrap_or(0))
                         .sum::<u64>());
-                    delta["cost"] = json!((r["usage"]["cost"].as_f64().unwrap_or(0.0)
+                    delta["cost"] = json!((usage["cost"].as_f64().unwrap_or(0.0)
                         - old["cost"].as_f64().unwrap_or(0.0))
                     .max(0.0));
                     if delta["totalTokens"] != 0 || delta["cost"].as_f64().unwrap_or(0.0) > 0.0 {
                         self.usage(&delta, out);
                     }
-                    item["agentsStates"][&agent_id] = json!({"status":status,"message":message,"agent":r["agent"],"task":r["task"],"model":r["model"],"usage":r["usage"]});
+                    item["agentsStates"][&agent_id] = json!({"status":status,"message":message.chars().take(300).collect::<String>(),"agent":r["agent"],"task":r["task"],"model":r["model"],"usage":r["usage"]});
                 }
                 if done
                     && item["agentsStates"]
@@ -722,4 +738,16 @@ pub(super) fn sandbox(mode: &str, cwd: &str) -> Value {
 }
 fn settings_event(id: &str, cwd: &str, provider: &str, model: &str, mode: &str) -> Value {
     json!({"method":"thread/settings/updated","params":{"threadId":id,"threadSettings":{"disabledPluginIds":[],"cwd":cwd,"approvalPolicy":if mode == "full-access" {"never"}else{"on-request"},"approvalsReviewer":"user","sandboxPolicy":sandbox(mode,cwd),"activePermissionProfile":null,"model":model,"modelProvider":provider,"serviceTier":null,"effort":null,"summary":null,"collaborationMode":{"mode":"default","settings":{"model":model,"reasoning_effort":null,"developer_instructions":null}},"multiAgentMode":"explicitRequestOnly","personality":null}}})
+}
+
+pub(super) fn markdown_plan(text: &str) -> Vec<Value> {
+    text.lines().filter_map(|line| {
+        let line = line.trim();
+        let (status, step) = if let Some(step) = line.strip_prefix("- [ ] ").or_else(|| line.strip_prefix("* [ ] ")) {
+            ("pending", step)
+        } else if let Some(step) = line.strip_prefix("- [x] ").or_else(|| line.strip_prefix("- [X] ")).or_else(|| line.strip_prefix("* [x] ")) {
+            ("completed", step)
+        } else { return None };
+        (!step.trim().is_empty()).then(|| json!({"step":step.trim(),"status":status}))
+    }).take(100).collect()
 }

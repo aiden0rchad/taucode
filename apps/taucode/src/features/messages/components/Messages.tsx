@@ -1,3 +1,5 @@
+import { useCheckpointWarnings } from "@/features/checkpoints/useCheckpointWarnings";
+import { RewindAction } from "@/features/checkpoints/Checkpoints";
 import { memo, useCallback } from "react";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
@@ -51,6 +53,9 @@ type MessagesProps = {
   onPlanSubmitChanges?: (changes: string) => void;
   onOpenThreadLink?: (threadId: string, workspaceId?: string | null) => void;
   onQuoteMessage?: (text: string) => void;
+  onSideChat?: (itemId: string) => void;
+  sideChatDisabledReason?: string;
+  onSendToMain?: (text: string) => void;
 };
 
 export const Messages = memo(function Messages({
@@ -77,8 +82,10 @@ export const Messages = memo(function Messages({
   onPlanAccept,
   onPlanSubmitChanges,
   onOpenThreadLink,
-  onQuoteMessage,
+  onQuoteMessage, onSideChat, sideChatDisabledReason, onSendToMain,
 }: MessagesProps) {
+  const lastUserId = [...items].reverse().find((item) => item.kind === "message" && item.role === "user")?.id;
+  const checkpointWarnings = useCheckpointWarnings(workspaceId, threadId, lastUserId);
   const activeUserInputRequestId =
     threadId && userInputRequests.length
       ? (userInputRequests.find(
@@ -164,6 +171,10 @@ export const Messages = memo(function Messages({
           key={item.id}
           item={item}
           isCopied={isCopied}
+          rewindAction={item.role === "user" && workspaceId && threadId ? <><RewindAction workspaceId={workspaceId} threadId={threadId} userItemId={item.id} running={isThinking} />{checkpointWarnings[item.id] && <span role="status">{checkpointWarnings[item.id]}</span>}</> : undefined}
+          onSideChat={onSideChat}
+          sideChatDisabledReason={sideChatDisabledReason}
+          onSendToMain={onSendToMain}
           onCopy={handleCopyMessage}
           onQuote={onQuoteMessage ? handleQuoteMessage : undefined}
           codeBlockCopyUseModifier={codeBlockCopyUseModifier}

@@ -180,11 +180,12 @@ export function useThreadMessaging({
       const summary = threadsByWorkspace?.[workspace.id]?.find(t => t.id === threadId);
       const provider = resolvedModel?.split("/")[0];
       if (summary?.engine !== "pi" && provider && summary?.modelProvider && provider !== summary.modelProvider) {
+        if (summary?.engine === "claude") { pushThreadErrorMessage(threadId, "Start a new Claude Code thread to switch providers."); return { status: "blocked" }; }
         if (isProcessing) { pushThreadErrorMessage(threadId, "Finish or interrupt the running turn before switching providers."); return { status: "blocked" }; }
         const usage = tokenUsageByThread?.[threadId];
         const tokens = usage?.last.totalTokens ?? usage?.total.totalTokens ?? 0;
         if (!window.confirm("Switch provider by forking this codex thread? ~" + tokens.toLocaleString() + " tokens re-sent.")) return { status: "blocked" };
-        const forked = await forkThreadForWorkspace(workspace.id, threadId, { activate: true, model: resolvedModel ?? undefined });
+        const forked = await forkThreadForWorkspace(workspace.id, threadId, { activate: !summary.sideOf, model: resolvedModel ?? undefined });
         if (!forked) return { status: "blocked" };
         threadId = forked;
       }
@@ -298,7 +299,7 @@ export function useThreadMessaging({
           if (steeredTurnId) {
             setActiveTurnId(threadId, steeredTurnId);
           }
-          return { status: "sent" };
+          return { status: "sent", ...(summary?.sideOf ? { threadId } : {}) };
         }
         const result = (response?.result ?? response) as Record<string, unknown>;
         const turn = (result?.turn ?? response?.turn ?? null) as
@@ -313,7 +314,7 @@ export function useThreadMessaging({
           return { status: "blocked" };
         }
         setActiveTurnId(threadId, turnId);
-        return { status: "sent" };
+        return { status: "sent", ...(summary?.sideOf ? { threadId } : {}) };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         if (requestMode !== "steer") {
@@ -428,21 +429,21 @@ export function useThreadMessaging({
     [sendMessageToThread],
   );
 
-  const interruptTurn = useCallback(async () => {
-    if (!activeWorkspace || !activeThreadId) {
+  const interruptThread = useCallback(async (workspaceId: string, threadId: string) => {
+    if (!workspaceId || !threadId) {
       return;
     }
-    const activeTurnId = activeTurnIdByThread[activeThreadId] ?? null;
+    const activeTurnId = activeTurnIdByThread[threadId] ?? null;
     const turnId = activeTurnId ?? "pending";
-    markProcessing(activeThreadId, false);
-    setActiveTurnId(activeThreadId, null);
+    markProcessing(threadId, false);
+    setActiveTurnId(threadId, null);
     dispatch({
       type: "addAssistantMessage",
-      threadId: activeThreadId,
+      threadId,
       text: "Session stopped.",
     });
     if (!activeTurnId) {
-      pendingInterruptsRef.current.add(activeThreadId);
+      pendingInterruptsRef.current.add(threadId);
     }
     onDebug?.({
       id: `${Date.now()}-client-turn-interrupt`,
@@ -450,16 +451,16 @@ export function useThreadMessaging({
       source: "client",
       label: "turn/interrupt",
       payload: {
-        workspaceId: activeWorkspace.id,
-        threadId: activeThreadId,
+        workspaceId,
+        threadId,
         turnId,
         queued: !activeTurnId,
       },
     });
     try {
       const response = await interruptTurnService(
-        activeWorkspace.id,
-        activeThreadId,
+        workspaceId,
+        threadId,
         turnId,
       );
       onDebug?.({
@@ -479,15 +480,17 @@ export function useThreadMessaging({
       });
     }
   }, [
-    activeThreadId,
     activeTurnIdByThread,
-    activeWorkspace,
     dispatch,
     markProcessing,
     onDebug,
     pendingInterruptsRef,
     setActiveTurnId,
   ]);
+
+  const interruptTurn = useCallback(async () => {
+    if (activeWorkspace && activeThreadId) await interruptThread(activeWorkspace.id, activeThreadId);
+  }, [activeWorkspace, activeThreadId, interruptThread]);
 
   const startReviewTarget = useCallback(
     async (target: ReviewTarget, workspaceIdOverride?: string): Promise<boolean> => {
@@ -880,6 +883,7 @@ export function useThreadMessaging({
 
   return {
     interruptTurn,
+    interruptThread,
     sendUserMessage,
     sendUserMessageToThread,
     startFork,

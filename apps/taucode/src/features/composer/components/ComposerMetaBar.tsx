@@ -1,4 +1,6 @@
 import type { CSSProperties } from "react";
+import { useEffect, useState } from "react";
+import { engineRuntime } from "@services/tauri";
 import { BrainCog, SlidersHorizontal, Zap } from "lucide-react";
 import type { AccessMode, ServiceTier, ThreadTokenUsage } from "../../../types";
 import type { CodexArgsOption } from "../../threads/utils/codexArgsProfiles";
@@ -47,6 +49,25 @@ export function ComposerMetaBar({
   onSelectCodexArgsOverride,
   contextUsage = null,
 }: ComposerMetaBarProps) {
+  const [claudeRuntimeReason, setClaudeRuntimeReason] = useState("");
+  const hasClaudeModels = models.some(m => m.engines?.includes("claude"));
+  useEffect(() => {
+    if (!hasClaudeModels && engine !== "claude") return;
+    let active = true;
+    void engineRuntime("status").then(runtimes => {
+      const runtime = runtimes.find(r => r.engine === "claude-acp");
+      if (active) setClaudeRuntimeReason(runtime && ["error", "installing", "preparing"].includes(runtime.state) ? runtime.message : "");
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [engine, hasClaudeModels]);
+  const claudeReason = hasClaudeModels ? claudeRuntimeReason : "Claude Code needs an Anthropic or Anthropic-compatible provider and model";
+  const selectEngine = (next: import("@/types").EngineKind) => {
+    if (!models.find(m => m.id === selectedModelId)?.engines?.includes(next)) {
+      const model = models.find(m => m.engines?.includes(next));
+      if (model) onSelectModel(model.id);
+    }
+    onSelectEngine?.(next);
+  };
   const selectedModel =
     models.find((model) => model.id === selectedModelId) ?? null;
   const selectedModelLabel =
@@ -175,7 +196,7 @@ export function ComposerMetaBar({
               />
             </svg>
           </span>
-          {onSelectEngine ? <select aria-label="Engine" value={engine} onChange={e => onSelectEngine(e.target.value as "pi" | "codex")}><option value="pi">pi</option><option value="codex">codex</option></select> : <span className="engine-badge" aria-label="Thread engine">{engine}</span>}
+          {onSelectEngine ? <select aria-label="Engine" value={engine} disabled={disabled} onChange={e => selectEngine(e.target.value as import("@/types").EngineKind)}><option value="pi">pi</option><option value="codex">codex</option><option value="claude" disabled={!!claudeReason} title={claudeReason || undefined}>Claude Code (ACP){claudeReason ? " — " + claudeReason : ""}</option></select> : <span className="engine-badge" aria-label="Thread engine">{engine === "claude" ? "Claude Code (ACP)" : engine}</span>}
           <select
             className="composer-select composer-select--model"
             aria-label="Model"

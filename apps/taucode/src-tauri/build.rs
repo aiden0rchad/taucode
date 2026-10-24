@@ -4,7 +4,7 @@ mod engine_files;
 fn main() {
     // Tauri directory mappings have no excludes. Stage clean trees so local
     // Python caches, test fixtures and dependencies can never enter the bundle.
-    for dir in ["computer/taucode_cua", "pi/extensions"] {
+    for dir in ["computer/taucode_cua", "pi/extensions", "work/skills"] {
         let source = std::path::Path::new("../engines").join(dir);
         let target = std::path::Path::new("target/engine-resources").join(dir);
         println!("cargo:rerun-if-changed={}", source.display());

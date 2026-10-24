@@ -1,10 +1,11 @@
-export type EngineKind = "pi" | "codex";
+export type EngineKind = "pi" | "codex" | "claude";
 export type ModelRef = { providerId: string; modelId: string };
 export type ProviderKind = "openai" | "anthropic" | "google" | "openrouter" | "groq" | "mistral" | "xai" | "deepseek" | "zai" | "ollama" | "lmstudio" | "openai-compatible";
 export type ProviderAuth = { type: "none" } | { type: "apiKey" } | { type: "env"; var: string } | { type: "command"; command: string; args: string[]; timeoutMs?: number };
 export type ProviderModel = { id: string; displayName?: string | null; enabled: boolean; contextWindow?: number | null; supportsTools?: boolean | null; supportsImages?: boolean | null };
 export type ProviderEntry = {
   id: string; name: string; kind: ProviderKind; baseUrl?: string | null;
+  anthropicCompatible?: boolean;
   apiStyle?: "chat-completions" | "responses" | null; auth: ProviderAuth;
   models: ProviderModel[]; modelsFetchedAt?: number | null; enabled: boolean; extraHeaders?: Record<string, string>;
 };
@@ -60,7 +61,7 @@ export type WorkspaceGroup = {
   copiesFolder?: string | null;
 };
 
-export type WorkspaceKind = "main" | "worktree";
+export type WorkspaceKind = "main" | "worktree" | "work";
 
 export type WorktreeInfo = {
   branch: string;
@@ -111,6 +112,21 @@ export type CollabAgentRef = {
   nickname?: string;
   role?: string;
 };
+
+export type AgentNode = {
+  id: string;
+  agent: string;
+  model?: string | null;
+  task?: string;
+  status: "pending" | "running" | "completed" | "failed" | "aborted";
+  startedAt?: number | null;
+  endedAt?: number | null;
+  usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number } | null;
+  lastMessage?: string;
+  errorMessage?: string | null;
+  children: AgentNode[];
+};
+export type SideOf = { threadId: string; workspaceId: string; atItemId: string | null };
 
 export type CollabAgentStatus = CollabAgentRef & {
   status: string;
@@ -167,10 +183,14 @@ export type ConversationItem =
       collabReceiver?: CollabAgentRef;
       collabReceivers?: CollabAgentRef[];
       collabStatuses?: CollabAgentStatus[];
+      agentsTree?: AgentNode[];
+      turnId?: string;
     };
 
 export type ThreadSummary = {
+  sideOf?: SideOf;
   engine?: EngineKind;
+  capabilities?: { fork: boolean; rewind: boolean; steer?: boolean };
   modelProvider?: string;
   id: string;
   name: string;
@@ -241,6 +261,7 @@ export type FollowUpMessageBehavior = "queue" | "steer";
 export type ComposerSendIntent = "default" | "queue" | "steer";
 export type SendMessageResult = {
   status: "sent" | "blocked" | "steer_failed";
+  threadId?: string;
 };
 
 export type ComposerEditorPreset = "default" | "helpful" | "smart";
@@ -274,7 +295,10 @@ export type McpServerEntry = {
 };
 export type McpConnectionResult = { ok: boolean; latencyMs: number; tools?: { name: string; description?: string }[]; error?: string };
 
+export type AppMode = "code" | "chat" | "work";
 export type AppSettings = {
+  windowModes?: Record<string, AppMode>;
+  chatDefaultModel?: ModelRef | null;
   computer?: import("@/features/computer/computer").ComputerSettings;
   browser?: BrowserSettings;
   mcpServers?: McpServerEntry[];
@@ -728,4 +752,55 @@ export type DictationEvent =
 export type DictationTranscript = {
   id: string;
   text: string;
+};
+
+export type Checkpoint = {
+  id: string;
+  commit: string | null;
+  metadata: { threadId: string; turnId: string; userItemId: string; kind: "before" | "after" | "pre-rewind"; timestamp: string; engine: string; preview?: string };
+  skipped: string[];
+  warning: string | null;
+  filesChanged: number;
+};
+export type CheckpointChange = { path: string; status: "modified" | "added since" | "deleted since"; diff: string };
+export type CheckpointResponse = {
+  checkpoints?: Checkpoint[];
+  changes?: CheckpointChange[];
+  conversation?: boolean;
+  engine?: string;
+  undoAvailable?: boolean;
+  conversationChanged?: boolean;
+  text?: string;
+  error?: string | null;
+};
+
+export type WorkSpace = {
+  id: string; name: string; path: string; kind: "work"; readOnlyFolders: string[];
+  readOnly?: boolean;
+};
+export type WorkStatus = "queued" | "running" | "needs-input" | "done" | "failed" | "stopped";
+export type WorkRequest = {
+  id: string; method: string;
+  params: { reason?: string; command?: string; diffPreview?: string; questions?: { question: string; options?: { label: string }[] }[] };
+};
+export type WorkTask = {
+  importId?: string | null;
+  id: string; spaceId: string; threadId: string | null; title: string; brief: string;
+  attachments: string[]; model: string; accessMode: "ask" | "read-only" | "full-access"; status: WorkStatus;
+  plan: TurnPlanStep[]; outputs: string[]; pending: WorkRequest[]; error: string | null;
+};
+export type WorkState = { spaces: WorkSpace[]; tasks: WorkTask[]; concurrency: number };
+export type ImportEntry = {
+  key: string; source: string; id: string; kind: string; title: string; project: string; cwd: string;
+  archived: boolean; missingCwd: boolean; needsSecrets: boolean; warning: string | null;
+};
+export type ImportDetection = { entries: ImportEntry[]; warnings: string[] };
+export type ImportLog = {
+  id: string; created: { key: string; title: string; kind: string; threadId: string; workspaceId: string | null }[];
+  skipped: string[]; warnings: string[]; cancelled: boolean; undone: boolean;
+};
+export type ImportProgress = { running: boolean; completed: number; total: number; phase?: string };
+export type ImportedTranscript = {
+  title: string; source: string; kind: string; cwd: string; readOnly: boolean; warning: string | null;
+  messages: { role: string; text: string }[]; raw: unknown[] | null; attachments: string[];
 };
