@@ -408,7 +408,40 @@ pub fn get_process_psn_for_window(window_id: u32, pid: libc::pid_t, out_psn: &mu
 }
 
 pub fn key_window_of_pid(pid: i32) -> Option<u32> {
-    super::ax_actions::focused_window(pid).or_else(|| super::windows::order(pid).first().copied())
+    super::ax_actions::focused_window(pid)
+        .or_else(|| super::windows::order(pid).first().copied())
+        .or_else(|| {
+            (pid == std::process::id() as i32)
+                .then(super::focus_guard::host_key_window)
+                .flatten()
+        })
+}
+
+// Reference set_front_process_persistently: restore only the prior process/window,
+// with kCPSNoWindows (0x400) to avoid changing window order.
+pub fn restore_activation(previous: i32, window: Option<u32>, from: i32) -> bool {
+    type SetFrontProcessFn = unsafe extern "C" fn(*const c_void, u32, u32) -> i32;
+    static SET_FRONT: OnceLock<Option<SetFrontProcessFn>> = OnceLock::new();
+    let set_front = *SET_FRONT.get_or_init(|| {
+        find_sym(b"_SLPSSetFrontProcessWithOptions\0")
+            .or_else(|| find_sym(b"SLPSSetFrontProcessWithOptions\0"))
+            .map(|p| unsafe { as_fn(p) })
+    });
+    let window = window.or_else(|| key_window_of_pid(previous));
+    if let (Some(set_front), Some(window)) = (set_front, window) {
+        let mut psn = [0u8; 8];
+        if !get_process_psn_for_window(window, previous, &mut psn) {
+            return false;
+        }
+        unsafe { set_front(psn.as_ptr().cast(), window, 0x400) == 0 }
+    } else {
+        restore_focus_after_without_raise(
+            previous,
+            window,
+            from,
+            key_window_of_pid(from).unwrap_or(0),
+        )
+    }
 }
 
 // Port of restore_focus_after_without_raise: target defocus precedes user focus.
