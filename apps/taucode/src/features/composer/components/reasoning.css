@@ -1,9 +1,50 @@
 .reasoning-control { position: relative; }
 .reasoning-control > button { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
-.reasoning-popover { width: 340px; padding: 16px; }
+.reasoning-popover { width: 340px; padding: 16px; overflow-x: hidden; }
 .reasoning-popover label, .reasoning-popover input { display: block; width: 100%; }
 .reasoning-popover button { cursor: pointer; color: var(--text-primary); background: var(--surface-card-muted); border: 1px solid var(--border-subtle); border-radius: var(--radius-chip); padding: 7px 10px; }
-.reasoning-popover input { margin: 14px 0 8px; accent-color: var(--text-primary); }
+.reasoning-heading { display: flex; align-items: center; gap: 6px; }
+.reasoning-flame, .reasoning-popover.burning .reasoning-heading { color: #f06436; }
+.reasoning-slider { display: block; position: relative; margin: 16px 0 8px; height: 24px; }
+.reasoning-rail { position: absolute; top: 10px; left: 7px; right: 7px; height: 4px; border-radius: 4px; background: var(--border-subtle); pointer-events: none; }
+.reasoning-fill { display: block; width: var(--reasoning-position); height: 100%; border-radius: inherit; background: var(--reasoning-color); }
+.reasoning-thumb { position: absolute; left: var(--reasoning-position); top: -5px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--reasoning-color); }
+.reasoning-popover input { position: relative; margin: 0; height: 24px; appearance: none; background: transparent; cursor: pointer; }
+.reasoning-popover input::-webkit-slider-runnable-track { height: 4px; background: transparent; }
+.reasoning-popover input::-moz-range-track { height: 4px; background: transparent; }
+.reasoning-popover input::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; margin-top: -5px; border: 0; border-radius: 50%; background: transparent; }
+.reasoning-popover input::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: transparent; }
+.reasoning-popover input:focus-visible { outline: 2px solid var(--reasoning-color); outline-offset: 3px; border-radius: 4px; }
+.reasoning-popover.warm .reasoning-thumb { box-shadow: 0 0 8px 2px #e9ac3855; }
+.reasoning-popover.burning .reasoning-thumb { box-shadow: 0 0 10px 2px #f0643680; }
+.reasoning-popover.burning .reasoning-thumb::before,
+.reasoning-popover.burning .reasoning-thumb::after { content: ""; position: absolute; inset: 0; border-radius: inherit; animation: reasoning-glow 1.2s infinite; }
+.reasoning-popover.burning .reasoning-thumb::after { animation-name: reasoning-glow-offset; animation-delay: -0.43s; }
+.reasoning-popover.burning .reasoning-fill { background: linear-gradient(100deg, #f06436, #ffcc66, #e94e28, #f06436); background-size: 250% 100%; animation: reasoning-flow 4s linear infinite; }
+.reasoning-popover.burning .reasoning-heading .reasoning-flame { animation: reasoning-flame 1.7s ease-in-out infinite; }
+.reasoning-ember { position: absolute; left: 5px; top: 0; width: var(--ember-size, 5px); height: var(--ember-size, 5px); border-radius: 50%; color: #ffbd64; background: currentColor; box-shadow: 0 0 6px currentColor; opacity: 0; animation: reasoning-ember 1.8s ease-out infinite; --ember-drift: -9px; --ember-rise: -30px; }
+.reasoning-ember:nth-child(2) { --ember-size: 4px; --ember-drift: 7px; --ember-rise: -24px; color: #ffaa53; animation-duration: 1.3s; animation-delay: -0.22s; }
+.reasoning-ember:nth-child(3) { --ember-size: 3px; --ember-drift: -3px; --ember-rise: -27px; color: #ff9342; animation-duration: 1.6s; animation-delay: -0.51s; }
+.reasoning-ember:nth-child(4) { --ember-drift: 8px; --ember-rise: -22px; color: #ff8137; animation-duration: 1.1s; animation-delay: -0.74s; }
+.reasoning-ember:nth-child(5) { --ember-size: 4px; --ember-drift: -7px; --ember-rise: -26px; color: #ff722f; animation-duration: 1.5s; animation-delay: -1.03s; }
+.reasoning-ember:nth-child(6) { --ember-size: 3px; --ember-drift: 3px; --ember-rise: -29px; color: #ff6a2b; animation-duration: 1.7s; animation-delay: -1.36s; }
+@keyframes reasoning-glow {
+  0%, 100% { box-shadow: 0 0 6px 1px #f0643670; }
+  23%, 71% { box-shadow: 0 0 14px 3px #f06436aa; }
+  46%, 83% { box-shadow: 0 0 8px 2px #ffb44655; }
+}
+@keyframes reasoning-glow-offset {
+  0%, 100% { box-shadow: 0 0 4px 1px #ffcc6655; }
+  37%, 79% { box-shadow: 0 0 9px 2px #ffcc6699; }
+  58% { box-shadow: 0 0 5px 0 #f0643644; }
+}
+@keyframes reasoning-flow { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+@keyframes reasoning-flame { 0%, 100% { transform: scale(1); opacity: 0.85; } 33% { transform: scale(1.08); opacity: 1; } 71% { transform: scale(0.96); opacity: 0.75; } }
+@keyframes reasoning-ember { 0% { transform: translate(0, 0) scale(1); opacity: 0; } 12% { opacity: 1; } 45% { transform: translate(calc(var(--ember-drift) * 0.45), calc(var(--ember-rise) * 0.45)) scale(1); opacity: 0.95; } 100% { transform: translate(var(--ember-drift), var(--ember-rise)) scale(0.3); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .reasoning-popover, .reasoning-popover *, .reasoning-popover *::before, .reasoning-popover *::after { animation: none !important; }
+  .reasoning-ember { display: none; }
+}
 .reasoning-stops { display: flex; justify-content: space-between; gap: 3px; margin-bottom: 12px; }
 .reasoning-stops button { font-size: 11px; padding: 4px; }
 .reasoning-stops button[aria-pressed="true"] { font-weight: 700; color: var(--text-strong); }

@@ -47,20 +47,47 @@ it("portals above the chip, shifts inside viewport margins, and keeps slider cli
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(document.activeElement).toBe(trigger);
 });
-it("uses exactly the detected stops, keyboard navigation, source and clamp notice", () => {
+it("uses exactly the detected stops, keyboard navigation and clamp notice without a source line", () => {
   const change = vi.fn();
   render(<ReasoningControl capability={cap} value="medium" onChange={change} />);
   fireEvent.click(screen.getByRole("button", { name: "Reasoning: Low (adjusted for model)" }));
   const slider = screen.getByRole("slider");
   expect(slider.getAttribute("max")).toBe("2");
   expect(slider.getAttribute("aria-valuetext")).toBe("Low");
-  expect(screen.getByText("from provider API")).toBeTruthy();
+  expect(screen.queryByText("from provider API")).toBeNull();
   expect(screen.getByRole("status").textContent).toContain("Medium is unavailable; using Low");
   expect(screen.queryByRole("button", { name: "Medium" })).toBeNull();
   fireEvent.keyDown(slider, { key: "ArrowRight" }); expect(change).toHaveBeenLastCalledWith("high");
   fireEvent.keyDown(slider, { key: "End" }); expect(change).toHaveBeenLastCalledWith("max");
   fireEvent.keyDown(slider, { key: "ArrowLeft" }); expect(change).toHaveBeenLastCalledWith("low");
   fireEvent.keyDown(slider, { key: "Escape" }); expect(screen.queryByRole("dialog")).toBeNull();
+});
+it.each([["low", "high", "max"], ["off", "high"], ["low", "medium", "high", "xhigh", "max"]])("heats relative to the model's levels: %j", (...levels) => {
+  const capability = { ...cap, levels };
+  const { container, rerender } = render(<ReasoningControl capability={capability} value={levels[levels.length - 1]} onChange={vi.fn()} />);
+  const chip = screen.getByRole("button");
+  expect(chip.querySelector(".lucide-flame")).toBeTruthy();
+  expect(chip.querySelector(".lucide-brain-cog")).toBeNull();
+  expect(container.querySelector(".reasoning-ember")).toBeNull();
+  fireEvent.click(chip);
+  const dialog = screen.getByRole("dialog");
+  expect(dialog.classList.contains("burning")).toBe(true);
+  expect(dialog.querySelectorAll(".reasoning-ember")).toHaveLength(6);
+  expect(dialog.style.getPropertyValue("--reasoning-position")).toBe("100%");
+  expect(dialog.querySelector(".reasoning-heading .lucide-flame")).toBeTruthy();
+  rerender(<ReasoningControl capability={capability} value={levels[levels.length - 2]} onChange={vi.fn()} />);
+  expect(dialog.classList.contains("warm")).toBe(true);
+  expect(dialog.classList.contains("burning")).toBe(false);
+  expect(dialog.querySelector(".reasoning-ember")).toBeNull();
+  expect(chip.querySelector(".lucide-flame")).toBeNull();
+  rerender(<ReasoningControl capability={capability} value={levels[0]} onChange={vi.fn()} />);
+  expect(dialog.style.getPropertyValue("--reasoning-position")).toBe("0%");
+  expect(dialog.style.getPropertyValue("--reasoning-color")).toContain("#e9ac38 0%");
+  rerender(<ReasoningControl capability={capability} value={levels[levels.length - 1]} onChange={vi.fn()} />);
+  fireEvent.click(chip);
+  expect(document.querySelector(".reasoning-ember")).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(chip.querySelector(".lucide-flame")).toBeTruthy();
 });
 it("hides unsupported models and links unknown ones to Settings", () => {
   const settings = vi.fn();
