@@ -72,6 +72,9 @@ export function selectCode(
   const section = query.get("settings");
   const sections = SETTINGS_ROUTE_SECTION_IDS.filter(s => s !== "profile");
   if (section) openSettings(sections.find(s => s === section) ?? "display");
+  if (query.get("evals") === "layout") {
+    void import("./evals.layout").then(module => module.checkEvalsLayout()).catch(console.error);
+  }
   if (query.get("diagnostics") === "layout") {
     void import("./diagnostics.layout").then(module => module.checkDiagnosticsLayout()).catch(console.error);
   }

@@ -4,7 +4,11 @@ Settings → Evals compares engines and provider/model pairs against an offline,
 versioned task suite. **Open full view** opens the same page in the main area.
 Select engines, models, tags/categories, Codegraph, repeats, concurrency and optional
 token/dollar caps. The preview counts the matrix and estimates tokens from prior
-completed runs. **Start → Confirm start** spends provider tokens.
+completed runs. **Start run → Confirm start** spends provider tokens.
+
+Pending runtimes install once before any cells are scheduled; the UI and CLI show
+“Preparing <engine>…”. A preparation failure saves a failed run without model calls.
+Disabled, missing and errored engines are rejected with their name and state.
 
 Progress updates arrive through `eval/progress`. Cancel stops active sessions and
 cancels queued cells. Results show sortable configuration summaries, highlighted
@@ -26,7 +30,8 @@ codex_monitor_daemonctl evals gate --baseline latest-passing --tags smoke --max-
 The CLI uses the existing daemon address/token and data-directory resolution.
 It connects to the running daemon or hosts the shared evaluator in-process when no daemon is reachable.
 `--data-dir`, `--listen`, `--token`, and `--daemon-path` retain their normal
-daemonctl meanings. Ctrl-C requests cancellation. `--keep-workdirs` retains all
+daemonctl meanings, before or after the subcommand. Use `--insecure-no-auth` for a
+local throwaway daemon without a token. Ctrl-C requests cancellation. `--keep-workdirs` retains all
 cell directories. Exit status is nonzero on RPC errors, incomplete runs, or a failed
 regression gate. A regular completed run may contain failed cells; use the gate
 to enforce thresholds.
@@ -122,7 +127,9 @@ Rust fake-engine tests cover lifecycle, retry nudges, usage, budgets, cancellati
 persistence, cleanup, approval boundaries and gate thresholds. UI tests cover
 confirmation, count preview, events, comparison sorting/highlighting, A/B deltas,
 transcripts and policy writes. `?settings=evals` includes completed A/B and live
-preview runs in History.
+preview runs in History. Open `?settings=evals&evals=layout` at each of 1024px and
+1440px to run real-DOM form, model-picker, results, A/B and progress assertions.
+The document's `data-evals-layout` attribute reports `passed` or the failure.
 
 Before merging an engine/model/Codegraph upgrade, save a passing smoke baseline,
 run CLI gate with the same matrix, and inspect flagged task transcripts. A missing

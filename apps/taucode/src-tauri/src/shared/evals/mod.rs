@@ -43,9 +43,10 @@ impl Driver for WorkspaceSession {
     fn stop(&self)->BoxFuture<'_,()> { Box::pin(self.shutdown()) }
 }
 type Factory=Arc<dyn Fn(WorkspaceEntry,AppSettings,Sink)->BoxFuture<'static,Result<Arc<dyn Driver>,String>>+Send+Sync>;
+type Prepare=Arc<dyn Fn(PathBuf,String)->BoxFuture<'static,Result<Value,String>>+Send+Sync>;
 pub(crate) struct Evals {
     data:PathBuf, emit:Arc<dyn Fn(AppServerEvent)+Send+Sync>,
-    active:Mutex<HashMap<String,watch::Sender<bool>>>, factory:Factory,
+    active:Mutex<HashMap<String,watch::Sender<bool>>>, factory:Factory, prepare:Prepare,
 }
 impl Evals {
     pub fn new(data:PathBuf,sink:impl EventSink)->Arc<Self> {
@@ -58,7 +59,11 @@ impl Evals {
                 Ok(session as Arc<dyn Driver>)
             })
         });
-        Arc::new(Self {data,emit:Arc::new(move |e|sink.emit_app_server_event(e)),active:Mutex::new(HashMap::new()),factory})
+        let prepare:Prepare=Arc::new(|data,engine|Box::pin(async move {
+            super::engine_runtime::prepare(&data,&engine,None).await?;
+            super::engine_runtime::status(&data).await.as_array().and_then(|rows|rows.iter().find(|r|r["engine"]==engine)).cloned().ok_or_else(||format!("Engine {engine}: runtime state missing after preparation"))
+        }));
+        Arc::new(Self {data,emit:Arc::new(move |e|sink.emit_app_server_event(e)),active:Mutex::new(HashMap::new()),factory,prepare})
     }
     fn path(&self,id:&str)->Result<PathBuf,String> { safe_id(id)?; Ok(self.data.join("evals/runs").join(format!("{id}.json"))) }
     fn read(&self,id:&str)->Result<Run,String> {
@@ -68,7 +73,7 @@ impl Evals {
         let path=self.path(&run.id)?;
         std::fs::create_dir_all(path.parent().unwrap()).map_err(|e|e.to_string())?;
         super::pi::config::write_json(&path,&json!(run))?;
-        (self.emit)(AppServerEvent {workspace_id:"evals".into(),message:json!({"method":"eval/progress","params":{"runId":run.id,"status":run.status,"cells":run.cells}})});
+        (self.emit)(AppServerEvent {workspace_id:"evals".into(),message:json!({"method":"eval/progress","params":{"runId":run.id,"status":run.status,"message":run.message,"cells":run.cells}})});
         Ok(())
     }
     fn runs(&self)->Result<Vec<Run>,String> {
@@ -107,7 +112,7 @@ impl Evals {
             "status"|"run"=>{
                 let id=p["runId"].as_str().ok_or("Missing runId")?;
                 let mut run=self.read(id)?;
-                if run.status=="running" && !self.active.lock().await.contains_key(id) { run.status="interrupted".into(); self.save(&run)?; }
+                if matches!(run.status.as_str(),"running"|"preparing") && !self.active.lock().await.contains_key(id) { run.status="interrupted".into(); self.save(&run)?; }
                 Ok(json!({"summary":summary(&run),"run":run}))
             },
             "cancel"=>{
@@ -142,9 +147,16 @@ impl Evals {
     async fn start(self:&Arc<Self>,settings:AppSettings,plan:Plan,runtime:Value)->Result<Value,String> {
         let registry=super::engine_registry::registry(&settings);
         let connectors=super::connectors::effective(&settings,&WorkspaceSettings::default(),None)?;
-        let ready=|id:&String|registry.iter().any(|e|e.id==*id && e.enabled) &&
-            runtime.as_array().is_some_and(|rows|rows.iter().any(|r|r["engine"]==if id=="claude" {"claude-acp"} else {id} && r["state"]=="ready"));
-        if !plan.engines.iter().any(ready) { return Err("No selected engine is enabled and ready".into()); }
+        let mut preparing=Vec::new();
+        for engine in &plan.engines {
+            let state=runtime.as_array().and_then(|rows|rows.iter().find(|r|r["engine"]==if engine=="claude" {"claude-acp"} else {engine}));
+            let enabled=registry.iter().any(|e|e.id==*engine && e.enabled);
+            let name=state.and_then(|s|s["state"].as_str()).unwrap_or("missing");
+            if !enabled || !matches!(name,"ready"|"pending") {
+                return Err(format!("Engine {engine}: {}{}",if enabled {name} else {"disabled"},state.and_then(|s|s["message"].as_str()).map(|s|format!(" — {s}")).unwrap_or_default()));
+            }
+            if name=="pending" { preparing.push(engine.clone()); }
+        }
         let id=uuid::Uuid::new_v4().to_string();
         let mut cells=Vec::new();
         for task in plan.tasks() { for engine in &plan.engines { for model in &plan.models { for graph in &plan.codegraph { for repeat in 0..plan.repeats {
@@ -154,28 +166,57 @@ impl Evals {
                 _=>false,
             });
             cells.push(Cell {id:format!("cell-{}",cells.len()+1),task:task.id.clone(),engine:engine.clone(),model:model.clone(),codegraph:*graph,repeat,
-                status:if ready(engine) && supported {"queued"} else {"skipped"}.into(),turns:0,thread_id:None,
-                output:if !ready(engine) {"Engine disabled or not ready"} else if !supported {"Required feature/connector unavailable"} else {""}.into(),
+                status:if supported {"queued"} else {"skipped"}.into(),turns:0,thread_id:None,
+                output:if !supported {"Required feature/connector unavailable"} else {""}.into(),
                 answer:String::new(),usage:Usage::default(),transcript:vec![],workdir:None,completed_at:None});
         }}}}}
         let graph_version=if plan.codegraph.contains(&true) {
             let output=tokio::time::timeout(Duration::from_secs(3),tokio::process::Command::new("codegraph").arg("--version").kill_on_drop(true).output()).await;
             output.ok().and_then(Result::ok).filter(|o|o.status.success()).map(|o|String::from_utf8_lossy(&o.stdout).trim().to_owned())
         } else {None};
-        let run=Run {id:id.clone(),created_at:chrono::Utc::now().to_rfc3339(),status:"running".into(),
+        let mut run=Run {id:id.clone(),created_at:chrono::Utc::now().to_rfc3339(),status:if preparing.is_empty() {"running"} else {"preparing"}.into(),
+            message:preparing.first().map(|e|format!("Preparing {e}…")),
             environment:json!({"appVersion":env!("CARGO_PKG_VERSION"),"engines":runtime,"codegraphVersion":graph_version,"models":plan.models}),plan,cells};
         self.save(&run)?;
         let (cancel,_)=watch::channel(false);
         self.active.lock().await.insert(id.clone(),cancel.clone());
         let this=self.clone();
-        let response=json!({"runId":id});
+        let response=json!({"runId":id,"status":run.status,"message":run.message});
         tokio::spawn(async move {
-            let result=this.drive(run,settings,cancel).await;
+            let result=match this.prepare_run(&mut run,&preparing,&cancel).await {
+                Ok(())=>this.drive(run,settings,cancel).await,
+                Err(error)=>{
+                    run.status=if *cancel.borrow() {"cancelled"} else {"failed"}.into();
+                    run.message=Some(error.clone());
+                    for cell in &mut run.cells { if cell.status=="queued" {cell.status="cancelled".into();cell.output=error.clone();} }
+                    this.save(&run)
+                }
+            };
             if let Err(error)=result { (this.emit)(AppServerEvent {workspace_id:"evals".into(),message:json!({"method":"eval/progress","params":{"runId":id,"status":"error","error":error}})}); }
             this.active.lock().await.remove(&id);
             this.prune().await;
         });
         Ok(response)
+    }
+    async fn prepare_run(&self,run:&mut Run,engines:&[String],cancel:&watch::Sender<bool>)->Result<(),String> {
+        let mut cancelled=cancel.subscribe();
+        for engine in engines {
+            if *cancelled.borrow() {return Err("Run cancelled during preparation".into());}
+            run.message=Some(format!("Preparing {engine}…"));self.save(run)?;
+            let runtime_id=if engine=="claude" {"claude-acp"} else {engine};
+            let mut prepare=(self.prepare)(self.data.clone(),runtime_id.into());
+            let status=tokio::select! {
+                _=cancelled.changed()=>{
+                    super::engine_runtime::cancel(runtime_id);
+                    let _=tokio::time::timeout(Duration::from_secs(5),&mut prepare).await;
+                    return Err("Run cancelled during preparation".into());
+                },
+                status=&mut prepare=>status.map_err(|e|format!("Engine {engine}: preparation failed — {e}"))?,
+            };
+            if status["state"]!="ready" { return Err(format!("Engine {engine}: preparation ended in {} — {}",status["state"].as_str().unwrap_or("missing"),status["message"].as_str().unwrap_or(""))); }
+            if let Some(row)=run.environment["engines"].as_array_mut().and_then(|rows|rows.iter_mut().find(|r|r["engine"]==runtime_id)) { *row=status; }
+        }
+        run.status="running".into();run.message=None;self.save(run)
     }
     async fn drive(self:&Arc<Self>,mut run:Run,settings:AppSettings,cancel:watch::Sender<bool>)->Result<(),String> {
         let mut pending:VecDeque<_>=run.cells.iter().filter(|c|c.status=="queued").cloned().collect();

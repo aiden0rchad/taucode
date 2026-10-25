@@ -154,27 +154,12 @@ async fn run() -> Result<(), String> {
 }
 
 fn parse_args() -> Result<CliArgs, String> {
-    let mut args = env::args().skip(1);
-
-    let Some(first) = args.next() else {
-        return Err(usage());
-    };
-
-    if matches!(first.as_str(), "-h" | "--help" | "help") {
-        print!("{}", usage());
-        std::process::exit(0);
-    }
-
-    let command = match first.as_str() {
-        "evals" => CliCommand::Evals,
-        "start" => CliCommand::Start,
-        "stop" => CliCommand::Stop,
-        "status" => CliCommand::Status,
-        "command-preview" => CliCommand::CommandPreview,
-        _ => return Err(format!("Unknown command: {first}\n\n{}", usage())),
-    };
-
-    let eval_action = if command == CliCommand::Evals { Some(args.next().filter(|s| matches!(s.as_str(), "run" | "gate")).ok_or("Use evals run or evals gate")?) } else { None };
+    parse_args_from(env::args().skip(1))
+}
+fn parse_args_from(input:impl IntoIterator<Item=String>)->Result<CliArgs,String> {
+    let mut args=input.into_iter();
+    let mut command=None;
+    let mut eval_action=None;
     let mut eval_params = json!({});
     let mut listen: Option<String> = None;
     let mut token: Option<String> = None;
@@ -185,25 +170,30 @@ fn parse_args() -> Result<CliArgs, String> {
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--engines" | "--models" | "--tags" | "--ids" | "--categories" if command == CliCommand::Evals => {
+            "start" | "stop" | "status" | "command-preview" | "evals" if command.is_none() => {
+                command=Some(match arg.as_str() {"start"=>CliCommand::Start,"stop"=>CliCommand::Stop,"status"=>CliCommand::Status,"evals"=>CliCommand::Evals,_=>CliCommand::CommandPreview});
+            },
+            "run" | "gate" if command==Some(CliCommand::Evals) && eval_action.is_none()=>eval_action=Some(arg),
+
+            "--engines" | "--models" | "--tags" | "--ids" | "--categories" if command == Some(CliCommand::Evals) => {
                 let value=args.next().ok_or("Missing list value")?;
                 eval_params[arg.trim_start_matches("--")]=json!(value.split(',').map(str::to_owned).collect::<Vec<_>>());
             },
-            "--codegraph" if command == CliCommand::Evals => {
+            "--codegraph" if command == Some(CliCommand::Evals) => {
                 eval_params["codegraph"]=match args.next().as_deref() { Some("both")=>json!([false,true]),Some("on")=>json!([true]),Some("off")=>json!([false]),_=>return Err("Use --codegraph on, off or both".into()) };
             },
-            "--repeats" | "--concurrency" | "--max-total-tokens" if command == CliCommand::Evals => {
+            "--repeats" | "--concurrency" | "--max-total-tokens" if command == Some(CliCommand::Evals) => {
                 let key=if arg=="--max-total-tokens" {"maxTotalTokens"} else {arg.trim_start_matches("--")};
                 eval_params[key]=json!(args.next().ok_or("Missing number")?.parse::<u64>().map_err(|e|e.to_string())?);
             },
-            "--max-cost" | "--max-pass-drop" | "--max-token-increase" if command == CliCommand::Evals => {
+            "--max-cost" | "--max-pass-drop" | "--max-token-increase" if command == Some(CliCommand::Evals) => {
                 let key=match arg.as_str() {"--max-cost"=>"maxCost","--max-pass-drop"=>"maxPassDrop",_=>"maxTokenIncrease"};
                 let n=args.next().ok_or("Missing number")?.parse::<f64>().map_err(|e|e.to_string())?;
                 if !n.is_finite() || n<0. { return Err("Threshold must be finite and nonnegative".into()); }
                 eval_params[key]=json!(n);
             },
-            "--baseline" if command == CliCommand::Evals => eval_params["baseline"]=json!(args.next().ok_or("Missing baseline")?),
-            "--keep-workdirs" if command == CliCommand::Evals => eval_params["keepWorkdirs"]=json!(true),
+            "--baseline" if command == Some(CliCommand::Evals) => eval_params["baseline"]=json!(args.next().ok_or("Missing baseline")?),
+            "--keep-workdirs" if command == Some(CliCommand::Evals) => eval_params["keepWorkdirs"]=json!(true),
             "--listen" => {
                 let value = args.next().ok_or("--listen requires a value")?;
                 let trimmed = value.trim();
@@ -243,7 +233,7 @@ fn parse_args() -> Result<CliArgs, String> {
                 insecure_no_auth = true;
                 token = None;
             }
-            "-h" | "--help" => {
+            "-h" | "--help" | "help" => {
                 print!("{}", usage());
                 std::process::exit(0);
             }
@@ -251,6 +241,8 @@ fn parse_args() -> Result<CliArgs, String> {
         }
     }
 
+    let command=command.ok_or_else(usage)?;
+    if command==CliCommand::Evals && eval_action.is_none() { return Err("Use evals run or evals gate".into()); }
     Ok(CliArgs {
         command,
         eval_action,
@@ -267,10 +259,10 @@ fn parse_args() -> Result<CliArgs, String> {
 fn usage() -> String {
     format!(
         "\
-USAGE:\n  codex-monitor-daemonctl <command> [options]\n\n\
-COMMANDS:\n  evals run --engines pi,omp --models provider/model [--tags smoke] [--codegraph both]\n  evals gate --baseline <runId|latest-passing> [--tags smoke] [--max-pass-drop 0.1] [--max-token-increase 0.25]\n  start              Start daemon (auto-restarts mismatched daemon if safe)\n  stop               Stop daemon\n  status             Show daemon status\n  command-preview    Print equivalent daemon start command\n\n\
+USAGE:\n  codex-monitor-daemonctl [global options] <command> [options]\n\n\
+COMMANDS:\n  evals run --engines pi,omp --models provider/model [--tags smoke] [--codegraph both] [--insecure-no-auth]\n  evals gate --baseline <runId|latest-passing> [--tags smoke] [--max-pass-drop 0.1] [--max-token-increase 0.25]\n  start              Start daemon (auto-restarts mismatched daemon if safe)\n  stop               Stop daemon\n  status             Show daemon status\n  command-preview    Print equivalent daemon start command\n\n\
 OPTIONS:\n  --listen <addr>        Bind/listen address (default derived from settings, fallback: {DEFAULT_LISTEN_ADDR})\n  --token <token>        Remote backend token override\n  --data-dir <path>      App data dir (contains settings.json/workspaces.json)\n  --daemon-path <path>   Explicit path to codex-monitor-daemon binary\n  --insecure-no-auth     Start/probe daemon without auth token (dev only)\n  --json                 Print JSON output\n  -h, --help             Show this help\n\n\
-NOTES:\n  - Defaults read token/host from <data-dir>/settings.json\n  - If no --data-dir is provided, default app data dir is used for this platform\n"
+NOTES:\n  - Global options are accepted before or after the subcommand.\n  - Use --insecure-no-auth for a local throwaway daemon without a token.\n  - Defaults read token/host from <data-dir>/settings.json\n  - If no --data-dir is provided, default app data dir is used for this platform\n"
     )
 }
 
@@ -1493,13 +1485,15 @@ async fn run_evals(args:&CliArgs,data:&Path,listen:&str,token:Option<&str>)->Res
     for key in ["baseline","maxPassDrop","maxTokenIncrease"] { plan.as_object_mut().unwrap().remove(key); }
     let result=client.request("start",plan).await?;
     let id=result["runId"].as_str().ok_or("Missing runId")?;
+    let mut last_preparing=String::new();
+    print_eval_preparing(&result,&mut last_preparing);
     loop {
         tokio::select! {
             _=tokio::signal::ctrl_c()=>{
                 client.request("cancel",json!({"runId":id})).await?;
                 let _=tokio::time::timeout(Duration::from_secs(10),async {
                     loop {
-                        if client.request("status",json!({"runId":id})).await?["run"]["status"]!="running" {return Ok::<(),String>(());}
+                        if !matches!(client.request("status",json!({"runId":id})).await?["run"]["status"].as_str(),Some("running"|"preparing")) {return Ok::<(),String>(());}
                         tokio::time::sleep(Duration::from_millis(100)).await;
                     }
                 }).await;
@@ -1509,7 +1503,8 @@ async fn run_evals(args:&CliArgs,data:&Path,listen:&str,token:Option<&str>)->Res
             _=tokio::time::sleep(Duration::from_millis(500))=>{},
         }
         let status=client.request("status",json!({"runId":id})).await?;
-        if status["run"]["status"]=="running" { continue; }
+        print_eval_preparing(&status["run"],&mut last_preparing);
+        if matches!(status["run"]["status"].as_str(),Some("running"|"preparing")) { continue; }
         client.shutdown().await;
         let result=if gate {
             let mut params=args.eval_params.clone(); params["runId"]=json!(id); params["baseline"]=json!(baseline);
@@ -1525,7 +1520,41 @@ async fn run_evals(args:&CliArgs,data:&Path,listen:&str,token:Option<&str>)->Res
             }
         }
         if gate && result["passed"]!=true { return Err("Eval regression gate failed".into()); }
-        if status["run"]["status"]!="completed" { return Err("Eval run did not complete".into()); }
+        if status["run"]["status"]!="completed" { return Err(status["run"]["message"].as_str().unwrap_or("Eval run did not complete").into()); }
         return Ok(());
     }
+}
+
+fn print_eval_preparing(run:&Value,last:&mut String) {
+    if run["status"]=="preparing" {
+        if let Some(message)=run["message"].as_str() {
+            if message!=last { eprintln!("{message}"); *last=message.into(); }
+        }
+    }
+}
+
+#[cfg(test)]
+mod eval_cli_tests {
+ use super::*;
+ #[test] fn globals_work_before_after_and_between_subcommands() {
+  for arguments in [
+   vec!["--listen","127.0.0.1:4732","--data-dir","/eval-data","--insecure-no-auth","--json","evals","run","--engines","pi,omp","--models","lab/GLM 5.3"],
+   vec!["evals","run","--listen","127.0.0.1:4732","--engines","pi,omp","--models","lab/GLM 5.3","--data-dir","/eval-data","--insecure-no-auth","--json"],
+   vec!["evals","--data-dir","/eval-data","--json","run","--engines","pi,omp","--models","lab/GLM 5.3","--listen","127.0.0.1:4732","--insecure-no-auth"],
+  ] {
+   let parsed=parse_args_from(arguments.into_iter().map(str::to_owned)).unwrap();
+   assert_eq!(parsed.command,CliCommand::Evals);assert_eq!(parsed.eval_action.as_deref(),Some("run"));
+   assert_eq!(parsed.listen.as_deref(),Some("127.0.0.1:4732"));assert_eq!(parsed.data_dir,Some("/eval-data".into()));
+   assert!(parsed.insecure_no_auth && parsed.json);assert_eq!(parsed.eval_params["models"],json!(["lab/GLM 5.3"]));
+   assert_eq!(parsed.eval_params["engines"],json!(["pi","omp"]));
+  }
+  assert_eq!(parse_args_from(["--json","status"].map(str::to_owned)).unwrap().command,CliCommand::Status);
+  assert!(parse_args_from(["--listen"].map(str::to_owned)).is_err());
+  assert!(parse_args_from(["evals"].map(str::to_owned)).is_err());
+ }
+ #[test] fn preparing_output_is_deduplicated() {
+  let mut last=String::new();let state=json!({"status":"preparing","message":"Preparing pi…"});
+  print_eval_preparing(&state,&mut last);assert_eq!(last,"Preparing pi…");
+  print_eval_preparing(&state,&mut last);assert_eq!(last,"Preparing pi…");
+ }
 }

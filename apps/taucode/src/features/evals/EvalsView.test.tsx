@@ -1,22 +1,22 @@
 // @vitest-environment jsdom
 import {afterEach,beforeEach,expect,it,vi} from "vitest";
-import {cleanup,fireEvent,render,screen,waitFor,within} from "@testing-library/react";
+import {act,cleanup,fireEvent,render,screen,waitFor,within} from "@testing-library/react";
 import {EvalsView} from "./EvalsView";
 import {planCount,roleSettings,type EvalResult} from "./evals";
 import {createFixtures} from "@/dev/uiPreview/fixtures";
 import {createEvalFixture} from "@/dev/uiPreview/evals";
-import {evalRequest} from "@services/tauri";
+import {evalRequest,engineRuntime} from "@services/tauri";
 let progress:(event:{runId:string;status:string})=>void;
-vi.mock("@services/tauri",()=>({evalRequest:vi.fn()}));
+vi.mock("@services/tauri",()=>({evalRequest:vi.fn(),engineRuntime:vi.fn()}));
 vi.mock("@services/events",()=>({subscribeEvalProgress:vi.fn(fn=>{progress=fn;return()=>{};})}));
 const settings=createFixtures().settings;
 let fixture:ReturnType<typeof createEvalFixture>;
-beforeEach(()=>{fixture=createEvalFixture((_w,_m,p)=>progress?.(p as {runId:string;status:string}));vi.mocked(evalRequest).mockImplementation(async(a,p)=>fixture(a,p as Record<string,unknown>) as never);});
+beforeEach(()=>{vi.mocked(engineRuntime).mockResolvedValue([{engine:"pi",state:"pending",message:"Ready to set up on first use"}]);fixture=createEvalFixture((_w,_m,p)=>progress?.(p as {runId:string;status:string}));vi.mocked(evalRequest).mockImplementation(async(a,p)=>fixture(a,p as Record<string,unknown>) as never);});
 afterEach(()=>{cleanup();vi.clearAllMocks();});
 it("counts the matrix and requires explicit confirmation before spending",async()=>{
  render(<EvalsView appSettings={settings} onUpdateAppSettings={vi.fn()} />);
  await screen.findByText(/2 cells · 2 tasks/);
- fireEvent.click(screen.getByRole("button",{name:"Start"}));
+ fireEvent.click(screen.getByRole("button",{name:"Start run"}));
  expect(vi.mocked(evalRequest).mock.calls.some(([a])=>a==="start")).toBe(false);
  fireEvent.click(screen.getByRole("button",{name:"Confirm start"}));
  await screen.findByText("Run · running");
@@ -72,3 +72,35 @@ it("sorts multiple configurations independently",async()=>{
  expect(within(table).getAllByRole("row")[1].textContent).toContain("omp");
 });
 
+
+it.each([1024,1440])("uses chips, searchable models and untruncated labels at %ipx",async width=>{
+ vi.stubGlobal("innerWidth",width);
+ const {container}=render(<EvalsView appSettings={settings} onUpdateAppSettings={vi.fn()} />);
+ await screen.findByText(/2 cells · 2 tasks/);
+ const form=container.querySelector(".evals-new-run")!;
+ expect(form.querySelector("select[multiple]")).toBeNull();
+ for(const label of form.querySelectorAll("label")) expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth);
+ expect(screen.getByText("will install")).toBeTruthy();
+ fireEvent.click(screen.getByRole("button",{name:"Choose models"}));
+ const dialog=screen.getByRole("dialog",{name:"Choose models"});
+ fireEvent.change(within(dialog).getByRole("textbox",{name:"Search models"}),{target:{value:"gpt-5-mini"}});
+ const options=within(dialog).getAllByRole("option");
+ expect(options.every(option=>option.textContent?.includes("gpt-5-mini"))).toBe(true);
+ fireEvent.click(options[0]);
+ expect(options[0].getAttribute("aria-selected")).toBe("true");
+ fireEvent.keyDown(dialog,{key:"Escape"});
+ expect(screen.queryByRole("dialog",{name:"Choose models"})).toBeNull();
+ expect(document.activeElement).toBe(screen.getByRole("button",{name:"Choose models"}));
+ await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"Increase repeats"}));});
+ expect((screen.getByRole("spinbutton",{name:"Repeats"}) as HTMLInputElement).value).toBe("2");
+ vi.unstubAllGlobals();
+});
+it("keeps preparing runs active and displays the installation message",async()=>{
+ const base=fixture("run",{runId:"eval-live"}) as EvalResult;
+ base.run.status="preparing";base.run.message="Preparing pi…";
+ render(<EvalsView appSettings={settings} onUpdateAppSettings={vi.fn()}/>);
+ fireEvent.click(await screen.findByRole("button",{name:/10\/23\/2026.*preparing/}));
+ await screen.findByText("Preparing pi…");
+ expect((screen.getByRole("button",{name:"Start run"}) as HTMLButtonElement).disabled).toBe(true);
+ expect(screen.getByRole("button",{name:"Cancel run"})).toBeTruthy();
+});

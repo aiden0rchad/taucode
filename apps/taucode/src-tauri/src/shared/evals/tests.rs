@@ -36,7 +36,7 @@ fn fixture(delay:bool)->(Arc<Evals>,Output,Arc<AtomicUsize>) {
  let root=std::env::temp_dir().join(format!("eval-test-{}",uuid::Uuid::new_v4()));
  let output=Output::default(); let emit=output.clone(); let stops=Arc::new(AtomicUsize::new(0)); let stopped=stops.clone();
  let factory:Factory=Arc::new(move |entry,_,sink|{let stops=stopped.clone();Box::pin(async move{Ok(Arc::new(Fake{root:PathBuf::from(entry.path),sink,turns:AtomicUsize::new(0),stops,delay}) as Arc<dyn Driver>)})});
- (Arc::new(Evals{data:root,emit:Arc::new(move|e|emit.emit_app_server_event(e)),active:Mutex::new(HashMap::new()),factory}),output,stops)
+ (Arc::new(Evals{data:root,emit:Arc::new(move|e|emit.emit_app_server_event(e)),active:Mutex::new(HashMap::new()),factory,prepare:Arc::new(|_,_|Box::pin(async {panic!("ready engines must not prepare")}))}),output,stops)
 }
 fn plan()->Plan { serde_json::from_value(json!({"engines":["pi"],"models":["lab/model"],"ids":["ts-bugfix-range"],"concurrency":1})).unwrap() }
 async fn start(service:&Arc<Evals>,plan:Plan)->String {
@@ -136,5 +136,44 @@ async fn finished(service:&Arc<Evals>,id:&str)->Run {
  assert_eq!(stored.cells.iter().filter(|c|c.workdir.is_some()).count(),20);
  assert!(stored.cells[0].workdir.is_none());assert!(stored.cells[21].workdir.is_some());
  assert_eq!(std::fs::read_dir(service.data.join("evals/work").join(&id)).unwrap().count(),20);
+ std::fs::remove_dir_all(&service.data).unwrap();
+}
+
+#[tokio::test] async fn pending_engines_prepare_once_before_any_cells() {
+ let (mut service,output,_)=fixture(false);
+ let calls=Arc::new(StdMutex::new(Vec::new()));let seen=calls.clone();
+ Arc::get_mut(&mut service).unwrap().prepare=Arc::new(move|data,engine|{
+  let seen=seen.clone();Box::pin(async move {
+   assert!(!data.join("evals/work").exists(),"no cell may start while preparing");
+   seen.lock().unwrap().push(engine.clone());
+   Ok(json!({"engine":engine,"state":"ready","version":"prepared"}))
+  })
+ });
+ let mut p=plan();p.engines=vec!["pi".into(),"omp".into()];p.repeats=2;p.concurrency=4;
+ let mut settings=AppSettings::default();
+ let mut omp=super::super::engine_registry::resolve(&settings,"omp").unwrap().0;omp.enabled=true;settings.engines.push(omp);
+ let result=service.start(settings,p,json!([{"engine":"pi","state":"pending"},{"engine":"omp","state":"pending"}])).await.unwrap();
+ assert_eq!(result["status"],"preparing");
+ let run=finished(&service,result["runId"].as_str().unwrap()).await;
+ assert_eq!(*calls.lock().unwrap(),vec!["pi","omp"]);
+ assert_eq!(run.status,"completed");assert!(run.cells.iter().all(|c|c.status=="passed"));
+ for engine in ["pi","omp"] {assert!(output.0.lock().unwrap().iter().any(|e|e["params"]["message"]==format!("Preparing {engine}…")));}
+ assert!(run.environment["engines"].as_array().unwrap().iter().all(|r|r["version"]=="prepared"));
+ std::fs::remove_dir_all(&service.data).unwrap();
+}
+#[tokio::test] async fn engine_errors_and_failed_preparation_are_explicit() {
+ let (mut service,_,stops)=fixture(false);
+ for state in ["error","missing"] {
+  let runtime=if state=="missing" {json!([])} else {json!([{"engine":"pi","state":"error","message":"bad executable"}])};
+  let error=service.start(AppSettings::default(),plan(),runtime).await.unwrap_err();
+  assert!(error.contains("pi") && error.contains(state),"{error}");
+ }
+ Arc::get_mut(&mut service).unwrap().prepare=Arc::new(|_,_|Box::pin(async{Err("offline package unavailable".into())}));
+ let result=service.start(AppSettings::default(),plan(),json!([{"engine":"pi","state":"pending"}])).await.unwrap();
+ let run=finished(&service,result["runId"].as_str().unwrap()).await;
+ assert_eq!(run.status,"failed");
+ assert!(run.message.unwrap().contains("Engine pi: preparation failed — offline package unavailable"));
+ assert!(run.cells.iter().all(|c|c.turns==0 && c.status=="cancelled"));
+ assert_eq!(stops.load(Ordering::SeqCst),0);assert!(!service.data.join("evals/work").exists());
  std::fs::remove_dir_all(&service.data).unwrap();
 }

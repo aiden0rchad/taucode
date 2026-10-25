@@ -76,6 +76,7 @@ impl Cell { pub fn config(&self) -> String { format!("{}/{}/{}",self.engine,self
 #[serde(rename_all="camelCase")]
 pub struct Run {
     pub id: String, pub created_at: String, pub status: String, pub plan: Plan,
+    #[serde(default)] pub message: Option<String>,
     pub environment: Value, pub cells: Vec<Cell>,
 }
 pub fn safe_id(id: &str) -> Result<(),String> {
