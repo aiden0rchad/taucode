@@ -45,6 +45,7 @@ if (!("IntersectionObserver" in globalThis)) {
   }
   Object.defineProperty(globalThis, "IntersectionObserver", {
     value: IntersectionObserverMock,
+    configurable: true,
   });
 }
 

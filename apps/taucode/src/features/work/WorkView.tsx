@@ -1,3 +1,4 @@
+import { DigitalRain } from "@/features/themes/DigitalRain";
 import { Squircle } from "@/features/design-system/components/squircle/Squircle";
 import { SidebarTree } from "@app/components/SidebarTree";
 import { buildThreadTranscript } from "@utils/threadText";
@@ -162,7 +163,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
         </div></div>
 
       </div> : <div className="chat-scroll"><div className="chat-column">
-        <div className="chat-empty work-empty"><span className="chat-eyebrow">A space for getting things done</span><h1>What would you like to make?</h1><p>Bring a folder and a brief. Follow the plan, review requests, and find the finished files here.</p>
+        <div className="chat-empty work-empty"><DigitalRain /><span className="chat-eyebrow">A space for getting things done</span><h1>What would you like to make?</h1><p>Bring a folder and a brief. Follow the plan, review requests, and find the finished files here.</p>
 
         </div>
         <form className="work-composer" aria-label="New task" onSubmit={e => { e.preventDefault(); void create(true); }} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }} onDrop={e => { e.preventDefault(); setDragOver(false); }}>

@@ -1,0 +1,410 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taucode.dev/theme.schema.json",
+  "title": "taucode theme v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "appearance",
+    "tokens"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,40}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "author": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "version": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "appearance": {
+      "enum": [
+        "light",
+        "dark"
+      ]
+    },
+    "extends": {
+      "enum": [
+        "light",
+        "dark",
+        "dim",
+        "glass-dark",
+        "glass-light",
+        "matrix",
+        "claude-light",
+        "claude-dark"
+      ]
+    },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "--surface-app": {
+          "$ref": "#/$defs/color",
+          "description": "surface app"
+        },
+        "--text-primary": {
+          "$ref": "#/$defs/color",
+          "description": "text primary"
+        },
+        "--text-strong": {
+          "$ref": "#/$defs/color",
+          "description": "text strong"
+        },
+        "--text-emphasis": {
+          "$ref": "#/$defs/color",
+          "description": "text emphasis"
+        },
+        "--text-stronger": {
+          "$ref": "#/$defs/color",
+          "description": "text stronger"
+        },
+        "--text-quiet": {
+          "$ref": "#/$defs/color",
+          "description": "text quiet"
+        },
+        "--text-muted": {
+          "$ref": "#/$defs/color",
+          "description": "text muted"
+        },
+        "--text-subtle": {
+          "$ref": "#/$defs/color",
+          "description": "text subtle"
+        },
+        "--text-faint": {
+          "$ref": "#/$defs/color",
+          "description": "text faint"
+        },
+        "--text-fainter": {
+          "$ref": "#/$defs/color",
+          "description": "text fainter"
+        },
+        "--text-dim": {
+          "$ref": "#/$defs/color",
+          "description": "text dim"
+        },
+        "--surface-sidebar": {
+          "$ref": "#/$defs/color",
+          "description": "surface sidebar"
+        },
+        "--tree-line": {
+          "$ref": "#/$defs/color",
+          "description": "tree line"
+        },
+        "--tree-line-active": {
+          "$ref": "#/$defs/color",
+          "description": "tree line active"
+        },
+        "--surface-sidebar-opaque": {
+          "$ref": "#/$defs/color",
+          "description": "surface sidebar opaque"
+        },
+        "--surface-topbar": {
+          "$ref": "#/$defs/color",
+          "description": "surface topbar"
+        },
+        "--surface-right-panel": {
+          "$ref": "#/$defs/color",
+          "description": "surface right panel"
+        },
+        "--surface-composer": {
+          "$ref": "#/$defs/color",
+          "description": "surface composer"
+        },
+        "--surface-messages": {
+          "$ref": "#/$defs/color",
+          "description": "surface messages"
+        },
+        "--surface-card": {
+          "$ref": "#/$defs/color",
+          "description": "surface card"
+        },
+        "--surface-card-strong": {
+          "$ref": "#/$defs/color",
+          "description": "surface card strong"
+        },
+        "--surface-card-muted": {
+          "$ref": "#/$defs/color",
+          "description": "surface card muted"
+        },
+        "--surface-item": {
+          "$ref": "#/$defs/color",
+          "description": "surface item"
+        },
+        "--surface-control": {
+          "$ref": "#/$defs/color",
+          "description": "surface control"
+        },
+        "--surface-control-hover": {
+          "$ref": "#/$defs/color",
+          "description": "surface control hover"
+        },
+        "--surface-control-disabled": {
+          "$ref": "#/$defs/color",
+          "description": "surface control disabled"
+        },
+        "--surface-hover": {
+          "$ref": "#/$defs/color",
+          "description": "surface hover"
+        },
+        "--surface-active": {
+          "$ref": "#/$defs/color",
+          "description": "surface active"
+        },
+        "--surface-approval": {
+          "$ref": "#/$defs/color",
+          "description": "surface approval"
+        },
+        "--surface-debug": {
+          "$ref": "#/$defs/color",
+          "description": "surface debug"
+        },
+        "--surface-command": {
+          "$ref": "#/$defs/color",
+          "description": "surface command"
+        },
+        "--surface-diff-card": {
+          "$ref": "#/$defs/color",
+          "description": "surface diff card"
+        },
+        "--surface-bubble": {
+          "$ref": "#/$defs/color",
+          "description": "surface bubble"
+        },
+        "--surface-bubble-user": {
+          "$ref": "#/$defs/color",
+          "description": "surface bubble user"
+        },
+        "--surface-context-core": {
+          "$ref": "#/$defs/color",
+          "description": "surface context core"
+        },
+        "--surface-popover": {
+          "$ref": "#/$defs/color",
+          "description": "surface popover"
+        },
+        "--surface-review": {
+          "$ref": "#/$defs/color",
+          "description": "surface review"
+        },
+        "--border-review": {
+          "$ref": "#/$defs/color",
+          "description": "border review"
+        },
+        "--surface-review-active": {
+          "$ref": "#/$defs/color",
+          "description": "surface review active"
+        },
+        "--text-review-active": {
+          "$ref": "#/$defs/color",
+          "description": "text review active"
+        },
+        "--surface-review-done": {
+          "$ref": "#/$defs/color",
+          "description": "surface review done"
+        },
+        "--text-review-done": {
+          "$ref": "#/$defs/color",
+          "description": "text review done"
+        },
+        "--border-subtle": {
+          "$ref": "#/$defs/color",
+          "description": "border subtle"
+        },
+        "--border-muted": {
+          "$ref": "#/$defs/color",
+          "description": "border muted"
+        },
+        "--border-strong": {
+          "$ref": "#/$defs/color",
+          "description": "border strong"
+        },
+        "--border-stronger": {
+          "$ref": "#/$defs/color",
+          "description": "border stronger"
+        },
+        "--border-quiet": {
+          "$ref": "#/$defs/color",
+          "description": "border quiet"
+        },
+        "--border-accent": {
+          "$ref": "#/$defs/color",
+          "description": "border accent"
+        },
+        "--border-accent-soft": {
+          "$ref": "#/$defs/color",
+          "description": "border accent soft"
+        },
+        "--text-accent": {
+          "$ref": "#/$defs/color",
+          "description": "text accent"
+        },
+        "--message-link-color": {
+          "$ref": "#/$defs/color",
+          "description": "message link color"
+        },
+        "--shadow-accent": {
+          "$ref": "#/$defs/color",
+          "description": "shadow accent"
+        },
+        "--status-success": {
+          "$ref": "#/$defs/color",
+          "description": "status success"
+        },
+        "--status-warning": {
+          "$ref": "#/$defs/color",
+          "description": "status warning"
+        },
+        "--status-error": {
+          "$ref": "#/$defs/color",
+          "description": "status error"
+        },
+        "--status-unknown": {
+          "$ref": "#/$defs/color",
+          "description": "status unknown"
+        },
+        "--select-caret": {
+          "$ref": "#/$defs/color",
+          "description": "select caret"
+        },
+        "--surface-text-accent": {
+          "$ref": "#/$defs/color",
+          "description": "surface text accent"
+        },
+        "--surface-text-muted": {
+          "$ref": "#/$defs/color",
+          "description": "surface text muted"
+        },
+        "--surface-border-subtle": {
+          "$ref": "#/$defs/color",
+          "description": "surface border subtle"
+        },
+        "--surface-border-strong": {
+          "$ref": "#/$defs/color",
+          "description": "surface border strong"
+        },
+        "--surface-border-accent": {
+          "$ref": "#/$defs/color",
+          "description": "surface border accent"
+        },
+        "--surface-border-accent-soft": {
+          "$ref": "#/$defs/color",
+          "description": "surface border accent soft"
+        },
+        "--surface-text-dim": {
+          "$ref": "#/$defs/color",
+          "description": "surface text dim"
+        },
+        "--surface-status-error": {
+          "$ref": "#/$defs/color",
+          "description": "surface status error"
+        },
+        "--surface-status-success": {
+          "$ref": "#/$defs/color",
+          "description": "surface status success"
+        },
+        "--surface-status-warning": {
+          "$ref": "#/$defs/color",
+          "description": "surface status warning"
+        },
+        "--surface-status-unknown": {
+          "$ref": "#/$defs/color",
+          "description": "surface status unknown"
+        },
+        "--surface-border-muted": {
+          "$ref": "#/$defs/color",
+          "description": "surface border muted"
+        }
+      }
+    },
+    "fonts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ui": {
+          "type": "string",
+          "maxLength": 120,
+          "pattern": "^\\s*(?:\"[a-zA-Z0-9 -]+\"|'[a-zA-Z0-9 -]+'|serif|sans-serif|monospace|system-ui|ui-serif|ui-sans-serif|ui-monospace|ui-rounded|cursive|fantasy)(?:\\s*,\\s*(?:\"[a-zA-Z0-9 -]+\"|'[a-zA-Z0-9 -]+'|serif|sans-serif|monospace|system-ui|ui-serif|ui-sans-serif|ui-monospace|ui-rounded|cursive|fantasy))*\\s*$"
+        },
+        "mono": {
+          "type": "string",
+          "maxLength": 120,
+          "pattern": "^\\s*(?:\"[a-zA-Z0-9 -]+\"|'[a-zA-Z0-9 -]+'|serif|sans-serif|monospace|system-ui|ui-serif|ui-sans-serif|ui-monospace|ui-rounded|cursive|fantasy)(?:\\s*,\\s*(?:\"[a-zA-Z0-9 -]+\"|'[a-zA-Z0-9 -]+'|serif|sans-serif|monospace|system-ui|ui-serif|ui-sans-serif|ui-monospace|ui-rounded|cursive|fantasy))*\\s*$"
+        },
+        "prose": {
+          "type": "string",
+          "maxLength": 120,
+          "pattern": "^\\s*(?:\"[a-zA-Z0-9 -]+\"|'[a-zA-Z0-9 -]+'|serif|sans-serif|monospace|system-ui|ui-serif|ui-sans-serif|ui-monospace|ui-rounded|cursive|fantasy)(?:\\s*,\\s*(?:\"[a-zA-Z0-9 -]+\"|'[a-zA-Z0-9 -]+'|serif|sans-serif|monospace|system-ui|ui-serif|ui-sans-serif|ui-monospace|ui-rounded|cursive|fantasy))*\\s*$"
+        }
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "translucent",
+        "material"
+      ],
+      "properties": {
+        "translucent": {
+          "type": "boolean"
+        },
+        "material": {
+          "enum": [
+            "none",
+            "sidebar",
+            "underWindow",
+            "hudWindow"
+          ]
+        }
+      }
+    },
+    "effects": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digitalRain"
+      ],
+      "properties": {
+        "digitalRain": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "color": {
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^(?!.*(?:[uU][rR][lL]\\(|[iI][mM][aA][gG][eE]-[sS][eE][tT]\\(|[eE][xX][pP][rR][eE][sS][sS][iI][oO][nN]|[@;{}\\\\<]))(?:#(?:[a-fA-F0-9]{3,4}|[a-fA-F0-9]{6}|[a-fA-F0-9]{8})|(?:rgb|rgba|hsl|hsla|oklch|color-mix|var)\\(.+\\))$"
+    },
+    "radius": {
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:px|rem)$"
+    }
+  }
+}

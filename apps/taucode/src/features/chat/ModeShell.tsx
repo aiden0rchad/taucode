@@ -2,7 +2,7 @@ import { useSidebarDensity } from "@settings/hooks/useSidebarDensity";
 import { SidebarEngine } from "@app/components/SidebarTree";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { AppMode, AppSettings } from "@/types";
-import { getAppSettings, setWindowMode } from "@services/tauri";
+import { getAppSettings, updateAppSettings, setWindowMode } from "@services/tauri";
 import { matchesShortcut } from "@utils/shortcuts";
 import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import { useThemePreference } from "@/features/layout/hooks/useThemePreference";
@@ -41,7 +41,12 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  useThemePreference(settings?.theme ?? "system");
+  useThemePreference(settings ?? { theme: "system" }, () => {
+    if (!settings) return;
+    const next = { ...settings, theme: "system" };
+    setSettings(next);
+    void updateAppSettings(next).catch(e => setError(String(e)));
+  });
   useEffect(() => {
     const open = () => setSettingsOpen(true);
     window.addEventListener("taucode:provider-settings", open);

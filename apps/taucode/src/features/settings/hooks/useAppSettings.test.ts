@@ -29,7 +29,7 @@ describe("useAppSettings", () => {
     cleanup();
   });
 
-  it("loads settings and normalizes theme + uiScale", async () => {
+  it("preserves custom theme ids and normalizes uiScale", async () => {
     getAppSettingsMock.mockResolvedValue(
       ({
         uiScale: UI_SCALE_MAX + 1,
@@ -48,7 +48,7 @@ describe("useAppSettings", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(result.current.settings.uiScale).toBe(UI_SCALE_MAX);
-    expect(result.current.settings.theme).toBe("system");
+    expect(result.current.settings.theme).toBe("nope");
     expect(result.current.settings.uiFontFamily).toContain("system-ui");
     expect(result.current.settings.codeFontFamily).toContain("ui-monospace");
     expect(result.current.settings.codeFontSize).toBe(16);
@@ -108,7 +108,7 @@ describe("useAppSettings", () => {
 
     expect(updateAppSettingsMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        theme: "system",
+        theme: "nope",
         uiScale: 0.1,
         uiFontFamily: expect.stringContaining("system-ui"),
         codeFontFamily: expect.stringContaining("ui-monospace"),

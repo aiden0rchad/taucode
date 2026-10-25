@@ -94,6 +94,7 @@ function createEventHub<T>(eventName: string) {
 }
 
 const appServerHub = createEventHub<AppServerEvent>("app-server-event");
+export const subscribeThemesChanged = createEventHub<void>('themes-changed').subscribe;
 const dictationDownloadHub = createEventHub<DictationModelStatus>("dictation-download");
 const dictationEventHub = createEventHub<DictationEvent>("dictation-event");
 const terminalOutputHub = createEventHub<TerminalOutputEvent>("terminal-output");

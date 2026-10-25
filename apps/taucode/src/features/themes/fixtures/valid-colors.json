@@ -1,0 +1,19 @@
+{
+  "$schema": "https://taucode.dev/theme.schema.json",
+  "schemaVersion": 1,
+  "id": "custom-forest",
+  "name": "Forest",
+  "author": "Preview",
+  "appearance": "dark",
+  "extends": "dark",
+  "tokens": {
+    "--text-primary": "rgb(220 240 230)",
+    "--text-muted": "hsl(120 30% 70%)",
+    "--surface-active": "color-mix(in srgb, #0f0 10%, var(--surface-app))",
+    "--text-strong": "oklch(0.9 0.04 140)"
+  },
+  "fonts": {
+    "ui": "system-ui",
+    "prose": "\"Georgia\", serif"
+  }
+}

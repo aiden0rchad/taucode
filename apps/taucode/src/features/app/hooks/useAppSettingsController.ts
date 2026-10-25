@@ -12,7 +12,10 @@ export function useAppSettingsController() {
     isLoading: appSettingsLoading,
   } = useAppSettings();
 
-  useThemePreference(appSettings.theme);
+  useThemePreference(appSettings, () => {
+    setAppSettings(previous => ({ ...previous, theme: 'system' }));
+    void saveSettings({ ...appSettings, theme: 'system' });
+  });
 
   const {
     uiScale,

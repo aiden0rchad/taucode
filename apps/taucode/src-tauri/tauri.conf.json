@@ -24,7 +24,7 @@
           "x": 19,
           "y": 24
         },
-        "transparent": false,
+        "transparent": true,
         "devtools": true
       }
     ],
@@ -36,7 +36,8 @@
           "**/*"
         ]
       }
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,

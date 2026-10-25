@@ -512,6 +512,12 @@ pub(crate) struct AppSettings {
     pub(crate) ui_scale: f64,
     #[serde(default = "default_theme", rename = "theme")]
     pub(crate) theme: String,
+    #[serde(default = "default_theme_light", rename = "themeLight")]
+    pub(crate) theme_light: String,
+    #[serde(default = "default_theme_dark", rename = "themeDark")]
+    pub(crate) theme_dark: String,
+    #[serde(default, rename = "themeAnimations")]
+    pub(crate) theme_animations: std::collections::HashMap<String, bool>,
     #[serde(
         default = "default_usage_show_remaining",
         rename = "usageShowRemaining"
@@ -720,6 +726,9 @@ fn default_remote_backends() -> Vec<RemoteBackendTarget> {
 fn default_ui_scale() -> f64 {
     1.0
 }
+
+fn default_theme_light() -> String { "light".into() }
+fn default_theme_dark() -> String { "dark".into() }
 
 fn default_theme() -> String {
     "system".to_string()
@@ -1181,6 +1190,9 @@ impl Default for AppSettings {
             last_composer_reasoning_effort: None,
             ui_scale: 1.0,
             theme: default_theme(),
+            theme_light: default_theme_light(),
+            theme_dark: default_theme_dark(),
+            theme_animations: Default::default(),
             usage_show_remaining: default_usage_show_remaining(),
             show_message_file_path: default_show_message_file_path(),
             chat_history_scrollback_items: default_chat_history_scrollback_items(),

@@ -162,27 +162,6 @@ export function SettingsDisplaySection({
         Adjust how the window renders backgrounds and effects.
       </div>
       <SettingsRow className="settings-field">
-        <label className="settings-field-label" htmlFor="theme-select">
-          Theme
-        </label>
-        <SettingsSelect
-          id="theme-select"
-          className="settings-select"
-          value={appSettings.theme}
-          onChange={(event) =>
-            void onUpdateAppSettings({
-              ...appSettings,
-              theme: event.target.value as AppSettings["theme"],
-            })
-          }
-        >
-          <option value="system">System</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-          <option value="dim">Dim</option>
-        </SettingsSelect>
-      </SettingsRow>
-      <SettingsRow className="settings-field">
         <label className="settings-field-label" htmlFor="sidebar-density">Sidebar density</label>
         <SettingsSelect id="sidebar-density" value={density} onChange={event => setDensity(event.target.value)}>
           <option value="compact">Compact (default)</option>

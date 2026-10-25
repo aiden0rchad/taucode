@@ -1,0 +1,16 @@
+{
+  "$schema": "https://taucode.dev/theme.schema.json",
+  "schemaVersion": 1,
+  "id": "custom-forest",
+  "name": "Forest",
+  "author": "Preview",
+  "appearance": "dark",
+  "extends": "dark",
+  "tokens": {
+    "--surface-sidebar": "#141418e0"
+  },
+  "window": {
+    "translucent": true,
+    "material": "sidebar"
+  }
+}

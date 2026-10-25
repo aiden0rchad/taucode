@@ -119,6 +119,17 @@ export function useTerminalSession({
   onDebug,
   onSessionExit,
 }: UseTerminalSessionOptions): TerminalSessionState {
+  useEffect(() => {
+    const update = () => {
+      if (!terminalRef.current) return;
+      const appearance = getTerminalAppearance(containerRef.current);
+      terminalRef.current.options.theme = appearance.theme;
+      terminalRef.current.options.fontFamily = appearance.fontFamily;
+      fitAddonRef.current?.fit();
+    };
+    window.addEventListener('taucode-theme-applied', update);
+    return () => window.removeEventListener('taucode-theme-applied', update);
+  }, []);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);

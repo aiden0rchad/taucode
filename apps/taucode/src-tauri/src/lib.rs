@@ -46,6 +46,7 @@ mod tray;
 mod types;
 mod utils;
 mod window;
+mod themes;
 mod workspaces;
 
 #[cfg(desktop)]
@@ -127,6 +128,7 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            if let Err(error) = themes::watch(app.handle()) { eprintln!("Theme watcher unavailable: {error}"); }
             let _ = shared::engine_runtime::RESOURCES.set(app.path().resource_dir()?);
             let state = state::AppState::load(&app.handle());
             #[cfg(desktop)]
@@ -206,6 +208,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
+            themes::themes_list, themes::themes_save, themes::themes_delete,
+            themes::themes_import, themes::themes_export, themes::themes_open_folder, themes::themes_reveal_file,
+            themes::window_set_material,
             work::work_request,
             work::work_attachment,
             work::work_output,

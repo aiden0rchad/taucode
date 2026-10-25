@@ -45,6 +45,7 @@ it.each([
   ["?mode=chat&chat=chat-1&theme=light", "A starting point"],
   ["?mode=work&task=task-needs-input&theme=light", "Approval required"],
   ["?settings=display&theme=light", "Display"],
+  ["?settings=appearance&theme=glass-dark", "Choose a palette"],
   ["?mode=chat&chat=new&composer=attachments", "brief.md"],
   ["?mode=chat&chat=chat-streaming", "Responding…"],
   ["?mode=work&task=task-running", "Prepare the launch brief"],
