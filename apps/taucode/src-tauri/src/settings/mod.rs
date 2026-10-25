@@ -5,7 +5,6 @@ use crate::shared::settings_core::{
 };
 use crate::state::AppState;
 use crate::types::{AppSettings, BackendMode};
-use crate::window;
 
 #[tauri::command]
 pub(crate) async fn get_app_settings(
@@ -28,7 +27,6 @@ pub(crate) async fn get_app_settings(
             }
         }
     }
-    let _ = window::apply_window_appearance(&window, settings.theme.as_str());
     Ok(settings)
 }
 
@@ -66,7 +64,6 @@ pub(crate) async fn update_app_settings(
         *state.remote_backend.lock().await = None;
     }
     ensure_remote_runtime_for_settings(&updated, state).await;
-    let _ = window::apply_window_appearance(&window, updated.theme.as_str());
     Ok(updated)
 }
 

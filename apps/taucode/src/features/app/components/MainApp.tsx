@@ -128,7 +128,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
     handleCopyDebug,
     clearDebugEntries,
   } = useAppBootstrapOrchestration();
-  useModeSettings(appSettings);
+  useModeSettings(appSettingsLoading ? null : appSettings);
   const {
     threadListSortKey,
     setThreadListSortKey,

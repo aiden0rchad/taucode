@@ -4,6 +4,13 @@ import { builtins, resolveTheme, selectTheme } from './builtins';
 import { validateTheme } from './validate';
 import { rgba, composite, contrast } from './contrast';
 import { themeTokens } from './tokens';
+it('keeps native appearance out of settings and restores the theme before React mounts', () => {
+  const settings = readFileSync('src-tauri/src/settings/mod.rs', 'utf8');
+  expect(settings).not.toMatch(/apply_window_appearance|set_theme|setAppearance|window_set_material/);
+  expect(readFileSync('src-tauri/src/window.rs', 'utf8')).not.toMatch(/WindowAppearanceOverride|apply_window_appearance/);
+  const main = readFileSync('src/main.tsx', 'utf8');
+  expect(main.indexOf('restoreTheme();')).toBeLessThan(main.indexOf('ReactDOM.createRoot('));
+});
 it('resolves themeable scrollbar colors for every palette', () => {
   for (const builtin of builtins) {
     const theme = resolveTheme(builtin);

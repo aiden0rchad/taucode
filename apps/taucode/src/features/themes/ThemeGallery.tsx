@@ -31,7 +31,7 @@ export function ThemeGallery({ settings, update }: { settings: AppSettings; upda
   const [editor,setEditor] = useState<ThemeManifest|null>(null), [paste,setPaste] = useState<string|null>(null), [error,setError] = useState('');
   const [remove,setRemove] = useState<ThemeManifest|null>(null), [conflict,setConflict] = useState<{ manifest: ThemeManifest; path?: string }|null>(null);
   const active = selectTheme(settings.theme,themes,systemDark,settings.themeLight,settings.themeDark);
-  const restore = () => applyTheme(active,settings.themeAnimations?.[active.id] !== false,settings.themeAnimations?.[`${active.id}:neonGlow`] !== false);
+  const restore = () => applyTheme(active,settings.themeAnimations?.[active.id] !== false,settings.themeAnimations?.[`${active.id}:neonGlow`] !== false,settings.theme === 'system');
   const run = async (fn: () => Promise<unknown>) => { setError(''); try { await fn(); } catch (e) { setError(String(e)); } };
   const unique = (id: string) => {
     for (let n=2;;n++) { const suffix = '-'+n, next = id.slice(0,40-suffix.length)+suffix; if (!themes.some(t => t.id === next)) return next; }

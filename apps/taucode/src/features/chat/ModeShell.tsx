@@ -25,9 +25,9 @@ export function ModeSwitcher() {
   </nav>;
 }
 
-export function useModeSettings(settings: AppSettings) {
+export function useModeSettings(settings: AppSettings | null) {
   const update = useContext(ModeContext)?.updateSettings;
-  useEffect(() => { update?.(settings); }, [settings, update]);
+  useEffect(() => { if (settings) update?.(settings); }, [settings, update]);
   return update;
 }
 
@@ -53,7 +53,7 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
     const next = { ...settings, theme: "system" };
     setSettings(next);
     void updateAppSettings(next).catch(e => setError(String(e)));
-  });
+  }, loaded);
   useEffect(() => {
     const open = () => setSettingsOpen(true);
     window.addEventListener("taucode:provider-settings", open);

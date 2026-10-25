@@ -236,6 +236,14 @@ fn reveal_path(dir: &Path, file: &str) -> Result<PathBuf,String> {
 pub(crate) fn themes_reveal_file(app: tauri::AppHandle, file: String) -> Result<(),String> {
     app.opener().reveal_item_in_dir(reveal_path(&folder(&app)?, &file)?).map_err(|e| e.to_string())
 }
+fn window_theme(appearance: Option<&str>) -> Result<Option<tauri::Theme>, String> {
+    match appearance {
+        None => Ok(None),
+        Some("dark") => Ok(Some(tauri::Theme::Dark)),
+        Some("light") => Ok(Some(tauri::Theme::Light)),
+        _ => Err("Invalid window appearance".into()),
+    }
+}
 #[tauri::command]
 pub(crate) fn window_set_material(window: tauri::WebviewWindow, material: Option<String>, appearance: Option<String>) -> Result<(),String> {
     use tauri::window::{Effect, EffectState, EffectsBuilder};
@@ -246,13 +254,7 @@ pub(crate) fn window_set_material(window: tauri::WebviewWindow, material: Option
         Some("hudWindow") => Some(Effect::HudWindow),
         _ => return Err("Invalid window material".into()),
     };
-    let theme = if effect.is_some() {
-        Some(match appearance.as_deref() {
-            Some("dark") => tauri::Theme::Dark,
-            Some("light") => tauri::Theme::Light,
-            _ => return Err("Window material requires a light or dark appearance".into()),
-        })
-    } else { None };
+    let theme = window_theme(appearance.as_deref())?;
     window.set_theme(theme).map_err(|e| format!("Window appearance: {e}"))?;
     // macOS 26+: the system Liquid Glass view (what taucode used before M4l) is the one that
     // reliably shows the desktop behind the web view; older systems fall back to vibrancy.
@@ -334,6 +336,14 @@ pub(crate) fn watch(app: &tauri::AppHandle) -> Result<(),String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn appearance_is_independent_of_material() {
+        assert_eq!(window_theme(Some("dark")).unwrap(), Some(tauri::Theme::Dark));
+        assert_eq!(window_theme(Some("light")).unwrap(), Some(tauri::Theme::Light));
+        assert_eq!(window_theme(None).unwrap(), None);
+        assert!(window_theme(Some("system")).is_err());
+        assert!(window_theme(Some("invalid")).is_err());
+    }
     #[test]
     fn shared_fixtures() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/features/themes/fixtures");

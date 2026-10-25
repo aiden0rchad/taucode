@@ -151,7 +151,7 @@ it('saves a duplicate without restoring the old theme or enabling a disabled ani
 it('switches materials through one style element and clears Glass', async () => {
   applyTheme(builtins.find(t => t.id === 'glass-dark')!);
   applyTheme(builtins.find(t => t.id === 'claude-light')!);
-  await waitFor(() => expect(windowSetMaterial).toHaveBeenLastCalledWith(null, null));
+  await waitFor(() => expect(windowSetMaterial).toHaveBeenLastCalledWith(null, 'light'));
   expect(windowSetMaterial).toHaveBeenCalledWith('sidebar', 'dark');
   expect(document.querySelectorAll('#taucode-theme')).toHaveLength(1);
   expect(document.documentElement.dataset.theme).toBe('light');
@@ -270,7 +270,7 @@ it('scopes preview tokens, reports contrast, resets overrides and restores on Es
 it('pins both glass appearances, deduplicates identical materials and retries failures', async () => {
   applyTheme(builtins.find(t => t.id === 'glass-light')!);
   applyTheme(builtins.find(t => t.id === 'dark')!);
-  await waitFor(() => expect(windowSetMaterial).toHaveBeenLastCalledWith(null, null));
+  await waitFor(() => expect(windowSetMaterial).toHaveBeenLastCalledWith(null, 'dark'));
   vi.mocked(windowSetMaterial).mockClear();
   const dark = builtins.find(t => t.id === 'glass-dark')!;
   const light = builtins.find(t => t.id === 'glass-light')!;
@@ -286,7 +286,7 @@ it('pins both glass appearances, deduplicates identical materials and retries fa
   applyTheme(dark);
   await waitFor(() => expect(windowSetMaterial).toHaveBeenCalledTimes(4));
   applyTheme(builtins.find(t => t.id === 'dark')!);
-  await waitFor(() => expect(windowSetMaterial).toHaveBeenLastCalledWith(null, null));
+  await waitFor(() => expect(windowSetMaterial).toHaveBeenLastCalledWith(null, 'dark'));
 });
 
 it('persists glow independently of animation and restores it on theme changes', async () => {
