@@ -11,7 +11,7 @@ it("disables reasoning animations and particles for reduced motion", () => {
   expect(rules[".reasoning-ember"]).toEqual(expect.arrayContaining([expect.objectContaining({ prop: "display", value: "none" })]));
   css.walkDecls("animation", declaration => {
     if (declaration.value.includes("infinite")) {
-      expect(declaration.parent.selector).toMatch(/reasoning-popover\.burning|reasoning-ember|reasoning-sparkle/);
+      expect(declaration.parent.selector).toMatch(/reasoning-popover\.burning|reasoning-ember|reasoning-particle|reasoning-fill::before/);
     }
   });
 });
@@ -25,5 +25,29 @@ it("reserves stable popover, heading and chip geometry with animated snapping", 
   expect(rule(".reasoning-chip-sizer").visibility).toBe("hidden");
   expect(rule(".reasoning-level").width).toBe("100px");
   expect(rule(".reasoning-fill").transition).toBe("width 200ms ease-out");
+  expect(rule(".reasoning-slider").height).toBe("24px");
+  expect(rule(".reasoning-fill")).toMatchObject({ height: "24px", overflow: "hidden" });
+  expect(rule(".reasoning-thumb")).toMatchObject({ height: "30px", top: "-3px" });
+  expect(rule(".reasoning-popover input")).toMatchObject({ height: "30px", top: "-3px" });
+  expect(rule(".reasoning-tick")).toMatchObject({ height: "4px", top: "10px" });
+  expect(rule(".reasoning-slider:has(input:focus-visible)").outline).toBe("2px solid var(--reasoning-color)");
   expect(rule(".reasoning-popover.dragging .reasoning-fill, .reasoning-popover.dragging .reasoning-thumb").transition).toBe("none");
+});
+
+it("flows two identical gradient tiles using only translation, with matching endpoints", () => {
+  const css = postcss.parse(readFileSync("src/features/composer/components/reasoning.css", "utf8"));
+  const flow = css.nodes.find(node => node.type === "atrule" && node.params === "reasoning-flow");
+  const declarations = [];
+  flow.walkDecls(declaration => declarations.push([declaration.prop, declaration.value]));
+  expect(declarations).toEqual([["transform", "translateX(0)"], ["transform", "translateX(-50%)"]]);
+  const layer = css.nodes.find(node => node.selector === ".reasoning-fill::before");
+  const values = Object.fromEntries(layer.nodes.map(node => [node.prop, node.value]));
+  expect(values.width).toBe("200%");
+  const stops = postcss.list.comma(values.background.slice("linear-gradient(".length, -1)).slice(1);
+  const colors = stops.map(stop => stop.match(/^var\([^)]+\)/)[0]);
+  expect(colors[0]).toBe(colors[colors.length - 1]);
+  expect(colors.slice(0, 4)).toEqual(colors.slice(3));
+  expect(stops).toEqual(["var(--flow-a) 0%", "var(--flow-b) calc(100% / 6)", "var(--flow-c) calc(100% / 3)", "var(--flow-a) 50%", "var(--flow-b) calc(200% / 3)", "var(--flow-c) calc(500% / 6)", "var(--flow-a) 100%"]);
+  const drift = css.nodes.find(node => node.type === "atrule" && node.params === "reasoning-drift");
+  drift.walkDecls(declaration => expect(["transform", "opacity"]).toContain(declaration.prop));
 });

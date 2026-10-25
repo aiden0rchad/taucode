@@ -70,7 +70,7 @@ it("drags continuously, then commits and animates to the nearest supported stop"
   slider.setPointerCapture = () => { captured = true; };
   slider.hasPointerCapture = () => captured;
   slider.releasePointerCapture = () => { captured = false; };
-  expect(dialog.querySelectorAll(".reasoning-sparkle")).toHaveLength(10);
+  expect(dialog.querySelectorAll(".reasoning-particle")).toHaveLength(10);
   fireEvent.pointerDown(slider, { clientX: 108, button: 0 });
   expect(dialog.classList.contains("dragging")).toBe(true);
   expect(dialog.style.getPropertyValue("--reasoning-position")).toBe("45%");
@@ -152,6 +152,12 @@ it.each([["low", "high", "max"], ["off", "high"], ["low", "medium", "high", "xhi
   const dialog = screen.getByRole("dialog");
   expect(dialog.classList.contains("burning")).toBe(true);
   expect(dialog.querySelectorAll(".reasoning-ember")).toHaveLength(6);
+  expect(dialog.querySelectorAll(".reasoning-particle")).toHaveLength(10);
+  expect(dialog.style.getPropertyValue("--reasoning-flow-duration")).toBe("3s");
+  for (const particle of dialog.querySelectorAll<HTMLElement>(".reasoning-particle")) {
+    expect(parseFloat(particle.style.animationDuration)).toBeGreaterThanOrEqual(2.5);
+    expect(parseFloat(particle.style.animationDuration)).toBeLessThanOrEqual(5);
+  }
   expect(dialog.style.getPropertyValue("--reasoning-position")).toBe("100%");
   expect(dialog.querySelector(".reasoning-heading .lucide-flame")).toBeTruthy();
   rerender(<ReasoningControl capability={capability} value={levels[levels.length - 2]} onChange={vi.fn()} />);
@@ -161,6 +167,7 @@ it.each([["low", "high", "max"], ["off", "high"], ["low", "medium", "high", "xhi
   expect(chip.querySelector(".lucide-flame")).toBeNull();
   rerender(<ReasoningControl capability={capability} value={levels[0]} onChange={vi.fn()} />);
   expect(dialog.style.getPropertyValue("--reasoning-position")).toBe("0%");
+  expect(dialog.style.getPropertyValue("--reasoning-flow-duration")).toBe("6s");
   expect(dialog.style.getPropertyValue("--reasoning-color")).toContain("#e9ac38 0%");
   rerender(<ReasoningControl capability={capability} value={levels[levels.length - 1]} onChange={vi.fn()} />);
   fireEvent.click(chip);
