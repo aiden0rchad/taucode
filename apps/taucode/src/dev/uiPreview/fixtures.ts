@@ -57,7 +57,8 @@ export function createFixtures(now = Date.now()) {
   };
   const workspaces: WorkspaceInfo[] = [
     { id: "workspace-atlas", name: "Atlas", path: "/preview/atlas", connected: true, kind: "main", settings: { sidebarCollapsed: false, gitRoot: "/preview/atlas", groupId: "group-studio", worktreeSetupScript: "npm ci\nnpm run typecheck", worktreesFolder: "/preview/worktrees/atlas" } },
-    { id: "workspace-notes", name: "Notes", path: "/preview/notes", connected: true, kind: "main", settings: { sidebarCollapsed: true } },
+    { id: "workspace-orbit", name: "Orbit", path: "/preview/orbit", connected: true, kind: "main", settings: { sidebarCollapsed: true, groupId: "group-studio" } },
+    { id: "workspace-notes", name: "Notes", path: "/preview/notes", connected: true, kind: "main", settings: { sidebarCollapsed: false } },
   ];
   const agentsTree: AgentNode[] = [{ id: "agent-review", agent: "Reviewer", model: "openai/gpt-5-mini", task: "Review the greeting change", status: "completed", lastMessage: "The change is correct and covered by tests.", children: [
     { id: "agent-tests", agent: "Test runner", model: "openai/gpt-5-mini", task: "Run focused tests", status: "completed", lastMessage: "All 8 tests pass.", children: [] },

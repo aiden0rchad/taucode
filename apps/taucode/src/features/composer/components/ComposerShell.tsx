@@ -1,3 +1,4 @@
+import { Squircle } from "@/features/design-system/components/squircle/Squircle";
 import { ReasoningControl, type ReasoningControlProps } from "./ReasoningControl";
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { ArrowUp, Plus, Settings2, Square } from "lucide-react";
@@ -13,14 +14,14 @@ export function ComposerShell({ children, menu, toolbar, controls, reasoning, ac
   useEffect(() => {
     if (add.isOpen) popover.current?.querySelector<HTMLButtonElement>(".composer-add-menu button:not(:disabled)")?.focus();
   }, [add.isOpen]);
-  const root = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     const input = root.current?.querySelector("textarea");
     if (!input) return;
     input.style.height = "auto";
     input.style.height = `${Math.min(Math.max(input.scrollHeight, 48), 260)}px`;
   });
-  return <div className={`composer-shell ${className}`} ref={root}>
+  return <Squircle className={`composer-shell ${className}`} ref={root}>
     {children}
     <div className="composer-shell-toolbar">
       <div className="composer-shell-left">
@@ -32,7 +33,7 @@ export function ComposerShell({ children, menu, toolbar, controls, reasoning, ac
       </div>
       <div className="composer-shell-actions">{reasoning && <ReasoningControl {...reasoning} />}{controls}{actions}</div>
     </div>
-  </div>;
+  </Squircle>;
 }
 
 export function ComposerSendButton({ running, disabled, disabledReason, onSend, onStop, label = "Send", runningHint }: {

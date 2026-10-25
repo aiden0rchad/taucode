@@ -154,7 +154,8 @@ export function SettingsView({
   return (
     <ModalShell
       className="settings-overlay"
-      cardClassName="settings-window"
+      cardClassName="settings-window squircle-clip"
+      squircle
       onBackdropClick={onClose}
       ariaLabelledBy="settings-modal-title"
     >

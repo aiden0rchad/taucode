@@ -397,6 +397,8 @@ export function SidebarWorkspaceGroups({
         name={group.name}
         showHeader={showGroupHeader}
         isCollapsed={isGroupCollapsed}
+        ungrouped={group.id === null}
+        isSelected={group.workspaces.some(workspace => workspace.id === entryProps.activeWorkspaceId)}
         onToggleCollapse={toggleGroupCollapse}
       >
         {group.workspaces.map((workspace) => (

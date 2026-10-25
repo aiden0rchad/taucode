@@ -1,3 +1,4 @@
+import { Squircle } from "@/features/design-system/components/squircle/Squircle";
 import type { MouseEventHandler, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { joinClassNames } from "../classNames";
@@ -6,6 +7,7 @@ type ModalShellProps = {
   children: ReactNode;
   className?: string;
   cardClassName?: string;
+  squircle?: boolean;
   onBackdropClick?: MouseEventHandler<HTMLDivElement>;
   ariaLabel?: string;
   ariaLabelledBy?: string;
@@ -16,11 +18,13 @@ export function ModalShell({
   children,
   className,
   cardClassName,
+  squircle = false,
   onBackdropClick,
   ariaLabel,
   ariaLabelledBy,
   ariaDescribedBy,
 }: ModalShellProps) {
+  const Card = squircle ? Squircle : "div";
   return createPortal(
     <div
       className={joinClassNames("ds-modal", className)}
@@ -31,7 +35,7 @@ export function ModalShell({
       aria-describedby={ariaDescribedBy}
     >
       <div className="ds-modal-backdrop" onClick={onBackdropClick} />
-      <div className={joinClassNames("ds-modal-card", cardClassName)}>{children}</div>
+      <Card className={joinClassNames("ds-modal-card", cardClassName)}>{children}</Card>
     </div>, document.body
   );
 }

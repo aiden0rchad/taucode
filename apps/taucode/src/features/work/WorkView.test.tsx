@@ -41,6 +41,20 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Work mode", () => {
+  it("renders selected space cards and collapses their entire contents", async () => {
+    state.spaces.push({ id: "other", kind: "work", name: "Other", path: "/other", readOnlyFolders: [] });
+    state.spaces[0].readOnlyFolders = ["/reference"];
+    state.tasks = [task("Report", "done")];
+    render(<WorkView settings={settings} />);
+    const space = await screen.findByRole("region", { name: "Research" });
+    expect(document.querySelectorAll(".work-space.squircle")).toHaveLength(2);
+    fireEvent.click(within(space).getByRole("button", { name: "Report" }));
+    await waitFor(() => expect(space.classList.contains("is-selected")).toBe(true));
+    fireEvent.click(within(space).getByRole("button", { name: "Research" }));
+    expect(space.querySelector(".sidebar-tree")).toBeNull();
+    expect(space.querySelector(".work-readonly-folders")).toBeNull();
+    expect(within(space).getByRole("button", { name: "Research" }).getAttribute("aria-expanded")).toBe("false");
+  });
   it("keeps task actions in a keyboard-accessible context menu", async () => {
     state.tasks = [task("Draft report", "running")];
     render(<WorkView settings={settings} />);

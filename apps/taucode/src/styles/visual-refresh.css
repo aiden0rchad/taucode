@@ -45,9 +45,12 @@
   --text-secondary: var(--text-subtle);
 
   --radius-chip: 6px;
-  --radius-row: 8px;
+  --radius-row: 6px;
   --radius-card: 12px;
-  --radius-composer: 18px;
+  /* Community-measured macOS 27 Golden Gate window radius: MacRumors
+     NSConvolutionOverride1 thread / 9to5Mac coverage; not an Apple specification. */
+  --radius-window: 20px;
+  --radius-composer: var(--radius-window);
   --conversation-column-width: 780px;
   --composer-model-select-width: 16ch;
   --context-free: 0;
@@ -370,5 +373,32 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 
 .sidebar .workspace-card-content.collapsed { display: none; }
 .sidebar .workspace-card-content-inner { overflow: visible; }
+/* Collapsible grids need an explicit shrinkable track; an implicit auto column sizes to
+   the nowrap titles' min-content and pushes rows past the card when the sidebar narrows. */
+.sidebar .workspace-card-content,
+.sidebar .worktree-card-content,
+.sidebar .workspace-group-list { grid-template-columns: minmax(0, 1fr); }
+.sidebar .workspace-card-content-inner,
+.sidebar .worktree-card-content-inner,
+.sidebar .workspace-group-content,
+.sidebar .sidebar-tree,
+.sidebar .thread-list { min-width: 0; }
 
 .messages-inner { gap: 28px; }
+
+/* Header and tree share the padded origin, preserving guide alignment. */
+.sidebar .project-group-card {
+  --squircle-background: color-mix(in srgb, var(--surface-sidebar), var(--text-primary) 3%);
+  --squircle-border: var(--tree-line);
+  padding: 4px;
+  overflow: visible;
+  margin: 0;
+}
+.sidebar .project-group-card.is-selected { --squircle-border: var(--tree-line-active); }
+.sidebar .workspace-group-content { gap: 6px; }
+.sidebar .work-space { margin-bottom: 6px; }
+.sidebar .work-space > .workspace-row { margin: 0 0 2px; }
+.composer-shell.squircle { --squircle-background: var(--surface-composer); padding: 1px; }
+.composer-shell.squircle:focus-within { --squircle-border: var(--border-accent); }
+.settings-window.squircle { --squircle-background: var(--surface-app); padding: 1px; }
+.side-panel-tools .squircle:hover { --squircle-background: var(--surface-hover); background: transparent; }

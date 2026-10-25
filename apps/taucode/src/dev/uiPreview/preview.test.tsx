@@ -64,7 +64,13 @@ it.each([
     const toggle = screen.getByRole("button", { name: "Toggle side panel" });
     expect(toggle.closest(".workspace-titlebar")).toBeTruthy();
     expect(document.querySelector(".browser-toggle")).toBeNull();
-    if (query.includes("mode=code")) expect(screen.getByPlaceholderText("Ask taucode to do something…")).toBeTruthy();
+    if (query.includes("mode=code")) {
+      expect(screen.getByPlaceholderText("Ask taucode to do something…").closest(".squircle")).toBeTruthy();
+      expect(document.querySelectorAll(".workspace-card.squircle")).toHaveLength(3);
+      expect(document.querySelector(".ungrouped-card.squircle")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Orbit" }).closest(".workspace-card")?.querySelector(".workspace-card-content.collapsed")).toBeTruthy();
+    }
+    if (query.includes("mode=work")) await waitFor(() => expect(document.querySelectorAll(".work-space.squircle")).toHaveLength(2));
     if (query.includes("composer=attachments")) expect(document.querySelectorAll(".chat-attachments li")).toHaveLength(2);
     if (query.includes("task=task-running")) {
       expect(document.querySelector(".work-space .thread-row .thread-status.processing")).toBeTruthy();
@@ -211,7 +217,10 @@ it.each(["new", "browser"])("renders the %s panel preview fixture", async panel 
   await screen.findByText(/A starting point/);
   expect(screen.getByRole("complementary", { name: "Side panel" })).toBeTruthy();
   if (panel === "browser") expect(await screen.findByRole("tab", { name: "Example" })).toBeTruthy();
-  else expect(screen.getByRole("heading", { name: "Tools" })).toBeTruthy();
+  else {
+    expect(screen.getByRole("heading", { name: "Tools" })).toBeTruthy();
+    expect(document.querySelector(".side-panel-tools > button.squircle")).toBeTruthy();
+  }
 });
 
 it.each(["?mode=code&thread=thread-plan&panel=new", "?mode=chat&chat=chat-1", "?mode=work&task=task-running", "?settings=display", "?settings=providers"])("names the controls at %s", async query => {

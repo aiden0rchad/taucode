@@ -4,6 +4,13 @@ import { expect, it } from "vitest";
 const read = name => readFileSync(`src/styles/${name}.css`, "utf8");
 const tokens = css => Object.fromEntries([...css.matchAll(/(--[\w-]+):\s*(#[\da-f]{6});/gi)].map(([, key, value]) => [key, value]));
 const dark = tokens(read("themes.dark"));
+it("defines the window radius and shared group card treatments", () => {
+  const css = read("visual-refresh");
+  expect(css).toContain("--radius-window: 20px;");
+  expect(css).toContain("--squircle-border: var(--tree-line);");
+  expect(css).toContain(".sidebar .project-group-card.is-selected { --squircle-border: var(--tree-line-active); }");
+  expect(css).toContain(".sidebar .workspace-group-content { gap: 6px; }");
+});
 function luminance(hex) {
   const channels = hex.slice(1).match(/../g).map(channel => parseInt(channel, 16) / 255);
   return channels.reduce((sum, value, index) => sum + [0.2126, 0.7152, 0.0722][index] * (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4), 0);
@@ -31,4 +38,10 @@ it("uses dedicated colors for 1px trunks and rounded elbows, including the proje
   expect(rules[".tree-branch::after"]).toContain("border-bottom-left-radius: 6px");
   expect(rules[".workspace-card-content .sidebar-tree > .tree-branch:first-child::after"]).toContain("top: -18px");
   expect(rules[".tree-last-child::before"]).toContain("display: none");
+});
+
+it("lets collapsible sidebar grids shrink with the sidebar", () => {
+  const css = read("visual-refresh");
+  expect(css).toMatch(/\.sidebar \.workspace-card-content,[^{]*\{ grid-template-columns: minmax\(0, 1fr\); \}/);
+  expect(css).toMatch(/\.sidebar \.workspace-card-content-inner,[^{]*\.sidebar \.thread-list \{ min-width: 0; \}/);
 });

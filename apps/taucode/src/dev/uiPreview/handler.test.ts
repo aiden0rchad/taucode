@@ -26,9 +26,10 @@ describe("UI preview IPC", () => {
   it("supplies typed rich fixtures, date groups, side chats and all work statuses", () => {
     const fixtures = createFixtures();
     expect(fixtures.settings.providers).toHaveLength(2);
-    expect(fixtures.workspaces).toHaveLength(2);
+    expect(fixtures.workspaces).toHaveLength(3);
     expect(fixtures.threads).toHaveLength(17);
-    expect(fixtures.workspaces.find(w => w.id === "workspace-notes")?.settings.sidebarCollapsed).toBe(true);
+    expect(fixtures.workspaces.find(w => w.id === "workspace-orbit")?.settings).toMatchObject({ sidebarCollapsed: true, groupId: "group-studio" });
+    expect(fixtures.workspaces.find(w => w.id === "workspace-notes")?.settings.sidebarCollapsed).toBe(false);
     expect(fixtures.threads.find(t => t.id === "agent-review")?.source?.subAgent.thread_spawn.parent_thread_id).toBe("thread-rich");
     expect(fixtures.threads.find(t => t.id === "agent-tests")?.source?.subAgent.thread_spawn.parent_thread_id).toBe("agent-review");
     expect(fixtures.work.spaces.every(space => fixtures.work.tasks.some(task => task.spaceId === space.id))).toBe(true);
@@ -67,7 +68,7 @@ describe("UI preview IPC", () => {
     expect(state.work.tasks[0]).toMatchObject({ title: "New brief", status: "running" });
     const workspaces = handler("list_workspaces") as unknown[];
     workspaces.pop();
-    expect(state.workspaces).toHaveLength(2);
+    expect(state.workspaces).toHaveLength(3);
     expect(createPreviewHandler().state.threads[0].name).toBe("Polish the welcome message");
   });
 
@@ -86,7 +87,7 @@ describe("UI preview IPC", () => {
     await emit("preview-once");
     await emit("preview-once");
     expect(oneTime).toHaveBeenCalledTimes(1);
-    expect(await invoke("list_workspaces")).toHaveLength(2);
+    expect(await invoke("list_workspaces")).toHaveLength(3);
   });
 
   it("returns checkpoint lists and diffs using the UI's request actions", () => {
