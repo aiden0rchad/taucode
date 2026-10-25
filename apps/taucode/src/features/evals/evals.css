@@ -50,6 +50,8 @@
 .evals-page th,.evals-page th .settings-button { white-space: nowrap; overflow-wrap: normal; word-break: normal; text-align: inherit; }
 .evals-page th:first-child { text-align: left; position: sticky; left: 0; z-index: var(--z-sticky); background: var(--surface-card); box-shadow: 1px 0 var(--border-muted); }
 .evals-page th small { display: block; color: var(--text-muted); }
+.evals-page thead th { color: var(--text-muted); text-transform: uppercase; font-size: 11px; font-weight: 500; border-radius: 0; }
+.evals-page thead th .settings-button { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; color: inherit; font: inherit; text-transform: inherit; }
 .evals-best { font-weight: 700; }
 .evals-summary-cards { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,260px),1fr)); gap: 12px; }
 .evals-summary-card { padding: 16px; min-width: 0; border: 1px solid var(--border-muted); border-radius: 10px; background: var(--surface-card); }

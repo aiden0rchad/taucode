@@ -139,6 +139,34 @@ async fn finished(service:&Arc<Evals>,id:&str)->Run {
  std::fs::remove_dir_all(&service.data).unwrap();
 }
 
+fn installed_runtime(data:&Path,engine:&str,version:&str) {
+ let (package,entry)=match engine {"pi"=>("@earendil-works/pi-coding-agent","dist/bundle/cli.js"),"omp"=>("@oh-my-pi/pi-coding-agent","dist/cli.js"),_=>panic!("unexpected test engine")};
+ let modules=data.join("engines").join(engine).join("node_modules");
+ let cli=modules.join(package).join(entry);
+ std::fs::create_dir_all(cli.parent().unwrap()).unwrap();
+ std::fs::write(cli,"").unwrap();
+ std::fs::write(modules.join(package).join("package.json"),json!({"version":version}).to_string()).unwrap();
+ if engine=="omp" {std::fs::create_dir_all(modules.join(".bin")).unwrap();std::fs::write(modules.join(".bin/bun"),"").unwrap();}
+}
+#[tokio::test] async fn pending_engine_environment_records_installed_version() {
+ let (mut service,_,_)=fixture(false);
+ Arc::get_mut(&mut service).unwrap().prepare=Arc::new(|data,engine|Box::pin(async move {
+  let path=std::fs::read_dir(data.join("evals/runs")).unwrap().next().unwrap().unwrap().path();
+  let before:Value=serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+  assert_eq!(before["environment"]["engines"][0]["state"],"pending");
+  assert!(before["environment"]["engines"][0]["version"].is_null());
+  installed_runtime(&data,&engine,"99.0.0-eval-fixture");
+  Ok(())
+ }));
+ let result=service.start(AppSettings::default(),plan(),json!([{"engine":"pi","state":"pending"},{"engine":"custom","state":"ready","version":"custom-1"}])).await.unwrap();
+ let run=finished(&service,result["runId"].as_str().unwrap()).await;
+ assert_eq!(run.status,"completed");
+ let stored:Value=serde_json::from_slice(&std::fs::read(service.path(&run.id).unwrap()).unwrap()).unwrap();
+ assert_eq!(stored["environment"]["engines"][0]["state"],"ready");
+ assert_eq!(stored["environment"]["engines"][0]["version"],"99.0.0-eval-fixture");
+ assert_eq!(stored["environment"]["engines"][1]["version"],"custom-1");
+ std::fs::remove_dir_all(&service.data).unwrap();
+}
 #[tokio::test] async fn pending_engines_prepare_once_before_any_cells() {
  let (mut service,output,_)=fixture(false);
  let calls=Arc::new(StdMutex::new(Vec::new()));let seen=calls.clone();
@@ -146,7 +174,8 @@ async fn finished(service:&Arc<Evals>,id:&str)->Run {
   let seen=seen.clone();Box::pin(async move {
    assert!(!data.join("evals/work").exists(),"no cell may start while preparing");
    seen.lock().unwrap().push(engine.clone());
-   Ok(json!({"engine":engine,"state":"ready","version":"prepared"}))
+   installed_runtime(&data,&engine,"prepared");
+   Ok(())
   })
  });
  let mut p=plan();p.engines=vec!["pi".into(),"omp".into()];p.repeats=2;p.concurrency=4;

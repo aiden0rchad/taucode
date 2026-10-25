@@ -43,7 +43,7 @@ impl Driver for WorkspaceSession {
     fn stop(&self)->BoxFuture<'_,()> { Box::pin(self.shutdown()) }
 }
 type Factory=Arc<dyn Fn(WorkspaceEntry,AppSettings,Sink)->BoxFuture<'static,Result<Arc<dyn Driver>,String>>+Send+Sync>;
-type Prepare=Arc<dyn Fn(PathBuf,String)->BoxFuture<'static,Result<Value,String>>+Send+Sync>;
+type Prepare=Arc<dyn Fn(PathBuf,String)->BoxFuture<'static,Result<(),String>>+Send+Sync>;
 pub(crate) struct Evals {
     data:PathBuf, emit:Arc<dyn Fn(AppServerEvent)+Send+Sync>,
     active:Mutex<HashMap<String,watch::Sender<bool>>>, factory:Factory, prepare:Prepare,
@@ -60,8 +60,7 @@ impl Evals {
             })
         });
         let prepare:Prepare=Arc::new(|data,engine|Box::pin(async move {
-            super::engine_runtime::prepare(&data,&engine,None).await?;
-            super::engine_runtime::status(&data).await.as_array().and_then(|rows|rows.iter().find(|r|r["engine"]==engine)).cloned().ok_or_else(||format!("Engine {engine}: runtime state missing after preparation"))
+            super::engine_runtime::prepare(&data,&engine,None).await.map(|_|())
         }));
         Arc::new(Self {data,emit:Arc::new(move |e|sink.emit_app_server_event(e)),active:Mutex::new(HashMap::new()),factory,prepare})
     }
@@ -205,7 +204,7 @@ impl Evals {
             run.message=Some(format!("Preparing {engine}…"));self.save(run)?;
             let runtime_id=if engine=="claude" {"claude-acp"} else {engine};
             let mut prepare=(self.prepare)(self.data.clone(),runtime_id.into());
-            let status=tokio::select! {
+            tokio::select! {
                 _=cancelled.changed()=>{
                     super::engine_runtime::cancel(runtime_id);
                     let _=tokio::time::timeout(Duration::from_secs(5),&mut prepare).await;
@@ -213,8 +212,20 @@ impl Evals {
                 },
                 status=&mut prepare=>status.map_err(|e|format!("Engine {engine}: preparation failed — {e}"))?,
             };
-            if status["state"]!="ready" { return Err(format!("Engine {engine}: preparation ended in {} — {}",status["state"].as_str().unwrap_or("missing"),status["message"].as_str().unwrap_or(""))); }
-            if let Some(row)=run.environment["engines"].as_array_mut().and_then(|rows|rows.iter_mut().find(|r|r["engine"]==runtime_id)) { *row=status; }
+        }
+        if !engines.is_empty() {
+            let runtime=super::engine_runtime::status(&self.data).await;
+            // Preserve custom-engine handshake rows while refreshing installed runtimes.
+            for row in run.environment["engines"].as_array_mut().into_iter().flatten() {
+                if let Some(fresh)=runtime.as_array().and_then(|rows|rows.iter().find(|r|r["engine"]==row["engine"])) { *row=fresh.clone(); }
+            }
+            for engine in engines {
+                let runtime_id=if engine=="claude" {"claude-acp"} else {engine};
+                let status=runtime.as_array().and_then(|rows|rows.iter().find(|r|r["engine"]==runtime_id));
+                if status.is_none_or(|s|s["state"]!="ready") {
+                    return Err(format!("Engine {engine}: preparation ended in {} — {}",status.and_then(|s|s["state"].as_str()).unwrap_or("missing"),status.and_then(|s|s["message"].as_str()).unwrap_or("")));
+                }
+            }
         }
         run.status="running".into();run.message=None;self.save(run)
     }

@@ -97,6 +97,7 @@ pub(crate) async fn status(data: &Path) -> Value {
             let package = match engine { "omp" => "@oh-my-pi/pi-coding-agent", "pi" => "@earendil-works/pi-coding-agent", _ => "@agentclientprotocol/claude-agent-acp" };
             let version = fs::read(dir.join("node_modules").join(package).join("package.json")).ok().and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok()).and_then(|v| v["version"].as_str().map(str::to_owned)).unwrap_or_default();
             if let Some(row) = status.as_array_mut().and_then(|rows| rows.iter_mut().find(|r| r["engine"] == engine)) {
+                row["version"] = if version.is_empty() { Value::Null } else { json!(version) };
                 if !matches!(row["state"].as_str(), Some("installing" | "preparing")) {
                     let bun = engine != "omp" || dir.join("node_modules/.bin/bun").is_file();
                     row["state"] = json!(if bun { "ready" } else { "error" });
@@ -114,12 +115,16 @@ pub(crate) async fn status(data: &Path) -> Value {
     let settings = super::engine_registry::settings(Some(data));
     let mut command = Command::new(settings.codex_bin.as_deref().unwrap_or("codex"));
     command.arg("--version").stdin(Stdio::null()).kill_on_drop(true);
-    let (state, message) = match tokio::time::timeout(Duration::from_secs(3), command.output()).await {
-        Ok(Ok(output)) if output.status.success() => ("ready", format!("Ready {}", String::from_utf8_lossy(&output.stdout).trim())),
-        Ok(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => ("pending", "Install Codex to use this engine".into()),
-        _ => ("error", "Codex version check failed".into()),
+    let (state, message, version) = match tokio::time::timeout(Duration::from_secs(3), command.output()).await {
+        Ok(Ok(output)) if output.status.success() => {
+            let text=String::from_utf8_lossy(&output.stdout).trim().to_owned();
+            let version=text.strip_prefix("codex-cli ").unwrap_or(&text).to_owned();
+            ("ready", format!("Ready {text}"), if version.is_empty(){None}else{Some(version)})
+        },
+        Ok(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => ("pending", "Install Codex to use this engine".into(), None),
+        _ => ("error", "Codex version check failed".into(), None),
     };
-    status.as_array_mut().unwrap().push(json!({"engine":"codex","state":state,"message":message}));
+    status.as_array_mut().unwrap().push(json!({"engine":"codex","state":state,"message":message,"version":version}));
     status
 }
 

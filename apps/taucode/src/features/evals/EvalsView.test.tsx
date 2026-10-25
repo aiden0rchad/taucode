@@ -7,6 +7,7 @@ import {createFixtures} from "@/dev/uiPreview/fixtures";
 import {createEvalFixture} from "@/dev/uiPreview/evals";
 import {evalRequest,engineRuntime} from "@services/tauri";
 const evalStyles=(await vi.importActual<{readFileSync:(path:string,encoding:"utf8")=>string}>("node:fs")).readFileSync("src/features/evals/evals.css","utf8");
+const settingsStyles=(await vi.importActual<{readFileSync:(path:string,encoding:"utf8")=>string}>("node:fs")).readFileSync("src/styles/settings.css","utf8");
 let progress:(event:{runId:string;status:string})=>void;
 vi.mock("@services/tauri",()=>({evalRequest:vi.fn(),engineRuntime:vi.fn()}));
 vi.mock("@services/events",()=>({subscribeEvalProgress:vi.fn(fn=>{progress=fn;return()=>{};})}));
@@ -126,10 +127,18 @@ it.each([1024,1440])("keeps full results headers unwrapped at %ipx and opens mat
  const result=fixture("run",{runId:"eval-b"}) as EvalResult;
  result.run.cells[1].output="x".repeat(3000)+"AssertionError: frequency map";
  result.run.cells.push({...result.run.cells[0],id:"repeat-2",repeat:1});
- render(<><style>{evalStyles}</style><EvalsView full initialRunId="eval-b" appSettings={settings} onUpdateAppSettings={vi.fn()}/></>);
+ render(<><style>{settingsStyles+evalStyles}</style><EvalsView full initialRunId="eval-b" appSettings={settings} onUpdateAppSettings={vi.fn()}/></>);
  const table=await screen.findByRole("table",{name:"Configuration comparison"});
  expect(within(table).getAllByRole("columnheader").map(h=>h.textContent)).toEqual(["Configuration","Pass","Tokens (eff.)","Cache","Cost","Tools","1st token","Wall","Errors"]);
  for(const header of table.querySelectorAll("th,th button")) expect(getComputedStyle(header).whiteSpace).toBe("nowrap");
+ for(const header of table.querySelectorAll("thead th")) {
+  const style=getComputedStyle(header);
+  expect(style.fontSize).toBe("11px");expect(style.textTransform).toBe("uppercase");
+ }
+ for(const button of table.querySelectorAll("thead button")) {
+  const style=getComputedStyle(button);
+  expect(style.backgroundColor).toBe("rgba(0, 0, 0, 0)");expect(style.borderRadius).toBe("0");expect(style.boxShadow).toBe("none");
+ }
  expect(getComputedStyle(table.querySelector("th")!).position).toBe("sticky");
  expect(getComputedStyle(table.parentElement!).overflowX).toBe("auto");
  expect(within(table).getByText("2.1k")).toBeTruthy();
