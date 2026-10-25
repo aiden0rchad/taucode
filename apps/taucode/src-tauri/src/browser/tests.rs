@@ -159,6 +159,12 @@ async fn bridge_tracks_tabs_streams_and_navigates_without_sockets() {
         .await
         .unwrap();
     assert_eq!(state.borrow()["frame"], "first-frame");
+    // Opening a page before the pane measures itself sends a bare attach: keep the size.
+    bridge.command(json!({"action":"attach"})).await.unwrap();
+    assert_eq!((state.borrow()["width"].clone(), state.borrow()["height"].clone()), (json!(800), json!(600)));
+    bridge.command(json!({"action":"resize","width":470.6,"height":599.4,"dpr":2})).await.unwrap();
+    assert_eq!((state.borrow()["width"].clone(), state.borrow()["height"].clone()), (json!(471), json!(599)));
+    assert!(bridge.command(json!({"action":"resize"})).await.is_err());
     bridge
         .command(json!({"action":"activate","id":"two"}))
         .await
