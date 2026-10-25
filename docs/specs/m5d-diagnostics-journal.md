@@ -48,7 +48,7 @@ Done means:
  "area":"engine|provider|ui|ipc|git|browser|computer|terminal|checkpoints|connectors|themes|work|chat|startup|agent",
  "code":"engine.exit_nonzero","message":"pi exited with code 1 during turn","fingerprint":"<16 hex>",
  "context":{"appVersion":"…","os":"macOS 27.0","mode":"code","engine":"pi","providerKind":"openai-compatible","model":"glm-5.3","threadId":"…","turnId":"…","workspace":"~/proj/x"},
- "metrics":{"durationMs":0,"tokensIn":0,"tokensOut":0,"cachedTokens":0,"costUsd":0,"count":0},
+ "metrics":{"durationMs":0,"tokensIn":0,"tokensOut":0,"cachedTokens":0,"costUsd":null,"count":0},
  "detail":{"stderrTail":"…redacted…","stack":"…trimmed…","tool":"read_file"}}
 ```
 
@@ -79,7 +79,7 @@ Done means:
 **Performance**
 - Startup:
   - process start → first paint → interactive
-  - engine spawn latency
+  - `engine.ready`: spawn → first successful `get_state` / `initialize` response; over 5s is a performance issue
   - first token latency per turn
 - IPC calls over 300ms (command plus duration).
 - UI long tasks over 150ms (`PerformanceObserver('longtask')`, attributed to the current
@@ -90,11 +90,12 @@ Done means:
 **Efficiency and agent quality** (`usage` / `agent` events at turn end, one event per
 turn):
 - duration, tokens in/out/cached, cost, tool-call count, errors
+- Unknown price (zero or missing provider cost) is stored as `costUsd: null`. Local Ollama/LM Studio models with `auth: none` and an explicit zero cost carry `context.zeroCost: true` and may report `$0`.
 - engine/model/provider kind, codegraph on/off
 - Derived signals, each its own coded event:
   - `agent.tool_loop`: same tool + same args 3 or more times in a turn
   - `agent.reread`: the same file read 4 or more times in a turn
-  - `agent.high_tokens`: turn tokens above 2× this model's rolling p50 (and above 50k)
+  - `agent.high_tokens`: effective turn tokens (`tokensIn + cachedTokens + tokensOut`) above 2× this model's rolling p50 (and above 50k)
   - `agent.compaction`: the turn hit compaction
   - `agent.aborted`, `agent.denied` (approval denied), `agent.rewound` (the user
     rewound or undid the turn, a strong "bad output" signal)
@@ -141,15 +142,14 @@ turn):
   - **Performance:** startup, first-token p50/p95 by engine/model, slowest IPC
     commands, long-task hot spots
   - **Efficiency:**
-    - tokens and cost by engine/model
-    - average tokens per turn
-    - top token-heavy turns (ids only)
+    - effective input (`tokensIn + cachedTokens`), cache hit rate, output and cost by engine/model; compact k/M token counts and `cost unknown` when unpriced
+    - token-heavy turns that triggered `agent.high_tokens` (ids only)
     - codegraph on vs off comparison when both exist
   - **Suggestions:** rule-based, each with its evidence and a confidence. Examples:
     - repeated `agent.reread` → enable codegraph for that project
     - tool error rate over 20% for a tool → investigate the tool
     - `provider.http_429` bursts → add a fallback model
-    - engine spawn over 3s repeatedly → prewarm
+    - engine ready over 5s repeatedly → prewarm
     - long tasks concentrated in one panel → profile that panel
     - high-tokens model X vs Y on similar turn counts → consider Y for that role
     - Rules live in one table in code, so they're easy to extend.
@@ -208,7 +208,7 @@ turn):
   - `Bearer …`, `Authorization:` headers, JWT-like `a.b.c` tokens
   - any registry provider's actual key value if it's present in memory
   - env assignments `FOO=…` where FOO matches `/(KEY|TOKEN|SECRET|PASSWORD|AUTH)/i`
-  - long hex/base64 runs (≥ 32 chars)
+  - long hex/base64 runs (≥ 32 chars), except identifier fields (`run`, thread/turn/response/item/workspace IDs) and canonical UUIDs, including turn/message suffixes; key-prefix and known-secret redaction still applies inside IDs
   - emails
 - Home directory → `~`.
 - Applied to message, detail, stack and context before writing. Tests use shared

@@ -9,6 +9,14 @@ fn percentile(mut xs: Vec<f64>, p: f64) -> f64 {
     xs.sort_by(f64::total_cmp);
     xs[((xs.len() - 1) as f64 * p).ceil() as usize]
 }
+fn compact_tokens(n: f64) -> String {
+    if n >= 1_000_000.0 { format!("{:.1}M", n / 1_000_000.0) }
+    else if n >= 1_000.0 { format!("{:.1}k", n / 1_000.0) }
+    else { format!("{n:.0}") }
+}
+fn duration(ms: f64) -> String {
+    if ms >= 1000.0 { format!("{:.1}s", ms / 1000.0) } else { format!("{ms:.0}ms") }
+}
 pub const RULES: &[(&str, usize, &str, &str)] = &[
     (
         "agent.reread",
@@ -17,7 +25,7 @@ pub const RULES: &[(&str, usize, &str, &str)] = &[
         "high",
     ),
     ("provider.http_429", 3, "Add a fallback model", "high"),
-    ("engine.spawn_slow", 3, "Prewarm the engine", "medium"),
+    ("engine.ready", 3, "Prewarm the engine", "medium"),
     ("ui.long_task", 3, "Profile the affected panel", "medium"),
     (
         "agent.tool_errors",
@@ -72,14 +80,20 @@ pub fn digest(events: &[Event], issues: &Issues, previous: &str) -> String {
     out += "\n## Performance\n";
     let mut perf = BTreeMap::<String, Vec<f64>>::new();
     for e in events.iter().filter(|e| e.kind == "perf") {
-        let key = format!(
-            "{} · {}/{} · {}{}",
-            e.code,
+        if !e.metrics["durationMs"].is_number() { continue; }
+        let label = match e.code.as_str() {
+            "engine.first_token" => "first token",
+            "engine.ready" => "engine ready",
+            code => code,
+        };
+        let mut key = format!("{} · {}/{}", label,
             e.context["engine"].as_str().unwrap_or("-"),
-            e.context["model"].as_str().unwrap_or("-"),
-            e.detail["command"].as_str().unwrap_or(""),
-            e.context["panel"].as_str().unwrap_or("")
-        );
+            e.context["model"].as_str().unwrap_or("-"));
+        for extra in [&e.detail["command"], &e.context["panel"]] {
+            if let Some(extra) = extra.as_str().filter(|s| !s.is_empty()) {
+                key += &format!(" · {extra}");
+            }
+        }
         perf.entry(key)
             .or_default()
             .push(e.metrics["durationMs"].as_f64().unwrap_or(0.0));
@@ -88,10 +102,10 @@ pub fn digest(events: &[Event], issues: &Issues, previous: &str) -> String {
     perf.sort_by(|a, b| percentile(b.1.clone(), 0.95).total_cmp(&percentile(a.1.clone(), 0.95)));
     for (k, xs) in perf {
         out += &format!(
-            "- {}: p50 {:.0}ms / p95 {:.0}ms (n={})\n",
+            "- {} · p50 {} · p95 {} · n={}\n",
             line(&k),
-            percentile(xs.clone(), 0.5),
-            percentile(xs.clone(), 0.95),
+            duration(percentile(xs.clone(), 0.5)),
+            duration(percentile(xs.clone(), 0.95)),
             xs.len()
         );
     }
@@ -100,46 +114,54 @@ pub fn digest(events: &[Event], issues: &Issues, previous: &str) -> String {
         .iter()
         .filter(|e| e.code == "agent.turn")
         .collect::<Vec<_>>();
-    let mut usage = BTreeMap::<String, (f64, f64, usize)>::new();
+    let mut usage = BTreeMap::<String, (f64, f64, f64, Option<f64>, usize)>::new();
     let mut cg = BTreeMap::<bool, (f64, usize)>::new();
     for e in &turns {
-        let tokens = e.metrics["tokensIn"].as_f64().unwrap_or(0.0)
-            + e.metrics["tokensOut"].as_f64().unwrap_or(0.0);
+        let cached = e.metrics["cachedTokens"].as_f64().unwrap_or(0.0);
+        let input = e.metrics["tokensIn"].as_f64().unwrap_or(0.0) + cached;
+        let output = e.metrics["tokensOut"].as_f64().unwrap_or(0.0);
+        let tokens = input + output;
         let v = usage
             .entry(format!(
                 "{}/{}",
                 e.context["engine"].as_str().unwrap_or("-"),
                 e.context["model"].as_str().unwrap_or("-")
             ))
-            .or_default();
-        v.0 += tokens;
-        v.1 += e.metrics["costUsd"].as_f64().unwrap_or(0.0);
-        v.2 += 1;
+            .or_insert((0.0, 0.0, 0.0, Some(0.0), 0));
+        v.0 += input;
+        v.1 += cached;
+        v.2 += output;
+        v.3 = v.3.zip(e.metrics["costUsd"].as_f64().filter(|cost| *cost > 0.0 || (*cost == 0.0 && e.context["zeroCost"] == true)))
+            .map(|(sum, cost)| sum + cost);
+        v.4 += 1;
         if let Some(on) = e.context["codegraph"].as_bool() {
             let v = cg.entry(on).or_default();
             v.0 += tokens;
             v.1 += 1;
         }
     }
-    for (key, (tokens, cost, n)) in usage {
+    for (key, (input, cached, output, cost, n)) in usage {
+        let cost = cost.map(|cost| if cost == 0.0 { "$0".into() } else { format!("${cost:.4}") }).unwrap_or_else(|| "cost unknown".into());
         out += &format!(
-            "- {}: {tokens:.0} tokens, USD {cost:.4}, {n} turns, {:.0} tokens/turn\n",
-            line(&key),
-            tokens / n as f64
+            "- {}: {n} turns · in {} ({:.0}% cached) · out {} · {cost}\n",
+            line(&key), compact_tokens(input),
+            if input > 0.0 { cached / input * 100.0 } else { 0.0 },
+            compact_tokens(output)
         );
     }
     if cg.len() == 2 {
         for (on, (tokens, n)) in cg {
             out += &format!(
-                "- codegraph {on}: {:.0} tokens/turn (n={n})\n",
-                tokens / n as f64
+                "- codegraph {on}: {} tokens/turn (n={n})\n",
+                compact_tokens(tokens / n as f64)
             );
         }
     }
-    let mut heavy = turns;
+    let mut heavy = events.iter().filter(|e| e.code == "agent.high_tokens").collect::<Vec<_>>();
     heavy.sort_by(|a, b| {
         let sum = |e: &&Event| {
             e.metrics["tokensIn"].as_u64().unwrap_or(0)
+                + e.metrics["cachedTokens"].as_u64().unwrap_or(0)
                 + e.metrics["tokensOut"].as_u64().unwrap_or(0)
         };
         sum(b).cmp(&sum(a))
@@ -152,7 +174,7 @@ pub fn digest(events: &[Event], issues: &Issues, previous: &str) -> String {
     }
     out += "\n## Suggestions\n";
     for &(code, threshold, suggestion, confidence) in RULES {
-        let matches = events.iter().filter(|e| e.code == code).collect::<Vec<_>>();
+        let matches = events.iter().filter(|e| e.code == code && (code != "engine.ready" || is_issue(e))).collect::<Vec<_>>();
         if matches.len() >= threshold {
             out += &format!(
                 "- {suggestion} · confidence {confidence} · evidence {code} ×{} ({})\n",

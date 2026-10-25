@@ -97,6 +97,9 @@ pub fn event(kind: &str, area: &str, code: &str, message: &str) -> Event {
     }
 }
 pub fn redact(text: &str, home: &str, secrets: &[String]) -> String {
+    redact_field(text, home, secrets, false)
+}
+fn redact_field(text: &str, home: &str, secrets: &[String], identifier: bool) -> String {
     static RULES: OnceLock<Vec<(Regex, String)>> = OnceLock::new();
     let rules = RULES.get_or_init(|| {
         serde_json::from_str::<Value>(REDACTION).unwrap()["rules"]
@@ -122,6 +125,16 @@ pub fn redact(text: &str, home: &str, secrets: &[String]) -> String {
         text = pattern
             .replace_all(&text, replacement.as_str())
             .into_owned();
+    }
+    if !identifier {
+        static TOKENS: OnceLock<(Regex, Regex)> = OnceLock::new();
+        let (token, uuid) = TOKENS.get_or_init(|| {
+            let data: Value = serde_json::from_str(REDACTION).unwrap();
+            (Regex::new(data["longToken"].as_str().unwrap()).unwrap(), Regex::new(data["uuid"].as_str().unwrap()).unwrap())
+        });
+        text = token.replace_all(&text, |caps: &regex::Captures| {
+            if uuid.is_match(&caps[0]) { caps[0].to_owned() } else { "[REDACTED]".into() }
+        }).into_owned();
     }
     text
 }
@@ -198,9 +211,12 @@ pub fn sanitize(mut e: Event, options: &Options, home: &str, secrets: &[String])
                 "providerKind",
                 "model",
                 "threadId",
+                "itemId",
+                "workspaceId",
                 "turnId",
                 "workspace",
                 "codegraph",
+                "zeroCost",
                 "responseId",
             ][..],
         ),
@@ -244,12 +260,12 @@ pub fn sanitize(mut e: Event, options: &Options, home: &str, secrets: &[String])
                 if let Some(s) = v.as_str() {
                     clean.insert(
                         (*key).into(),
-                        json!(redact(s, home, secrets)
+                        json!(redact_field(s, home, secrets, matches!(*key, "threadId" | "turnId" | "responseId" | "itemId" | "workspace" | "workspaceId"))
                             .chars()
                             .take(if *key == "stack" { 2000 } else { 300 })
                             .collect::<String>()),
                     );
-                } else if v.is_number() || v.is_boolean() {
+                } else if v.is_number() || v.is_boolean() || (*key == "costUsd" && v.is_null()) {
                     clean.insert((*key).into(), v.clone());
                 }
             }
@@ -259,14 +275,18 @@ pub fn sanitize(mut e: Event, options: &Options, home: &str, secrets: &[String])
     e.metrics
         .as_object_mut()
         .unwrap()
-        .retain(|_, v| v.as_f64().is_some_and(|n| n >= 0.0));
+        .retain(|key, v| (key == "costUsd" && v.is_null()) || v.as_f64().is_some_and(|n| n >= 0.0));
     e.context.as_object_mut().unwrap().retain(|key, v| {
-        if key == "codegraph" {
+        if key == "codegraph" || key == "zeroCost" {
             v.is_boolean()
         } else {
             v.is_string()
         }
     });
+    if e.code == "agent.turn" && e.metrics["costUsd"].as_f64().is_none_or(|cost| cost <= 0.0 && e.context["zeroCost"] != true) {
+        e.metrics["costUsd"] = Value::Null;
+    }
+    e.run = redact_field(&e.run, home, secrets, true);
     e.message = redact(&e.message, home, secrets)
         .chars()
         .take(300)
@@ -328,7 +348,7 @@ pub fn is_issue(e: &Event) -> bool {
         "ipc.slow" => 300.0,
         "ui.long_task" => 150.0,
         "git.slow" => 500.0,
-        "startup.interactive" | "startup.first_paint" => 5000.0,
+        "startup.interactive" | "startup.first_paint" | "engine.ready" => 5000.0,
         "engine.first_token" => 10000.0,
         _ => return false,
     };

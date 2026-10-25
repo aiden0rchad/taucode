@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     codegraph::CodegraphSetup,
-    types::{AgentPolicy, ModelRef, ProviderEntry},
+    types::{AgentPolicy, ModelRef, ProviderAuth, ProviderEntry, ProviderKind},
 };
 use process::Process;
 use serde_json::{json, Value};
@@ -516,6 +516,7 @@ impl PiEngine {
             .unwrap_or("ask")
             .into();
         translator.provider = provider.id.clone();
+        translator.diagnostic_zero_cost = matches!(provider.auth, ProviderAuth::None) && matches!(provider.kind, ProviderKind::Ollama | ProviderKind::Lmstudio);
         translator.diagnostic_provider_kind = serde_json::to_value(provider.kind).unwrap_or_default().as_str().unwrap_or("unknown").into();
         translator.model = json!({"id":model,"provider":config::provider_id(provider,registry),"contextWindow":provider.models.iter().find(|m|m.id==model).and_then(|m|m.context_window)});
         let events = self.events.clone();
@@ -914,6 +915,7 @@ impl PiEngine {
                 }
                 let mut t = p.translator.lock().await;
                 t.provider = provider.id.clone();
+                t.diagnostic_zero_cost = matches!(provider.auth, ProviderAuth::None) && matches!(provider.kind, ProviderKind::Ollama | ProviderKind::Lmstudio);
                 t.diagnostic_provider_kind = serde_json::to_value(provider.kind).unwrap_or_default().as_str().unwrap_or("unknown").into();
                 let events = t.apply(
                     &json!({"type":"response","command":"set_model","success":true,"data":actual}),

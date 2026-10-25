@@ -11,10 +11,11 @@ let cleanup: (() => void) | undefined;
 let context: Record<string, unknown> = {};
 let send: (events: DiagnosticEvent[]) => Promise<unknown> = async () => {};
 export function diagnosticsEnabled() { return enabled; }
-export function redact(text: string, home = "", keys: string[] = []) {
+export function redact(text: string, home = "", keys: string[] = [], identifier = false) {
   for (const key of keys.filter(Boolean)) text = text.split(key).join("[REDACTED]");
   if (home) text = text.split(home).join("~");
   for (const [pattern, replacement] of fixtures.rules) text = text.replace(new RegExp(pattern.replace("(?i)", ""), pattern.startsWith("(?i)") ? "gi" : "g"), replacement);
+  if (!identifier) text = text.replace(new RegExp(fixtures.longToken, "g"), token => new RegExp(fixtures.uuid).test(token) ? token : "[REDACTED]");
   return text;
 }
 export function diagnosticContext(value: Record<string, unknown>) { if (enabled) context = { ...context, ...value }; }

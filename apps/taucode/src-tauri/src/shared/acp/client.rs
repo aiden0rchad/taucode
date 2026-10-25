@@ -44,6 +44,7 @@ pub(super) struct Client {
     pub alive: AtomicBool,
     pub running: AtomicUsize,
     touched: Mutex<Instant>,
+    diagnostic_start: Mutex<Option<std::time::Instant>>,
     pub operation: Mutex<()>,
     pub capabilities: Mutex<Value>,
     pub id: String,
@@ -82,7 +83,6 @@ impl Client {
         let mut child = command
             .spawn()
             .map_err(|e| { taucode_diag_mcp::writer::record(|| {let mut event=taucode_diag_mcp::core::event("error","engine","engine.spawn_failed","Engine spawn failed");event.context=serde_json::json!({"engine":"claude"});event.detail=serde_json::json!({"errorClass":format!("{:?}",e.kind())});event});e.to_string() })?;
-        taucode_diag_mcp::observe::spawned("claude",diagnostic_start);
         let diagnostic_pid=child.id();
         taucode_diag_mcp::observe::child(diagnostic_pid,"claude");
         let stdout = child.stdout.take().ok_or("ACP stdout unavailable")?;
@@ -96,6 +96,7 @@ impl Client {
             alive: AtomicBool::new(true),
             running: AtomicUsize::new(0),
             touched: Mutex::new(Instant::now()),
+            diagnostic_start: Mutex::new(diagnostic_start),
             operation: Mutex::new(()),
             capabilities: Mutex::new(Value::Null),
             id: uuid::Uuid::new_v4().to_string(),
@@ -216,13 +217,17 @@ impl Client {
         if method == "session/prompt" {
             return rx.await.map_err(|_| "ACP response channel closed")?.map_err(|e| e.to_string());
         }
-        match tokio::time::timeout(Duration::from_secs(120), rx).await {
+        let result = match tokio::time::timeout(Duration::from_secs(120), rx).await {
             Ok(result) => result.map_err(|_| "ACP response channel closed")?.map_err(|e| e.to_string()),
             Err(_) => {
                 self.pending.lock().await.remove(&id);
                 Err(format!("ACP {method} timed out"))
             }
+        };
+        if method == "initialize" && result.is_ok() {
+            taucode_diag_mcp::observe::ready("claude", self.diagnostic_start.lock().await.take());
         }
+        result
     }
     pub async fn notify(&self, method: &str, params: Value) -> Result<(), String> {
         self.write(json!({"jsonrpc":"2.0","method":method,"params":params}))

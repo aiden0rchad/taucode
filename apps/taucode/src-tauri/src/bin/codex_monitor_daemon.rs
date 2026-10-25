@@ -1674,7 +1674,7 @@ mod tests {
             assert!(writer::enabled());
             writer::remember_secret("diagnostics-private-key");
             for engine in ["pi", "omp", "claude", "codex"] {
-                observe::spawned(engine, Some(std::time::Instant::now()));
+                observe::ready(engine, Some(std::time::Instant::now()));
                 emit(engine, "turn/started", json!({"engine":engine,"model":"test","turn":{"id":"turn"}}));
                 emit(engine, "thread/tokenUsage/updated", json!({"tokenUsage":{"total":{"inputTokens":42,"outputTokens":7}}}));
                 emit(engine, "item/completed", json!({"item":{"type":"mcpToolCall","tool":"diagnostics-private-key","status":"failed"}}));
@@ -1683,7 +1683,7 @@ mod tests {
             writer::flush().unwrap();
             let events = core::events(&dir);
             for engine in ["pi", "omp", "claude", "codex"] {
-                assert!(events.iter().any(|e| e.code == "engine.spawn" && e.context["engine"] == engine));
+                assert!(events.iter().any(|e| e.code == "engine.ready" && e.context["engine"] == engine));
                 assert!(events.iter().any(|e| e.code == "agent.tool_failed" && e.context["engine"] == engine));
                 assert!(events.iter().any(|e| e.code == "agent.turn" && e.context["engine"] == engine && e.metrics["tokensIn"] == 42 && e.metrics["tokensOut"] == 7));
             }
