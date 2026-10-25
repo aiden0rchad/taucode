@@ -36,6 +36,7 @@ try {
       assert(Math.abs(rect.x + rect.width / 2 - width / 2) <= 2 && Math.abs(rect.y + rect.height / 2 - height / 2) <= 2, `Not centered: ${details}`);
       assert(rect.x >= 0 && rect.y >= 0 && rect.x + rect.width <= width && rect.y + rect.height <= height, `Outside viewport: ${details}`);
       console.log(`PASS ${details}`);
+      return rect;
     };
     const check = async (label, fn) => {
       try { await fn(); } catch (error) {
@@ -45,13 +46,33 @@ try {
     };
     await check('Settings', async () => {
       await open({ settings: 'appearance', theme: 'dark' });
-      await centered('Settings', '.settings-window');
+      const rect = await centered('Settings', '.settings-window');
+      assert(Math.abs(rect.width - Math.min(1180, width * .94)) <= 2 && Math.abs(rect.height - Math.min(900, height * .92)) <= 2, `Settings size: ${JSON.stringify(rect)}`);
     });
     await check('Theme editor', async () => {
       await open({ settings: 'appearance', theme: 'dark' });
       await page.getByRole('button', { name: 'Actions for Dark', exact: true }).click();
       await page.getByRole('menuitem', { name: 'Duplicate & edit', exact: true }).click();
       await centered('Theme editor', '.theme-editor-card');
+    });
+    for (const [theme, name] of [['glass-dark', 'Glass Dark'], ['cyberpunk-neon', 'Cyberpunk Neon']]) await check(`${name} live preview`, async () => {
+      await open({ settings: 'appearance', theme });
+      const settings = await centered('Settings', '.settings-window');
+      assert(Math.abs(settings.width - Math.min(1180, width * .94)) <= 2 && Math.abs(settings.height - Math.min(900, height * .92)) <= 2, `Settings size: ${JSON.stringify(settings)}`);
+      await page.getByRole('button', { name: `Actions for ${name}`, exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Duplicate & edit', exact: true }).click();
+      await centered(`${name} editor`, '.theme-editor-card');
+      const preview = page.getByTestId('theme-preview');
+      await preview.waitFor({ state: 'visible' });
+      const [outer, sidebar, main] = await Promise.all([
+        preview.boundingBox(), preview.locator('.theme-preview-sidebar').boundingBox(), preview.locator('.theme-preview-main').boundingBox(),
+      ]);
+      const details = JSON.stringify({ outer, sidebar, main });
+      assert(outer && sidebar && main && outer.width > 0, details);
+      assert(sidebar.width / outer.width >= .25 && sidebar.width / outer.width <= .31, `Preview sidebar width: ${details}`);
+      assert(main.x >= sidebar.x + sidebar.width, `Preview columns overlap: ${details}`);
+      assert(Math.abs(main.x + main.width - outer.x - outer.width) <= 2, `Preview main right edge: ${details}`);
+      await page.screenshot({ path: resolve(out, `${theme}-editor-${width}x${height}.png`), animations: 'disabled' });
     });
     await check('Add engine', async () => {
       await open({ settings: 'engines', theme: 'dark' });
@@ -60,6 +81,19 @@ try {
     });
     for (const theme of ids) await check(theme, async () => {
       await open({ theme });
+      const composer = page.locator('.composer-shell').first();
+      await composer.waitFor({ state: 'visible' });
+      const composerRect = await composer.boundingBox();
+      assert(composerRect && composerRect.height > 0 && composerRect.width >= (width === 1440 ? 400 : 1), `Composer size: ${JSON.stringify(composerRect)}`);
+      const project = page.locator('.sidebar .project-group-card').first();
+      await project.waitFor({ state: 'visible' });
+      const geometry = await project.evaluate(element => {
+        const body = element.closest('.sidebar-body');
+        const css = getComputedStyle(body), rect = body.getBoundingClientRect();
+        const left = rect.x + parseFloat(css.borderLeftWidth) + parseFloat(css.paddingLeft);
+        return { card: element.getBoundingClientRect().toJSON(), left, width: body.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight) };
+      });
+      assert(geometry.card.height > 0 && Math.abs(geometry.card.x - geometry.left) <= 2 && Math.abs(geometry.card.width - geometry.width) <= 2, `Project must fill padded sidebar: ${JSON.stringify(geometry)}`);
       await page.screenshot({ path: resolve(out, `${theme}-${width}x${height}.png`), animations: 'disabled' });
     });
     await page.close();
