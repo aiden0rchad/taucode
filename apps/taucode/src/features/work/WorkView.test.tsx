@@ -165,7 +165,7 @@ describe("Work mode", () => {
       expect(row.textContent).not.toContain("local/test");
       expect(row.title).toContain(`Research · local/test · ${status.replace("-", " ")}`);
       expect(row.querySelector(`.thread-status.work-status-${status}`)).toBeTruthy();
-      expect(row.querySelector(".thread-time")?.textContent).toBe(status.replace("-", " "));
+      expect(row.querySelector(".thread-time")?.textContent).toBe(["needs-input", "failed"].includes(status) ? status.replace("-", " ") : undefined);
     }
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Task done" })); });
     expect(document.querySelector(".thread-header-model")?.textContent).toContain("local/test");
@@ -179,6 +179,13 @@ describe("Work mode", () => {
     expect(row.querySelector(".thread-time")?.textContent).toBe("2m");
     expect(row.title).toContain(`Created: ${new Date((updatedAt - 60) * 1000).toLocaleString()}`);
     expect(row.title).toContain(`Updated: ${new Date(updatedAt * 1000).toLocaleString()}`);
+  });
+  it.each(["needs-input", "failed"] as const)("keeps %s attention visible when a timestamp is available", async status => {
+    state.tasks = [{ ...task("Attention task", status), updatedAt: Math.floor(Date.now() / 1000) - 120 }];
+    render(<WorkView settings={settings} />);
+    const row = await screen.findByRole("button", { name: "Attention task" });
+    expect(row.querySelector(`.work-attention-${status}`)?.textContent).toBe(status.replace("-", " "));
+    expect(row.title).toContain("Updated:");
   });
   it("cycles input tasks, expands their spaces and clears search before scrolling", async () => {
     state.tasks = [task("First", "needs-input"), task("Second", "needs-input"), task("Third", "needs-input")];

@@ -33,6 +33,11 @@ to the preceding 20 sanitized journal records.
 The folder is the app-data directory's diagnostics subdirectory. On macOS this is
 ~/Library/Application Support/dev.taucode.desktop/diagnostics.
 
+The standalone daemon writes to `<data-dir>/diagnostics` (set with `--data-dir`).
+It loads diagnostics settings at startup and applies `update_app_settings` changes
+live, including `features.diagnostics` and the `diagnostics` options. Point the MCP
+reader at that folder with `--dir <data-dir>/diagnostics`.
+
 - events-YYYY-MM-DD.ndjson: schema-v1 event stream; incomplete final records are ignored.
 - issues.json: app-owned aggregation with status, notes and regression flags.
 - annotations.ndjson: append-only agent status changes and notes.

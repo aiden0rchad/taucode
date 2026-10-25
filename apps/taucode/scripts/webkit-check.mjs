@@ -115,7 +115,7 @@ try {
                 card: rect(card),
                 rows: [...card.querySelectorAll('.work-task-row')].map(row => ({
                   row: rect(row), content: [...row.children].map(rect),
-                  metaVisible: getComputedStyle(row.querySelector('.thread-time')).visibility,
+                  metaVisible: row.querySelector('.thread-time') ? getComputedStyle(row.querySelector('.thread-time')).visibility : null,
                   ellipsis: getComputedStyle(row.querySelector('.thread-name')).textOverflow,
                 })),
               })),
@@ -130,10 +130,10 @@ try {
               assert(row.x >= card.x && row.right <= card.right + 1 && row.y >= card.y && row.bottom <= card.bottom + 1, `Work row outside card: ${details}`);
               assert(!i || row.y - rows[i - 1].row.bottom >= 1.5, `Work rows overlap or lack gap: ${details}`);
               assert(content.every(child => child.x >= row.x && child.right <= row.right + 1 && child.y >= row.y && child.bottom <= row.bottom + 1), `Work row content overflow: ${details}`);
-              assert(metaVisible === 'visible' && ellipsis === 'ellipsis', `Work metadata/title: ${details}`);
+              assert((metaVisible === null || metaVisible === 'visible') && ellipsis === 'ellipsis', `Work metadata/title: ${details}`);
             }
           }
-          await page.locator('.work-task-row').first().hover();
+          await page.locator('.work-task-row:has(.thread-time)').first().hover();
           assert(await page.locator('.work-task-row .thread-time').first().evaluate(element => getComputedStyle(element).visibility === 'visible'), 'Work metadata hidden on hover');
           await page.screenshot({ path: resolve(out, `work-${theme}-${sidebarWidth}-${density}-${width}x${height}.png`), animations: 'disabled' });
           console.log(`PASS Work ${theme} ${sidebarWidth}px ${density} ${width}x${height}`);

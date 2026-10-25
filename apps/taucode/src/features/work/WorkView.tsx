@@ -121,6 +121,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const taskButton = (entry: WorkTask) => {
     const status = entry.status.replace("-", " ");
     const timestamp = entry.updatedAt ?? entry.createdAt;
+    const attention = entry.status === "needs-input" || entry.status === "failed";
     const title = [
       entry.title, work.state.spaces.find(space => space.id === entry.spaceId)?.name, entry.model, status,
       ...(["createdAt", "updatedAt"] as const).flatMap(key => entry[key] == null ? [] : [`${key === "createdAt" ? "Created" : "Updated"}: ${new Date(entry[key] * 1000).toLocaleString()}`]),
@@ -128,7 +129,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     return <RowMenu key={entry.id} label={entry.title} actions={[
     { label: "Open task", onClick: () => selectTask(entry.id) },
     ...(["running", "needs-input", "queued"].includes(entry.status) ? [{ label: "Stop task", disabled: busy, onClick: () => { void run(() => work.mutate("stop", { taskId: entry.id })); } }] : []),
-  ]}><button className={`thread-row work-task-row is-nested${work.active === entry.id ? " active" : ""}`} data-task-id={entry.id} data-depth={1} title={title} aria-label={entry.title} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}><span className={`thread-status work-status-${entry.status}`} aria-label={status} /><span className="thread-name">{entry.title}</span><span className="thread-time">{timestamp == null ? status : formatRelativeTimeShort(timestamp * 1000)}</span></button></RowMenu>;
+  ]}><button className={`thread-row work-task-row is-nested${work.active === entry.id ? " active" : ""}`} data-task-id={entry.id} data-depth={1} title={title} aria-label={entry.title} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}><span className={`thread-status work-status-${entry.status}`} aria-label={status} /><span className="thread-name">{entry.title}</span>{(attention || timestamp != null) && <span className={`thread-time${attention ? ` work-attention-${entry.status}` : ""}`}>{attention ? status : formatRelativeTimeShort(timestamp! * 1000)}</span>}</button></RowMenu>;
   };
   const checkpoints = useCallback<typeof checkpointRequest>((_space, params) => {
     const task = tasksRef.current.find(t => t.threadId === params.threadId);

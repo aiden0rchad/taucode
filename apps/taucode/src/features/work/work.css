@@ -5,7 +5,7 @@
 .work-layout .work-space { flex-shrink: 0; }
 .work-layout .sidebar .mode-row { margin: 0; }
 .work-layout .sidebar .work-task-row { padding-right: 28px; }
-.work-layout .sidebar .work-task-row .thread-time { flex-shrink: 0; padding: 0; font-weight: 400; text-transform: none; visibility: visible; }
+.work-layout .sidebar .work-task-row .thread-time { flex-shrink: 0; padding: 0; font-weight: 400; font-size: 11.5px; text-transform: none; visibility: visible; }
 .work-layout .sidebar > .sidebar-section-header { margin-right: -12px; padding-right: 0; }
 .work-layout .mode-section-actions .icon-button { width: 28px; height: 28px; padding: 6px; }
 .work-layout .work-space-toggle .workspace-name { text-align: left; }
@@ -68,3 +68,6 @@
   .work-composer { padding: 14px; }
 }
 
+
+.work-layout .sidebar .work-attention-needs-input { color: color-mix(in srgb, var(--status-warning) 75%, var(--text-muted)); }
+.work-layout .sidebar .work-attention-failed { color: color-mix(in srgb, var(--status-error) 75%, var(--text-muted)); }
