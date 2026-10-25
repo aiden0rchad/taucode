@@ -400,12 +400,12 @@ impl PiEngine {
             "TAUCODE_WORKSPACE".into(),
             s.thread["cwd"].as_str().ok_or("Missing cwd")?.into(),
         );
-        let node = std::env::var("TAUCODE_NODE").unwrap_or_else(|_| "node".into());
+        let node = super::engine_runtime::node_path();
         #[cfg(test)]
         let node = if self.fake { "python3".into() } else { node };
         #[cfg(test)]
         if !self.fake {
-            super::engine_runtime::check_node(std::ffi::OsStr::new(&node)).await?;
+            super::engine_runtime::check_node(node.as_os_str()).await?;
         }
         let runtime = {
             #[cfg(test)]
@@ -499,7 +499,8 @@ impl PiEngine {
             .arg("--session")
             .arg(&s.file)
             .current_dir(s.thread["cwd"].as_str().ok_or("Pi session missing cwd")?)
-            .envs(env);
+            .envs(env)
+            .env("PATH", super::engine_runtime::node_path_env(&super::engine_runtime::node_path())?);
         let (_, history) = read_session(&s.file, registry)?;
         let mut translator = history;
         translator.diagnostic_codegraph = connectors.iter().any(|s|s.id=="codegraph" && s.enabled);

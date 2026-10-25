@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export type SettingsSection = import("@settings/components/settingsTypes").CodexSection;
 
@@ -12,6 +12,12 @@ export function useSettingsModalState() {
     setSettingsSection(section ?? null);
     setSettingsOpen(true);
   }, []);
+
+  useEffect(() => {
+    const navigate = (event: Event) => openSettings((event as CustomEvent<SettingsSection>).detail);
+    window.addEventListener("taucode:setup-settings", navigate);
+    return () => window.removeEventListener("taucode:setup-settings", navigate);
+  }, [openSettings]);
 
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);

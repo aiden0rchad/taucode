@@ -66,5 +66,5 @@ export default function App() {
     );
   }
 
-  return <DiagnosticBoundary panel="app"><ModeShell renderSettings={onClose => <MainApp settingsOnly onCloseModeSettings={onClose} />}><MainApp /></ModeShell><ComputerApprovals /></DiagnosticBoundary>;
+  return <DiagnosticBoundary panel="app"><ModeShell renderSettings={(onClose, section) => <MainApp settingsOnly initialSettingsSection={section} onCloseModeSettings={onClose} />}><MainApp /></ModeShell><ComputerApprovals /></DiagnosticBoundary>;
 }

@@ -128,3 +128,10 @@ pub(crate) async fn engine_test(definition: crate::types::EngineDefinition, stat
     if remote_backend::is_remote_mode(&*state).await { return remote_backend::call_remote(&*state, app, "engine_test", json!({"definition":definition})).await; }
     crate::shared::engine_registry::test(state.settings_path.parent().ok_or("Missing app data directory")?, &definition).await
 }
+
+// App-only: TCC and locally installed tools must never be queried on a remote daemon.
+#[tauri::command]
+pub(crate) fn setup_status() -> Value {
+    json!({"permissions": crate::shared::computer::permissions(),
+        "codegraph": crate::codegraph::discover(std::env::temp_dir()).is_some()})
+}

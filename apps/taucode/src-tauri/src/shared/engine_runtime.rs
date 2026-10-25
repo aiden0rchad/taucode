@@ -18,6 +18,46 @@ pub(crate) fn cancel(engine: &str) {
 }
 pub(crate) static RESOURCES: OnceLock<PathBuf> = OnceLock::new();
 
+fn resource_file(resource: Option<&Path>, executable: &Path, relative: &str) -> Option<PathBuf> {
+    resource.map(Path::to_path_buf).into_iter()
+        .chain(executable.parent().map(|p| p.join("../Resources")))
+        .map(|root| root.join(relative)).find(|path| path.is_file())
+}
+
+fn resolve_node(explicit: Option<std::ffi::OsString>, resource: Option<&Path>, executable: &Path) -> PathBuf {
+    explicit.map(PathBuf::from)
+        .or_else(|| resource_file(resource, executable, "node/bin/node"))
+        .unwrap_or_else(|| "node".into())
+}
+
+pub(crate) fn node_path() -> PathBuf {
+    resolve_node(std::env::var_os("TAUCODE_NODE"), RESOURCES.get().map(PathBuf::as_path),
+        &std::env::current_exe().unwrap_or_default())
+}
+
+pub(crate) fn node_path_env(node: &Path) -> Result<std::ffi::OsString, String> {
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    std::env::join_paths(node.parent().filter(|p| !p.as_os_str().is_empty()).map(Path::to_path_buf)
+        .into_iter().chain(std::env::split_paths(&existing))).map_err(|e| e.to_string())
+}
+
+fn npm_command(resource: Option<&Path>, executable: &Path) -> Result<Command, String> {
+    // The bundled npm always runs on its matching Node, including lifecycle scripts.
+    let mut command = if let Some(node) = resource_file(resource, executable, "node/bin/node") {
+        let npm = node.parent().unwrap().join("../lib/node_modules/npm/bin/npm-cli.js");
+        if !npm.is_file() { return Err("Bundled npm is missing. Reinstall taucode.".into()); }
+        let mut cmd = Command::new(&node);
+        cmd.arg(npm).env("PATH", node_path_env(&node)?);
+        cmd
+    } else {
+        let mut cmd = Command::new(if cfg!(windows) { "npm.cmd" } else { "npm" });
+        cmd.env("PATH", node_path_env(&node_path())?);
+        cmd
+    };
+    command.args(["ci", "--omit=dev", "--no-audit", "--no-fund"]);
+    Ok(command)
+}
+
 fn manifest(engine: &str) -> Result<&'static str, String> {
     match engine {
         "pi" | "omp" | "browser" | "claude-acp" => Ok("package-lock.json"),
@@ -105,7 +145,7 @@ pub(crate) async fn status(data: &Path) -> Value {
             }
         }
     }
-    if let Err(error) = check_node(&std::env::var_os("TAUCODE_NODE").unwrap_or_else(|| "node".into())).await {
+    if let Err(error) = check_node(node_path().as_os_str()).await {
         if let Some(claude) = status.as_array_mut().and_then(|r| r.iter_mut().find(|r| r["engine"] == "claude-acp")) {
             claude["state"] = json!("error");
             claude["message"] = json!(error);
@@ -184,7 +224,9 @@ async fn prepare_inner(
         let installed = fs::read(dir.join(".installed-lock")).ok();
         copy_tree(&src, &dir).map_err(|e| e.to_string())?;
         if !matches!(engine, "computer" | "work") {
-            check_node(&std::env::var_os("TAUCODE_NODE").unwrap_or_else(|| "node".into())).await?;
+            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+            let node = resolve_node(std::env::var_os("TAUCODE_NODE"), resource.or(RESOURCES.get().map(PathBuf::as_path)), &exe);
+            check_node(node.as_os_str()).await?;
         }
         if installed.as_ref() != Some(&locked) || !dir.join(executable(engine)).is_file() {
             if dir.join(".installed-lock").exists() {
@@ -192,14 +234,14 @@ async fn prepare_inner(
             }
             let mut command = if matches!(engine, "computer" | "work") {
                 status_file(data, engine, "installing", "Installing Python 3.12 dependencies with uv…")?;
-                let mut cmd = Command::new("uv");
-                cmd.args(["sync", "--frozen", "--no-dev", "--python", "3.12"]);
+                let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+                let uv = resource_file(resource.or(RESOURCES.get().map(PathBuf::as_path)), &exe, "uv/uv").unwrap_or_else(|| "uv".into());
+                let mut cmd = Command::new(uv);
+                cmd.args(["sync", "--frozen", "--no-dev", "--python", "3.12"]).env("UV_PYTHON_PREFERENCE", "only-managed");
                 cmd
             } else {
                 status_file(data, engine, "installing", "Installing Node dependencies from the bundled lockfile…")?;
-                let mut cmd = Command::new(if cfg!(windows) { "npm.cmd" } else { "npm" });
-                cmd.args(["ci", "--omit=dev", "--no-audit", "--no-fund"]);
-                cmd
+                npm_command(resource.or(RESOURCES.get().map(PathBuf::as_path)), &std::env::current_exe().map_err(|e| e.to_string())?)?
             };
             let mut child = command.current_dir(&dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true).spawn()
                 .map_err(|_| if matches!(engine, "computer" | "work") { "Install uv to prepare Computer Use" } else { "Install system Node >=22.19 and npm to prepare this runtime" })?;
@@ -231,6 +273,61 @@ async fn prepare_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn install_executes_bundled_npm_with_bundled_node_on_lifecycle_path() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let resources = root.join("Resources");
+        let node = resources.join("node/bin/node");
+        let npm = resources.join("node/lib/node_modules/npm/bin/npm-cli.js");
+        let source = resources.join("engines/pi");
+        for dir in [node.parent().unwrap(), npm.parent().unwrap(), &source] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        fs::write(&npm, "mock npm").unwrap();
+        fs::write(&node, r#"#!/bin/sh
+if [ "$1" = --version ]; then echo v26.10.0; exit 0; fi
+case "$1" in */node/lib/node_modules/npm/bin/npm-cli.js|*/node/bin/../lib/node_modules/npm/bin/npm-cli.js) ;; *) exit 21;; esac
+[ "$2" = ci ] || exit 22
+[ "$(command -v node)" = "$0" ] || exit 23
+/bin/mkdir -p node_modules/@earendil-works/pi-coding-agent/dist/bundle
+echo installed > node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js
+"#).unwrap();
+        fs::set_permissions(&node, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::write(source.join("package-lock.json"), "locked").unwrap();
+        fs::write(source.join("package.json"), "{}").unwrap();
+        let installed = prepare(&root.join("data"), "pi", Some(&resources)).await.unwrap();
+        assert_eq!(fs::read_to_string(installed.join(".installed-lock")).unwrap(), "locked");
+        assert!(installed.join(executable("pi")).is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn node_resolution_and_npm_use_bundle_without_machine_dependencies() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let resources = root.join("taucode.app/Contents/Resources");
+        let exe = root.join("taucode.app/Contents/MacOS/codex_monitor_daemon");
+        fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        assert_eq!(resolve_node(None, Some(&resources), &exe), PathBuf::from("node"));
+        let node = resources.join("node/bin/node");
+        fs::create_dir_all(node.parent().unwrap()).unwrap();
+        fs::write(&node, b"fixture").unwrap();
+        assert_eq!(resolve_node(None, Some(&resources), &exe), node);
+        assert_eq!(resolve_node(None, None, &exe), exe.parent().unwrap().join("../Resources/node/bin/node"));
+        assert_eq!(resolve_node(Some("/override/node".into()), Some(&resources), &exe), PathBuf::from("/override/node"));
+        assert!(npm_command(Some(&resources), &exe).is_err());
+        let npm = resources.join("node/lib/node_modules/npm/bin/npm-cli.js");
+        fs::create_dir_all(npm.parent().unwrap()).unwrap();
+        fs::write(&npm, b"fixture").unwrap();
+        let command = npm_command(Some(&resources), &exe).unwrap();
+        let command = command.as_std();
+        assert_eq!(command.get_program(), node.as_os_str());
+        assert_eq!(PathBuf::from(command.get_args().next().unwrap()).canonicalize().unwrap(), npm.canonicalize().unwrap());
+        let path = command.get_envs().find(|(key, _)| *key == "PATH").unwrap().1.unwrap();
+        assert_eq!(std::env::split_paths(path).next().unwrap(), node.parent().unwrap());
+        assert!(command.get_args().any(|arg| arg == "ci"));
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn omp_install_copies_bundled_auth_guard_without_dependencies() {
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/omp");

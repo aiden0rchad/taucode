@@ -5,6 +5,7 @@ import type { AppSettings } from "@/types";
 import { ModeShell, ModeSwitcher, modeShortcut } from "./ModeShell";
 import { getAppSettings, setWindowMode } from "@services/tauri";
 vi.mock("@services/tauri", () => ({ getAppSettings: vi.fn(), setWindowMode: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@/features/onboarding/SetupChecklist", () => ({ SetupChecklist: () => null }));
 vi.mock("@/features/work/WorkView", () => ({ WorkView: () => <><ModeSwitcher /><p>Work content</p></> }));
 vi.mock("./ChatView", () => ({ ChatView: () => <><ModeSwitcher /><p>Chat content</p></> }));
 vi.mock("@/features/layout/hooks/useWindowLabel", () => ({ useWindowLabel: () => "second-window" }));

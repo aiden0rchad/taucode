@@ -102,20 +102,25 @@ mod tests {
 pub(crate) fn resolve_diagnostics_binary_path() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let parent = exe.parent().ok_or("Executable directory missing")?;
-    let mut dirs = daemon_search_dirs(parent);
     #[cfg(debug_assertions)]
-    {
+    let dev = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../crates/taucode-diag-mcp/target/debug"));
+    #[cfg(not(debug_assertions))]
+    let dev = None;
+    resolve_diagnostics_in(&diagnostics_search_dirs(parent, dev))
+}
+
+fn diagnostics_search_dirs(parent: &std::path::Path, dev: Option<PathBuf>) -> Vec<PathBuf> {
+    let mut dirs = daemon_search_dirs(parent);
+    if let Some(dev) = dev {
         if parent.file_name().is_some_and(|n| n == "deps") {
             if let Some(target) = parent.parent() {
                 dirs.insert(0, target.to_path_buf());
             }
         }
-        dirs.push(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../crates/taucode-diag-mcp/target/debug"),
-        );
+        dirs.push(dev);
     }
-    resolve_diagnostics_in(&dirs)
+    dirs
 }
 fn resolve_diagnostics_in(dirs: &[PathBuf]) -> Result<PathBuf, String> {
     let name = if cfg!(windows) {
@@ -135,6 +140,20 @@ fn resolve_diagnostics_in(dirs: &[PathBuf]) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod diagnostics_tests {
     use super::*;
+    #[test]
+    fn bundle_helpers_take_priority_and_release_has_no_dev_dirs() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let macos = root.join("taucode.app/Contents/MacOS");
+        std::fs::create_dir_all(&macos).unwrap();
+        let diagnostics = macos.join(if cfg!(windows) { "taucode-diag-mcp.exe" } else { "taucode-diag-mcp" });
+        std::fs::write(&diagnostics, b"fixture").unwrap();
+        assert_eq!(daemon_search_dirs(&macos)[0], macos);
+        assert_eq!(resolve_diagnostics_in(&diagnostics_search_dirs(&macos, None)).unwrap(), diagnostics.canonicalize().unwrap());
+        let dev = root.join("development");
+        assert!(!diagnostics_search_dirs(&macos, None).contains(&dev));
+        assert!(diagnostics_search_dirs(&macos, Some(dev.clone())).contains(&dev));
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn resolves_existing_absolute_binary_and_rejects_missing() {
         let dir = std::env::temp_dir().join(format!("diagnostics-binary-{}", uuid::Uuid::new_v4()));

@@ -96,7 +96,7 @@ const SettingsView = lazy(() =>
   })),
 );
 
-export default function MainApp({ settingsOnly = false, onCloseModeSettings }: { settingsOnly?: boolean; onCloseModeSettings?: () => void } = {}) {
+export default function MainApp({ settingsOnly = false, onCloseModeSettings, initialSettingsSection }: { settingsOnly?: boolean; initialSettingsSection?: import("@settings/components/settingsTypes").CodexSection; onCloseModeSettings?: () => void } = {}) {
   const features = useFeatures();
   const [selectedEngine, setSelectedEngine] = useState<import("@/types").EngineKind | undefined>();
   const {
@@ -1919,7 +1919,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
   });
 
   const agentDetails = useMemo(() => agentThreadDetails(Object.values(threadsByWorkspace).flat(), threadStatusById, tokenUsageByThread), [threadsByWorkspace, threadStatusById, tokenUsageByThread]);
-  if (settingsOnly) return <div className="mode-settings-host" style={mainAppShellProps.appStyle}><AppModals {...mainAppShellProps.appModalsProps} settingsOpen onCloseSettings={onCloseModeSettings ?? mainAppShellProps.appModalsProps.onCloseSettings} /></div>;
+  if (settingsOnly) return <div className="mode-settings-host" style={mainAppShellProps.appStyle}><AppModals {...mainAppShellProps.appModalsProps} settingsOpen settingsSection={initialSettingsSection ?? mainAppShellProps.appModalsProps.settingsSection} onCloseSettings={onCloseModeSettings ?? mainAppShellProps.appModalsProps.onCloseSettings} /></div>;
   return <AgentsContext.Provider value={{ details: agentDetails, workspaceId: activeWorkspaceId, threadId: activeThreadId, itemsByThread,
     policy: appSettings.agentPolicy ? { ...appSettings.agentPolicy.subagents, ...activeWorkspace?.settings.agentPolicy?.subagents } : undefined }}>
     {features.checkpoints && <Checkpoints running={threadStatusById} onChanged={async (workspace, thread, text) => {

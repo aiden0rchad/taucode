@@ -222,6 +222,7 @@ pub fn run() {
             chats::read_chat_attachment,
             chats::set_window_mode,
             providers::engine_runtime,
+            providers::setup_status,
             providers::engine_test,
             computer_commands::computer_request,
             computer_commands::computer_request_permissions,

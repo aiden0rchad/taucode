@@ -247,7 +247,7 @@ pub(super) fn command(
     settings: &Settings,
 ) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(
-        std::env::var_os("TAUCODE_NODE").unwrap_or_else(|| "node".into()),
+        crate::shared::engine_runtime::node_path(),
     );
     command
         .args(arguments(cli, data, port, settings))
