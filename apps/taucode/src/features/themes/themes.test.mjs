@@ -106,7 +106,8 @@ describe('built-in themes', () => {
   it('keeps glass visibly translucent and sidebar cards readable over the material', () => {
     for (const theme of builtins.filter(t => t.window?.translucent).map(resolveTheme)) {
       for (const surface of ['sidebar','topbar']) expect(rgba(theme.tokens['--surface-'+surface])[3]).toBeLessThanOrEqual(.5);
-      for (const surface of ['app','messages']) expect(rgba(theme.tokens['--surface-'+surface])[3]).toBe(.72);
+      for (const surface of ['app','messages']) expect(rgba(theme.tokens['--surface-'+surface])[3]).toBeLessThanOrEqual(.6);
+      expect(theme.window.material).toBe('sidebar');
       const backdrops = theme.appearance === 'dark' ? ['#000000','#4a4a4e'] : ['#ffffff','#bdbdc2'];
       for (const desktop of backdrops) {
         const sidebar = composite(rgba(theme.tokens['--surface-sidebar']),rgba(desktop));
