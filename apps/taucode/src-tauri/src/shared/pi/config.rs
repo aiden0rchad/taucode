@@ -43,6 +43,7 @@ pub(crate) fn models(registry: &[ProviderEntry]) -> Value {
             let mut v = json!({"id":m.id,"name":m.display_name.as_ref().unwrap_or(&m.id)});
             if let Some(n) = m.context_window { v["contextWindow"] = json!(n); }
             if let Some(images) = m.supports_images { v["input"] = if images { json!(["text","image"]) } else { json!(["text"]) }; }
+            if let Some(cap) = &m.reasoning { super::super::reasoning::pi_config(&mut v, cap, p.kind); }
             v
         }).collect::<Vec<_>>()});
         if custom

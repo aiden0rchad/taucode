@@ -1,0 +1,96 @@
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { ReasoningControl } from "./ReasoningControl";
+import { useReasoningSelection } from "@/features/models/reasoning";
+import { ModelReasoningSettings } from "@settings/components/sections/ModelReasoningSettings";
+import type { ReasoningCapability } from "@/types";
+
+const cap: ReasoningCapability = { supported: true, levels: ["low", "high", "max"], default: "low", control: "effort", source: "api", detectedAt: 1 };
+beforeEach(() => localStorage.clear());
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+it("portals above the chip, shifts inside viewport margins, and keeps slider clicks inside", () => {
+  vi.stubGlobal("innerWidth", 1440);
+  vi.stubGlobal("innerHeight", 900);
+  let left = 360, top = 820;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    return { left, top, right: left + 100, bottom: top + 28, width: 100, height: 28, x: left, y: top, toJSON() {} };
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(340);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(160);
+  const change = vi.fn();
+  const { container } = render(<div style={{ overflow: "hidden" }}><ReasoningControl capability={cap} value="low" onChange={change} /></div>);
+  const trigger = screen.getByRole("button", { name: "Reasoning: Low" });
+  fireEvent.click(trigger);
+  const dialog = screen.getByRole("dialog");
+  expect(dialog.parentElement).toBe(document.body);
+  expect(container.contains(dialog)).toBe(false);
+  expect(dialog.style.position).toBe("fixed");
+  expect(dialog.style.left).toBe("360px");
+  expect(dialog.style.top).toBe("652px");
+  expect(document.activeElement).toBe(screen.getByRole("slider"));
+  fireEvent.mouseDown(screen.getByRole("slider"));
+  fireEvent.change(screen.getByRole("slider"), { target: { value: "1" } });
+  expect(change).toHaveBeenCalledWith("high");
+  expect(screen.getByRole("dialog")).toBe(dialog);
+  left = 1380;
+  fireEvent.resize(window);
+  expect(dialog.style.left).toBe("1092px");
+  left = -20; top = 700;
+  fireEvent.scroll(window);
+  expect(dialog.style.left).toBe("8px");
+  expect(dialog.style.top).toBe("532px");
+  vi.stubGlobal("innerWidth", 300);
+  fireEvent.resize(window);
+  expect(dialog.style.maxWidth).toBe("284px");
+  fireEvent.mouseDown(document.body);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+});
+it("uses exactly the detected stops, keyboard navigation, source and clamp notice", () => {
+  const change = vi.fn();
+  render(<ReasoningControl capability={cap} value="medium" onChange={change} />);
+  fireEvent.click(screen.getByRole("button", { name: "Reasoning: Low (adjusted for model)" }));
+  const slider = screen.getByRole("slider");
+  expect(slider.getAttribute("max")).toBe("2");
+  expect(slider.getAttribute("aria-valuetext")).toBe("Low");
+  expect(screen.getByText("from provider API")).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toContain("Medium is unavailable; using Low");
+  expect(screen.queryByRole("button", { name: "Medium" })).toBeNull();
+  fireEvent.keyDown(slider, { key: "ArrowRight" }); expect(change).toHaveBeenLastCalledWith("high");
+  fireEvent.keyDown(slider, { key: "End" }); expect(change).toHaveBeenLastCalledWith("max");
+  fireEvent.keyDown(slider, { key: "ArrowLeft" }); expect(change).toHaveBeenLastCalledWith("low");
+  fireEvent.keyDown(slider, { key: "Escape" }); expect(screen.queryByRole("dialog")).toBeNull();
+});
+it("hides unsupported models and links unknown ones to Settings", () => {
+  const settings = vi.fn();
+  const { rerender } = render(<ReasoningControl capability={{ ...cap, supported: false }} onChange={vi.fn()} />);
+  expect(screen.queryByRole("button")).toBeNull();
+  rerender(<ReasoningControl onChange={vi.fn()} onOpenSettings={settings} />);
+  fireEvent.click(screen.getByRole("button", { name: "Reasoning: ?" }));
+  fireEvent.click(screen.getByRole("button", { name: "Detect in Settings" })); expect(settings).toHaveBeenCalledOnce();
+});
+it("remembers thread levels and model defaults and clamps after switching models", () => {
+  const { result, rerender, unmount } = renderHook(({ model, thread, capability }) => useReasoningSelection(model, thread, capability), { initialProps: { model: "p/a", thread: "thread-a" as string | null, capability: cap } });
+  act(() => result.current.onChange("max"));
+  rerender({ model: "p/b", thread: "thread-a", capability: { ...cap, levels: ["low", "high"] } });
+  expect(result.current.level).toBe("high"); expect(result.current.requested).toBe("max");
+  rerender({ model: "p/a", thread: "thread-b", capability: cap }); expect(result.current.level).toBe("max");
+  act(() => result.current.onChange("low"));
+  rerender({ model: "p/a", thread: "thread-a", capability: cap }); expect(result.current.level).toBe("max");
+  unmount();
+  const again = renderHook(() => useReasoningSelection("p/a", "thread-a", cap)); expect(again.result.current.level).toBe("max");
+});
+it("shows Settings pills, saves overrides, resets and probes only on click", () => {
+  const change = vi.fn(), detect = vi.fn();
+  const model = { id: "test", enabled: true, reasoning: cap };
+  const { rerender } = render(<ModelReasoningSettings model={model} disabled={false} onChange={change} onDetect={detect} />);
+  expect(screen.getAllByText("Max").length).toBe(2);
+  fireEvent.click(screen.getByLabelText("Medium: test"));
+  const updated = change.mock.calls[0][0];
+  expect(updated.reasoning.levels).toEqual(["low", "medium", "high", "max"]);
+  expect(updated.reasoning.source).toBe("user"); expect(updated.detectedReasoning).toEqual(cap);
+  rerender(<ModelReasoningSettings model={updated} disabled={false} onChange={change} onDetect={detect} />);
+  fireEvent.click(screen.getByText("Reset to detected")); expect(change.mock.calls[1][0].reasoning).toEqual(cap);
+  expect(detect).not.toHaveBeenCalled(); fireEvent.click(screen.getByText("Detect reasoning")); expect(detect).toHaveBeenCalledOnce();
+});

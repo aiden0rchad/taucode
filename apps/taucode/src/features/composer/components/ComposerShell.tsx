@@ -1,16 +1,18 @@
+import { ReasoningControl, type ReasoningControlProps } from "./ReasoningControl";
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { ArrowUp, Plus, Square } from "lucide-react";
 import { useMenuController } from "@app/hooks/useMenuController";
-import { PopoverSurface } from "@/features/design-system/components/popover/PopoverPrimitives";
+import { AnchoredPopover } from "@/features/design-system/components/popover/AnchoredPopover";
 
-export function ComposerShell({ children, menu, toolbar, controls, actions, className = "" }: {
-  children: ReactNode; menu: ReactNode; toolbar?: ReactNode; controls?: ReactNode; actions: ReactNode; className?: string;
+export function ComposerShell({ children, menu, toolbar, controls, reasoning, actions, className = "" }: {
+  children: ReactNode; menu: ReactNode; toolbar?: ReactNode; controls?: ReactNode; reasoning?: ReasoningControlProps; actions: ReactNode; className?: string;
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
-  const add = useMenuController({ onDismiss: () => trigger.current?.focus() });
+  const popover = useRef<HTMLDivElement>(null);
+  const add = useMenuController({ popoverRef: popover, onDismiss: () => trigger.current?.focus() });
   useEffect(() => {
-    if (add.isOpen) add.containerRef.current?.querySelector<HTMLButtonElement>(".composer-add-menu button:not(:disabled)")?.focus();
-  }, [add.isOpen, add.containerRef]);
+    if (add.isOpen) popover.current?.querySelector<HTMLButtonElement>(".composer-add-menu button:not(:disabled)")?.focus();
+  }, [add.isOpen]);
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const input = root.current?.querySelector("textarea");
@@ -24,11 +26,11 @@ export function ComposerShell({ children, menu, toolbar, controls, actions, clas
       <div className="composer-shell-left">
       <div className="composer-add" ref={add.containerRef}>
         <button ref={trigger} type="button" aria-haspopup="dialog" className="ghost icon-button" title="Add attachments and tools" aria-label="Add attachments and tools" aria-expanded={add.isOpen} onClick={add.toggle}><Plus aria-hidden /></button>
-        {add.isOpen && <PopoverSurface role="dialog" aria-label="Attachments and tools" className="composer-add-menu" onClick={event => { if ((event.target as HTMLElement).closest("button")) { add.close(); trigger.current?.focus(); } }}>{menu}</PopoverSurface>}
+        {add.isOpen && <AnchoredPopover anchorRef={trigger} surfaceRef={popover} role="dialog" aria-label="Attachments and tools" className="composer-add-menu" onClick={event => { if ((event.target as HTMLElement).closest("button")) { add.close(); trigger.current?.focus(); } }}>{menu}</AnchoredPopover>}
       </div>
       {toolbar}
       </div>
-      <div className="composer-shell-actions">{controls}{actions}</div>
+      <div className="composer-shell-actions">{reasoning && <ReasoningControl {...reasoning} />}{controls}{actions}</div>
     </div>
   </div>;
 }

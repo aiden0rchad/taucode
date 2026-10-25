@@ -68,3 +68,16 @@ it.each(["chat", "work"])("gives every %s text element an authored type scale in
     expect(sized, element.outerHTML).toBe(true);
   }
 });
+
+it("uses one sidebar width and shared resize handle across Code, Chat and Work", () => {
+  for (const file of ["features/chat/ChatView.tsx", "features/work/WorkView.tsx", "features/layout/components/DesktopLayout.tsx"]) expect(readFileSync("src/" + file, "utf8")).toContain("<SidebarResizeHandle");
+  for (const file of ["styles/base.css", "styles/compact-tablet.css", "features/chat/chat.css", "features/work/work.css"]) {
+    postcss.parse(readFileSync("src/" + file, "utf8")).walkDecls(decl => {
+      expect(decl.prop).not.toBe("--sidebar-width");
+      if (decl.prop === "grid-template-columns" && /\.(app|chat-layout|work-layout)(?:[ .,:]|$)/.test(decl.parent.selector)) expect(decl.value).not.toMatch(/^\d+px/);
+    });
+  }
+  expect(declarations(".chat-layout")["grid-template-columns"]).toContain("var(--sidebar-width");
+  expect(declarations(".sidebar").padding).toBe("var(--sidebar-top-padding, 36px) var(--sidebar-padding) 20px");
+  expect(declarations(".sidebar-bottom-rail")["min-height"]).toBe("43px");
+});

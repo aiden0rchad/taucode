@@ -1,3 +1,4 @@
+import { modelEffortKey } from "../reasoning";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DebugEntry, ModelOption, WorkspaceInfo } from "../../../types";
 import { getConfigModel, getModelList } from "../../../services/tauri";
@@ -12,6 +13,7 @@ type UseModelsOptions = {
   preferredModelId?: string | null;
   preferredEffort?: string | null;
   selectionKey?: string | null;
+  threadId?: string | null;
 };
 
 
@@ -41,6 +43,7 @@ export function useModels({
   preferredModelId = null,
   preferredEffort = null,
   selectionKey = null,
+  threadId = null,
 }: UseModelsOptions) {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [configModel, setConfigModel] = useState<string | null>(null);
@@ -88,13 +91,15 @@ export function useModels({
 
   const setSelectedModelId = useCallback((next: string | null) => {
     hasUserSelectedModel.current = true;
+    if (selectedEffort) hasUserSelectedEffort.current = true;
     setSelectedModelIdState(next);
-  }, []);
+  }, [selectedEffort]);
 
   const setSelectedEffort = useCallback((next: string | null) => {
     hasUserSelectedEffort.current = true;
     setSelectedEffortState(next);
-  }, []);
+    if (next && selectedModelId) localStorage.setItem(modelEffortKey(selectedModelId), next);
+  }, [selectedModelId]);
 
   const selectedModel = useMemo(
     () => models.find((model) => model.id === selectedModelId) ?? null,
@@ -134,7 +139,7 @@ export function useModels({
       if (supportedEfforts.length === 0) {
         return normalizeEffortValue(preferredEffort);
       }
-      const preferred = normalizeEffortValue(preferredEffort);
+      const preferred = normalizeEffortValue(preferredEffort) ?? localStorage.getItem(modelEffortKey(model.id));
       if (preferred && supportedEfforts.includes(preferred)) {
         return preferred;
       }
@@ -160,7 +165,7 @@ export function useModels({
     });
     try {
       const [modelListResult, configModelResult] = await Promise.allSettled([
-        getModelList(workspaceId),
+        threadId ? getModelList(workspaceId, threadId) : getModelList(workspaceId),
         getConfigModel(workspaceId),
       ]);
       const configModelFromConfig =
@@ -241,6 +246,7 @@ export function useModels({
     selectedModelId,
     resolveEffort,
     workspaceId,
+    threadId,
   ]);
 
   useEffect(() => {

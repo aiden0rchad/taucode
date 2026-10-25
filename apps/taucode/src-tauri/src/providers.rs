@@ -21,6 +21,7 @@ pub(crate) async fn engine_runtime(action: String, engine: Option<String>, state
 #[tauri::command]
 pub(crate) async fn provider_test_and_fetch(
     id: String,
+    model_id: Option<String>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Value, String> {
@@ -29,11 +30,11 @@ pub(crate) async fn provider_test_and_fetch(
             &*state,
             app,
             "provider_test_and_fetch",
-            json!({"id":id}),
+            json!({"id":id,"modelId":model_id}),
         )
         .await;
     }
-    providers::test_and_fetch(id, &state.app_settings, &state.settings_path).await
+    providers::test_and_fetch(id, model_id, &state.app_settings, &state.settings_path).await
 }
 #[tauri::command]
 pub(crate) async fn provider_set_api_key(

@@ -1,3 +1,6 @@
+import { useReasoningSelection } from "@/features/models/reasoning";
+import { SidebarResizeHandle, SidebarCollapseButton } from "@/features/layout/components/SidebarResizeHandle";
+import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
 import { ComposerDictation } from "@/features/composer/components/ComposerDictation";
 import { NewConversationRow } from "@/features/chat/NewConversationRow";
 import { Folder, Shield, X, PanelLeft, FolderTree, FileSearch, Table, Presentation, Trash2, ListPlus, CheckCircle2, Circle, ExternalLink, FolderOpen, Eye, Copy, Terminal, LoaderCircle, Search, ChevronDown, FilePenLine, Globe, Bot, ListChecks, CircleAlert } from "lucide-react";
@@ -40,6 +43,7 @@ function InputRequest({ request, busy, respond }: { request: WorkRequest; busy: 
 
 export function WorkView({ settings, onOpenSettings = () => {} }: { settings: AppSettings; onOpenSettings?: () => void }) {
   const work = useWork();
+  const { sidebarCollapsed } = useSidebarState();
   const searchInput = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
   const [collapsedSpaces, setCollapsedSpaces] = useState<string[]>([]);
@@ -47,7 +51,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [brief, setBrief] = useState("");
   const [spaceId, setSpaceId] = useState("");
   const [access, setAccess] = useState<WorkTask["accessMode"]>("ask");
-  const models = (settings.providers ?? []).filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => ({ key: p.id + "/" + m.id, label: p.name + " · " + (m.displayName || m.id) })));
+  const models = (settings.providers ?? []).filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => ({ ...m, key: p.id + "/" + m.id, label: p.name + " · " + (m.displayName || m.id) })));
   const [model, setModel] = useState(models[0]?.key ?? "");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -61,6 +65,8 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const selectedSpace = writableSpaces.find(s => s.id === spaceId)?.id || "";
   const needs = work.state.tasks.filter(t => t.status === "needs-input");
   const task = work.task;
+  const capability = models.find(m => m.key === model)?.reasoning;
+  const reasoning = useReasoningSelection(model, work.active, capability);
   const continuationSpace = writableSpaces.find(s => s.id === spaceId)?.id || writableSpaces.find(s => s.id === task?.spaceId)?.id || writableSpaces[0]?.id || "";
   const active = task?.status === "running" || task?.status === "needs-input";
   const nativeDrop = useRef<(paths: string[]) => void>(() => {});
@@ -79,7 +85,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   nativeDrop.current = paths => { if (!busy && !task) void attach(paths); };
   const create = (runNow: boolean) => run(async () => {
     if (busy || dictating || !brief.trim() || !selectedSpace || !model) return;
-    const created = await work.mutate<WorkTask>("create", { spaceId: selectedSpace, brief, model, accessMode: access, attachments, runNow });
+    const created = await work.mutate<WorkTask>("create", { spaceId: selectedSpace, brief, model, accessMode: access, attachments, runNow, effort: reasoning.level });
     work.setActive(created.id); setBrief(""); setAttachments([]); setShowList(false);
   });
   const selectTask = (id: string) => { work.setActive(id); setSpaceId(""); setShowList(false); };
@@ -91,7 +97,8 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     const task = tasksRef.current.find(t => t.threadId === params.threadId);
     return workRequest("checkpoint", { taskId: task?.id, request: params });
   }, []);
-  return <BrowserDock searchUrl={settings.browser?.searchUrl} onInterrupt={() => work.active ? workRequest("stop", { taskId: work.active }).then(() => {}) : undefined}><div className={"chat-layout work-layout" + (showList ? " chat-list-open" : "")}>
+  return <BrowserDock searchUrl={settings.browser?.searchUrl} onInterrupt={() => work.active ? workRequest("stop", { taskId: work.active }).then(() => {}) : undefined}><div className={"chat-layout work-layout" + (sidebarCollapsed ? " sidebar-collapsed" : "") + (showList ? " chat-list-open" : "")}>
+    <SidebarResizeHandle /><SidebarCollapseButton />
     <aside className="sidebar chat-sidebar" aria-label="Spaces and tasks">
       <ModeSwitcher />
       <NewConversationRow label="New task" disabled={busy} shortcut={settings.newAgentShortcut} handleShortcut onSearch={() => searchInput.current?.focus()} onNew={() => { work.setActive(null); setShowList(false); }} />
@@ -138,7 +145,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
             <label>Space <select aria-label="Continuation space" value={continuationSpace} onChange={e => setSpaceId(e.target.value)} disabled={busy}><option value="" disabled>Choose an available space</option>{writableSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
             <label>Model <select aria-label="Continuation model" value={model} onChange={e => setModel(e.target.value)} disabled={busy}>{!models.length && <option value="">Enable a provider in Code → Settings</option>}{models.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}</select></label>
             <button disabled={busy || !continuationSpace || !model} onClick={() => { void run(async () => {
-              const created = await work.mutate<WorkTask>("continue", { taskId: task.id, spaceId: continuationSpace, model });
+              const created = await work.mutate<WorkTask>("continue", { taskId: task.id, spaceId: continuationSpace, model, ...(reasoning.level ? { effort: reasoning.level } : {}) });
               work.setActive(created.id);
             }); }}>Continue</button>
           </section> : !active && task.status !== "queued" && <button onClick={() => { setBrief("Continue this task:\n" + task.brief + "\n\nReviewed plan:\n" + task.plan.map(p => "- " + p.step).join("\n") + "\n\nAsk before changing any existing files."); setSpaceId(task.spaceId); setAccess("ask"); setModel(task.model); work.setActive(null); }}>Continue as a new task…</button>}
@@ -154,7 +161,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
 
         </div>
         <form className="work-composer" aria-label="New task" onSubmit={e => { e.preventDefault(); void create(true); }} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }} onDrop={e => { e.preventDefault(); setDragOver(false); }}>
-          <ComposerShell toolbar={<div className="work-fields"><label className="composer-chip"><Folder aria-hidden /><select aria-label="Space" value={selectedSpace} disabled={busy} onChange={e => { setSpaceId(e.target.value); setAttachments([]); }}><option value="" disabled>Choose a space</option>{writableSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+          <ComposerShell reasoning={{ capability, value: reasoning.requested, onChange: reasoning.onChange, disabled: busy, onOpenSettings }} toolbar={<div className="work-fields"><label className="composer-chip"><Folder aria-hidden /><select aria-label="Space" value={selectedSpace} disabled={busy} onChange={e => { setSpaceId(e.target.value); setAttachments([]); }}><option value="" disabled>Choose a space</option>{writableSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
 
             <label className="composer-chip"><Shield aria-hidden /><select aria-label="Access mode" disabled={busy} value={access} onChange={e => setAccess(e.target.value as WorkTask["accessMode"])}><option value="ask">Ask</option><option value="read-only">Read only</option><option value="full-access">Full access</option></select></label>
           </div>} menu={<button type="button" disabled={busy || !selectedSpace} title={!selectedSpace ? "Choose a space first" : "Attach files to this space"} onClick={() => { void run(async () => { const paths = await pickWorkAttachments(); if (paths.length) await attach(paths); }); }}>Attach files to space</button>} controls={<label className="composer-model-chip"><span className="provider-dot" aria-hidden>{model[0]?.toUpperCase() || "M"}</span><select aria-label="Work model" value={model} disabled={busy} onChange={e => setModel(e.target.value)}>{!models.length && <option value="">Enable a provider in Code → Settings</option>}{models.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}</select></label>} actions={<><ComposerDictation settings={settings} disabled={busy} onBusyChange={setDictating} onTranscript={text => setBrief(current => current + (current && !/\s$/.test(current) ? " " : "") + text)} onError={work.setError} onOpenSettings={onOpenSettings} /><button className="ghost icon-button" type="button" aria-label="Queue" title={!selectedSpace ? "Choose a space first" : !brief.trim() ? "Describe the task to queue" : "Queue task"} disabled={busy || dictating || !brief.trim() || !selectedSpace || !model} onClick={() => { void create(false); }}><ListPlus aria-hidden /></button><ComposerSendButton label="Run now" disabled={busy || dictating || !brief.trim() || !selectedSpace || !model} disabledReason={dictating ? "Finish dictation first" : busy ? "Please wait" : !selectedSpace ? "Choose a space first" : !model ? "Choose a model in Settings" : "Describe the result you want"} onSend={() => { void create(true); }} /></>}>

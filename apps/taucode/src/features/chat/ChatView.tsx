@@ -1,3 +1,6 @@
+import { threadEffortKey, useReasoningSelection } from "@/features/models/reasoning";
+import { SidebarResizeHandle, SidebarCollapseButton } from "@/features/layout/components/SidebarResizeHandle";
+import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
 import { ComposerDictation } from "@/features/composer/components/ComposerDictation";
 import { NewConversationRow } from "@/features/chat/NewConversationRow";
 import { formatRelativeTimeShort } from "@utils/time";
@@ -24,6 +27,7 @@ const examples = [{ label: "Explore an idea", prompt: "Explain something surpris
 
 export function ChatView({ settings, onOpenSettings = () => {} }: { settings: AppSettings; onOpenSettings?: () => void }) {
   const chat = useChat();
+  const { sidebarCollapsed } = useSidebarState();
   const updateSettings = useModeSettings(settings);
   const models = (settings.providers ?? []).filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => ({ ...m, key: `${p.id}/${m.id}`, label: `${p.name} · ${m.displayName || m.id}` })));
   const [model, setModel] = useState(modelKey(settings.chatDefaultModel ?? settings.agentPolicy?.defaultModel) || models[0]?.key || "");
@@ -44,6 +48,8 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [dragOver, setDragOver] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   const active = chat.chats.find(c => c.id === chat.active);
+  const capability = models.find(m => m.key === model)?.reasoning;
+  const reasoning = useReasoningSelection(model, chat.active, capability);
   const users = chat.messages.filter(m => m.role === "user");
   const lastUser = users[users.length - 1];
   const supportsImages = models.find(m => m.key === model)?.supportsImages !== false;
@@ -81,7 +87,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
   };
   const send = () => { if (disabled || dictating || (!draft.trim() && !attachments.length)) return; void run(async () => {
     const text = [draft, ...attachments.flatMap(a => a.text ? [a.text] : [])].filter(Boolean).join("\n\n");
-    await chat.send(text, attachments.flatMap(a => a.url ? [a.url] : []), model || null, editing, newWeb);
+    await chat.send(text, attachments.flatMap(a => a.url ? [a.url] : []), model || null, editing, newWeb, reasoning.level);
     clearDraft();
   }); };
   const mutate = (action: string, id: string, params: Record<string, unknown> = {}) => run(async () => {
@@ -91,14 +97,15 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
   });
   const selectModel = (next: string) => { void run(async () => {
     if (attachments.some(a => a.url) && models.find(m => m.key === next)?.supportsImages === false) throw new Error("Remove images before selecting a text-only model.");
-    if (chat.active) { await chat.fork(chat.active, next); setEditing(undefined); }
+    if (chat.active) { const id = await chat.fork(chat.active, next); if (reasoning.requested || reasoning.level) localStorage.setItem(threadEffortKey(id), reasoning.requested || reasoning.level!); setEditing(undefined); }
     setModel(next);
   }); };
 
   const web = active ? Boolean(active.chat.web) : newWeb;
   const toggleWeb = () => { if (active) { void mutate("web", active.id, { web: !web }); } else setNewWeb(!web); };
 
-  return <BrowserDock searchUrl={settings.browser?.searchUrl} onInterrupt={() => chatRequest("stop", { threadId: chat.active }).then(() => {})}><div className={`chat-layout${showList ? " chat-list-open" : ""}`}>
+  return <BrowserDock searchUrl={settings.browser?.searchUrl} onInterrupt={() => chatRequest("stop", { threadId: chat.active }).then(() => {})}><div className={`chat-layout${sidebarCollapsed ? " sidebar-collapsed" : ""}${showList ? " chat-list-open" : ""}`}>
+    <SidebarResizeHandle /><SidebarCollapseButton />
     <aside className="sidebar chat-sidebar" aria-label="Chats">
       <ModeSwitcher />
       <NewConversationRow label="New chat" disabled={busy} shortcut={settings.newAgentShortcut} handleShortcut onSearch={() => searchInput.current?.focus()} onNew={() => { chat.setActive(null); clearDraft(); setNewWeb(false); setModel(defaultModel || modelKey(settings.agentPolicy?.defaultModel) || models[0]?.key || ""); setTrash(false); setShowList(false); }} />
@@ -136,7 +143,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
             {message.images?.map((url, index) => <img key={index} src={url} alt={`Attachment ${index + 1}`} />)}
             <Markdown codeBlockStyle="message" className="markdown" value={message.text} showFilePath={false} />
             </div>
-            <div className="message-hover-actions"><button type="button" className="ghost icon-button" aria-label="Copy message" title="Copy message" onClick={() => { void navigator.clipboard.writeText(message.text).catch(() => chat.setError("Could not copy message.")); }}><Copy aria-hidden /></button>{message.id === lastUser?.id && <button className="ghost icon-button" aria-label="Edit and resend" title="Edit and resend" disabled={disabled} onClick={() => { setDraft(message.text); setAttachments(message.images?.map((url, i) => ({ name: `Image ${i + 1}`, url })) ?? []); setEditing(message.id); }}><Pencil aria-hidden /></button>}{message.role === "assistant" && message.id === chat.messages[chat.messages.length - 1]?.id && lastUser && <button className="ghost icon-button" aria-label="Regenerate last answer" title="Regenerate last answer" disabled={disabled} onClick={() => { void run(() => chat.send(lastUser.text, lastUser.images ?? [], model || null, lastUser.id)); }}><RotateCcw aria-hidden /></button>}</div>
+            <div className="message-hover-actions"><button type="button" className="ghost icon-button" aria-label="Copy message" title="Copy message" onClick={() => { void navigator.clipboard.writeText(message.text).catch(() => chat.setError("Could not copy message.")); }}><Copy aria-hidden /></button>{message.id === lastUser?.id && <button className="ghost icon-button" aria-label="Edit and resend" title="Edit and resend" disabled={disabled} onClick={() => { setDraft(message.text); setAttachments(message.images?.map((url, i) => ({ name: `Image ${i + 1}`, url })) ?? []); setEditing(message.id); }}><Pencil aria-hidden /></button>}{message.role === "assistant" && message.id === chat.messages[chat.messages.length - 1]?.id && lastUser && <button className="ghost icon-button" aria-label="Regenerate last answer" title="Regenerate last answer" disabled={disabled} onClick={() => { void run(() => chat.send(lastUser.text, lastUser.images ?? [], model || null, lastUser.id, web, reasoning.level)); }}><RotateCcw aria-hidden /></button>}</div>
           </article>)}
 
           {chat.running && <p role="status" className="chat-muted">Responding…</p>}
@@ -145,7 +152,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
       </div>
       <form className="chat-composer chat-column" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }} onDrop={e => { e.preventDefault(); setDragOver(false); if (!disabled) addFiles(Array.from(e.dataTransfer.files)); }}>
         <input ref={fileInput} hidden type="file" aria-label="Attach files" multiple disabled={disabled} onChange={e => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
-        <ComposerShell menu={<><button type="button" disabled={disabled} onClick={() => fileInput.current?.click()}>Attach files or images</button>{settings.mcpServers?.some(c => c.id === "taucode-browser" && c.enabled) && <button type="button" disabled={disabled} aria-pressed={web} onClick={toggleWeb}><Globe aria-hidden />{web ? "Turn off Web" : "Turn on Web"}</button>}<button type="button" disabled={disabled || !model} onClick={() => { void run(async () => {
+        <ComposerShell reasoning={{ capability, value: reasoning.requested, onChange: reasoning.onChange, disabled, onOpenSettings }} menu={<><button type="button" disabled={disabled} onClick={() => fileInput.current?.click()}>Attach files or images</button>{settings.mcpServers?.some(c => c.id === "taucode-browser" && c.enabled) && <button type="button" disabled={disabled} aria-pressed={web} onClick={toggleWeb}><Globe aria-hidden />{web ? "Turn off Web" : "Turn on Web"}</button>}<button type="button" disabled={disabled || !model} onClick={() => { void run(async () => {
           const value = defaultModel === model ? "" : model;
           const updated = await updateAppSettings({ ...await getAppSettings(), chatDefaultModel: modelRef(value) });
           updateSettings?.(updated);

@@ -1,5 +1,5 @@
 import type { ThreadItem } from "@protocol/v2/ThreadItem";
-import type { AgentNode, AppSettings, Checkpoint, EngineKind, ImportDetection, SideOf, WorkState, WorkspaceInfo } from "@/types";
+import type { AgentNode, AppSettings, Checkpoint, EngineKind, ImportDetection, ReasoningCapability, SideOf, WorkState, WorkspaceInfo } from "@/types";
 import type { Chat } from "@/features/chat/chat";
 import { buildDefaultSettings } from "@settings/hooks/useAppSettings";
 
@@ -24,6 +24,8 @@ export function makeThread(id: string, workspaceId: string, title: string, items
   };
 }
 
+const reasoning = (levels: string[], control: ReasoningCapability["control"] = "effort"): ReasoningCapability => ({ supported: levels.length > 0, levels, default: levels.includes("medium") ? "medium" : levels[0] ?? null, control, source: "api", detectedAt: 1792800000 });
+
 export function createFixtures(now = Date.now()) {
   const settings: AppSettings = {
     ...buildDefaultSettings(), theme: "dark", automaticAppUpdateChecksEnabled: false,
@@ -31,11 +33,14 @@ export function createFixtures(now = Date.now()) {
     windowModes: { main: "code" }, chatDefaultModel: { providerId: "openai", modelId: "gpt-5" },
     providers: [
       { id: "openai", name: "OpenAI", kind: "openai", enabled: true, auth: { type: "none" }, models: [
-        { id: "gpt-5", displayName: "GPT-5", enabled: true, contextWindow: 200000, supportsTools: true, supportsImages: true },
-        { id: "gpt-5-mini", displayName: "GPT-5 mini", enabled: true, contextWindow: 128000, supportsTools: true, supportsImages: true },
+        { id: "gpt-5", reasoning: reasoning(["low", "medium", "high", "xhigh", "max"]), displayName: "GPT-5", enabled: true, contextWindow: 200000, supportsTools: true, supportsImages: true },
+        { id: "gpt-5-mini", reasoning: reasoning(["low", "high", "max"]), displayName: "GPT-5 mini", enabled: true, contextWindow: 128000, supportsTools: true, supportsImages: true },
       ] },
       { id: "anthropic", name: "Anthropic", kind: "anthropic", enabled: true, auth: { type: "none" }, models: [
-        { id: "claude-sonnet-4", displayName: "Claude Sonnet 4", enabled: true, contextWindow: 200000, supportsTools: true, supportsImages: true },
+        { id: "toggle-model", displayName: "Thinking toggle", enabled: true, reasoning: reasoning(["off", "high"], "thinking-toggle") },
+        { id: "plain-model", displayName: "No reasoning", enabled: true, reasoning: reasoning([]) },
+        { id: "unknown-model", displayName: "Unknown reasoning", enabled: true },
+        { id: "claude-sonnet-4", reasoning: reasoning(["low", "medium", "high"], "adaptive"), displayName: "Claude Sonnet 4", enabled: true, contextWindow: 200000, supportsTools: true, supportsImages: true },
       ] },
     ],
     agentPolicy: { defaultEngine: "pi", defaultModel: { providerId: "openai", modelId: "gpt-5" }, subagents: {
@@ -65,6 +70,7 @@ export function createFixtures(now = Date.now()) {
     { ...makeThread("thread-side", "workspace-atlas", "Why keep the greeting constant?", [userMessage("side-user", "Why use a constant here?"), assistantMessage("side-answer", "It gives the interface and tests one shared source of truth.")], now - 60000), sideOf: { threadId: "thread-rich", workspaceId: "workspace-atlas", atItemId: "code-done" } },
   ];
   threads.push(makeThread("thread-empty", "workspace-atlas", "New thread"));
+  threads.push(...(settings.providers ?? []).flatMap(p => p.models.map(m => ({ ...makeThread("reasoning-" + m.id, "workspace-atlas", m.displayName || m.id, [], now), modelProvider: p.id, model: m.id }))));
   const chats: Chat[] = ["Plan a weekend in Kyoto", "Explain async iterators", "Ideas for a team offsite", "A better morning routine", "Notes on good documentation"].map((title, i) => ({
     id: `chat-${i + 1}`, model: "gpt-5", modelProvider: "openai", createdAt: Math.floor(now / 1000) - [0, 0, 2, 5, 20][i] * 86400,
     updatedAt: Math.floor(now / 1000) - [0, 0, 2, 5, 20][i] * 86400, preview: title,

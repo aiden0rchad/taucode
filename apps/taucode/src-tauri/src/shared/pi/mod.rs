@@ -881,6 +881,11 @@ impl PiEngine {
                     self.emit(workspace, event);
                 }
             }
+            if let Some(cap) = provider.models.iter().find(|m| m.id == model).and_then(|m| m.reasoning.as_ref()) {
+                if let Some(level) = super::reasoning::clamp(cap, params["effort"].as_str()) {
+                    p.request(json!({"type":"set_thinking_level","level":level})).await?;
+                }
+            }
             let (message, images) = prompt_input(&params["input"])?;
             let turn_id = {
                 let t = p.translator.lock().await;

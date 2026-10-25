@@ -117,6 +117,17 @@ pub(crate) fn validate(providers: &[ProviderEntry], policy: &AgentPolicy) -> Res
                 return Err("Auth command timeout must be greater than zero".into());
             }
         }
+        for model in &p.models {
+            for cap in [&model.reasoning, &model.detected_reasoning].into_iter().flatten() {
+                if !["effort", "thinking-toggle", "budget", "adaptive", "unknown"].contains(&cap.control.as_str())
+                    || !["api", "probe", "heuristic", "user"].contains(&cap.source.as_str())
+                    || cap.levels.iter().any(|l| !super::reasoning::LEVELS.contains(&l.as_str()))
+                    || cap.levels.windows(2).any(|w| super::reasoning::LEVELS.iter().position(|l| l == &w[0]) >= super::reasoning::LEVELS.iter().position(|l| l == &w[1]))
+                    || !cap.supported && !cap.levels.is_empty()
+                    || cap.default.as_ref().is_some_and(|d| !cap.levels.contains(d))
+                { return Err("Invalid reasoning capability".into()); }
+            }
+        }
         let mut models = HashSet::new();
         if p.models
             .iter()
@@ -209,7 +220,9 @@ pub(crate) fn catalog(providers: &[ProviderEntry]) -> Value {
         "providerId": p.id, "providerName": p.name, "modelId": m.id,
         "displayName": m.display_name.as_ref().unwrap_or(&m.id), "description": p.name,
         "engines": ([Some("pi"), codex_usable(p).then_some("codex"), claude_usable(p).then_some("claude")].into_iter().flatten().collect::<Vec<_>>()),
-        "supportedReasoningEfforts": [], "defaultReasoningEffort": null, "isDefault": false,
+        "reasoning": m.reasoning,
+        "supportedReasoningEfforts": m.reasoning.as_ref().filter(|r| r.supported).map(|r| r.levels.iter().map(|l| json!({"reasoningEffort":l,"description":l})).collect::<Vec<_>>()).unwrap_or_default(),
+        "defaultReasoningEffort": m.reasoning.as_ref().and_then(|r| r.default.as_ref()), "isDefault": false,
         "contextWindow": m.context_window
     }))).collect::<Vec<_>>() } })
 }
@@ -304,17 +317,27 @@ pub(crate) struct ModelRequest {
 }
 pub(crate) trait ModelHttp: Send + Sync {
     fn get(&self, request: ModelRequest) -> BoxFuture<'_, Result<(u16, Value), String>>;
+    fn post(&self, _request: ModelRequest, _body: Value) -> BoxFuture<'_, Result<(u16, Value), String>> {
+        Box::pin(async { Err("POST unavailable".into()) })
+    }
 }
 pub(crate) struct Http;
 impl ModelHttp for Http {
     fn get(&self, request: ModelRequest) -> BoxFuture<'_, Result<(u16, Value), String>> {
+        http_request(request, None)
+    }
+    fn post(&self, request: ModelRequest, body: Value) -> BoxFuture<'_, Result<(u16, Value), String>> {
+        http_request(request, Some(body))
+    }
+}
+fn http_request(request: ModelRequest, body: Option<Value>) -> BoxFuture<'static, Result<(u16, Value), String>> {
         Box::pin(async move {
             let client = reqwest::Client::builder()
                 .timeout(Duration::from_secs(15))
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .map_err(|_| "Cannot create HTTP client")?;
-            let mut req = client.get(&request.url);
+            let mut req = if let Some(body) = body { client.post(&request.url).header("content-type", "application/json").body(body.to_string()) } else { client.get(&request.url) };
             for (k, v) in request.headers {
                 req = req.header(k, v);
             }
@@ -335,12 +358,15 @@ impl ModelHttp for Http {
                 serde_json::from_slice(&bytes).unwrap_or(Value::Null),
             ))
         })
-    }
 }
 pub(crate) fn merge_models(existing: &mut Vec<ProviderModel>, fetched: Vec<ProviderModel>) {
     for mut model in fetched {
         if let Some(old) = existing.iter_mut().find(|m| m.id == model.id) {
             model.enabled = old.enabled;
+            model.detected_reasoning = model.reasoning.clone();
+            if old.reasoning.as_ref().is_some_and(|r| r.source == "user") {
+                model.reasoning = old.reasoning.clone();
+            }
             *old = model;
         } else {
             existing.push(model);
@@ -427,6 +453,8 @@ pub(crate) async fn fetch(
                         .and_then(Value::as_u64),
                     supports_tools: None,
                     supports_images: None,
+                    reasoning: if p.base_url.as_deref().is_none_or(|url| url.trim_end_matches('/') == kind_info(p.kind).0) || matches!(p.kind, ProviderKind::Openrouter | ProviderKind::Google) { super::reasoning::detect(p.kind, id, entry) } else { None },
+                    detected_reasoning: None,
                 });
             }
         }
@@ -446,10 +474,32 @@ pub(crate) async fn fetch(
             break;
         }
     }
+    if p.kind == ProviderKind::Ollama {
+        for model in &mut models {
+            if let Ok((200..=299, body)) = http.post(ModelRequest {
+                url: format!("{}/api/show", base_url(p).trim_end_matches('/').trim_end_matches("/v1")),
+                headers: headers.clone(),
+            }, json!({"model": model.id})).await {
+                model.reasoning = super::reasoning::detect(p.kind, &model.id, &body);
+            }
+        }
+    } else if !matches!(p.kind, ProviderKind::Anthropic | ProviderKind::Google | ProviderKind::Openrouter)
+        && (p.kind != ProviderKind::Openai || base_url(p).trim_end_matches('/') != kind_info(p.kind).0) {
+        let base = base_url(p).trim_end_matches('/').trim_end_matches("/v1");
+        if let Ok((200..=299, body)) = http.get(ModelRequest { url: format!("{base}/v1/model/info"), headers }).await {
+            for model in &mut models {
+                if let Some(entry) = body["data"].as_array().into_iter().flatten().find(|e| e["model_name"] == model.id || e["id"] == model.id) {
+                    model.reasoning = super::reasoning::litellm(&entry["model_info"]);
+                }
+            }
+        }
+    }
+    for model in &mut models { model.detected_reasoning = model.reasoning.clone(); }
     Ok(models)
 }
 pub(crate) async fn test_and_fetch(
     id: String,
+    probe_model: Option<String>,
     settings: &Mutex<AppSettings>,
     path: &std::path::PathBuf,
 ) -> Result<Value, String> {
@@ -466,7 +516,15 @@ pub(crate) async fn test_and_fetch(
         ProviderAuth::Command { timeout_ms, .. } => timeout_ms.unwrap_or(15_000),
         _ => 0,
     };
-    match tokio::time::timeout(Duration::from_millis(auth_budget.saturating_add(15_000)), fetch(&provider, &Keychain, &Http))
+    let operation = async {
+        if let Some(model_id) = probe_model {
+            let mut model = provider.models.iter().find(|m| m.id == model_id).cloned().ok_or("Model not found")?;
+            model.reasoning = Some(probe(&provider, &model, &Keychain, &Http).await?);
+            model.detected_reasoning = model.reasoning.clone();
+            Ok(vec![model])
+        } else { fetch(&provider, &Keychain, &Http).await }
+    };
+    match tokio::time::timeout(Duration::from_millis(auth_budget.saturating_add(15_000)), operation)
         .await
         .unwrap_or_else(|_| Err("Model listing timed out".into()))
     {
@@ -500,6 +558,49 @@ pub(crate) async fn test_and_fetch(
     }
 }
 
+pub(crate) async fn probe(p: &ProviderEntry, model: &ProviderModel, keys: &dyn KeyStore, http: &dyn ModelHttp) -> Result<ReasoningCapability, String> {
+    let mut headers = p.extra_headers.clone();
+    let (_, auth) = kind_info(p.kind);
+    if let Some(token) = token(p, keys).await? {
+        if !auth.is_empty() { headers.insert(auth.into(), if auth == "authorization" { format!("Bearer {token}") } else { token }); }
+    }
+    let base = base_url(p).trim_end_matches('/');
+    let mut body = json!({"model":model.id,"messages":[{"role":"user","content":"Hi"}],"max_tokens":1});
+    let (url, param, control) = match p.kind {
+        ProviderKind::Anthropic => {
+            headers.insert("anthropic-version".into(), "2023-06-01".into());
+            body["output_config"] = json!({"effort":"low"});
+            (format!("{base}/messages"), "effort", "adaptive")
+        }
+        ProviderKind::Google => {
+            body = json!({"contents":[{"parts":[{"text":"Hi"}]}],"generationConfig":{"maxOutputTokens":1,"thinkingConfig":{"thinkingBudget":128}}});
+            let mut url = reqwest::Url::parse(&format!("{base}/models/")).map_err(|_| "Invalid provider URL")?;
+            url.path_segments_mut().map_err(|_| "Invalid provider URL")?.pop_if_empty().push(&format!("{}:generateContent", model.id));
+            (url.to_string(), "thinkingConfig", "budget")
+        }
+        ProviderKind::Ollama => {
+            body = json!({"model":model.id,"messages":[{"role":"user","content":"Hi"}],"think":if model.id.starts_with("gpt-oss") { json!("low") } else { json!(true) },"stream":false,"options":{"num_predict":1}});
+            (format!("{}/api/chat", base.trim_end_matches("/v1")), "think", if model.id.starts_with("gpt-oss") { "effort" } else { "thinking-toggle" })
+        }
+        ProviderKind::Openrouter => {
+            body["reasoning"] = json!({"effort":"low"});
+            (format!("{base}/chat/completions"), "reasoning", "effort")
+        }
+        _ if model.reasoning.as_ref().is_some_and(|r| r.control == "thinking-toggle") => {
+            body["thinking"] = json!({"type":"enabled"});
+            (format!("{base}/chat/completions"), "thinking", "thinking-toggle")
+        }
+        _ => {
+            body["reasoning_effort"] = json!("low");
+            (format!("{base}/chat/completions"), "reasoning_effort", "effort")
+        }
+    };
+    let (status, body) = http.post(ModelRequest { url, headers }, body).await?;
+    let supported = super::reasoning::classify_probe(status, &body, param).ok_or_else(|| format!("Reasoning detection inconclusive (HTTP {status}); existing capabilities kept"))?;
+    // A successful probe proves only the requested level, never the entire range.
+    Ok(super::reasoning::capability(supported, if control == "thinking-toggle" { &["high"] } else { &["low"] }, control, "probe"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -522,8 +623,13 @@ mod tests {
     struct FakeHttp {
         replies: StdMutex<std::collections::VecDeque<Result<(u16, Value), String>>>,
         requests: StdMutex<Vec<ModelRequest>>,
+        bodies: StdMutex<Vec<Value>>,
     }
     impl ModelHttp for FakeHttp {
+        fn post(&self, request: ModelRequest, body: Value) -> BoxFuture<'_, Result<(u16, Value), String>> {
+            self.bodies.lock().unwrap().push(body);
+            self.get(request)
+        }
         fn get(&self, request: ModelRequest) -> BoxFuture<'_, Result<(u16, Value), String>> {
             self.requests.lock().unwrap().push(request);
             let response = self
@@ -539,10 +645,37 @@ mod tests {
         FakeHttp {
             replies: StdMutex::new(replies.into()),
             requests: StdMutex::new(vec![]),
+            bodies: StdMutex::new(vec![]),
         }
     }
     fn provider(kind: ProviderKind) -> ProviderEntry {
         serde_json::from_value(json!({"id":"test","name":"Test","kind":kind,"auth":{"type":"apiKey"},"models":[{"id":"model","enabled":true}],"enabled":true,"baseUrl": if kind == ProviderKind::OpenaiCompatible { Some("http://localhost:1234/v1") } else { None }})).unwrap()
+    }
+    #[tokio::test]
+    async fn fetch_detects_proxy_and_ollama_without_probing_and_explicit_probe_proves_only_low() {
+        let keys = Keys::default();
+        keys.set("test", "secret").unwrap();
+        let p = provider(ProviderKind::OpenaiCompatible);
+        let fake = http(vec![
+            Ok((200, json!({"data":[{"id":"GLM 5.3"}]}))),
+            Ok((200, json!({"data":[{"model_name":"GLM 5.3","model_info":{"supports_reasoning":true,"supported_reasoning_efforts":["low","high","max"],"supported_openai_params":["thinking"]}}]}))),
+        ]);
+        let models = fetch(&p, &keys, &fake).await.unwrap();
+        assert_eq!(models[0].reasoning.as_ref().unwrap().levels, ["low","high","max"]);
+        assert_eq!(models[0].detected_reasoning, models[0].reasoning);
+        assert_eq!(fake.requests.lock().unwrap()[1].url, "http://localhost:1234/v1/model/info");
+        assert_eq!(fake.bodies.lock().unwrap().len(), 0);
+        let fake = http(vec![Ok((200, json!({"data":[{"id":"gpt-oss:20b"}]}))), Ok((200, json!({"capabilities":["thinking"]})))]);
+        let models = fetch(&provider(ProviderKind::Ollama), &keys, &fake).await.unwrap();
+        assert_eq!(models[0].reasoning.as_ref().unwrap().levels, ["low","medium","high"]);
+        assert_eq!(fake.requests.lock().unwrap()[1].url, "http://localhost:11434/api/show");
+        assert_eq!(fake.bodies.lock().unwrap()[0], json!({"model":"gpt-oss:20b"}));
+        let fake = http(vec![Ok((200, json!({})))]);
+        let cap = probe(&p, &p.models[0], &keys, &fake).await.unwrap();
+        assert_eq!(cap.source, "probe");
+        assert_eq!(cap.levels, ["low"]);
+        assert_eq!(fake.bodies.lock().unwrap()[0]["max_tokens"], 1);
+        assert_eq!(fake.bodies.lock().unwrap()[0]["reasoning_effort"], "low");
     }
     #[tokio::test]
     async fn command_auth_timeout_is_configurable_and_actionable() {
@@ -590,6 +723,8 @@ mod tests {
                     )),
                     Ok((200, json!({"models":[{"name":"models/two"}]}))),
                 ])
+            } else if !matches!(kind, Openai | Anthropic | Openrouter) {
+                http(vec![Ok((200, json!({"data":[{"id":"one"}]}))), Ok((404, Value::Null))])
             } else {
                 http(vec![Ok((200, json!({"data":[{"id":"one"}]})))])
             };

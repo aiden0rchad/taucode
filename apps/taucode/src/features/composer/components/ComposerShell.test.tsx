@@ -25,6 +25,13 @@ it("opens add controls, closes on selection and Escape, and grows the editor", (
   const toggle = screen.getByRole("button", { name: "Add attachments and tools" });
   expect(screen.queryByText("Attach files")).toBeNull();
   fireEvent.click(toggle);
+  const dialog = screen.getByRole("dialog", { name: "Attachments and tools" });
+  expect(dialog.parentElement).toBe(document.body);
+  expect(toggle.closest(".composer-shell")?.contains(dialog)).toBe(false);
+  expect(dialog.style.position).toBe("fixed");
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Attach files" }));
+  fireEvent.mouseDown(screen.getByRole("button", { name: "Attach files" }));
+  expect(screen.getByRole("dialog")).toBe(dialog);
   fireEvent.click(screen.getByRole("button", { name: "Attach files" }));
   expect(attach).toHaveBeenCalledOnce();
   expect(screen.queryByText("Attach files")).toBeNull();

@@ -12,6 +12,7 @@ pub(crate) mod local_usage_core;
 pub(crate) mod process_core;
 pub(crate) mod prompts_core;
 pub(crate) mod providers;
+pub(crate) mod reasoning;
 pub(crate) mod settings_core;
 pub(crate) mod workspace_rpc;
 pub(crate) mod workspaces_core;

@@ -584,12 +584,13 @@ pub(crate) async fn list_models(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Value, String> {
-    model_list(workspace_id, state, app).await
+    model_list(workspace_id, None, state, app).await
 }
 
 #[tauri::command]
 pub(crate) async fn model_list(
     workspace_id: String,
+    thread_id: Option<String>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Value, String> {
@@ -598,14 +599,13 @@ pub(crate) async fn model_list(
             &*state,
             app,
             "model_list",
-            json!({ "workspaceId": workspace_id }),
+            json!({ "workspaceId": workspace_id, "threadId": thread_id }),
         )
         .await;
     }
 
-    Ok(crate::shared::providers::catalog(
-        &state.app_settings.lock().await.providers,
-    ))
+    let providers = state.app_settings.lock().await.providers.clone();
+    Ok(crate::shared::reasoning::catalog(&providers, &state.sessions, &workspace_id, thread_id.as_deref()).await)
 }
 
 #[tauri::command]

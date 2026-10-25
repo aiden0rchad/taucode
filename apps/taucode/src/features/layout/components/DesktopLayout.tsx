@@ -1,3 +1,4 @@
+import { SidebarResizeHandle } from "./SidebarResizeHandle";
 import { useEffect, useRef, type MouseEvent, type ReactNode } from "react";
 import { MainTopbar } from "../../app/components/MainTopbar";
 import { ChatPane } from "./ChatPane";
@@ -142,13 +143,7 @@ export function DesktopLayout({
   return (
     <>
       {sidebarNode}
-      <div
-        className="sidebar-resizer"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize sidebar"
-        onMouseDown={onSidebarResizeStart}
-      />
+      <SidebarResizeHandle onMouseDown={onSidebarResizeStart} />
 
       <section className="main">
         {updateToastNode}

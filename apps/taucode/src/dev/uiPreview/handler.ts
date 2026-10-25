@@ -148,7 +148,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "work_request": return work(String(args.action), params);
       case "checkpoint_request": return checkpoint(params);
       case "get_subagent_transcript": return { messages: [assistantMessage("review-result", "All tests pass. No issues found.")], truncated: false };
-      case "model_list": return page(state.settings.providers?.flatMap(p => p.models.map(m => ({ id: `${p.id}/${m.id}`, model: `${p.id}/${m.id}`, displayName: m.displayName, description: p.name, isDefault: m.id === "gpt-5", supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }, { reasoningEffort: "high", description: "Thorough" }], defaultReasoningEffort: "medium" }))) ?? []);
+      case "model_list": return page(state.settings.providers?.flatMap(p => p.models.map(m => ({ id: `${p.id}/${m.id}`, model: `${p.id}/${m.id}`, displayName: m.displayName, description: p.name, isDefault: m.id === "gpt-5", reasoning: m.reasoning, providerId: p.id, providerName: p.name, modelId: m.id, engines: ["pi", "codex", "claude"], supportedReasoningEfforts: m.reasoning?.levels.map(level => ({ reasoningEffort: level, description: level })) ?? [], defaultReasoningEffort: m.reasoning?.default ?? null }))) ?? []);
       case "get_config_model": return { model: "openai/gpt-5" };
       case "engine_runtime": return ["pi", "codex", "claude"].map(engine => ({ engine, state: "ready", message: "Mock runtime ready" }));
       case "get_git_status": {

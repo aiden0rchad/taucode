@@ -1641,6 +1641,8 @@
 }
 
 .sidebar-bottom-rail {
+  min-height: 43px;
+  flex-shrink: 0;
   margin-top: 4px;
   padding-top: 10px;
   border-top: 1px solid var(--border-subtle);

@@ -290,6 +290,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
     selectedEffort,
     setSelectedEffort, refreshModels,
   } = useModels({
+    threadId: activeThreadIdRef.current,
     activeWorkspace,
     onDebug: addDebugEntry,
     preferredModelId: preferredModelId ?? (modelKey(activeWorkspace?.settings.agentPolicy?.defaultModel ?? appSettings.agentPolicy?.defaultModel) || null),

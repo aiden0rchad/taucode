@@ -1188,3 +1188,30 @@ async fn side_chat_current_blocks_mutations_and_two_turn_checkpoints_bind_real_i
     session.shutdown().await;
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+
+#[tokio::test]
+async fn detected_levels_agree_with_pi_and_are_set_before_turn_on_model_switch() {
+    let dir = temp();
+    let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into_owned(), None, Arc::new(|_, _| {}));
+    engine.fake = true;
+    engine.keys = Arc::new(Keys);
+    let first = crate::shared::reasoning::capability(true, &["low", "medium", "high", "xhigh", "max"], "effort", "api");
+    let second = crate::shared::reasoning::capability(true, &["low", "high"], "effort", "api");
+    let registry: Vec<ProviderEntry> = serde_json::from_value(json!([{"id":"first","name":"Test","kind":"openai-compatible","baseUrl":"https://lab.test/v1","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"a","enabled":true,"reasoning":first},{"id":"b","enabled":true,"reasoning":second}]}])).unwrap();
+    engine.configure("workspace", registry, AgentPolicy::default()).await;
+    let started = engine.request("workspace", "thread/start", json!({"model":"first/a"})).await.unwrap();
+    let id = started["result"]["thread"]["id"].as_str().unwrap();
+    let process = engine.sessions.lock().await[id].process.clone().unwrap();
+    assert_eq!(process.request(json!({"type":"get_available_thinking_levels"})).await.unwrap()["levels"], json!(first.levels));
+    engine.request("workspace", "turn/start", json!({"threadId":id,"model":"first/b","effort":"max","input":[{"type":"text","text":"Hello"}]})).await.unwrap();
+    assert_eq!(process.request(json!({"type":"get_available_thinking_levels"})).await.unwrap()["levels"], json!(second.levels));
+    let file = engine.sessions.lock().await[id].file.clone();
+    let requests: Vec<Value> = std::fs::read_to_string(file.with_extension("requests")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let prompt = requests.iter().position(|r| r["type"] == "prompt").unwrap();
+    assert_eq!(requests[prompt - 1]["type"], "set_thinking_level");
+    assert_eq!(requests[prompt - 1]["level"], "high");
+    assert_eq!(requests[prompt - 2]["type"], "set_model");
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}

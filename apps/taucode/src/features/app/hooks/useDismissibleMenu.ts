@@ -6,6 +6,7 @@ type UseDismissibleMenuOptions = {
   containerRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   closeOnEscape?: boolean;
+  popoverRef?: RefObject<HTMLElement | null>;
 };
 
 export function useDismissibleMenu({
@@ -13,6 +14,7 @@ export function useDismissibleMenu({
   containerRef,
   onClose,
   closeOnEscape = true,
+  popoverRef,
 }: UseDismissibleMenuOptions) {
   useEffect(() => {
     if (!isOpen) {
@@ -21,7 +23,7 @@ export function useDismissibleMenu({
 
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null;
-      if (target && containerRef.current?.contains(target)) {
+      if (target && (containerRef.current?.contains(target) || popoverRef?.current?.contains(target))) {
         return;
       }
       onClose();
@@ -41,5 +43,5 @@ export function useDismissibleMenu({
       window.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [closeOnEscape, containerRef, isOpen, onClose]);
+  }, [closeOnEscape, containerRef, isOpen, onClose, popoverRef]);
 }

@@ -122,3 +122,8 @@ describe("Chat UI", () => {
     expect(screen.getByRole("button", { name: "Turn on Web" })).toBeTruthy();
   });
 });
+
+it("includes the shared sidebar resize handle", () => {
+  render(<ChatView settings={settings} />);
+  expect(screen.getByRole("separator", { name: "Resize sidebar" })).toBeTruthy();
+});

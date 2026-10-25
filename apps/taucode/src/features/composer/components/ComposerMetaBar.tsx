@@ -1,7 +1,8 @@
+import { ReasoningControl } from "./ReasoningControl";
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { engineRuntime } from "@services/tauri";
-import { BrainCog, SlidersHorizontal, Zap, ListChecks, Shield } from "lucide-react";
+import { SlidersHorizontal, Zap, ListChecks, Shield } from "lucide-react";
 import type { AccessMode, ServiceTier, ThreadTokenUsage } from "../../../types";
 import type { CodexArgsOption } from "../../threads/utils/codexArgsProfiles";
 
@@ -12,7 +13,7 @@ type ComposerMetaBarProps = {
   onSelectCollaborationMode: (id: string | null) => void;
   engine?: import("@/types").EngineKind;
   onSelectEngine?: (engine: import("@/types").EngineKind) => void;
-  models: (Pick<import("@/types").ModelOption, "id" | "displayName" | "model" | "providerId" | "providerName" | "engines">)[];
+  models: (Pick<import("@/types").ModelOption, "id" | "displayName" | "model" | "providerId" | "providerName" | "engines" | "reasoning" | "acpReasoning">)[];
   selectedModelId: string | null;
   onSelectModel: (id: string) => void;
   reasoningOptions: string[];
@@ -149,6 +150,7 @@ export function ComposerMetaBar({
             </div>
           )
         )}
+        <ReasoningControl capability={engine === "claude" ? selectedModel?.acpReasoning : selectedModel?.reasoning ?? (reasoningSupported ? { supported: true, levels: reasoningOptions, default: selectedEffort, control: "effort", source: "heuristic", detectedAt: 0 } : selectedModel?.reasoning)} value={selectedEffort} onChange={onSelectEffort} disabled={disabled} unavailable={engine === "claude" && !selectedModel?.acpReasoning ? "This Claude session does not advertise a reasoning option" : undefined} />
         <div className="composer-select-wrap composer-select-wrap--model">
           <span className="composer-icon composer-icon--model" aria-hidden>
             <span className="provider-dot">{(selectedModel?.providerName || selectedModel?.providerId || selectedModelLabel)[0]?.toUpperCase()}</span>
@@ -180,26 +182,6 @@ export function ComposerMetaBar({
               <Zap size={12} strokeWidth={1.8} />
             </span>
           )}
-        </div>
-        <div className="composer-select-wrap composer-select-wrap--effort">
-          <span className="composer-icon composer-icon--effort" aria-hidden>
-            <BrainCog size={14} strokeWidth={1.8} />
-          </span>
-          <select
-            className="composer-select composer-select--effort"
-            aria-label="Thinking mode"
-            title={!reasoningSupported ? "This model does not support reasoning effort" : "Reasoning effort"}
-            value={selectedEffort ?? ""}
-            onChange={(event) => onSelectEffort(event.target.value)}
-            disabled={disabled || !reasoningSupported}
-          >
-            {reasoningOptions.length === 0 && <option value="">Default</option>}
-            {reasoningOptions.map((effort) => (
-              <option key={effort} value={effort}>
-                {effort}
-              </option>
-            ))}
-          </select>
         </div>
         {codexArgsOptions.length > 1 && onSelectCodexArgsOverride && (
           <div className="composer-select-wrap">

@@ -921,11 +921,9 @@ impl DaemonState {
             .await
     }
 
-    async fn model_list(&self, workspace_id: String) -> Result<Value, String> {
-        let _ = workspace_id;
-        Ok(shared::providers::catalog(
-            &self.app_settings.lock().await.providers,
-        ))
+    async fn model_list(&self, workspace_id: String, thread_id: Option<String>) -> Result<Value, String> {
+        let providers = self.app_settings.lock().await.providers.clone();
+        Ok(shared::reasoning::catalog(&providers, &self.sessions, &workspace_id, thread_id.as_deref()).await)
     }
 
     async fn experimental_feature_list(

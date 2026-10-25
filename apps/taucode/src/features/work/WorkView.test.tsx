@@ -149,3 +149,8 @@ describe("Work mode", () => {
   });
 });
 
+
+it("includes the shared sidebar resize handle", () => {
+  render(<WorkView settings={settings} />);
+  expect(screen.getByRole("separator", { name: "Resize sidebar" })).toBeTruthy();
+});

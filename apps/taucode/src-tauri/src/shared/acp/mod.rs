@@ -115,6 +115,12 @@ impl ClaudeAcpEngine {
             ..Self::default()
         }
     }
+    pub(crate) async fn reasoning_options(&self, id: &str) -> Option<(String, String, crate::types::ReasoningCapability)> {
+        let threads = self.threads.lock().await;
+        let thread = threads.get(id)?;
+        let (_, cap) = super::reasoning::acp(&thread.capabilities)?;
+        Some((thread.metadata["modelProvider"].as_str()?.into(), thread.metadata["model"].as_str()?.into(), cap))
+    }
     pub async fn configure(
         &self,
         workspace: &str,
@@ -808,17 +814,26 @@ impl ClaudeAcpEngine {
             .and_then(|o| o["id"].as_str())
             .map(str::to_string);
         if let Some(config_id) = config_id {
-            client
+            let result = client
                 .request(
                     "session/set_config_option",
                     json!({"sessionId":session,"configId":config_id,"value":model}),
                 )
                 .await?;
+            if result["configOptions"].is_array() {
+                self.threads.lock().await.get_mut(id).unwrap().capabilities["configOptions"] = result["configOptions"].clone();
+            }
         } else if self.threads.lock().await[id].metadata["model"] != model {
             return Err(
                 "This ACP agent cannot change models; start a new thread with the selected model"
                     .into(),
             );
+        }
+        let effort_option = super::reasoning::acp(&self.threads.lock().await[id].capabilities);
+        if let Some((config_id, cap)) = effort_option {
+            if let Some(effort) = super::reasoning::clamp(&cap, params["effort"].as_str()) {
+                client.request("session/set_config_option", json!({"sessionId":session,"configId":config_id,"value":effort})).await?;
+            }
         }
         let prompt = prompt_input(
             &params["input"],

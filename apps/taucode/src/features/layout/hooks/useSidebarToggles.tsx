@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-const SIDEBAR_COLLAPSED_KEY = "codexmonitor.sidebarCollapsed";
+import { useSidebarState } from "./useSidebarState";
 const RIGHT_PANEL_COLLAPSED_KEY = "codexmonitor.rightPanelCollapsed";
 
 type UseSidebarTogglesOptions = {
@@ -15,19 +15,10 @@ function readStoredBool(key: string) {
 }
 
 export function useSidebarToggles({ isCompact }: UseSidebarTogglesOptions) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
-    readStoredBool(SIDEBAR_COLLAPSED_KEY),
-  );
+  const { sidebarCollapsed, setSidebarCollapsed } = useSidebarState();
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(() =>
     readStoredBool(RIGHT_PANEL_COLLAPSED_KEY),
   );
-
-  useEffect(() => {
-    window.localStorage.setItem(
-      SIDEBAR_COLLAPSED_KEY,
-      String(sidebarCollapsed),
-    );
-  }, [sidebarCollapsed]);
 
   useEffect(() => {
     window.localStorage.setItem(

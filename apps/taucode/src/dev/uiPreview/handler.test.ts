@@ -27,7 +27,9 @@ describe("UI preview IPC", () => {
     const fixtures = createFixtures();
     expect(fixtures.settings.providers).toHaveLength(2);
     expect(fixtures.workspaces).toHaveLength(2);
-    expect(fixtures.threads).toHaveLength(5);
+    expect(fixtures.threads).toHaveLength(11);
+    expect(fixtures.settings.providers!.flatMap(p => p.models.map(m => m.reasoning?.levels.length ?? null))).toEqual([5, 3, 2, 0, null, 3]);
+    for (const p of fixtures.settings.providers!) for (const m of p.models) expect(fixtures.threads.some(t => t.modelProvider === p.id && t.model === m.id)).toBe(true);
     expect(fixtures.threads.find(t => t.id === "thread-empty")?.turns).toEqual([]);
     expect(fixtures.chats.find(c => c.id === "chat-streaming")?.running).toBe(true);
     const items = buildItemsFromThread(fixtures.threads[0]);

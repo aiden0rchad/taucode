@@ -1,0 +1,12 @@
+.reasoning-control { position: relative; }
+.reasoning-control > button { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.reasoning-popover { width: 340px; padding: 16px; }
+.reasoning-popover label, .reasoning-popover input { display: block; width: 100%; }
+.reasoning-popover button { cursor: pointer; color: var(--text-primary); background: var(--surface-card-muted); border: 1px solid var(--border-subtle); border-radius: var(--radius-chip); padding: 7px 10px; }
+.reasoning-popover input { margin: 14px 0 8px; accent-color: var(--text-primary); }
+.reasoning-stops { display: flex; justify-content: space-between; gap: 3px; margin-bottom: 12px; }
+.reasoning-stops button { font-size: 11px; padding: 4px; }
+.reasoning-stops button[aria-pressed="true"] { font-weight: 700; color: var(--text-strong); }
+.reasoning-popover small, .reasoning-unavailable { color: var(--text-muted); }
+.reasoning-pills { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+.reasoning-pills span { padding: 2px 7px; border: 1px solid var(--border-subtle); border-radius: 8px; font-size: 11px; }

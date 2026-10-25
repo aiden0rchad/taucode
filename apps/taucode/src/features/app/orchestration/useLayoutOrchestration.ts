@@ -33,7 +33,6 @@ export function useAppShellOrchestration({
   selectedDiffPath,
   showComposer,
   activeThreadId,
-  sidebarWidth,
   rightPanelWidth,
   chatDiffSplitPositionPercent,
   planPanelHeight,
@@ -53,7 +52,6 @@ export function useAppShellOrchestration({
 
   const appStyle = useMemo<CSSProperties>(
     () => ({
-      "--sidebar-width": `${isCompact ? sidebarWidth : sidebarCollapsed ? 0 : sidebarWidth}px`,
       "--right-panel-width": `${
         isCompact ? rightPanelWidth : rightPanelCollapsed ? 0 : rightPanelWidth
       }px`,
@@ -98,8 +96,6 @@ export function useAppShellOrchestration({
       planPanelHeight,
       rightPanelCollapsed,
       rightPanelWidth,
-      sidebarCollapsed,
-      sidebarWidth,
       terminalPanelHeight,
     ],
   );

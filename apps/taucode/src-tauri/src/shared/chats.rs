@@ -151,7 +151,7 @@ impl Chats {
                             .and_then(|p| p.models.iter().find(|m| thread["model"] == m.id))
                             .is_some_and(|m| m.supports_images == Some(false)) { return Err("This model does not support images".into()); }
                     }
-                    return self.engine.request(WORKSPACE, "turn/start", json!({"threadId":id,"input":input})).await;
+                    return self.engine.request(WORKSPACE, "turn/start", json!({"threadId":id,"input":input,"effort":params["effort"]})).await;
                 }
                 _ => return Err("Unknown chat action".into()),
             }

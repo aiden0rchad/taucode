@@ -40,6 +40,11 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   const [settingsOpen, setSettingsOpen] = useState(false);
   useThemePreference(settings?.theme ?? "system");
   useEffect(() => {
+    const open = () => setSettingsOpen(true);
+    window.addEventListener("taucode:provider-settings", open);
+    return () => window.removeEventListener("taucode:provider-settings", open);
+  }, []);
+  useEffect(() => {
     let cancelled = false;
     void getAppSettings().then(value => {
       if (cancelled) return;

@@ -1,7 +1,7 @@
 .mode-switcher { display: flex; gap: 3px; padding: 4px; margin: 12px 0; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-card-muted); }
 .mode-switcher button { flex: 1; border: 0; border-radius: 7px; padding: 8px 12px; background: transparent; color: var(--text-subtle); cursor: pointer; }
 .mode-switcher button[aria-pressed="true"] { background: var(--surface-card-strong); color: var(--text-strong); box-shadow: 0 1px 4px #0002; }
-.chat-layout { height: 100dvh; display: grid; grid-template-columns: var(--sidebar-width, 280px) minmax(0, 1fr); color: var(--text-primary); font-family: var(--ui-font-family); --main-panel-padding: 24px; background: var(--surface-messages); }
+.chat-layout { position: relative; height: 100dvh; display: grid; grid-template-columns: var(--sidebar-width, 280px) minmax(0, 1fr); color: var(--text-primary); font-family: var(--ui-font-family); --main-panel-padding: 24px; background: var(--surface-messages); }
 .chat-layout { font-size: var(--ui-font-size); }
 .chat-sidebar { flex-shrink: 0; min-width: 0; overflow-x: hidden; }
 :where(.chat-layout) input, :where(.chat-layout) select, :where(.chat-layout) textarea { font: inherit; color: inherit; }
@@ -43,10 +43,10 @@
 .chat-placeholder { display: grid; place-content: center; text-align: center; }
 .chat-mode-error { position: fixed; z-index: 100; bottom: 0; background: var(--surface-card-strong); padding: 12px; }
 .chat-list-toggle { display: none; }
-@media (max-width: 900px) { .chat-layout { grid-template-columns: 220px minmax(0, 1fr); } .chat-examples { grid-template-columns: 1fr; } .chat-examples button { display: flex; justify-content: space-between; padding: 12px; } .chat-examples span { margin: 0; } }
+@media (max-width: 900px) { .chat-examples { grid-template-columns: 1fr; } .chat-examples button { display: flex; justify-content: space-between; padding: 12px; } .chat-examples span { margin: 0; } }
 @media (max-width: 600px) {
   .chat-work { grid-template-rows: auto 1fr; }
-  .chat-work .chat-sidebar { display: flex; padding-block: 8px; }
+  .chat-work .chat-sidebar { display: flex; }
   .chat-layout { grid-template-columns: minmax(0, 1fr); }
   .chat-sidebar { display: none; }
   .chat-list-open .chat-sidebar { display: flex; }
@@ -83,3 +83,8 @@
 .chat-main .workspace-title { font-weight: 600; }
 .mode-settings-host { position: fixed; inset: 0; z-index: 100; font-family: var(--ui-font-family); }
 @media (hover: none) { .mode-row-menu-trigger { opacity: 1; } }
+
+.chat-layout.sidebar-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
+.chat-layout.sidebar-collapsed .chat-sidebar, .chat-layout.sidebar-collapsed .sidebar-resizer { visibility: hidden; }
+.mode-sidebar-toggle { position: absolute; top: 10px; left: 88px; z-index: 5; }
+@media (max-width: 600px) { .chat-layout .sidebar-resizer { display: none; } }

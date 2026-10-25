@@ -510,6 +510,13 @@ impl WorkspaceSession {
                         return Err("Fork this codex thread to switch providers".into());
                     }
                 }
+                if method == "turn/start" {
+                    if let Some(cap) = p.models.iter().find(|m| m.id == model).and_then(|m| m.reasoning.as_ref()) {
+                        let effort = super::reasoning::clamp(cap, params["effort"].as_str());
+                        params["effort"] = json!(effort.as_deref().map(|v| if v == "off" { "none" } else { v }));
+                        if params["collaborationMode"]["settings"].is_object() { params["collaborationMode"]["settings"]["reasoning_effort"] = params["effort"].clone(); }
+                    }
+                }
                 params["model"] = json!(model);
                 if method != "turn/start" {
                     params["modelProvider"] = json!(provider);

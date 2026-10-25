@@ -1505,6 +1505,18 @@ pub(crate) struct ProviderModel {
     pub context_window: Option<u64>,
     pub supports_tools: Option<bool>,
     pub supports_images: Option<bool>,
+    pub reasoning: Option<ReasoningCapability>,
+    pub detected_reasoning: Option<ReasoningCapability>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReasoningCapability {
+    pub supported: bool,
+    pub levels: Vec<String>,
+    pub default: Option<String>,
+    pub control: String,
+    pub source: String,
+    pub detected_at: u64,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]

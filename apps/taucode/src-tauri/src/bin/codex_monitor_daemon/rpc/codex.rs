@@ -347,7 +347,7 @@ pub(super) async fn try_handle(
                 Ok(value) => value,
                 Err(err) => return Some(Err(err)),
             };
-            Some(state.model_list(workspace_id).await)
+            Some(state.model_list(workspace_id, params.get("threadId").and_then(Value::as_str).map(str::to_owned)).await)
         }
         "experimental_feature_list" => {
             let workspace_id = match parse_string(params, "workspaceId") {
@@ -475,6 +475,7 @@ pub(super) async fn try_handle(
             Some(
                 crate::shared::providers::test_and_fetch(
                     id,
+                    params.get("modelId").and_then(Value::as_str).map(str::to_owned),
                     &state.app_settings,
                     &state.settings_path,
                 )

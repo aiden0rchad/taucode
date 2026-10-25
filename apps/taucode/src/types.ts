@@ -2,7 +2,8 @@ export type EngineKind = "pi" | "codex" | "claude";
 export type ModelRef = { providerId: string; modelId: string };
 export type ProviderKind = "openai" | "anthropic" | "google" | "openrouter" | "groq" | "mistral" | "xai" | "deepseek" | "zai" | "ollama" | "lmstudio" | "openai-compatible";
 export type ProviderAuth = { type: "none" } | { type: "apiKey" } | { type: "env"; var: string } | { type: "command"; command: string; args: string[]; timeoutMs?: number };
-export type ProviderModel = { id: string; displayName?: string | null; enabled: boolean; contextWindow?: number | null; supportsTools?: boolean | null; supportsImages?: boolean | null };
+export type ReasoningCapability = { supported: boolean; levels: string[]; default: string | null; control: "effort" | "thinking-toggle" | "budget" | "adaptive" | "unknown"; source: "api" | "probe" | "heuristic" | "user"; detectedAt: number };
+export type ProviderModel = { id: string; displayName?: string | null; enabled: boolean; contextWindow?: number | null; supportsTools?: boolean | null; supportsImages?: boolean | null; reasoning?: ReasoningCapability | null; detectedReasoning?: ReasoningCapability | null };
 export type ProviderEntry = {
   id: string; name: string; kind: ProviderKind; baseUrl?: string | null;
   anthropicCompatible?: boolean;
@@ -670,6 +671,8 @@ export type QueuedMessage = {
 
 
 export type ModelOption = {
+  reasoning?: ReasoningCapability | null;
+  acpReasoning?: ReasoningCapability | null;
   providerId?: string;
   providerName?: string;
   modelId?: string;

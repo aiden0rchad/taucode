@@ -256,3 +256,5 @@ button.window-caption-control:focus-visible,
   --cm-border-accent: color-mix(in srgb, var(--border-accent) 36%, transparent);
   --cm-border-accent-strong: color-mix(in srgb, var(--border-accent) 46%, transparent);
 }
+
+.app.sidebar-collapsed { grid-template-columns: 0 1fr; }

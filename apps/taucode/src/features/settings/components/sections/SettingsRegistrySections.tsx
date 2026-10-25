@@ -1,3 +1,4 @@
+import { ModelReasoningSettings } from "./ModelReasoningSettings";
 import "./registry.css";
 import { useEffect, useState } from "react";
 import type { AppSettings, ProviderEntry, ProviderKind, ProviderAuth, AgentPolicy, WorkspaceInfo, WorkspaceSettings } from "@/types";
@@ -73,7 +74,16 @@ export function SettingsProvidersSection({ appSettings, onUpdateAppSettings }: P
         await onUpdateAppSettings({ ...appSettings, providers: providers.map(p => p.id === draft.id ? { ...draft, models: result.models, modelsFetchedAt: Math.floor(Date.now() / 1000) } : p) });
         setStatus(result.latencyMs + " ms");
       })}>{busy && <span className="registry-spinner" aria-hidden="true" />}{busy ? "Testing…" : "Test & fetch models"}</button><span role="status">{status}</span>
-      <div>{draft.models.map(m => <label key={m.id}><input type="checkbox" checked={m.enabled} onChange={e => setDraft({ ...draft, models: draft.models.map(v => v.id === m.id ? { ...v, enabled: e.target.checked } : v) })} />{m.displayName || m.id}</label>)}</div>
+      <div>{draft.models.map(m => <div key={m.id}><label><input type="checkbox" checked={m.enabled} onChange={e => setDraft({ ...draft, models: draft.models.map(v => v.id === m.id ? { ...v, enabled: e.target.checked } : v) })} />{m.displayName || m.id}</label>
+        <ModelReasoningSettings model={m} disabled={busy} onChange={model => setDraft({ ...draft, models: draft.models.map(v => v.id === m.id ? model : v) })} onDetect={() => void run(async () => {
+          await save(draft);
+          const result = await providerTestAndFetch(draft.id, m.id);
+          if (!result.ok) throw new Error(result.error);
+          const next = { ...draft, models: result.models };
+          setDraft(next);
+          await onUpdateAppSettings({ ...appSettings, providers: providers.some(p => p.id === draft.id) ? providers.map(p => p.id === draft.id ? next : p) : [...providers, next] });
+        })} />
+      </div>)}</div>
       <label>Model ID<input value={manual} onChange={e => setManual(e.target.value)} /></label>
       <button type="button" disabled={!manual.trim()} onClick={() => { if (!draft.models.some(m => m.id === manual.trim())) setDraft({ ...draft, models: [...draft.models, { id: manual.trim(), enabled: true }] }); setManual(""); }}>Add model ID manually</button>
     </form>}
