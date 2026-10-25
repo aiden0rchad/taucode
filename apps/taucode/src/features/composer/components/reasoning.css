@@ -43,10 +43,14 @@
   --flow-b: color-mix(in srgb, var(--reasoning-color), white 25%);
   --flow-c: color-mix(in srgb, var(--reasoning-color), #453c72 15%);
   background: linear-gradient(90deg, var(--flow-a) 0%, var(--flow-b) calc(100% / 6), var(--flow-c) calc(100% / 3), var(--flow-a) 50%, var(--flow-b) calc(200% / 3), var(--flow-c) calc(500% / 6), var(--flow-a) 100%);
-  animation: reasoning-flow var(--reasoning-flow-duration) linear infinite;
+  animation: reasoning-flow 7s linear infinite;
 }
 .reasoning-popover.burning .reasoning-heading .reasoning-flame { animation: reasoning-flame 1.7s ease-in-out infinite; }
-.reasoning-particle { position: absolute; border-radius: 50%; color: var(--reasoning-particle-color); background: currentColor; box-shadow: 0 0 3px currentColor; opacity: var(--particle-opacity); animation: reasoning-drift 4s linear infinite; }
+.reasoning-particle { position: absolute; border-radius: 50%; color: var(--reasoning-particle-color); background: currentColor; box-shadow: 0 0 3px currentColor; opacity: var(--particle-opacity); animation: reasoning-drift 5.5s linear infinite; }
+.reasoning-particle:nth-child(5n + 2) { animation-duration: 5.25s; }
+.reasoning-particle:nth-child(5n + 3) { animation-duration: 5s; }
+.reasoning-particle:nth-child(5n + 4) { animation-duration: 4.75s; }
+.reasoning-particle:nth-child(5n) { animation-duration: 4.5s; }
 .reasoning-ember { position: absolute; left: 12px; top: 0; width: var(--ember-size, 5px); height: var(--ember-size, 5px); border-radius: 50%; color: #ffbd64; background: currentColor; box-shadow: 0 0 6px currentColor; opacity: 0; animation: reasoning-ember 1.8s ease-out infinite; --ember-drift: -9px; --ember-rise: -30px; }
 .reasoning-ember:nth-child(2) { --ember-size: 4px; --ember-drift: 7px; --ember-rise: -24px; color: #ffaa53; animation-duration: 1.3s; animation-delay: -0.22s; }
 .reasoning-ember:nth-child(3) { --ember-size: 3px; --ember-drift: -3px; --ember-rise: -27px; color: #ff9342; animation-duration: 1.6s; animation-delay: -0.51s; }

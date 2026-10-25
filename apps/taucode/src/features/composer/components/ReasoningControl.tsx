@@ -4,6 +4,7 @@ import type { ReasoningCapability } from "@/types";
 import { useMenuController } from "@app/hooks/useMenuController";
 import { AnchoredPopover } from "@/features/design-system/components/popover/AnchoredPopover";
 import { clampReasoning, reasoningLabel } from "@/features/models/reasoning";
+import { useReasoningAnimationSpeed } from "./useReasoningAnimationSpeed";
 import "./reasoning.css";
 
 export type ReasoningControlProps = {
@@ -26,8 +27,6 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
     else setDrag(null);
   }, [menu.isOpen]);
   const level = clampReasoning(capability, value);
-  if (unavailable) return <span className="reasoning-unavailable" title={unavailable} aria-label={unavailable}><BrainCog size={14} aria-hidden /></span>;
-  if (capability?.supported === false) return null;
   const adjusted = !!value && !!level && value !== level;
   const unknown = !capability || !level;
   const levels = capability?.levels ?? [];
@@ -39,11 +38,13 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
   const chipLabel = level ? reasoningLabel(level) : "?";
   const labels = levels.length ? levels.map(reasoningLabel) : ["?"];
   const heat = last > 0 ? position / last : 1;
+  useReasoningAnimationSpeed(popover, menu.isOpen && !!level && !unavailable, heat);
+  if (unavailable) return <span className="reasoning-unavailable" title={unavailable} aria-label={unavailable}><BrainCog size={14} aria-hidden /></span>;
+  if (capability?.supported === false) return null;
   const burning = !unknown && position === last;
   const warm = !unknown && !burning && Math.round(position) === last - 1;
   const sliderStyle = {
     "--reasoning-position": `${last > 0 ? heat * 100 : 0}%`,
-    "--reasoning-flow-duration": `${6 - heat * 3}s`,
     "--reasoning-particle-color": `color-mix(in srgb, white, #ffbd64 ${heat * 15}%)`,
     "--reasoning-color": heat < 0.5 ? `color-mix(in srgb, #8998ef, #e9ac38 ${heat * 200}%)` : `color-mix(in srgb, #e9ac38, #f06436 ${(heat - 0.5) * 200}%)`,
   } as CSSProperties;
@@ -76,7 +77,7 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
         </div>
         <div className="reasoning-slider">
           <div className="reasoning-rail" aria-hidden="true">
-            <span className="reasoning-fill">{Array.from({ length: 10 }, (_, dot) => <span className="reasoning-particle" key={dot} style={{ left: `${dot * 8}%`, top: `${20 + (dot % 3) * 25}%`, width: `${2 + dot % 2}px`, height: `${2 + dot % 2}px`, "--particle-drift": `${24 + (dot % 3) * 10}px`, "--particle-opacity": 0.35 + (dot % 3) * 0.125, animationDuration: `${5 - (dot % 5) * 0.4 - heat * 0.9}s`, animationDelay: `${dot * -0.43}s` } as CSSProperties} />)}</span>
+            <span className="reasoning-fill">{Array.from({ length: 10 }, (_, dot) => <span className="reasoning-particle" key={dot} style={{ left: `${dot * 8}%`, top: `${20 + (dot % 3) * 25}%`, width: `${2 + dot % 2}px`, height: `${2 + dot % 2}px`, "--particle-drift": `${24 + (dot % 3) * 10}px`, "--particle-opacity": 0.35 + (dot % 3) * 0.125, animationDelay: `${dot * -0.43}s` } as CSSProperties} />)}</span>
             {levels.map((stop, stopIndex) => <span className="reasoning-tick" key={stop} style={{ left: `${last > 0 ? stopIndex / last * 100 : 0}%` }} />)}
             <span className="reasoning-thumb">{burning && Array.from({ length: 6 }, (_, ember) => <span className="reasoning-ember" key={ember} />)}</span>
           </div>

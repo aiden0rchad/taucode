@@ -153,10 +153,9 @@ it.each([["low", "high", "max"], ["off", "high"], ["low", "medium", "high", "xhi
   expect(dialog.classList.contains("burning")).toBe(true);
   expect(dialog.querySelectorAll(".reasoning-ember")).toHaveLength(6);
   expect(dialog.querySelectorAll(".reasoning-particle")).toHaveLength(10);
-  expect(dialog.style.getPropertyValue("--reasoning-flow-duration")).toBe("3s");
+  expect(dialog.style.getPropertyValue("--reasoning-flow-duration")).toBe("");
   for (const particle of dialog.querySelectorAll<HTMLElement>(".reasoning-particle")) {
-    expect(parseFloat(particle.style.animationDuration)).toBeGreaterThanOrEqual(2.5);
-    expect(parseFloat(particle.style.animationDuration)).toBeLessThanOrEqual(5);
+    expect(particle.style.animationDuration).toBe("");
   }
   expect(dialog.style.getPropertyValue("--reasoning-position")).toBe("100%");
   expect(dialog.querySelector(".reasoning-heading .lucide-flame")).toBeTruthy();
@@ -167,7 +166,8 @@ it.each([["low", "high", "max"], ["off", "high"], ["low", "medium", "high", "xhi
   expect(chip.querySelector(".lucide-flame")).toBeNull();
   rerender(<ReasoningControl capability={capability} value={levels[0]} onChange={vi.fn()} />);
   expect(dialog.style.getPropertyValue("--reasoning-position")).toBe("0%");
-  expect(dialog.style.getPropertyValue("--reasoning-flow-duration")).toBe("6s");
+  expect(dialog.style.getPropertyValue("--reasoning-flow-duration")).toBe("");
+  for (const particle of dialog.querySelectorAll<HTMLElement>(".reasoning-particle")) expect(particle.style.animationDuration).toBe("");
   expect(dialog.style.getPropertyValue("--reasoning-color")).toContain("#e9ac38 0%");
   rerender(<ReasoningControl capability={capability} value={levels[levels.length - 1]} onChange={vi.fn()} />);
   fireEvent.click(chip);

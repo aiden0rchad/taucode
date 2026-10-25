@@ -43,6 +43,7 @@ it("flows two identical gradient tiles using only translation, with matching end
   const layer = css.nodes.find(node => node.selector === ".reasoning-fill::before");
   const values = Object.fromEntries(layer.nodes.map(node => [node.prop, node.value]));
   expect(values.width).toBe("200%");
+  expect(values.animation).toBe("reasoning-flow 7s linear infinite");
   const stops = postcss.list.comma(values.background.slice("linear-gradient(".length, -1)).slice(1);
   const colors = stops.map(stop => stop.match(/^var\([^)]+\)/)[0]);
   expect(colors[0]).toBe(colors[colors.length - 1]);
@@ -50,4 +51,13 @@ it("flows two identical gradient tiles using only translation, with matching end
   expect(stops).toEqual(["var(--flow-a) 0%", "var(--flow-b) calc(100% / 6)", "var(--flow-c) calc(100% / 3)", "var(--flow-a) 50%", "var(--flow-b) calc(200% / 3)", "var(--flow-c) calc(500% / 6)", "var(--flow-a) 100%"]);
   const drift = css.nodes.find(node => node.type === "atrule" && node.params === "reasoning-drift");
   drift.walkDecls(declaration => expect(["transform", "opacity"]).toContain(declaration.prop));
+});
+
+it("keeps particle base durations fixed in CSS between 4.5 and 5.5 seconds", () => {
+  const css = postcss.parse(readFileSync("src/features/composer/components/reasoning.css", "utf8"));
+  const particle = css.nodes.find(node => node.selector === ".reasoning-particle");
+  expect(particle.nodes.find(node => node.prop === "animation").value).toBe("reasoning-drift 5.5s linear infinite");
+  const durations = [];
+  css.walkRules(/^\.reasoning-particle:nth-child/, rule => rule.walkDecls("animation-duration", declaration => durations.push(declaration.value)));
+  expect(durations).toEqual(["5.25s", "5s", "4.75s", "4.5s"]);
 });
