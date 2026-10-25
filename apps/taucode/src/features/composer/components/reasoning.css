@@ -1,7 +1,8 @@
+.reasoning-control, .reasoning-popover { --reasoning-ink: color-mix(in srgb, var(--reasoning-color) 45%, var(--text-primary)); }
 .reasoning-control { position: relative; --reasoning-color: #8998ef; }
 .reasoning-control > button { display: flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap; }
 .reasoning-chip { flex-shrink: 0; }
-.reasoning-chip-label { display: grid; text-align: center; color: var(--reasoning-color); }
+.reasoning-chip-label { display: grid; text-align: center; color: var(--reasoning-ink); }
 .reasoning-chip-label.unknown { color: var(--text-muted); }
 .reasoning-chip-model { max-width: 190px; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
 .reasoning-chip > svg { flex-shrink: 0; }
@@ -35,9 +36,9 @@
 .reasoning-popover button { cursor: pointer; color: var(--text-primary); background: transparent; border: 0; border-radius: var(--radius-chip); padding: 7px 10px; }
 .reasoning-popover button:focus-visible { outline: 2px solid var(--reasoning-color); outline-offset: 2px; }
 .reasoning-heading { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; align-items: center; height: 40px; gap: 8px; }
-.reasoning-heading-icon { display: grid; place-items: center; color: var(--reasoning-color); opacity: 0.85; }
+.reasoning-heading-icon { display: grid; place-items: center; color: var(--reasoning-ink); opacity: 0.85; }
 .reasoning-heading-center { display: flex; flex-direction: column; align-items: center; min-width: 0; }
-.reasoning-level { width: 100px; text-align: center; font-size: 15px; font-weight: 600; line-height: 22px; color: var(--reasoning-color); }
+.reasoning-level { width: 100px; text-align: center; font-size: 15px; font-weight: 600; line-height: 22px; color: var(--reasoning-ink); }
 .reasoning-popover .reasoning-model { display: flex; align-items: center; justify-content: center; gap: 4px; max-width: 100%; padding: 0; color: var(--text-muted); font-size: 12px; line-height: 18px; }
 .reasoning-model > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reasoning-model svg { flex-shrink: 0; }

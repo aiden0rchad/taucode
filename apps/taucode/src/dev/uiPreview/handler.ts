@@ -1,5 +1,6 @@
 import { builtinIds, parseTheme, type ThemeFile, type ThemeManifest } from "@/features/themes/validate";
 import customTheme from "@/features/themes/fixtures/valid-custom.json";
+import { defaultFeatures, type Features } from '@settings/features';
 import type { BrowserState } from "@/features/browser/browser";
 import type { AppSettings, ImportLog, WorkTask, WorkspaceInfo } from "@/types";
 import { assistantMessage, createFixtures, diff, makeThread, userMessage, type PreviewThread } from "./fixtures";
@@ -13,6 +14,11 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const query = new URLSearchParams(search);
   const mode = query.get("mode");
   if (query.get("dictation") === "ready") { state.settings.dictationEnabled = true; state.settings.features = { ...state.settings.features, dictation: true }; }
+  for (const entry of (query.get('features') ?? '').split(',')) {
+    // URLSearchParams decodes a literal '+' as a space; accept it and %2B.
+    const match = /^([-+ ])([a-zA-Z]+)$/.exec(entry);
+    if (match && Object.prototype.hasOwnProperty.call(defaultFeatures, match[2])) state.settings.features = { ...state.settings.features, [match[2] as keyof Features]: match[1] !== '-' };
+  }
   state.settings.windowModes = { main: query.has("settings") ? "code" : mode === "chat" || mode === "work" ? mode : "code" };
   const theme = query.get("theme");
   if (theme && (builtinIds.includes(theme) || theme === "system" || theme === customTheme.id)) state.settings.theme = theme;

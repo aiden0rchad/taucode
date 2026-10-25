@@ -22,7 +22,7 @@
 .theme-mini { position: relative; display: flex; height: 116px; border-radius: 8px; overflow: hidden; background: var(--surface-app); color: var(--text-primary); font-size: 11px; border: 1px solid var(--border-subtle); }
 .theme-mini-sidebar { width: 27%; background: var(--surface-sidebar); padding: 16px 7px; display: grid; align-content: start; gap: 10px; }
 .theme-mini-project { height: 7px; width: 70%; background: var(--text-muted); opacity: .4; border-radius: 3px; }
-.theme-mini-selected { height: 15px; background: var(--surface-active); border-left: 2px solid var(--border-accent); border-radius: 3px; }
+.theme-mini-selected { height: 15px; background: var(--surface-active); border-radius: 3px; }
 .theme-mini-tree { display: block; margin-left: 4px; border-left: 1px solid var(--tree-line); border-bottom: 1px solid var(--tree-line); height: 22px; width: 65%; }
 .theme-mini-content { padding: 14px 10px; display: grid; grid-template-columns: 1fr auto; align-content: start; align-items: end; gap: 10px; flex: 1; min-width: 0; }
 .theme-mini-message { grid-column: 1 / -1; border-radius: 6px; background: var(--surface-card); border: 1px solid var(--border-subtle); padding: 7px; }
@@ -129,7 +129,8 @@
 :root[data-theme-id="matrix"] :is(h1,h2,h3,.thread-row.active) { text-shadow: 0 0 8px var(--text-accent); }
 :root[data-theme-id^="claude-"] .composer-action.is-send { background: var(--surface-text-accent); }
 :root[data-theme-id^="claude-"] .composer-action.is-send:hover { background: #d97757; }
-:root[data-theme-id^="claude-"] :is(.thread-row.active, .mode-switcher button[aria-pressed="true"]) { background: color-mix(in srgb, var(--surface-text-accent) 18%, var(--surface-sidebar-opaque)); border-color: var(--border-accent); }
+:root[data-theme-id^="claude-"] .sidebar .thread-row.active { --thread-selected-background: color-mix(in srgb, var(--surface-text-accent) 18%, var(--surface-sidebar-opaque)); }
+:root[data-theme-id^="claude-"] .mode-switcher button[aria-pressed="true"] { background: color-mix(in srgb, var(--surface-text-accent) 18%, var(--surface-sidebar-opaque)); border-color: var(--border-accent); }
 :root[data-translucent="true"] .workspace-titlebar :is(span, button, a) { color: var(--text-strong); }
 .chat-empty, .messages-empty { position: relative; isolation: isolate; }
 .digital-rain { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .12; pointer-events: none; z-index: var(--z-behind); }
@@ -144,14 +145,14 @@
 :root[data-translucent="true"] .sidebar .project-group-card {
   --squircle-background: color-mix(in srgb, var(--surface-card) 35%, transparent);
 }
-:root[data-translucent="true"] .sidebar .thread-row.active { background: color-mix(in srgb, var(--surface-card-strong) 35%, transparent); }
+:root[data-translucent="true"] .sidebar .thread-row.active { --thread-selected-background: color-mix(in srgb, var(--surface-card-strong) 35%, transparent); }
 :is(.theme-mini, .theme-app-preview)[data-glass="true"] :is(.theme-mini-sidebar, .theme-preview-sidebar) {
   background: linear-gradient(var(--surface-sidebar), var(--surface-sidebar)), repeating-linear-gradient(135deg, var(--surface-sidebar-opaque) 0 8px, var(--surface-card-strong) 8px 16px);
 }
 :root[data-neon-palette="true"] :is(.primary, .composer-action.is-send) { background: var(--border-accent); color: var(--surface-app); }
 :root[data-neon-palette="true"] :focus-visible { outline-color: var(--text-accent); }
 :root[data-neon-palette="true"] .composer-shell:focus-within { --squircle-border: var(--text-accent); }
-:root[data-neon-palette="true"] .sidebar .thread-row.active { box-shadow: inset 2px 0 var(--border-accent); }
+:root[data-neon-palette="true"] .sidebar .thread-row.active { --thread-selected-background: linear-gradient(90deg, color-mix(in srgb, var(--border-accent) 18%, transparent), transparent); }
 :root[data-neon-palette="true"] :is(.markdown, .chat-message-body) :not(pre) > code { color: var(--text-accent); }
 :root[data-neon-palette="true"] :is(.markdown-codeblock, .theme-preview-conversation pre) { background: var(--surface-command); }
 :root[data-neon-palette="true"] .token.keyword { color: var(--border-accent); }
@@ -169,7 +170,7 @@
   box-shadow: 0 0 0 1px var(--text-accent), 0 0 14px color-mix(in srgb, var(--text-accent) 45%, transparent);
 }
 :root[data-neon-glow="true"] .sidebar .thread-row.active {
-  box-shadow: inset 2px 0 var(--border-accent), 0 0 8px color-mix(in srgb, var(--border-accent) 20%, transparent);
+  box-shadow: none;
 }
 :root[data-neon-glow="true"] :is(.message.assistant .markdown, .chat-message.assistant .chat-message-body) :is(h1, h2, h3, h4, h5, h6) {
   text-shadow: 0 0 10px color-mix(in srgb, var(--border-accent) 35%, transparent);

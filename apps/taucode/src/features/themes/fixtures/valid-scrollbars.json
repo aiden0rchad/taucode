@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "custom-scrollbars",
+  "name": "Custom scrollbars",
+  "appearance": "dark",
+  "tokens": {
+    "--scrollbar-thumb": "rgba(128,200,255,0.3)",
+    "--scrollbar-thumb-hover": "color-mix(in srgb, var(--text-primary) 32%, rgba(0,0,0,0))"
+  }
+}

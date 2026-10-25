@@ -6,10 +6,29 @@ import { useReasoningSelection, threadEffortKey } from "@/features/models/reason
 import { ModelReasoningSettings } from "@settings/components/sections/ModelReasoningSettings";
 import type { ReasoningCapability } from "@/types";
 import { useState } from "react";
+import { FeatureSettings } from '@settings/features';
+import { createPreviewHandler } from '@/dev/uiPreview/handler';
+import { builtins, resolveTheme } from '@/features/themes/builtins';
 
 const cap: ReasoningCapability = { supported: true, levels: ["low", "high", "max"], default: "low", control: "effort", source: "api", detectedAt: 1 };
 beforeEach(() => localStorage.clear());
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); document.documentElement.removeAttribute("style"); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+it.each(builtins)('keeps Max heat, particles and embers with default preview features in $name', theme => {
+  const settings = createPreviewHandler().state.settings;
+  for (const [key,value] of Object.entries(resolveTheme(theme).tokens)) document.documentElement.style.setProperty(key,value);
+  render(<FeatureSettings.Provider value={settings}><ReasoningControl capability={cap} value="max" onChange={() => {}} /></FeatureSettings.Provider>);
+  fireEvent.click(screen.getByRole('button',{name:'Model · Max'}));
+  const dialog = screen.getByRole('dialog');
+  expect(dialog.classList.contains('effects-off')).toBe(false);
+  expect(dialog.querySelectorAll('.reasoning-particle')).toHaveLength(10);
+  expect(dialog.querySelectorAll('.reasoning-ember')).toHaveLength(6);
+  expect(dialog.style.getPropertyValue('--reasoning-color')).toContain('#f06436');
+});
+it('previews the reasoning off state through its URL switch', () => {
+  render(<FeatureSettings.Provider value={createPreviewHandler(undefined,'?features=-reasoningEffects').state.settings}><ReasoningControl capability={cap} value="max" onChange={() => {}} /></FeatureSettings.Provider>);
+  fireEvent.click(screen.getByRole('button',{name:'Model · Max'}));
+  expect(screen.getByRole('dialog').querySelector('.reasoning-particle, .reasoning-ember')).toBeNull();
+});
 it("keeps the anchor and chip sizing stable across level changes until resize or scroll", () => {
   const capability = { ...cap, levels: ["low", "medium", "high", "xhigh", "max"] };
   let left = 360;

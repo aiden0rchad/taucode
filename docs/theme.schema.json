@@ -63,6 +63,14 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "--scrollbar-thumb": {
+          "$ref": "#/$defs/color",
+          "description": "scrollbar thumb"
+        },
+        "--scrollbar-thumb-hover": {
+          "$ref": "#/$defs/color",
+          "description": "scrollbar thumb hover"
+        },
         "--surface-app": {
           "$ref": "#/$defs/color",
           "description": "surface app"

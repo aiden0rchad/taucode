@@ -74,11 +74,25 @@ Export a card as a file or Copy JSON. Recipients use Import or Paste theme. ID c
 
 ## Token reference
 
+Scrollbars use `--scrollbar-thumb` and `--scrollbar-thumb-hover` (the **Scrollbars**
+group in the editor). Defaults mix the foreground at 18% and 32% opacity. Glass uses
+white, Matrix green, and Neon blends its magenta and cyan tokens into a thumb gradient.
+Thumbs appear on hover or for 900ms after scrolling; tracks stay transparent.
+WebKit uses 8px thumbs with a 2px inset; other engines use thin colored scrollbars.
+Where native overlay scrollbars are unavailable, the transparent gutter stays fixed
+so showing a thumb cannot move content.
+
+Sidebar guides follow glyph bounds with 8px elbows, a 4px glyph gap and a 3px parent
+gap. The active ancestor path uses `--tree-line-active`; only Neon adds a glow.
+Glass Light retains dark tree colors for contrast against its light material.
+
 Generated from the Dark theme's themeable color and radius properties. Layout dimensions and typography metrics are deliberately excluded. Run `npm run themes:docs` from `apps/taucode` after changing the allowlist source. The same command generates the Dark, Light and Dim palettes from their CSS and updates the schema's token properties. Tests reject stale generated palettes, allowlists and documentation.
 
 <!-- tokens:start -->
 | Token | Group | Label |
 | --- | --- | --- |
+| `--scrollbar-thumb` | Scrollbars | scrollbar thumb |
+| `--scrollbar-thumb-hover` | Scrollbars | scrollbar thumb hover |
 | `--surface-app` | Surfaces | surface app |
 | `--text-primary` | Text | text primary |
 | `--text-strong` | Text | text strong |

@@ -1,3 +1,4 @@
+import { useSidebarScrollFade } from '@app/hooks/useSidebarScrollFade';
 import { DigitalRain } from "@/features/themes/DigitalRain";
 import { useFeatures } from "@settings/features";
 import { Squircle } from "@/features/design-system/components/squircle/Squircle";
@@ -55,6 +56,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [collapsedSpaces, setCollapsedSpaces] = useState<string[]>([]);
+  const { sidebarBodyRef, scrollFade, updateScrollFade } = useSidebarScrollFade([work.state, search, collapsedSpaces]);
   const [dragOver, setDragOver] = useState(false);
   const [brief, setBrief] = useState("");
   const [spaceId, setSpaceId] = useState("");
@@ -125,7 +127,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       {!searchOpen && <NewConversationRow label="New task" disabled={busy} shortcut={settings.newAgentShortcut} handleShortcut onSearch={() => setSearchOpen(true)} onNew={() => { work.setActive(null); if (window.innerWidth < 760) setSidebarCollapsed(true); }} />}
       {searchOpen && <label className="sidebar-search is-open"><Search aria-hidden /><input autoFocus onKeyDown={e => { if (e.key === "Escape") { setSearch(""); setSearchOpen(false); } }} ref={searchInput} type="search" aria-label="Search tasks" placeholder="Search tasks" value={search} onChange={e => setSearch(e.target.value)} /><button type="button" className="ghost icon-button" aria-label="Close search" onClick={() => { setSearch(""); setSearchOpen(false); }}><X aria-hidden /></button></label>}
       <div className="sidebar-section-header"><span className="sidebar-section-title">Spaces</span><div className="mode-section-actions"><button className="ghost sidebar-title-add" aria-label="Add space…" title="Add space…" disabled={busy} onClick={() => { void run(async () => { const path = await pickWorkspacePath(); if (path) { setFolder(path); setReadOnlyFolders([]); work.setActive(null); if (window.innerWidth < 760) setSidebarCollapsed(true); } }); }}><Plus size={14} aria-hidden /></button><WorkConcurrency value={work.state.concurrency} disabled={busy} onChange={count => { void run(() => work.mutate("concurrency", { count })); }} /></div></div>
-      <div className="chat-list">
+      <div ref={sidebarBodyRef} onScroll={updateScrollFade} className={`chat-list sidebar-body${scrollFade.top ? " fade-top" : ""}${scrollFade.bottom ? " fade-bottom" : ""}`}>
         <section aria-label="Needs input inbox" className="work-inbox"><h2 className="sidebar-section-header"><span className="sidebar-section-title">Needs input · {needs.length}</span></h2>{needs.filter(t => t.title.toLowerCase().includes(search.toLowerCase())).map(taskButton)}{!needs.length && <p className="chat-muted">You’re all caught up.</p>}</section>
         {work.state.spaces.map(space => <Squircle as="section" className={`work-space project-group-card${(task?.spaceId ?? selectedSpace) === space.id ? " is-selected" : ""}`} key={space.id} aria-label={space.name}>
           <h2 className="workspace-row" data-depth={0} title={space.path}><button className="ghost sidebar-section-title work-space-toggle" aria-expanded={!collapsedSpaces.includes(space.id)} onClick={() => setCollapsedSpaces(current => current.includes(space.id) ? current.filter(id => id !== space.id) : [...current, space.id])}>{collapsedSpaces.includes(space.id) ? <Folder aria-hidden /> : <FolderOpen aria-hidden />}<span className="workspace-name">{space.name}</span><ChevronDown className="work-space-chevron" aria-hidden /></button><span className="workspace-count">{work.state.tasks.filter(t => t.spaceId === space.id).length}</span><button type="button" className="ghost sidebar-title-add" aria-label={`New task in ${space.name}`} title={`New task in ${space.name}`} disabled={busy || space.readOnly} onClick={() => { setSpaceId(space.id); work.setActive(null); if (window.innerWidth < 760) setSidebarCollapsed(true); }}><Plus aria-hidden /></button></h2>

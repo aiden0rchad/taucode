@@ -1,0 +1,28 @@
+/* Global paint also covers nested lists, textareas and popovers mounted in portals. */
+* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+*:hover, *.is-scrolling { scrollbar-color: var(--scrollbar-thumb) transparent; }
+@supports selector(::-webkit-scrollbar) {
+  *, *:hover, *.is-scrolling { scrollbar-width: auto; scrollbar-color: auto; }
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  background-clip: padding-box;
+  transition: background-color 180ms ease;
+}
+*:hover::-webkit-scrollbar-thumb, *.is-scrolling::-webkit-scrollbar-thumb { background-color: var(--scrollbar-thumb); }
+*::-webkit-scrollbar-thumb:hover { background-color: var(--scrollbar-thumb-hover); }
+:root[data-neon-palette="true"] :is(:hover, .is-scrolling)::-webkit-scrollbar-thumb {
+  background-image: linear-gradient(var(--scrollbar-thumb), var(--scrollbar-thumb-hover));
+  background-color: transparent;
+}
+/* Overlay where the engine supports it; otherwise keep the same 8px gutter even
+   with a transparent thumb, so hover/scroll never changes content width. */
+:is(.sidebar-body, .messages, .chat-scroll, .side-chat-messages, .side-panel-content,
+    .settings-content, .settings-nav-list, .theme-editor-controls, .theme-editor-preview,
+    .ds-popover, .settings-select-options, .composer-model-options, .chat-list) { overflow-y: overlay; }
+:is(.side-panel-content, .settings-select-options, .composer-model-options, .chat-list) { padding-inline-end: 8px; }
+.sidebar .sidebar-body { margin-inline: -6px; padding-inline: 6px; }

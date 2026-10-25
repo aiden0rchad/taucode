@@ -4,6 +4,30 @@ import { builtins, resolveTheme, selectTheme } from './builtins';
 import { validateTheme } from './validate';
 import { rgba, composite, contrast } from './contrast';
 import { themeTokens } from './tokens';
+it('resolves themeable scrollbar colors for every palette', () => {
+  for (const builtin of builtins) {
+    const theme = resolveTheme(builtin);
+    for (const token of ['--scrollbar-thumb','--scrollbar-thumb-hover']) {
+      expect(themeTokens[token].group).toBe('Scrollbars');
+      expect(theme.tokens[token]).toBeTruthy();
+    }
+    if (builtin.id.startsWith('glass-')) expect(theme.tokens['--scrollbar-thumb']).toBe('rgba(255,255,255,0.22)');
+    else if (builtin.id === 'cyberpunk-neon') expect(theme.tokens['--scrollbar-thumb-hover']).toBe('rgba(0,229,255,0.5)');
+    else if (builtin.id === 'matrix') expect(theme.tokens['--scrollbar-thumb']).toBe('rgba(0,255,65,0.22)');
+    else expect(theme.tokens['--scrollbar-thumb']).toContain('var(--text-primary) 18%');
+  }
+});
+it('keeps heat labels readable across all themes without changing slider heat colors', () => {
+  const css = readFileSync('src/features/composer/components/reasoning.css','utf8');
+  expect(css).toContain('--reasoning-ink: color-mix(in srgb, var(--reasoning-color) 45%, var(--text-primary))');
+  for (const theme of builtins.map(resolveTheme)) {
+    for (const heat of ['#8998ef','#e9ac38','#f06436']) {
+      const foreground = rgba(theme.tokens['--text-primary']);
+      const ink = rgba(heat).slice(0,3).map((v,i) => v*.45+foreground[i]*.55).concat(1);
+      for (const surface of ['--surface-popover','--surface-composer']) expect(contrast(ink,rgba(theme.tokens[surface])),theme.id+heat+surface).toBeGreaterThanOrEqual(4.5);
+    }
+  }
+});
 import { cardStyle } from './cardStyle';
 it('limits new border styling to Glass and Neon and resets inherited CSS keys', () => {
   for (const theme of builtins) {

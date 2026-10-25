@@ -1,5 +1,7 @@
 {
   "dark": {
+    "--scrollbar-thumb": "color-mix(in srgb, var(--text-primary) 18%, rgba(0,0,0,0))",
+    "--scrollbar-thumb-hover": "color-mix(in srgb, var(--text-primary) 32%, rgba(0,0,0,0))",
     "--surface-app": "#141416",
     "--text-primary": "#e6e7ea",
     "--text-strong": "#ffffff",

@@ -7,6 +7,9 @@ const serif = 'ui-serif, "New York", "Iowan Old Style", "Georgia", serif';
 export const builtins: ThemeManifest[] = [
   base('dark', 'dark', palettes.dark), base('light', 'light', palettes.light), base('dim', 'dark', palettes.dim, { extends: 'dark' }),
   ...(['dark','light'] as const).map(appearance => base(`glass-${appearance}`, appearance, {
+    '--scrollbar-thumb': 'rgba(255,255,255,0.22)', '--scrollbar-thumb-hover': 'rgba(255,255,255,0.32)',
+    '--tree-line': appearance === 'dark' ? 'rgba(255,255,255,0.18)' : '#9398a3',
+    '--tree-line-active': appearance === 'dark' ? 'rgba(255,255,255,0.55)' : '#566178',
     '--surface-sidebar': appearance === 'dark' ? 'rgba(24, 24, 28, 0.45)' : 'rgba(246, 246, 248, 0.5)',
     '--surface-topbar': appearance === 'dark' ? 'rgba(24, 24, 28, 0.45)' : 'rgba(246, 246, 248, 0.5)',
     '--surface-app': appearance === 'dark' ? 'rgba(24, 24, 28, 0.72)' : 'rgba(246, 246, 248, 0.72)',
@@ -15,19 +18,21 @@ export const builtins: ThemeManifest[] = [
     '--text-subtle': appearance === 'dark' ? '#c4c6ce' : '#555863',
   }, { extends: appearance, window: { translucent: true, material: 'underWindow' }, shape: { corners: 'squircle' }, border: { gradient: appearance === 'dark' ? ['rgba(255,255,255,0.30)', 'rgba(255,255,255,0.06)', 'rgba(255,255,255,0.14)'] : ['rgba(255,255,255,0.95)', 'rgba(0,0,0,0.06)', 'rgba(255,255,255,0.7)'], angle: 160, highlight: true } })),
   base('cyberpunk-neon', 'dark', {
+    '--scrollbar-thumb': 'rgba(255,43,214,0.5)', '--scrollbar-thumb-hover': 'rgba(0,229,255,0.5)',
     '--surface-app': '#0b0714', '--surface-messages': '#0b0714',
     '--surface-sidebar': '#0e0a1c', '--surface-sidebar-opaque': '#0e0a1c', '--surface-topbar': '#0e0a1c',
     ...Object.fromEntries(['card','card-muted','composer','popover','right-panel','bubble-user','control','item'].map(k => [`--surface-${k}`, '#160f2b'])),
     '--surface-card-strong': '#1e1538', '--surface-hover': '#24183f', '--surface-control-hover': '#24183f', '--surface-active': '#2d1450',
     '--text-primary': '#ece8ff', '--text-strong': '#ffffff', '--text-stronger': '#ffffff', '--text-muted': '#a89fd0', '--text-subtle': '#a89fd0',
     '--border-accent': '#ff2bd6', '--surface-text-accent': '#ff2bd6', '--tree-line-active': '#ff2bd6',
-    '--text-accent': '#00e5ff', '--message-link-color': '#00e5ff', '--tree-line': 'rgba(0, 229, 255, 0.45)',
+    '--text-accent': '#00e5ff', '--message-link-color': '#00e5ff', '--tree-line': 'color-mix(in srgb, #a855f7 45%, var(--surface-sidebar))',
     '--status-warning': '#fcee0a', '--status-success': '#3dffa2', '--status-error': '#ff3b6b',
     '--surface-status-warning': '#fcee0a', '--surface-status-success': '#3dffa2', '--surface-status-error': '#ff3b6b',
     '--border-subtle': '#2b2150', '--border-muted': '#2b2150', '--border-strong': '#3d2f6e',
     '--surface-command': '#0f0a1f', '--surface-diff-card': '#0f0a1f', '--shadow-accent': 'rgba(255, 43, 214, 0.45)',
   }, { extends: 'dark', effects: { neonGlow: true }, shape: { corners: 'chamfer', chamfer: 10 }, border: { gradient: ['#ff2bd6', '#a855f7', '#00e5ff'], angle: 135 } }),
   base('matrix', 'dark', {
+    '--scrollbar-thumb': 'rgba(0,255,65,0.22)', '--scrollbar-thumb-hover': 'rgba(0,255,65,0.32)',
     ...Object.fromEntries(Object.keys(themeTokens).filter(k => k.startsWith('--surface-') && !/text|border|status/.test(k)).map(k => [k, '#030803'])),
     '--text-primary': '#d1ffdb', '--text-stronger': '#b8ffc9', '--text-strong': '#e4ffeb', '--text-muted': '#a0d5ad', '--text-subtle': '#8fca9b',
     '--text-accent': '#00ff41', '--message-link-color': '#00ff41', '--border-accent': '#00ff41', '--tree-line': '#276238', '--tree-line-active': '#00ff41', '--surface-active': '#12391d', '--surface-control-hover': '#16351d',
