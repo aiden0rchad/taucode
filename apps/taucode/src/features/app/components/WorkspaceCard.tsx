@@ -1,3 +1,5 @@
+import { Folder, FolderOpen } from "lucide-react";
+import { ProjectEngine } from "./SidebarTree";
 import type { MouseEvent } from "react";
 
 import type { WorkspaceInfo } from "../../../types";
@@ -41,9 +43,11 @@ export function WorkspaceCard({
   const contentCollapsedClass = isCollapsed ? " collapsed" : "";
 
   return (
-    <div className="workspace-card">
+    <ProjectEngine engine={workspace.settings.agentPolicy?.defaultEngine}><div className="workspace-card">
       <div
         className={`workspace-row ${isActive ? "active" : ""}`}
+        title={[workspace.name, summary].filter(Boolean).join(" · ")}
+        data-depth={0}
         role="button"
       aria-label={workspace.name}
         tabIndex={0}
@@ -56,6 +60,7 @@ export function WorkspaceCard({
           }
         }}
       >
+        {isCollapsed ? <Folder size={14} aria-hidden /> : <FolderOpen size={14} aria-hidden />}
         <div className="workspace-copy">
           <div className="workspace-name-row">
             <div className="workspace-title">
@@ -74,8 +79,8 @@ export function WorkspaceCard({
               </button>
             </div>
           </div>
-          {summary && <div className="workspace-summary">{summary}</div>}
         </div>
+        <span className="workspace-count">{summary?.match(/^\d+/)?.[0]}</span>
         <div className="workspace-actions">
           <button
             className="ghost workspace-add"
@@ -125,6 +130,6 @@ export function WorkspaceCard({
       >
         <div className="workspace-card-content-inner">{children}</div>
       </div>
-    </div>
+    </div></ProjectEngine>
   );
 }

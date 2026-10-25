@@ -21,6 +21,7 @@ import type { WorkspaceLaunchScriptsState } from "../hooks/useWorkspaceLaunchScr
 import { useMenuController } from "../hooks/useMenuController";
 
 type MainHeaderProps = {
+  model?: string | null;
   engine?: import("@/types").EngineKind;
   workspace: WorkspaceInfo;
   parentName?: string | null;
@@ -76,6 +77,7 @@ type MainHeaderProps = {
 
 export function MainHeader({
   engine,
+  model,
   workspace,
   worktreeLabel = null,
   disableBranchMenu = false,
@@ -191,6 +193,7 @@ export function MainHeader({
       <div className="workspace-header">
         <div className="workspace-title-line">
           {engine && <span className="engine-badge">{engine}</span>}
+          {model && <span className="thread-header-model" title={model}>{model}</span>}
           <span className="workspace-separator" aria-hidden>
             ›
           </span>

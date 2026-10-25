@@ -1,3 +1,4 @@
+import { useSidebarDensity } from "../../hooks/useSidebarDensity";
 import { SettingsRow, SettingsSelect, SettingsTextField, SettingsButton, SettingsSection, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import type { AppSettings } from "@/types";
@@ -61,6 +62,7 @@ export function SettingsDisplaySection({
   onTestNotificationSound,
   onTestSystemNotification,
 }: SettingsDisplaySectionProps) {
+  const [density, setDensity] = useSidebarDensity();
   const scrollbackUnlimited = appSettings.chatHistoryScrollbackItems === null;
   const [scrollbackDraft, setScrollbackDraft] = useState(() => {
     const value = appSettings.chatHistoryScrollbackItems;
@@ -178,6 +180,13 @@ export function SettingsDisplaySection({
           <option value="light">Light</option>
           <option value="dark">Dark</option>
           <option value="dim">Dim</option>
+        </SettingsSelect>
+      </SettingsRow>
+      <SettingsRow className="settings-field">
+        <label className="settings-field-label" htmlFor="sidebar-density">Sidebar density</label>
+        <SettingsSelect id="sidebar-density" value={density} onChange={event => setDensity(event.target.value)}>
+          <option value="compact">Compact (default)</option>
+          <option value="comfortable">Comfortable</option>
         </SettingsSelect>
       </SettingsRow>
       <SettingsToggleRow

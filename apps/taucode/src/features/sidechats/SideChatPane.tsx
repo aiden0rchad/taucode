@@ -50,7 +50,7 @@ export function SideChatPane({ chat, items, running, models, parentModel, messag
     finally { setSending(false); }
   };
   return <div className="side-chat-pane">
-    <header className="side-chat-header"><MessagesSquare size={16} aria-hidden /><strong title={chat.title}>{chat.title}</strong><span className="side-chat-status" role="status">{running ? "Running" : "Idle"}</span><RowMenu label="side chat" actions={[
+    <header className="side-chat-header"><MessagesSquare size={16} aria-hidden /><strong title={chat.title}>{chat.title}</strong><span className="thread-header-model" title={`${chat.engine} · ${model ?? ""}`}>{chat.engine} · {selectedModel?.displayName ?? model}</span><span className="side-chat-status" role="status">{running ? "Running" : "Idle"}</span><RowMenu label="side chat" actions={[
       { label: "Rename", onClick: () => onRename?.(), disabled: !onRename },
       { label: "Archive", onClick: onDelete },
       { label: "Open in split view", onClick: () => onOpenSplit?.(), disabled: !onOpenSplit },

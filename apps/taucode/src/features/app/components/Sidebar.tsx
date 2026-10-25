@@ -1,3 +1,4 @@
+import { SidebarProjects } from "./SidebarTree";
 import type {
   RequestUserInputRequest,
   ThreadListOrganizeMode,
@@ -834,7 +835,7 @@ export const Sidebar = memo(function Sidebar({
   }, [isSearchOpen, searchQuery]);
 
   return (
-    <aside
+    <SidebarProjects.Provider value={workspaces}><aside
       className={`sidebar${isSearchOpen ? " search-open" : ""}`}
       ref={workspaceDropTargetRef}
       onDragOver={onWorkspaceDragOver}
@@ -1004,7 +1005,7 @@ export const Sidebar = memo(function Sidebar({
         onOpenDebug={onOpenDebug}
         showDebugButton={showDebugButton}
       />
-    </aside>
+    </aside></SidebarProjects.Provider>
   );
 });
 

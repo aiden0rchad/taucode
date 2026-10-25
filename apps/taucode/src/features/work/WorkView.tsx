@@ -1,3 +1,4 @@
+import { SidebarTree } from "@app/components/SidebarTree";
 import { buildThreadTranscript } from "@utils/threadText";
 import { exportMarkdownFile } from "@services/tauri";
 import { WorkConcurrency } from "./WorkConcurrency";
@@ -95,7 +96,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const taskButton = (entry: WorkTask) => <RowMenu key={entry.id} label={entry.title} actions={[
     { label: "Open task", onClick: () => selectTask(entry.id) },
     ...(["running", "needs-input", "queued"].includes(entry.status) ? [{ label: "Stop task", disabled: busy, onClick: () => { void run(() => work.mutate("stop", { taskId: entry.id })); } }] : []),
-  ]}><button className={`thread-row has-secondary-line is-nested${work.active === entry.id ? " active" : ""}`} aria-label={entry.title} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}>{entry.status === "running" ? <svg className="work-progress-ring" viewBox="0 0 20 20" role="img" aria-label={`Plan: ${entry.plan.filter(p => p.status === "completed").length} of ${entry.plan.length} complete`}><circle cx="10" cy="10" r="8" /><circle cx="10" cy="10" r="8" pathLength="100" strokeDasharray={`${entry.plan.length ? entry.plan.filter(p => p.status === "completed").length / entry.plan.length * 100 : 0} 100`} /></svg> : <span className={`thread-status ${entry.status === "needs-input" ? "reviewing" : "ready"}`} aria-label={entry.status} />}<span className="thread-content"><span className="thread-name">{entry.title}</span><span className="thread-details">{entry.status.replace("-", " ")}</span></span></button></RowMenu>;
+  ]}><button className={`thread-row has-secondary-line is-nested${work.active === entry.id ? " active" : ""}`} data-depth={1} title={`${entry.title} · pi · ${entry.model} · ${entry.status}`} aria-label={entry.title} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}><span className={`thread-status ${entry.status === "running" ? "processing" : entry.status === "needs-input" ? "reviewing" : "ready"}`} aria-label={entry.status} /><span className="thread-content"><span className="thread-name">{entry.title}</span><span className="thread-details">{entry.model}</span></span><span className="thread-time">{entry.status.replace("-", " ")}</span></button></RowMenu>;
   const checkpoints = useCallback<typeof checkpointRequest>((_space, params) => {
     const task = tasksRef.current.find(t => t.threadId === params.threadId);
     return workRequest("checkpoint", { taskId: task?.id, request: params });
@@ -108,6 +109,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           </section>
         </aside>) : null;
   return <WorkspaceShell titleActions={<>
+        <span className="thread-header-model" title={`pi · ${task?.model ?? model}`}>pi · {task?.model ?? model}</span>
         {task && <div className="work-actions"><span className={`thread-state-chip ${task.status === "running" ? "processing" : task.status === "needs-input" ? "reviewing" : "ready"}`} role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && <button className="ghost main-header-action" aria-label="Stop task" title="Stop task" disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop</button>}
           {task.threadId && !task.importId && <RewindAction workspaceId={task.spaceId} threadId={task.threadId} running={active} />}
         </div>}
@@ -122,13 +124,10 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       <div className="chat-list">
         <section aria-label="Needs input inbox" className="work-inbox"><h2 className="sidebar-section-header"><span className="sidebar-section-title">Needs input · {needs.length}</span></h2>{needs.filter(t => t.title.toLowerCase().includes(search.toLowerCase())).map(taskButton)}{!needs.length && <p className="chat-muted">You’re all caught up.</p>}</section>
         {work.state.spaces.map(space => <section className="work-space" key={space.id} aria-label={space.name}>
-          <h2 className="sidebar-section-header" title={space.path}><button className="ghost sidebar-section-title work-space-toggle" aria-expanded={!collapsedSpaces.includes(space.id)} onClick={() => setCollapsedSpaces(current => current.includes(space.id) ? current.filter(id => id !== space.id) : [...current, space.id])}><ChevronDown aria-hidden />{space.name}</button><button type="button" className="ghost sidebar-title-add" aria-label={`New task in ${space.name}`} title={`New task in ${space.name}`} disabled={busy || space.readOnly} onClick={() => { setSpaceId(space.id); work.setActive(null); if (window.innerWidth < 760) setSidebarCollapsed(true); }}><Plus aria-hidden /></button></h2>
+          <h2 className="workspace-row" data-depth={0} title={space.path}><button className="ghost sidebar-section-title work-space-toggle" aria-expanded={!collapsedSpaces.includes(space.id)} onClick={() => setCollapsedSpaces(current => current.includes(space.id) ? current.filter(id => id !== space.id) : [...current, space.id])}>{collapsedSpaces.includes(space.id) ? <Folder aria-hidden /> : <FolderOpen aria-hidden />}<span className="workspace-name">{space.name}</span><ChevronDown className="work-space-chevron" aria-hidden /></button><span className="workspace-count">{work.state.tasks.filter(t => t.spaceId === space.id).length}</span><button type="button" className="ghost sidebar-title-add" aria-label={`New task in ${space.name}`} title={`New task in ${space.name}`} disabled={busy || space.readOnly} onClick={() => { setSpaceId(space.id); work.setActive(null); if (window.innerWidth < 760) setSidebarCollapsed(true); }}><Plus aria-hidden /></button></h2>
           {space.readOnly && <p className="chat-muted">Read-only history. Choose an available space to continue.</p>}
           {!!space.readOnlyFolders.length && <details className="work-readonly-folders"><summary><ChevronDown aria-hidden />{space.readOnlyFolders.length} read-only folders</summary>{space.readOnlyFolders.map(path => <p key={path} className="chat-muted">{path}</p>)}</details>}
-          {!collapsedSpaces.includes(space.id) && workGroups.map(([label, statuses]) => {
-            const entries = work.state.tasks.filter(t => t.spaceId === space.id && t.title.toLowerCase().includes(search.toLowerCase()) && (statuses as readonly string[]).includes(t.status));
-            return !!entries.length && <section key={label} aria-label={space.name + " " + label}><h3 className="sidebar-section-header"><span className="sidebar-section-title">{label}</span></h3>{entries.map(taskButton)}</section>;
-          })}
+          {!collapsedSpaces.includes(space.id) && <SidebarTree rows={workGroups.flatMap(([, statuses]) => work.state.tasks.filter(t => t.spaceId === space.id && t.title.toLowerCase().includes(search.toLowerCase()) && (statuses as readonly string[]).includes(t.status))).map(task => ({ ...task, depth: 0 }))} rowKey={task => task.id} selected={task => work.active === task.id}>{taskButton}</SidebarTree>}
         </section>)}
       </div>
       <SidebarBottomRail onOpenSettings={onOpenSettings} onOpenDebug={() => {}} showDebugButton={false} />

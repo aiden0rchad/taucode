@@ -91,7 +91,7 @@ describe("ThreadList", () => {
       />,
     );
 
-    const moreButton = screen.getByRole("button", { name: "More..." });
+    const moreButton = screen.getByRole("button", { name: "Show 1 more" });
     fireEvent.click(moreButton);
     expect(onToggleExpanded).toHaveBeenCalledWith("ws-1");
   });

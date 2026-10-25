@@ -11,6 +11,7 @@ export type PreviewThread = {
   model: string; modelProvider: string; engine: EngineKind; createdAt: number; updatedAt: number;
   capabilities: { fork: boolean; rewind: boolean; steer: boolean };
   sideOf?: SideOf;
+  source?: { subAgent: { thread_spawn: { parent_thread_id: string } } };
   turns: { id: string; status: "completed"; items: PreviewItem[] }[];
 };
 export const diff = "diff --git a/src/greeting.ts b/src/greeting.ts\n--- a/src/greeting.ts\n+++ b/src/greeting.ts\n@@ -1 +1 @@\n-export const greeting = 'Hello';\n+export const greeting = 'Hello, world!';\n";
@@ -56,7 +57,7 @@ export function createFixtures(now = Date.now()) {
   };
   const workspaces: WorkspaceInfo[] = [
     { id: "workspace-atlas", name: "Atlas", path: "/preview/atlas", connected: true, kind: "main", settings: { sidebarCollapsed: false, gitRoot: "/preview/atlas", groupId: "group-studio", worktreeSetupScript: "npm ci\nnpm run typecheck", worktreesFolder: "/preview/worktrees/atlas" } },
-    { id: "workspace-notes", name: "Notes", path: "/preview/notes", connected: true, kind: "main", settings: { sidebarCollapsed: false } },
+    { id: "workspace-notes", name: "Notes", path: "/preview/notes", connected: true, kind: "main", settings: { sidebarCollapsed: true } },
   ];
   const agentsTree: AgentNode[] = [{ id: "agent-review", agent: "Reviewer", model: "openai/gpt-5-mini", task: "Review the greeting change", status: "completed", lastMessage: "The change is correct and covered by tests.", children: [
     { id: "agent-tests", agent: "Test runner", model: "openai/gpt-5-mini", task: "Run focused tests", status: "completed", lastMessage: "All 8 tests pass.", children: [] },
@@ -76,6 +77,8 @@ export function createFixtures(now = Date.now()) {
     makeThread("thread-notes", "workspace-notes", "Organize project notes", [userMessage("notes-user", "Help organize these notes."), assistantMessage("notes-answer", "Group the notes into **Ideas**, **Decisions**, and **Next steps**.")], now - 86400000),
     { ...makeThread("thread-side", "workspace-atlas", "Why keep the greeting constant?", [userMessage("side-user", "Why use a constant here?"), assistantMessage("side-answer", "It gives the interface and tests one shared source of truth.\n\nKeep the value beside the public API so changes are easy to review.\n\n- Export the constant.\n- Import it in the greeting component.\n- Cover the rendered message with a focused test.")], now - 60000), sideOf: { threadId: "thread-rich", workspaceId: "workspace-atlas", atItemId: "code-done" } },
   ];
+  threads.push({ ...makeThread("agent-review", "workspace-atlas", "agent-review", [assistantMessage("review-answer", "The change is correct and covered by tests.")], now - 60000), source: { subAgent: { thread_spawn: { parent_thread_id: "thread-rich" } } } });
+  threads.push({ ...makeThread("agent-tests", "workspace-atlas", "agent-tests", [assistantMessage("tests-answer", "All 8 tests pass.")], now - 60000), source: { subAgent: { thread_spawn: { parent_thread_id: "agent-review" } } } });
   threads.push(makeThread("thread-empty", "workspace-atlas", "New thread"));
   threads.push(...(settings.providers ?? []).flatMap(p => p.models.map(m => ({ ...makeThread("reasoning-" + m.id, "workspace-atlas", m.displayName || m.id, [], now), modelProvider: p.id, model: m.id }))));
   const chats: Chat[] = ["Plan a weekend in Kyoto", "Explain async iterators", "Ideas for a team offsite", "A better morning routine", "Notes on good documentation"].map((title, i) => ({

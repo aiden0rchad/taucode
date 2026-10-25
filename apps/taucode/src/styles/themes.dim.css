@@ -2,6 +2,8 @@
   --surface-app: #292c33;
   color-scheme: dark;
   --surface-sidebar: #292c33;
+  --tree-line: #565660;
+  --tree-line-active: #787884;
   --surface-sidebar-opaque: rgb(41, 44, 51);
   --surface-topbar: #25282f;
   --surface-right-panel: #25282f;

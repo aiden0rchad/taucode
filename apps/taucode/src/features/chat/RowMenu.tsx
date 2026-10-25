@@ -11,7 +11,7 @@ export function RowMenu({ label, actions, children }: { label: string; actions: 
   useEffect(() => {
     if (menu.isOpen) menu.containerRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
   }, [menu.isOpen, menu.containerRef]);
-  const anchor = trigger.current?.getBoundingClientRect();
+  const anchor = menu.isOpen ? trigger.current?.getBoundingClientRect() : undefined;
   return <div className="mode-row" ref={menu.containerRef} onContextMenu={event => { event.preventDefault(); menu.setOpen(true); }} onKeyDown={event => {
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); menu.setOpen(true); }
     if (event.key === "Escape") { menu.setOpen(false); trigger.current?.focus(); }

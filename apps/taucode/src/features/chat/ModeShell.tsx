@@ -1,3 +1,5 @@
+import { useSidebarDensity } from "@settings/hooks/useSidebarDensity";
+import { SidebarEngine } from "@app/components/SidebarTree";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { AppMode, AppSettings } from "@/types";
 import { getAppSettings, setWindowMode } from "@services/tauri";
@@ -32,6 +34,7 @@ export function modeShortcut(event: KeyboardEvent, settings: AppSettings): AppMo
 }
 
 export function ModeShell({ children, renderSettings }: { children: ReactNode; renderSettings?: (onClose: () => void) => ReactNode }) {
+  useSidebarDensity();
   const label = useWindowLabel();
   const [mode, setMode] = useState<AppMode>("code");
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -71,7 +74,7 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   if (!loaded) return null;
   return <ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings }}>
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
-    {mode === "code" && children}
+    {mode === "code" && <SidebarEngine.Provider value={settings?.agentPolicy?.defaultEngine ?? "pi"}>{children}</SidebarEngine.Provider>}
     {mode === "chat" && settings && <ChatView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
     {mode === "work" && settings && <WorkView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
     {settingsOpen && renderSettings?.(() => { setSettingsOpen(false); void getAppSettings().then(setSettings).catch(e => setError(String(e))); })}

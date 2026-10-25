@@ -67,7 +67,7 @@ it.each([
     if (query.includes("mode=code")) expect(screen.getByPlaceholderText("Ask taucode to do something…")).toBeTruthy();
     if (query.includes("composer=attachments")) expect(document.querySelectorAll(".chat-attachments li")).toHaveLength(2);
     if (query.includes("task=task-running")) {
-      expect(screen.getByRole("img", { name: "Plan: 1 of 3 complete" })).toBeTruthy();
+      expect(document.querySelector(".work-space .thread-row .thread-status.processing")).toBeTruthy();
       expect(screen.getByRole("progressbar", { name: "Plan completion" })).toHaveProperty("value", 1);
     }
     if (query.includes("chat=chat-1")) {

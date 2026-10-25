@@ -123,9 +123,11 @@ describe("Work mode", () => {
     const inbox = await screen.findByRole("region", { name: "Needs input inbox" });
     fireEvent.click(within(inbox).getByRole("button", { name: /^Review brief/ }));
     expect((await screen.findByRole("checkbox", { name: "Write report" })).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("region", { name: "Research Running" })).toBeTruthy();
-    expect(screen.getByRole("region", { name: "Research Queued" })).toBeTruthy();
-    expect(screen.getByRole("region", { name: "Research Done" })).toBeTruthy();
+    const space = screen.getByRole("region", { name: "Research" });
+    const rows = space.querySelectorAll(".sidebar-tree-node");
+    expect(rows.length).toBeGreaterThan(0);
+    expect(Array.from(rows).every(row => row.getAttribute("data-depth") === "1")).toBe(true);
+    expect(rows[rows.length - 1].classList.contains("tree-last-child")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Quick Look" }));
     await waitFor(() => expect(workOutput).toHaveBeenCalledWith("Review brief", "outputs/report.pdf", "preview"));
     fireEvent.click(screen.getByRole("button", { name: "Allow once" }));

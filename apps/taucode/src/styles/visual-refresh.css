@@ -1,6 +1,8 @@
 /* Shared, opaque chrome for Code, Chat and Work. Existing token names stay public. */
 :root {
   --app-height: 100dvh;
+  --border: var(--border-subtle);
+  --sidebar-row-height: 28px;
   --chat-diff-split-position-percent: 50%;
   --debug-panel-height: 180px;
   --ds-toast-enter-y: -6px;
@@ -257,3 +259,116 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 }
 
 :root { --minimum-font-size: 11px; }
+
+/* Sidebar density and tree geometry are shared by all three modes. */
+:root[data-sidebar-density="comfortable"] { --sidebar-row-height: 44px; }
+.sidebar .thread-row, .sidebar .thread-row.has-secondary-line {
+  box-sizing: border-box; height: var(--sidebar-row-height); min-height: 0;
+  padding: 0 8px; gap: 6px; border-radius: 6px; margin: 0; width: 100%;
+}
+.sidebar .thread-content { gap: 0; overflow: hidden; }
+.sidebar .thread-name { line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar .thread-details { display: none; }
+[data-sidebar-density="comfortable"] .sidebar .thread-details { display: flex; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar .thread-details > :not(.thread-context-label) { display: none; }
+.sidebar .thread-context-label { padding: 0; border: 0; background: transparent; font-size: 11.5px; }
+.sidebar .thread-kind { position: relative; display: flex; align-items: center; justify-content: center; width: 14px; height: 14px; flex-shrink: 0; }
+.sidebar .thread-kind svg, .sidebar .workspace-row > svg { width: 14px; height: 14px; }
+.sidebar .thread-status, .sidebar .thread-row.has-secondary-line .thread-status { align-self: center; margin: 0 3px; width: 8px; height: 8px; box-shadow: none; flex-shrink: 0; }
+.sidebar .thread-kind .thread-status { margin: 0; }
+.sidebar .thread-status.ready { visibility: visible; background: transparent; border: 1px solid var(--text-muted); box-sizing: border-box; }
+.sidebar .thread-status.processing { animation: pulse 1.2s ease-in-out infinite; }
+.sidebar .thread-status.reviewing { background: var(--status-warning); animation: none; }
+.sidebar .thread-meta { position: relative; display: flex; align-items: center; gap: 4px; margin: 0; align-self: center; }
+.sidebar .thread-time { color: var(--text-muted); font-size: 11.5px; white-space: nowrap; }
+.thread-engine-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border-accent); }
+.thread-engine-dot.engine-pi { background: var(--status-warning); }
+.thread-engine-dot.engine-claude { background: var(--status-error); }
+.thread-menu-trigger { position: absolute; right: 0; width: 22px; height: 22px; padding: 3px; opacity: 0; }
+.thread-row:hover .thread-menu-trigger, .thread-row:focus-within .thread-menu-trigger { opacity: 1; }
+.thread-row:hover .thread-time, .thread-row:focus-within .thread-time,
+.mode-row:hover .thread-time, .mode-row:focus-within .thread-time { visibility: hidden; }
+.thread-tree-toggle { position: absolute; inset: -3px; border: 0; background: var(--surface-sidebar); color: var(--text-muted); padding: 0; opacity: 0; z-index: var(--z-sticky); }
+.thread-tree-toggle[aria-expanded="true"] { transform: rotate(90deg); }
+.thread-row:hover .thread-tree-toggle, .thread-row:focus-within .thread-tree-toggle { opacity: 1; }
+.sidebar .thread-list, .sidebar .thread-bucket, .sidebar .pinned-section { gap: 2px; }
+.sidebar .thread-list-nested { margin-left: 0; }
+.sidebar .thread-more { height: 24px; padding: 0 8px; color: var(--text-muted); font-size: 11.5px; }
+.sidebar .workspace-row { height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 6px; }
+.sidebar .workspace-row::before { border-radius: 6px; background: transparent; border: 0; box-shadow: none; }
+.sidebar .workspace-copy { flex: 1; padding: 0; }
+.sidebar .workspace-name { font-size: 13px; font-weight: 500; }
+.sidebar .workspace-actions { flex-direction: row; align-items: center; gap: 2px; padding: 0; }
+.sidebar .workspace-count { font-size: 11.5px; color: var(--text-muted); font-weight: 400; }
+.sidebar .workspace-card, .sidebar .workspace-card-content-inner { gap: 2px; }
+.sidebar .sidebar-section-header, .sidebar .workspace-group-header, .sidebar .thread-bucket-header { margin-top: 6px; }
+.sidebar .sidebar-section-title, .sidebar .workspace-group-label, .sidebar .thread-bucket-label { font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
+.sidebar .workspace-toggle, .sidebar .group-toggle { opacity: 0; }
+.sidebar .workspace-row:hover .workspace-toggle, .sidebar .workspace-row:focus-within .workspace-toggle,
+.sidebar .workspace-group-header:hover .group-toggle, .sidebar .workspace-group-header:focus-within .group-toggle { opacity: 1; }
+
+.sidebar-tree, .sidebar-tree-children { display: flex; flex-direction: column; gap: 2px; }
+.sidebar-tree-children { margin-left: 14px; }
+.sidebar-tree-node { position: relative; min-width: 0; }
+.sidebar-tree-node > .sidebar-tree-children { margin-top: 2px; }
+.tree-branch::before, .tree-branch::after { content: ""; position: absolute; left: 1px; pointer-events: none; z-index: var(--z-sticky); border-color: var(--tree-line); border-style: solid; border-width: 0; }
+.tree-branch::before { top: 0; bottom: -2px; border-left-width: 1px; }
+.tree-branch::after { top: calc(var(--sidebar-row-height) / -2 - 2px); height: calc(var(--sidebar-row-height) + 2px); width: 14px; border-left-width: 1px; border-bottom-width: 1px; border-bottom-left-radius: 6px; }
+.tree-last-child::before { display: none; }
+.tree-path::after, .tree-branch:has(~ .tree-path)::before { border-color: var(--tree-line-active); }
+.tree-branch:has(~ .tree-path)::after { border-left-color: var(--tree-line-active); }
+.sidebar-tree > .tree-branch:first-child::after { top: -16px; height: calc(var(--sidebar-row-height) / 2 + 16px); }
+/* The project header stays 28px in either density; include its 4px child gap. */
+.workspace-card-content .sidebar-tree > .tree-branch:first-child::after { top: -18px; height: calc(var(--sidebar-row-height) / 2 + 18px); }
+.sidebar .sidebar-tree-node > .thread-row, .sidebar .sidebar-tree-node > .mode-row .thread-row { padding-left: 8px; }
+.sidebar .mode-row { margin: 0 0 2px; }
+.sidebar .mode-row-menu-trigger { top: calc(var(--sidebar-row-height) / 2 - 11px); right: 4px; width: 22px; height: 22px; padding: 3px; }
+.sidebar .work-space > .workspace-row .work-space-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0; color: inherit; font-size: 13px; }
+.sidebar .work-space-toggle > svg { width: 14px; height: 14px; margin: 0; transform: none; }
+.sidebar .work-space-toggle .work-space-chevron { opacity: 0; margin-left: auto; }
+.sidebar .workspace-row:hover .work-space-chevron, .sidebar .workspace-row:focus-within .work-space-chevron { opacity: 1; }
+.sidebar .workspace-row .sidebar-title-add { opacity: 0; }
+.sidebar .workspace-row:hover .sidebar-title-add, .sidebar .workspace-row:focus-within .sidebar-title-add { opacity: 1; }
+
+/* Padding is permanent; hover changes only paint, never content position. */
+.message.assistant .message-bubble,
+.message.assistant .message-bubble.message-bubble-table-only,
+.chat-layout .chat-message.assistant {
+  position: relative; box-sizing: border-box; padding: 10px 12px; margin: -10px -12px;
+  width: calc(100% + 24px); max-width: calc(100% + 24px); border-radius: 10px;
+  border: 0; background: transparent; box-shadow: none; min-width: 0;
+}
+.chat-layout .chat-message.assistant { margin-top: 10px; margin-bottom: 10px; }
+.message.assistant .message-bubble:hover, .message.assistant .message-bubble:focus-within,
+.message.assistant .message-bubble.is-hovered,
+.chat-layout .chat-message.assistant:hover, .chat-layout .chat-message.assistant:focus-within,
+.chat-layout .chat-message.assistant.is-hovered { background: color-mix(in srgb, var(--surface-hover) 35%, transparent); box-shadow: none; }
+.message-hover-actions {
+  position: absolute; right: 8px; bottom: -14px; margin: 0; padding: 2px; gap: 2px;
+  border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-raised);
+  box-shadow: 0 2px 6px #00000018; z-index: var(--z-sticky); pointer-events: none;
+}
+.message:hover .message-hover-actions, .message:focus-within .message-hover-actions { pointer-events: auto; }
+.chat-layout .chat-message.user { position: relative; }
+.message.user .message-bubble, .chat-message.user .chat-message-body, .work-layout .chat-message.user { padding: 12px 14px; min-height: 0; height: auto; }
+.message .markdown > :first-child { margin-top: 0; }
+.message .markdown > :last-child { margin-bottom: 0; }
+.message .markdown, .message .markdown-codeblock { min-width: 0; max-width: 100%; }
+@media (hover: none) {
+  .message-hover-actions { pointer-events: auto; }
+  .thread-menu-trigger, .thread-tree-toggle { opacity: 1; }
+  .thread-row .thread-time { visibility: hidden; }
+}
+@media (prefers-reduced-motion: reduce) { .sidebar .thread-status.processing { animation: none; } }
+
+.thread-header-model { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 11.5px; }
+.sidebar .workspace-card-content-inner { padding-top: 2px; }
+.sidebar .work-space > .workspace-row { margin: 6px 0 2px; }
+.sidebar .workspace-count:empty::after { content: "0"; }
+
+.sidebar .thread-row[data-needs-input] .thread-status { background: var(--status-warning); animation: none; }
+
+.sidebar .workspace-card-content.collapsed { display: none; }
+.sidebar .workspace-card-content-inner { overflow: visible; }
+
+.messages-inner { gap: 28px; }

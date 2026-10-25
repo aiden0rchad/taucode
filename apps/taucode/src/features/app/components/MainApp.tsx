@@ -1784,6 +1784,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
       },
       mainHeaderProps: layoutSurfaces.primary.mainHeaderProps ? {
         ...layoutSurfaces.primary.mainHeaderProps,
+        model: threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.modelId ?? selectedModel?.id ?? resolvedModel,
         extraActionsNode: <>
           {sideChats.error && <span role="alert">{sideChats.error}</span>}
           {layoutSurfaces.primary.mainHeaderProps.extraActionsNode}

@@ -24,6 +24,8 @@
   --text-fainter: rgba(255, 255, 255, 0.45);
   --text-dim: rgba(255, 255, 255, 0.35);
   --surface-sidebar: #1b1b1e;
+  --tree-line: #46464e;
+  --tree-line-active: #787884;
   --surface-sidebar-opaque: #1b1b1e;
   --surface-topbar: #141416;
   --surface-right-panel: #0e1013;
