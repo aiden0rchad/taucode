@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { AppSettings, McpCredential, McpServerEntry, McpConnectionResult, WorkspaceInfo, WorkspaceSettings } from "@/types";
 import { connectorRequest } from "@services/tauri";
 
-const reserved = ["codegraph", "taucode-browser", "taucode-computer"];
+const reserved = ["codegraph", "taucode-browser", "taucode-computer", "taucode-diagnostics"];
 const builtin: McpServerEntry = { id: "codegraph", name: "CodeGraph", enabled: true, approval: "auto" };
 const empty = (): McpServerEntry => ({ id: "", name: "", enabled: true, approval: "ask", transport: { type: "stdio", command: "", args: [], env: {} } });
 const names = (text: string) => text.split("\n").map(s => s.trim()).filter(Boolean);

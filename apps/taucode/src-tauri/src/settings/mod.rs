@@ -38,6 +38,7 @@ pub(crate) async fn update_app_settings(
     state: State<'_, AppState>,
     window: Window,
 ) -> Result<AppSettings, String> {
+    settings.diagnostics.validate()?;
     let previous = state.app_settings.lock().await.clone();
     if serde_json::to_value(&previous.computer).ok()
         != serde_json::to_value(&settings.computer).ok()
@@ -60,6 +61,7 @@ pub(crate) async fn update_app_settings(
     }
     let updated =
         update_app_settings_core(settings, &state.app_settings, &state.settings_path).await?;
+    crate::diagnostics::configure(window.app_handle(), &updated)?;
     if should_reset_remote_backend(&previous, &updated) {
         *state.remote_backend.lock().await = None;
     }

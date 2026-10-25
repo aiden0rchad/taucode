@@ -2,6 +2,7 @@ import { createContext, useContext } from "react";
 import type { AppSettings } from "@/types";
 
 export const defaultFeatures = {
+  diagnostics: false,
   git: true,
   worktrees: true,
   browser: true,

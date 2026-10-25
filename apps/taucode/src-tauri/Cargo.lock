@@ -621,6 +621,7 @@ dependencies = [
  "sha2",
  "shell-words",
  "tau-mcp-proxy",
+ "taucode-diag-mcp",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -4986,6 +4987,20 @@ dependencies = [
  "rmcp",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "taucode-diag-mcp"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "regex",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

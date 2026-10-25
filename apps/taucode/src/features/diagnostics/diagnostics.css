@@ -1,0 +1,9 @@
+.diagnostics-page pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; padding: 12px; background: var(--surface-control); border-radius: 8px; font-size: 12px; }
+.diagnostics-page label { display: flex; gap: 12px; align-items: center; margin: 12px 0; }
+.diagnostics-page button { margin: 4px 8px 4px 0; }
+.diagnostics-page aside { border-top: 1px solid var(--border-muted); margin-top: 16px; padding-top: 16px; }
+.diagnostics-feedback { width: min(480px, calc(100vw - 32px)); padding: 24px; }
+.diagnostics-feedback form { display: grid; gap: 16px; }
+.diagnostics-feedback label { display: grid; gap: 8px; }
+.diagnostics-feedback textarea { min-height: 100px; resize: vertical; }
+.diagnostics-feedback p { color: var(--text-secondary); font-size: 12px; }

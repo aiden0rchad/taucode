@@ -4,6 +4,7 @@ import { features, type Features } from "@settings/features";
 import { SettingsPage, SettingsGroup, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 
 export const featureGroups: [string, [keyof Features, string, string, boolean?][]][] = [
+  ["Developer", [["diagnostics", "Diagnostics", "Record issues, performance and improvement signals locally for agents to review"]]],
   ["Workspace", [["git", "Git", "Changes, branches, diffs and pull requests. Turning off also disables worktrees."], ["worktrees", "Worktrees & clones", "Create isolated workspaces and clone agents."], ["terminal", "Terminal", "Integrated terminal sessions."], ["checkpoints", "Checkpoints & rewind", "Save and restore files independently of Git."]]],
   ["Agents", [["subagents", "Subagents tree", "Delegate to child agents and display their progress.", true], ["sideChats", "Side chats", "Fork conversations alongside the parent thread."], ["connectors", "Connectors (MCP)", "Connect external tools to engines.", true]]],
   ["Tools for the agent", [["browser", "Browser", "Browse pages with the integrated browser.", true], ["computerUse", "Computer use", "Allow agents to operate desktop apps.", true]]],

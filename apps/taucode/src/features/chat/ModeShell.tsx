@@ -1,3 +1,5 @@
+import { FeedbackComposer, DiagnosticsCommands } from "@/features/diagnostics/FeedbackComposer";
+import { diagnosticContext, record } from "@/features/diagnostics/client";
 import { FeatureSettings, features, useFeatures } from "@settings/features";
 import { useSidebarDensity } from "@settings/hooks/useSidebarDensity";
 import { SidebarEngine } from "@app/components/SidebarTree";
@@ -42,6 +44,7 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   const label = useWindowLabel();
   const [mode, setMode] = useState<AppMode>("code");
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  useEffect(() => { diagnosticContext({ mode }); if (settings?.features?.diagnostics) record({ kind: "ux", area: "ui", code: "ui.mode_switch", message: "Mode selected", context: { mode } }); }, [mode, settings]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -82,7 +85,7 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   }, [settings]);
   useEffect(() => { const enabled = features(settings); if ((mode === "chat" && !enabled.chatMode) || (mode === "work" && !enabled.workMode)) { setMode("code"); void setWindowMode("code").catch(e => setError(String(e))); } }, [mode, settings]);
   if (!loaded) return null;
-  return <FeatureSettings.Provider value={settings}><ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings }}>
+  return <FeatureSettings.Provider value={settings}>{settings?.features?.diagnostics && <><FeedbackComposer /><DiagnosticsCommands /></>}<ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings }}>
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
     {mode === "code" && <SidebarEngine.Provider value={settings?.agentPolicy?.defaultEngine ?? "pi"}>{children}</SidebarEngine.Provider>}
     {mode === "chat" && settings && <ChatView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}

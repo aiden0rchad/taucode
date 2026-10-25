@@ -301,6 +301,7 @@ export type McpConnectionResult = { ok: boolean; latencyMs: number; tools?: { na
 export type AppMode = "code" | "chat" | "work";
 export type AppSettings = {
   features?: Partial<import("@settings/features").Features>;
+  diagnostics?: { level: "essential" | "standard" | "verbose"; retention: number; includeContentSnippets: boolean; exposeToAgents: boolean };
   engines?: EngineDefinition[];
   windowModes?: Record<string, AppMode>;
   chatDefaultModel?: ModelRef | null;

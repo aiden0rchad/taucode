@@ -584,6 +584,9 @@ impl WorkspaceSession {
                         if params["collaborationMode"]["settings"].is_object() { params["collaborationMode"]["settings"]["reasoning_effort"] = params["effort"].clone(); }
                     }
                 }
+                if method=="turn/start" && taucode_diag_mcp::writer::enabled() {
+                    if let Some(id)=thread_id.as_deref(){taucode_diag_mcp::observe::thread_context(id,json!({"engine":"codex","model":model,"providerKind":p.kind,"codegraph":self.codegraph.is_some(),"workspace":params["cwd"]}));}
+                }
                 params["model"] = json!(model);
                 if method != "turn/start" {
                     params["modelProvider"] = json!(provider);

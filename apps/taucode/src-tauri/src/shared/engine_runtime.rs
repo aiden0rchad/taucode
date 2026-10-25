@@ -150,7 +150,7 @@ pub(crate) async fn check_node(node: &std::ffi::OsStr) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) async fn prepare(
+async fn prepare_inner(
     data: &Path,
     engine: &str,
     resource: Option<&Path>,
@@ -403,4 +403,10 @@ mod tests {
         assert_eq!(status(&data).await[2]["state"], "ready");
         fs::remove_dir_all(root).unwrap();
     }
+}
+
+pub(crate) async fn prepare(data:&Path,engine:&str,resource:Option<&Path>)->Result<PathBuf,String> {
+    let result=prepare_inner(data,engine,resource).await;
+    if result.is_err() {taucode_diag_mcp::writer::record(||{let mut e=taucode_diag_mcp::core::event("error","engine","engine.install_failed","Runtime install failed");e.context=serde_json::json!({"engine":engine});e});}
+    result
 }

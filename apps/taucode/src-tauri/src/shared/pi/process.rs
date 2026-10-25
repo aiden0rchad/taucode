@@ -36,21 +36,26 @@ pub(super) struct Process {
 impl Process {
     pub async fn spawn(
         mut command: Command,
-        translator: Translator,
+        mut translator: Translator,
         emit: Emit,
         graph: Option<CodegraphSetup>,
         idle: Duration,
         secrets: Vec<String>,
     ) -> Result<Arc<Self>, String> {
         let omp = command.as_std().get_envs().any(|(k,v)| k == "TAUCODE_OMP" && v.is_some());
+        if omp {translator.diagnostic_engine="omp".into();}
         command
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
+        let diagnostic_start = taucode_diag_mcp::writer::enabled().then(std::time::Instant::now);
         let mut child = command
             .spawn()
-            .map_err(|e| format!("Cannot start pi: {e}"))?;
+            .map_err(|e| { taucode_diag_mcp::writer::record(|| {let mut event=taucode_diag_mcp::core::event("error","engine","engine.spawn_failed","Engine spawn failed");event.context=serde_json::json!({"engine":"pi"});event.detail=serde_json::json!({"errorClass":format!("{:?}",e.kind())});event});e.to_string() })?;
+        taucode_diag_mcp::observe::spawned(if omp {"omp"} else {"pi"},diagnostic_start);
+        let diagnostic_pid=child.id();
+        taucode_diag_mcp::observe::child(diagnostic_pid,if omp {"omp"} else {"pi"});
         let stdout = child.stdout.take().ok_or("Pi stdout unavailable")?;
         let stderr = child.stderr.take().ok_or("Pi stderr unavailable")?;
         let stdin = child.stdin.take();
@@ -83,12 +88,13 @@ impl Process {
                         &output_secrets,
                     )) {
                         Ok(m) => reader.receive(m).await,
-                        Err(e) => break format!("Pi returned invalid JSON: {e}"),
+                        Err(e) => {taucode_diag_mcp::writer::record(||taucode_diag_mcp::core::event("error","engine","engine.protocol_decode","Pi protocol decode failed"));break format!("Pi returned invalid JSON: {e}");},
                     },
                     Ok(None) => break "Pi process exited unexpectedly".into(),
                     Err(e) => break format!("Pi stdout failed: {e}"),
                 }
             };
+            if taucode_diag_mcp::writer::enabled() {if let Ok(Some(status))=reader.child.lock().await.try_wait(){taucode_diag_mcp::observe::exited(diagnostic_pid,status);}}
             reader.alive.store(false, Ordering::SeqCst);
             let running = reader.running.swap(false, Ordering::SeqCst);
             let mut t = reader.translator.lock().await;
@@ -118,6 +124,7 @@ impl Process {
             let mut lines = BufReader::new(stderr).split(b'\n');
             while let Ok(Some(line)) = lines.next_segment().await {
                 let line = redact(String::from_utf8_lossy(&line).into_owned(), &secrets);
+                taucode_diag_mcp::observe::stderr(diagnostic_pid,&line);
                 eprintln!("pi: {line}");
                 stderr_emit(json!({"method":"codex/stderr","params":{"message":line}}));
             }

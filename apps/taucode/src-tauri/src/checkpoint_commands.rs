@@ -18,5 +18,7 @@ pub(crate) async fn checkpoint_request(
         )
         .await;
     }
-    checkpoints::request(&state.sessions, workspace_id, params).await
+    let result=checkpoints::request(&state.sessions, workspace_id, params).await;
+    if result.is_err(){taucode_diag_mcp::writer::record(||taucode_diag_mcp::core::event("error","checkpoints","checkpoints.request_failed","Checkpoint request failed"));}
+    result
 }

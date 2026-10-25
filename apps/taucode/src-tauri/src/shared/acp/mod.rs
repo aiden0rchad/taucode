@@ -895,7 +895,8 @@ impl ClaudeAcpEngine {
             }
             let updates = t.history.start(params["input"].clone());
             t.save()?;
-            for event in updates {
+            for mut event in updates {
+                if taucode_diag_mcp::writer::enabled() && event["method"]=="turn/started" { event["params"]["engine"]=t.metadata["engine"].clone();event["params"]["model"]=t.metadata["model"].clone();event["params"]["providerKind"]=serde_json::to_value(&provider.kind).unwrap_or_default(); }
                 self.emit(workspace, event);
             }
             t.history.turns.last().unwrap().clone()

@@ -98,3 +98,11 @@ mod tests {
         assert!(daemon_binary_candidates()[0].starts_with("codex_monitor_daemon"));
     }
 }
+
+pub(crate) fn resolve_diagnostics_binary_path() -> Result<PathBuf,String> {
+    let exe=std::env::current_exe().map_err(|e|e.to_string())?;
+    let parent=exe.parent().ok_or("Executable directory missing")?;
+    let name=if cfg!(windows) {"taucode-diag-mcp.exe"} else {"taucode-diag-mcp"};
+    for dir in daemon_search_dirs(parent) {let path=dir.join(name);if path.is_file(){return Ok(path);}}
+    Ok(parent.join(name))
+}

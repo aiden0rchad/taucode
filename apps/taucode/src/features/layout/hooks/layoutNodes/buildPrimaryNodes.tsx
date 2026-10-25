@@ -1,3 +1,4 @@
+import { DiagnosticBoundary } from "@/features/diagnostics/DiagnosticBoundary";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left";
 import { Sidebar } from "../../../app/components/Sidebar";
 import { Home } from "../../../home/components/Home";
@@ -32,9 +33,9 @@ type PrimaryLayoutNodes = Pick<
 >;
 
 export function buildPrimaryNodes(options: PrimaryLayoutNodesOptions): PrimaryLayoutNodes {
-  const sidebarNode = <Sidebar {...options.sidebarProps} />;
+  const sidebarNode = <DiagnosticBoundary panel="sidebar"><Sidebar {...options.sidebarProps} /></DiagnosticBoundary>;
 
-  const messagesNode = <Messages {...options.messagesProps} />;
+  const messagesNode = <DiagnosticBoundary panel="conversation"><Messages {...options.messagesProps} /></DiagnosticBoundary>;
 
   const composerNode = options.composerProps ? <Composer {...options.composerProps} isEmpty={!options.messagesProps.items.length && !options.messagesProps.isThinking && !options.messagesProps.isLoadingMessages} context={options.mainHeaderProps ? { worktree: options.mainHeaderProps.workspace.kind === "worktree", branch: options.mainHeaderProps.disableBranchMenu ? undefined : options.mainHeaderProps.branchName, sideChat: Boolean(options.messagesProps.onSendToMain) } : undefined} /> : null;
 
