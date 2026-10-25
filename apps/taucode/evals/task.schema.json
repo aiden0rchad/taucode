@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "repo",
+    "category",
+    "tags",
+    "prompt",
+    "setup",
+    "check",
+    "extraChecks",
+    "answerContains",
+    "requires",
+    "timeoutSec",
+    "maxTurns"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "repo": {
+      "enum": [
+        "ts-lib",
+        "py-cli",
+        "web-page"
+      ]
+    },
+    "category": {
+      "enum": [
+        "question",
+        "bugfix",
+        "feature",
+        "refactor",
+        "browser",
+        "computerUse"
+      ]
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "setup": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "expectExit"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expectExit": {
+          "type": "integer"
+        }
+      }
+    },
+    "extraChecks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "file",
+          "contains"
+        ],
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "contains": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "answerContains": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "browser",
+          "computerUse"
+        ]
+      }
+    },
+    "timeoutSec": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600
+    },
+    "maxTurns": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    }
+  }
+}
+

@@ -1,0 +1,11 @@
+--- a/cli.py
++++ b/cli.py
+@@ -5,7 +5,7 @@
+     return text.split(",")
+ 
+ def average(xs):
+-    return sum(xs) / len(xs)
++    return sum(xs) / len(xs) if xs else 0
+ 
+ def truth(text):
+     return bool(text)

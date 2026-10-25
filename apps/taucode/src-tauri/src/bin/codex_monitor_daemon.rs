@@ -167,6 +167,7 @@ struct DaemonConfig {
 }
 
 struct DaemonState {
+    evals: Arc<shared::evals::Evals>,
     work: Arc<shared::work::Work>,
     chats: shared::chats::Chats,
     imports: Arc<shared::imports::Imports>,
@@ -203,6 +204,7 @@ impl DaemonState {
             .and_then(|path| path.to_str().map(str::to_string));
         Self {
             browser: shared::browser::Browser::new(config.data_dir.clone()),
+            evals: shared::evals::Evals::new(config.data_dir.clone(), event_sink.clone()),
             work: shared::work::Work::new(config.data_dir.clone(), event_sink.clone()),
             chats: shared::chats::Chats::new(config.data_dir.clone(), event_sink.clone()),
             imports: shared::imports::Imports::new(config.data_dir.clone()),
@@ -1634,6 +1636,7 @@ mod tests {
         let (tx, _rx) = broadcast::channel::<DaemonEvent>(32);
         DaemonState {
             browser: shared::browser::Browser::new(data_dir.to_path_buf()),
+            evals: shared::evals::Evals::new(data_dir.to_path_buf(), DaemonEventSink { tx: tx.clone() }),
             work: shared::work::Work::new(data_dir.to_path_buf(), DaemonEventSink { tx: tx.clone() }),
             chats: shared::chats::Chats::new(data_dir.to_path_buf(), DaemonEventSink { tx: tx.clone() }),
             imports: shared::imports::Imports::new(data_dir.to_path_buf()),
@@ -1647,6 +1650,23 @@ mod tests {
             event_sink: DaemonEventSink { tx },
             daemon_binary_path: Some("/tmp/codex-monitor-daemon".to_string()),
         }
+    }
+
+    #[test]
+    fn eval_rpc_shares_suite_plan_and_validation() {
+        run_async_test(async {
+            let dir=make_temp_dir("eval-rpc"); let state=test_state(&dir);
+            let suites=rpc::handle_rpc_request(&state,"eval_request",json!({"action":"suites","params":{}}),"test".into()).await.unwrap();
+            assert_eq!(suites.as_array().unwrap().len(),24);
+            let plan=json!({"engines":["pi","omp"],"models":["lab/model"],"tags":["smoke"],"codegraph":[false,true]});
+            let preview=rpc::handle_rpc_request(&state,"eval_request",json!({"action":"plan","params":plan}),"test".into()).await.unwrap();
+            assert_eq!(preview["cells"],32); assert_eq!(preview["tasks"],8);
+            assert!(rpc::handle_rpc_request(&state,"eval_request",json!({"action":"delete","params":{"runId":"../outside"}}),"test".into()).await.is_err());
+            assert!(include_str!("../lib.rs").contains("evals::eval_request,"));
+            assert!(include_str!("../evals.rs").contains("state.evals.request"));
+            assert!(state.workspaces.lock().await.is_empty());
+            std::fs::remove_dir_all(dir).unwrap();
+        });
     }
 
     #[test]

@@ -1,0 +1,20 @@
+{
+  "id": "q-python",
+  "repo": "py-cli",
+  "category": "question",
+  "tags": [],
+  "prompt": "Which standard library classes are imported by cli.py?",
+  "setup": [],
+  "check": {
+    "command": "true",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [
+    "Path",
+    "Counter"
+  ],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

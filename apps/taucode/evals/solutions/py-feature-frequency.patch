@@ -1,0 +1,11 @@
+--- a/cli.py
++++ b/cli.py
+@@ -14,7 +14,7 @@
+     return ""
+ 
+ def frequency(xs):
+-    return {}
++    return dict(Counter(xs))
+ 
+ def total(xs):
+     return sum([x for x in xs])

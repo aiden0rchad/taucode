@@ -1,0 +1,13 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import * as lib from '../src/lib.js';
+test('range',()=>{assert.deepEqual(lib.range(3),[0,1,2]); assert.deepEqual(lib.range(0),[])});
+test('sum',()=>{assert.equal(lib.sum([]),0); assert.equal(lib.sum([2,3]),5)});
+test('unique',()=>{assert.deepEqual(lib.unique([2,1,2]),[2,1])});
+test('clamp',()=>{assert.equal(lib.clamp(4,0,9),4); assert.equal(lib.clamp(12,0,9),9)});
+test('median',()=>{const xs=[9,1,5]; assert.equal(lib.median(xs),5); assert.deepEqual(xs,[9,1,5]); assert.equal(lib.median([7,3,1]),3)});
+test('slug',()=>{assert.equal(lib.slug(' Hello  World '),'hello-world')});
+test('chunk',()=>{assert.deepEqual(lib.chunk([1,2,3],2),[[1,2],[3]]); assert.deepEqual(lib.chunk([],2),[])});
+test('count',()=>{assert.equal(lib.count(['a','b','a']).a,2); assert.equal(lib.count(['__proto__'])['__proto__'],1)});
+test('partition',()=>{assert.deepEqual(lib.partition([1,2,3],x=>x>1),[[2,3],[1]])});
+test('even',()=>{assert.deepEqual(lib.even([1,2,4]),[4,8]); assert.match(lib.even.toString(),/\.reduce\s*\(/); assert.doesNotMatch(lib.even.toString(),/\.(filter|map)\s*\(/)});

@@ -239,9 +239,9 @@ pub(crate) fn load(
     let workspaces = crate::storage::read_workspaces(&data.join("workspaces.json"))?;
     let mut entries = effective(
         &app,
-        &workspaces
-            .get(workspace)
-            .map(|w| w.settings.clone())
+        &crate::shared::evals::workspace(workspace)
+            .or_else(|| workspaces.get(workspace).cloned())
+            .map(|w| w.settings)
             .unwrap_or_default(),
         graph,
     )?;

@@ -1,0 +1,17 @@
+{
+  "id": "ts-feature-partition",
+  "repo": "ts-lib",
+  "category": "feature",
+  "tags": [],
+  "prompt": "Implement partition(xs,fn), preserving order in both groups. Run node --test --test-name-pattern=\"^partition$\".",
+  "setup": [],
+  "check": {
+    "command": "node --test --test-name-pattern=\"^partition$\"",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

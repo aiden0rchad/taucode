@@ -1,0 +1,19 @@
+{
+  "id": "ts-bugfix-sum",
+  "repo": "ts-lib",
+  "category": "bugfix",
+  "tags": [
+    "smoke"
+  ],
+  "prompt": "Fix sum, including empty input. Run node --test --test-name-pattern=\"^sum$\".",
+  "setup": [],
+  "check": {
+    "command": "node --test --test-name-pattern=\"^sum$\"",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

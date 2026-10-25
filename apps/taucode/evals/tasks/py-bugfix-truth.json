@@ -1,0 +1,17 @@
+{
+  "id": "py-bugfix-truth",
+  "repo": "py-cli",
+  "category": "bugfix",
+  "tags": [],
+  "prompt": "Fix truth: only true, yes and 1 (case insensitive) are true. Run python3 -m unittest test_cli.Tests.test_truth.",
+  "setup": [],
+  "check": {
+    "command": "python3 -m unittest test_cli.Tests.test_truth",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

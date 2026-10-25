@@ -1286,3 +1286,5 @@ export async function pickEngineExecutable(): Promise<string | null> {
   const selected = await open({ directory: false, multiple: false, title: "Choose engine executable" });
   return typeof selected === "string" ? selected : null;
 }
+
+export const evalRequest = <T = unknown>(action: string, params: object = {}) => invoke<T>("eval_request", { action, params });

@@ -1,3 +1,4 @@
+import { EvalsView } from "@/features/evals/EvalsView";
 import { FeedbackComposer, DiagnosticsCommands } from "@/features/diagnostics/FeedbackComposer";
 import { diagnosticContext, record } from "@/features/diagnostics/client";
 import { FeatureSettings, features, useFeatures } from "@settings/features";
@@ -48,6 +49,8 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [evalsFull, setEvalsFull] = useState(false);
+  useEffect(() => { const open = () => setEvalsFull(true); window.addEventListener("taucode:evals-full", open); return () => window.removeEventListener("taucode:evals-full", open); }, []);
   useThemePreference(settings ?? { theme: "system" }, () => {
     if (!settings) return;
     const next = { ...settings, theme: "system" };
@@ -87,9 +90,12 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   if (!loaded) return null;
   return <FeatureSettings.Provider value={settings}>{settings?.features?.diagnostics && <><FeedbackComposer /><DiagnosticsCommands /></>}<ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings }}>
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
+    {evalsFull && settings && <main className="evals-full"><EvalsView appSettings={settings} onUpdateAppSettings={async next => { const saved = await updateAppSettings(next); setSettings(saved); return saved; }} onClose={() => setEvalsFull(false)} /></main>}
+    <div style={{ display: evalsFull ? "none" : "contents" }}>
     {mode === "code" && <SidebarEngine.Provider value={settings?.agentPolicy?.defaultEngine ?? "pi"}>{children}</SidebarEngine.Provider>}
     {mode === "chat" && settings && <ChatView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
     {mode === "work" && settings && <WorkView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
+    </div>
     {settingsOpen && renderSettings?.(() => { setSettingsOpen(false); void getAppSettings().then(setSettings).catch(e => setError(String(e))); })}
   </ModeContext.Provider></FeatureSettings.Provider>;
 }

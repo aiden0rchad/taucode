@@ -397,3 +397,7 @@ export function subscribeCheckpointOpen(listener: (request: CheckpointOpen) => v
   checkpointOpenListeners.add(listener);
   return () => { checkpointOpenListeners.delete(listener); };
 }
+
+export function subscribeEvalProgress(listener: (event: {runId:string;status:string}) => void): Unsubscribe {
+  return subscribeAppServerEvents(event => { if(event.message.method === "eval/progress") listener(event.message.params as {runId:string;status:string}); });
+}

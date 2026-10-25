@@ -1,0 +1,8 @@
+--- a/src/lib.js
++++ b/src/lib.js
+@@ -7,4 +7,4 @@
+ export const chunk = (xs,n) => [];
+ export const count = (xs) => {};
+ export const partition = (xs,fn) => [xs,[]];
+-export const even = (xs) => xs.filter(x=>x%2===0).map(x=>x*2);
++export const even = (xs) => xs.reduce((out,x)=>{if(x%2===0)out.push(x*2);return out},[]);

@@ -1,0 +1,19 @@
+{
+  "id": "ts-feature-slug",
+  "repo": "ts-lib",
+  "category": "feature",
+  "tags": [
+    "smoke"
+  ],
+  "prompt": "Implement slug: trim, lowercase, collapse whitespace to hyphens. Run node --test --test-name-pattern=\"^slug$\".",
+  "setup": [],
+  "check": {
+    "command": "node --test --test-name-pattern=\"^slug$\"",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

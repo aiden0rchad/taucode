@@ -1,0 +1,20 @@
+{
+  "id": "q-tests",
+  "repo": "ts-lib",
+  "category": "question",
+  "tags": [],
+  "prompt": "Which built-in modules do the tests import?",
+  "setup": [],
+  "check": {
+    "command": "true",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [
+    "node:test",
+    "node:assert/strict"
+  ],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

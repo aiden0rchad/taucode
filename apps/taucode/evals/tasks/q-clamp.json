@@ -1,0 +1,19 @@
+{
+  "id": "q-clamp",
+  "repo": "ts-lib",
+  "category": "question",
+  "tags": [],
+  "prompt": "Which Math method does clamp currently call?",
+  "setup": [],
+  "check": {
+    "command": "true",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [
+    "Math.max"
+  ],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

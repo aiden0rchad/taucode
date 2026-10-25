@@ -1,0 +1,17 @@
+{
+  "id": "py-refactor-total",
+  "repo": "py-cli",
+  "category": "refactor",
+  "tags": [],
+  "prompt": "Refactor total to sum the iterable directly without a list comprehension. Run python3 -m unittest test_cli.Tests.test_total.",
+  "setup": [],
+  "check": {
+    "command": "python3 -m unittest test_cli.Tests.test_total",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

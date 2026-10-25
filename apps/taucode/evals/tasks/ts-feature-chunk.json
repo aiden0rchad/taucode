@@ -1,0 +1,19 @@
+{
+  "id": "ts-feature-chunk",
+  "repo": "ts-lib",
+  "category": "feature",
+  "tags": [
+    "smoke"
+  ],
+  "prompt": "Implement chunk(xs,n) for positive integer sizes, retaining partial chunks. Run node --test --test-name-pattern=\"^chunk$\".",
+  "setup": [],
+  "check": {
+    "command": "node --test --test-name-pattern=\"^chunk$\"",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

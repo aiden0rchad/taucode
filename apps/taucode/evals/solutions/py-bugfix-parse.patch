@@ -1,0 +1,11 @@
+--- a/cli.py
++++ b/cli.py
+@@ -2,7 +2,7 @@
+ from collections import Counter
+ 
+ def parse(text):
+-    return text.split(",")
++    return [x.strip() for x in text.split(",") if x.strip()]
+ 
+ def average(xs):
+     return sum(xs) / len(xs)

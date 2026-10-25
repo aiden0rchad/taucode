@@ -1,0 +1,19 @@
+{
+  "id": "ts-bugfix-range",
+  "repo": "ts-lib",
+  "category": "bugfix",
+  "tags": [
+    "smoke"
+  ],
+  "prompt": "Fix range(n): it returns n+1 items. Run node --test --test-name-pattern=\"^range$\".",
+  "setup": [],
+  "check": {
+    "command": "node --test --test-name-pattern=\"^range$\"",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

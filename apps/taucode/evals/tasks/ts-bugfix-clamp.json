@@ -1,0 +1,19 @@
+{
+  "id": "ts-bugfix-clamp",
+  "repo": "ts-lib",
+  "category": "bugfix",
+  "tags": [
+    "smoke"
+  ],
+  "prompt": "Fix clamp to enforce both bounds. Run node --test --test-name-pattern=\"^clamp$\".",
+  "setup": [],
+  "check": {
+    "command": "node --test --test-name-pattern=\"^clamp$\"",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}
