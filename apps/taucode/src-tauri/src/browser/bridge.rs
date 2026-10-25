@@ -294,18 +294,23 @@ impl<T: Transport> Bridge<T> {
     pub async fn command(&mut self, p: Value) -> Result<Value, String> {
         match p["action"].as_str().ok_or("Missing browser action")? {
             "attach" | "resize" => {
-                self.width = p["width"]
-                    .as_u64()
-                    .filter(|v| (1..=7680).contains(v))
-                    .ok_or("Invalid pane width")? as u32;
-                self.height = p["height"]
-                    .as_u64()
-                    .filter(|v| (1..=4320).contains(v))
-                    .ok_or("Invalid pane height")? as u32;
-                self.dpr = p["dpr"]
-                    .as_f64()
-                    .filter(|v| (0.5..=4.).contains(v))
-                    .ok_or("Invalid pixel ratio")?;
+                // A bare `attach` (opening a page before the pane has measured itself) keeps the
+                // current size; fractional CSS pixels are rounded rather than rejected.
+                let attach = p["action"] == "attach";
+                let dim = |key: &str, max: f64, current: u32, default: u32, error: &str| -> Result<u32, String> {
+                    match p[key].as_f64() {
+                        Some(v) if v >= 0.5 && v <= max => Ok(v.round() as u32),
+                        None if attach => Ok(if current == 0 { default } else { current }),
+                        _ => Err(error.to_string()),
+                    }
+                };
+                self.width = dim("width", 7680., self.width, 1000, "Invalid pane width")?;
+                self.height = dim("height", 4320., self.height, 700, "Invalid pane height")?;
+                self.dpr = match p["dpr"].as_f64() {
+                    Some(v) if (0.5..=4.).contains(&v) => v,
+                    None if attach => if self.dpr > 0. { self.dpr } else { 1. },
+                    _ => return Err("Invalid pixel ratio".into()),
+                };
                 self.streaming = true;
                 self.state.send_modify(|s| {
                     s["streaming"] = json!(true);

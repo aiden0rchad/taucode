@@ -238,7 +238,7 @@ pub(crate) fn themes_reveal_file(app: tauri::AppHandle, file: String) -> Result<
 }
 #[tauri::command]
 pub(crate) fn window_set_material(window: tauri::WebviewWindow, material: Option<String>, appearance: Option<String>) -> Result<(),String> {
-    use tauri::window::{Effect, EffectsBuilder};
+    use tauri::window::{Effect, EffectState, EffectsBuilder};
     let effect = match material.as_deref() {
         None | Some("none") => None,
         Some("sidebar") => Some(Effect::Sidebar),
@@ -254,9 +254,19 @@ pub(crate) fn window_set_material(window: tauri::WebviewWindow, material: Option
         })
     } else { None };
     window.set_theme(theme).map_err(|e| format!("Window appearance: {e}"))?;
-    window.set_effects(effect.map(|e| EffectsBuilder::new().effect(e).build()))
+    // macOS 26+: the system Liquid Glass view (what taucode used before M4l) is the one that
+    // reliably shows the desktop behind the web view; older systems fall back to vibrancy.
+    use tauri_plugin_liquid_glass::{GlassMaterialVariant, LiquidGlassConfig, LiquidGlassExt};
+    let glass = window.app_handle().liquid_glass();
+    let liquid = effect.is_some() && glass.is_supported();
+    if glass.is_supported() {
+        glass.set_effect(&window, LiquidGlassConfig { enabled: liquid, corner_radius: 16.0, variant: GlassMaterialVariant::Regular, ..Default::default() })
+            .map_err(|e| format!("Liquid glass: {e}"))?;
+    }
+    // Keep the blur live when the window loses focus; macOS otherwise swaps in an opaque fill.
+    window.set_effects(effect.filter(|_| !liquid).map(|e| EffectsBuilder::new().effect(e).state(EffectState::Active).build()))
         .map_err(|e| format!("Window material: {e}"))?;
-    eprintln!("{}", json!({"level":"info", "event":"window_material_applied", "window":window.label(), "material":material, "appearance":theme.map(|t| t.to_string())}));
+    eprintln!("{}", json!({"level":"info", "event":"window_material_applied", "window":window.label(), "material":material, "liquidGlass":liquid, "appearance":theme.map(|t| t.to_string())}));
     Ok(())
 }
 type Metadata = BTreeMap<PathBuf, (u64, SystemTime)>;

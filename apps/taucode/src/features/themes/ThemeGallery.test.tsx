@@ -152,7 +152,7 @@ it('switches materials through one style element and clears Glass', async () => 
   applyTheme(builtins.find(t => t.id === 'glass-dark')!);
   applyTheme(builtins.find(t => t.id === 'claude-light')!);
   await waitFor(() => expect(windowSetMaterial).toHaveBeenLastCalledWith(null, null));
-  expect(windowSetMaterial).toHaveBeenCalledWith('underWindow', 'dark');
+  expect(windowSetMaterial).toHaveBeenCalledWith('sidebar', 'dark');
   expect(document.querySelectorAll('#taucode-theme')).toHaveLength(1);
   expect(document.documentElement.dataset.theme).toBe('light');
   expect(document.documentElement.dataset.translucent).toBe('false');
@@ -279,7 +279,7 @@ it('pins both glass appearances, deduplicates identical materials and retries fa
   applyTheme(light);
   applyTheme(light);
   await waitFor(() => expect(windowSetMaterial).toHaveBeenCalledTimes(2));
-  expect(vi.mocked(windowSetMaterial).mock.calls).toEqual([['underWindow','dark'],['underWindow','light']]);
+  expect(vi.mocked(windowSetMaterial).mock.calls).toEqual([['sidebar','dark'],['sidebar','light']]);
   vi.mocked(windowSetMaterial).mockRejectedValueOnce(new Error('material failed'));
   applyTheme(dark);
   await waitFor(() => expect(pushErrorToast).toHaveBeenCalledWith(expect.objectContaining({ title:'Window material unavailable', message:'Error: material failed' })));
