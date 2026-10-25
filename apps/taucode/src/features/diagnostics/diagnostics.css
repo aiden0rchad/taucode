@@ -17,8 +17,8 @@
 .diagnostics-level p { margin: 6px 0 0; font-size: 12px; }
 .diagnostics-page .diagnostics-level .settings-segmented { margin-bottom: 0; }
 .diagnostics-path code { display: flex; min-width: 0; flex: 1; font-size: 12px; }
-.diagnostics-path code span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.diagnostics-path code span:last-child { flex: 0 0 auto; max-width: 60%; white-space: nowrap; overflow: hidden; direction: rtl; text-align: left; }
+.diagnostics-path code span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.diagnostics-path code span:last-child { flex: 0 0 auto; max-width: 60%; white-space: pre; overflow: hidden; direction: rtl; text-align: left; }
 .diagnostics-page .settings-button.diagnostics-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; min-width: 28px; flex: 0 0 28px; padding: 0; }
 .diagnostics-stats { flex-wrap: wrap; padding-top: 0; color: var(--text-secondary); font-size: 12px; }
 .diagnostics-stats > span + span::before { content: "·"; margin-right: 8px; color: var(--text-muted); }

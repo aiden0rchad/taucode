@@ -11,11 +11,41 @@ const settingsCss = readFileSync("src/styles/settings.css", "utf8");
 const diagnosticsCss = readFileSync("src/features/diagnostics/diagnostics.css", "utf8");
 vi.mock("@services/tauri", () => ({ diagnosticsRequest: vi.fn() }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
-function setup() {
+function setup(dir) {
   const { handler } = createPreviewHandler();
-  diagnosticsRequest.mockImplementation(async (action, params) => handler("diagnostics_request", { action, params }));
+  diagnosticsRequest.mockImplementation(async (action, params) => {
+    const result = await handler("diagnostics_request", { action, params });
+    return action === "info" && dir ? { ...result, dir } : result;
+  });
   render(createElement(DiagnosticsSettings, { appSettings: buildDefaultSettings(), onUpdateAppSettings: vi.fn() }));
 }
+
+// The longer usernames put the space at the end of the first or start of the second span.
+it.each(["x", "rolandleyco", "rolandleycoxx"])("preserves journal path whitespace for user %s", async user => {
+  const dir = `/Users/${user}/Library/Application Support/dev.taucode.desktop/diagnostics`;
+  const style = document.createElement("style");
+  style.textContent = settingsCss + diagnosticsCss;
+  document.head.append(style);
+  try {
+    setup(dir);
+    const code = await screen.findByTitle(dir);
+    const [start, end] = code.children;
+    // jsdom has no layout engine: check exact DOM text and the CSS responsible
+    // for preserving boundary spaces, including when flex clips the path.
+    for (const width of ["1200px", "240px"]) {
+      code.parentElement.style.width = width;
+      expect(code.textContent).toBe(dir);
+      expect(code.textContent).not.toContain("ApplicationSupport");
+      expect(code.title).toBe(dir);
+      expect(getComputedStyle(code).display).toBe("flex");
+      for (const part of [start, end]) {
+        expect(getComputedStyle(part).whiteSpace).toBe("pre");
+        expect(getComputedStyle(part).overflow).toBe("hidden");
+      }
+      expect(getComputedStyle(start).textOverflow).toBe("ellipsis");
+    }
+  } finally { style.remove(); }
+});
 
 it.each([false, true])("keeps custom layouts independent of the settings grid (generic CSS last: %s)", async genericLast => {
   expect(diagnosticsCss).toContain(".diagnostics-path");
