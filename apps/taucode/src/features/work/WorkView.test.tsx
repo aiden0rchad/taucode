@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppSettings, WorkState, WorkTask } from "@/types";
 import { WorkView } from "./WorkView";
@@ -25,6 +25,7 @@ function task(id: string, status: WorkTask["status"]): WorkTask {
 }
 beforeEach(() => {
   localStorage.clear();
+  Element.prototype.scrollIntoView = vi.fn();
   state = { spaces: [{ id: "space", kind: "work", name: "Research", path: "/synthetic", readOnlyFolders: [] }], tasks: [], concurrency: 2 };
   vi.mocked(workRequest).mockImplementation(async (action, params) => {
     if (action === "list") return structuredClone(state);
@@ -128,15 +129,15 @@ describe("Work mode", () => {
     await waitFor(() => expect(workRequest).toHaveBeenCalledWith("create", expect.objectContaining({ spaceId: "space", model: "local/test", accessMode: "ask", runNow: false, attachments: [".taucode/uploads/copied-notes.pdf"] })));
     expect(await screen.findByText(/Waiting for an available slot/)).toBeTruthy();
   });
-  it("groups tasks, exposes the inbox, renders plans and output actions, and responds", async () => {
+  it("groups tasks, exposes the input callout, renders plans and output actions, and responds", async () => {
     const needs = task("Review brief", "needs-input");
     needs.plan = [{ step: "Write report", status: "completed" }];
     needs.outputs = ["outputs/report.pdf"];
     needs.pending = [{ id: "approval", method: "item/fileChange/requestApproval", params: { reason: "Replace notes" } }];
     state.tasks = [needs, task("Running task", "running"), task("Queued task", "queued"), task("Finished task", "done")];
     render(<WorkView settings={settings} />);
-    const inbox = await screen.findByRole("region", { name: "Needs input inbox" });
-    fireEvent.click(within(inbox).getByRole("button", { name: /^Review brief/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "1 task needs your input" }));
+    expect(screen.getAllByRole("button", { name: "Review brief" })).toHaveLength(1);
     expect((await screen.findByRole("checkbox", { name: "Write report" })).getAttribute("aria-checked")).toBe("true");
     const space = screen.getByRole("region", { name: "Research" });
     const rows = space.querySelectorAll(".sidebar-tree-node");
@@ -148,8 +149,64 @@ describe("Work mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Allow once" }));
     await waitFor(() => expect(workRequest).toHaveBeenCalledWith("respond", { taskId: "Review brief", requestId: "approval", answer: { decision: "accept" } }));
     await waitFor(() => expect(screen.queryByText("Approval required")).toBeNull());
+    expect(screen.queryByRole("button", { name: /needs your input/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Stop all tasks" }));
     await waitFor(() => expect(workRequest).toHaveBeenCalledWith("stop-all", {}));
+  });
+  it("renders one-line rows with distinct status glyphs and tooltip metadata", async () => {
+    const statuses = ["needs-input", "running", "queued", "done", "failed", "stopped"] as const;
+    state.tasks = statuses.map(status => task(`Task ${status}`, status));
+    render(<WorkView settings={settings} />);
+    await screen.findByRole("button", { name: "Task running" });
+    for (const status of statuses) {
+      const row = screen.getByRole("button", { name: `Task ${status}` });
+      expect(row.classList.contains("has-secondary-line")).toBe(false);
+      expect(row.querySelector(".thread-details")).toBeNull();
+      expect(row.textContent).not.toContain("local/test");
+      expect(row.title).toContain(`Research · local/test · ${status.replace("-", " ")}`);
+      expect(row.querySelector(`.thread-status.work-status-${status}`)).toBeTruthy();
+      expect(row.querySelector(".thread-time")?.textContent).toBe(status.replace("-", " "));
+    }
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Task done" })); });
+    expect(document.querySelector(".thread-header-model")?.textContent).toContain("local/test");
+    expect(document.querySelector('.tree-selected .work-task-row.active')).toBeTruthy();
+  });
+  it("uses available timestamps for relative time and tooltip details", async () => {
+    const updatedAt = Math.floor(Date.now() / 1000) - 120;
+    state.tasks = [{ ...task("Timed task", "done"), createdAt: updatedAt - 60, updatedAt }];
+    render(<WorkView settings={settings} />);
+    const row = await screen.findByRole("button", { name: "Timed task" });
+    expect(row.querySelector(".thread-time")?.textContent).toBe("2m");
+    expect(row.title).toContain(`Created: ${new Date((updatedAt - 60) * 1000).toLocaleString()}`);
+    expect(row.title).toContain(`Updated: ${new Date(updatedAt * 1000).toLocaleString()}`);
+  });
+  it("cycles input tasks, expands their spaces and clears search before scrolling", async () => {
+    state.tasks = [task("First", "needs-input"), task("Second", "needs-input"), task("Third", "needs-input")];
+    render(<WorkView settings={settings} />);
+    const callout = await screen.findByRole("button", { name: "3 tasks need your input" });
+    const space = screen.getByRole("region", { name: "Research" });
+    fireEvent.click(within(space).getByRole("button", { name: "Research" }));
+    fireEvent.click(screen.getByRole("button", { name: /Search/ }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search tasks" }), { target: { value: "missing" } });
+    for (const title of ["First", "Second", "Third", "First"]) {
+      await act(async () => { fireEvent.click(callout); });
+      const row = within(space).getByRole("button", { name: title });
+      expect(row.getAttribute("aria-current")).toBe("page");
+      expect(vi.mocked(row.scrollIntoView).mock.contexts.slice(-1)[0]).toBe(row);
+    }
+    expect(screen.getByRole("searchbox", { name: "Search tasks" })).toHaveProperty("value", "");
+  });
+  it.each([0, 1, 2])("pluralizes the read-only folder disclosure for %i folders", async count => {
+    state.spaces[0].readOnlyFolders = Array.from({ length: count }, (_, i) => `/reference-${i}`);
+    render(<WorkView settings={settings} />);
+    const space = await screen.findByRole("region", { name: "Research" });
+    expect(screen.queryByRole("button", { name: /tasks? needs? your input/ })).toBeNull();
+    const summary = space.querySelector(".work-readonly-folders summary");
+    if (!count) expect(summary).toBeNull();
+    else {
+      expect(summary?.textContent).toBe(`${count} read-only ${count === 1 ? "folder" : "folders"}`);
+      expect(summary?.querySelector(".lucide-folder-lock")).toBeTruthy();
+    }
   });
   it("offers five templates, with read-only cleanup and Run now", async () => {
     render(<WorkView settings={settings} />);

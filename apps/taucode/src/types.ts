@@ -795,6 +795,8 @@ export type WorkRequest = {
   params: { reason?: string; command?: string; diffPreview?: string; questions?: { question: string; options?: { label: string }[] }[] };
 };
 export type WorkTask = {
+  /** Optional Unix timestamps in seconds. */
+  createdAt?: number; updatedAt?: number;
   importId?: string | null;
   id: string; spaceId: string; threadId: string | null; title: string; brief: string;
   attachments: string[]; model: string; accessMode: "ask" | "read-only" | "full-access"; status: WorkStatus;
