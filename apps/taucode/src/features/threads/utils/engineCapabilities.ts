@@ -14,7 +14,7 @@ export const ENGINE_CAPABILITIES: Record<EngineKind, EngineCapabilities> = {
 };
 
 export function engineCapabilities(engine: EngineKind, advertised?: ThreadSummary["capabilities"]): EngineCapabilities {
-  const defaults = ENGINE_CAPABILITIES[engine];
+  const defaults = ENGINE_CAPABILITIES[engine] ?? ENGINE_CAPABILITIES.pi;
   return engine === "claude" ? { ...defaults, forkLatest: advertised?.fork === true, sideChats: advertised?.fork === true, steer: advertised?.steer === true } : defaults;
 }
 

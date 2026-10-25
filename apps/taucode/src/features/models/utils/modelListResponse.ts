@@ -94,7 +94,7 @@ export function parseModelListResponse(response: unknown): ModelOption[] {
         id: String(record.id ?? record.model ?? ""),
         model: modelSlug,
         ...(typeof record.providerId === "string" ? { providerId: record.providerId, providerName: String(record.providerName ?? record.providerId), modelId: String(record.modelId ?? "") } : {}),
-        ...(Array.isArray(record.engines) ? { engines: record.engines.filter((v): v is "pi" | "codex" | "claude" => v === "pi" || v === "codex" || v === "claude") } : {}),
+        ...(Array.isArray(record.engines) ? { engines: record.engines.filter((v): v is string => typeof v === "string") } : {}),
         ...(record.reasoning !== undefined ? { reasoning: record.reasoning as ModelOption["reasoning"] } : {}),
         ...(record.acpReasoning !== undefined ? { acpReasoning: record.acpReasoning as ModelOption["acpReasoning"] } : {}),
         displayName,

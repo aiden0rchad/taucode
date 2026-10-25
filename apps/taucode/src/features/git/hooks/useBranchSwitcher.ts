@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useState } from "react";
 import type { WorkspaceInfo } from "../../../types";
 
@@ -16,6 +17,7 @@ export function useBranchSwitcher({
   checkoutBranch,
   setActiveWorkspaceId,
 }: UseBranchSwitcherOptions) {
+  if (!useFeatures().git) activeWorkspace = null;
   const [branchSwitcher, setBranchSwitcher] = useState<BranchSwitcherState>(null);
 
   const openBranchSwitcher = useCallback(() => {

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createElement, Fragment } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import App from "@/App";
 import { installUiPreview } from "@/dev/uiPreview";
@@ -21,8 +22,9 @@ it("uses shared settings pages, groups and rows in every section, with independe
   vi.stubEnv("MODE", "uipreview");
   window.history.replaceState(null, "", "/?settings=providers");
   installUiPreview();
+  await invoke("update_app_settings", { settings: { features: {} } });
   render(createElement(Fragment, null, createElement("style", null, settingsStyles), createElement(App)));
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  const dialog = await screen.findByRole("dialog", { name: "Settings" }, { timeout: 5000 });
   for (const section of SETTINGS_GROUPS.flatMap(group => group.sections)) {
     fireEvent.click(within(dialog).getByRole("button", { name: SETTINGS_SECTION_LABELS[section] }));
     await waitFor(() => expect(dialog.querySelector(".settings-page"), section).toBeTruthy());
@@ -65,8 +67,9 @@ it("uses shared settings pages, groups and rows in every section, with independe
   expect(within(options).getByText("You can keep using your Mac.")).toBeTruthy();
   fireEvent.keyDown(mode, { key: "Escape" });
   fireEvent.click(within(dialog).getByRole("button", { name: "Manage" }));
-  expect(within(dialog).getByRole("heading", { name: "Models & Agents" })).toBeTruthy();
-  expect(await within(dialog).findByText("Engine runtimes")).toBeTruthy();
+  expect(within(dialog).getByRole("heading", { name: "Engines" })).toBeTruthy();
+  expect(await within(dialog).findByText("Installed and available engines")).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Models & Agents" }));
   const tabs = within(dialog).getByRole("tablist", { name: "Models & Agents tabs" });
   expect(within(tabs).getAllByRole("tab").map(button => button.textContent)).toEqual(["Defaults", "Subagents", "Roles", "Engines"]);
   for (const name of ["Defaults", "Subagents", "Roles"]) {
@@ -95,10 +98,11 @@ it.each([[1440, "dark", "rgba(0, 0, 0, 0.5)"], [900, "light", "rgba(15, 15, 20, 
   vi.stubEnv("MODE", "uipreview");
   window.history.replaceState(null, "", "/?mode=code&thread=thread-rich&sidechat=thread-side&settings=computer&theme=" + theme);
   installUiPreview();
+  await invoke("update_app_settings", { settings: { features: {} } });
   const styles = ["src/styles/ds-tokens.css", "src/styles/ds-modal.css", "src/features/panels/side-panel.css"].map(path => readFileSync(path, "utf8")).join("\n") + settingsStyles;
   render(createElement(Fragment, null, createElement("style", null, styles), createElement(App)));
   await screen.findByRole("textbox", { name: "Side chat message" });
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  const dialog = await screen.findByRole("dialog", { name: "Settings" }, { timeout: 5000 });
   document.documentElement.dataset.theme = theme;
   const panel = document.querySelector(".tabbed-side-panel");
   expect(panel.hidden).toBe(false);

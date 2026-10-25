@@ -77,7 +77,11 @@
       "../engines/pi/.gitignore": "engines/pi/.gitignore",
       "../engines/browser/.gitignore": "engines/browser/.gitignore",
       "../engines/computer/README.md": "engines/computer/README.md",
-      "../engines/computer/.gitignore": "engines/computer/.gitignore"
+      "../engines/computer/.gitignore": "engines/computer/.gitignore",
+      "../engines/omp/package.json": "engines/omp/package.json",
+      "../engines/omp/package-lock.json": "engines/omp/package-lock.json",
+      "../engines/omp/.gitignore": "engines/omp/.gitignore",
+      "../engines/omp/no-accounts.mjs": "engines/omp/no-accounts.mjs"
     }
   },
   "plugins": {}

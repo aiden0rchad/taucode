@@ -90,7 +90,7 @@ export function SettingsFeaturesSection({
 }: SettingsFeaturesSectionProps) {
   return (
     <SettingsPage
-      title="Features"
+      title="Codex flags"
       subtitle="Manage stable and experimental Codex features."
     ><SettingsGroup title="Preferences">
       <SettingsToggleRow

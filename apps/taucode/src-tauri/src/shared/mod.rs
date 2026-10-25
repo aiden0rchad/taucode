@@ -39,3 +39,5 @@ pub(crate) mod local_socket;
 pub(crate) mod checkpoints;
 
 pub(crate) mod work;
+
+pub(crate) mod engine_registry;

@@ -218,6 +218,10 @@ pub(crate) fn effective(
             && !app.mcp_servers.iter().any(|s| s.id == c.id && !s.enabled);
         c.approval = Approval::Auto;
     }
+    let features = app.features();
+    for entry in &mut entries {
+        entry.enabled &= features.connectors && match entry.id.as_str() { "taucode-browser" => features.browser, "taucode-computer" => features.computer_use, _ => true };
+    }
     Ok(entries)
 }
 

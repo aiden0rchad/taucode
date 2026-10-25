@@ -199,6 +199,7 @@ pub(super) fn prepare(
     keys: &dyn KeyStore,
 ) -> Result<HashMap<String, String>, String> {
     std::fs::create_dir_all(home.join("extensions")).map_err(|e| e.to_string())?;
+    #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; std::fs::set_permissions(home, std::fs::Permissions::from_mode(0o700)).map_err(|e|e.to_string())?; }
     std::fs::create_dir_all(home.join("extensions/lib")).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(home.join("taucode")).map_err(|e| e.to_string())?;
     for (name, source) in [

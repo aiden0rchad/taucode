@@ -189,7 +189,7 @@ impl Computer {
     fn enabled(&self) -> Result<crate::types::AppSettings, String> {
         let s = crate::storage::read_settings(&self.data.join("settings.json"))?;
         validate(&s.computer)?;
-        if !s.computer.enabled {
+        if !s.computer.enabled || !s.features().computer_use {
             return Err("Enable Computer Use in Settings".into());
         }
         Ok(s)

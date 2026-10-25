@@ -67,10 +67,13 @@ it.each([
     if (query.includes("mode=code")) {
       expect(screen.getByPlaceholderText("Ask taucode to do something…").closest(".squircle")).toBeTruthy();
       expect(document.querySelectorAll(".workspace-card.squircle")).toHaveLength(3);
-      expect(document.querySelector(".ungrouped-card.squircle")).toBeTruthy();
+      expect(document.querySelector(".sidebar .squircle .squircle")).toBeNull();
       expect(screen.getByRole("button", { name: "Orbit" }).closest(".workspace-card")?.querySelector(".workspace-card-content.collapsed")).toBeTruthy();
     }
-    if (query.includes("mode=work")) await waitFor(() => expect(document.querySelectorAll(".work-space.squircle")).toHaveLength(2));
+    if (query.includes("mode=work")) {
+      await waitFor(() => expect(document.querySelectorAll(".work-space.squircle")).toHaveLength(2));
+      expect(document.querySelector(".sidebar .squircle .squircle")).toBeNull();
+    }
     if (query.includes("composer=attachments")) expect(document.querySelectorAll(".chat-attachments li")).toHaveLength(2);
     if (query.includes("task=task-running")) {
       expect(document.querySelector(".work-space .thread-row .thread-status.processing")).toBeTruthy();

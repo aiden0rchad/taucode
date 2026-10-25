@@ -127,7 +127,7 @@ export function useThreadTurnEvents({
       }
       const subagentSummaryPatch = getLiveThreadSubagentSummaryPatch(thread);
       dispatch({ type: "ensureThread", workspaceId, threadId });
-      dispatch({ type: "mergeThreadSummary", workspaceId, threadId, patch: { ...extractEngineCapabilities(thread), engine: thread.engine === "claude" ? "claude" : thread.engine === "pi" ? "pi" : "codex", modelProvider: asString(thread.modelProvider), ...(thread.sideOf ? { sideOf: thread.sideOf as import("@/types").SideOf, isSubagent: false } : {}) } });
+      dispatch({ type: "mergeThreadSummary", workspaceId, threadId, patch: { ...extractEngineCapabilities(thread), engine: String(thread?.engine ?? "codex"), modelProvider: asString(thread.modelProvider), ...(thread.sideOf ? { sideOf: thread.sideOf as import("@/types").SideOf, isSubagent: false } : {}) } });
       if (subagentSummaryPatch) {
         dispatch({
           type: "mergeThreadSummary",

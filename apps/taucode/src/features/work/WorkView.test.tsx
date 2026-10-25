@@ -48,6 +48,7 @@ describe("Work mode", () => {
     render(<WorkView settings={settings} />);
     const space = await screen.findByRole("region", { name: "Research" });
     expect(document.querySelectorAll(".work-space.squircle")).toHaveLength(2);
+    expect(document.querySelector(".sidebar .squircle .squircle")).toBeNull();
     fireEvent.click(within(space).getByRole("button", { name: "Report" }));
     await waitFor(() => expect(space.classList.contains("is-selected")).toBe(true));
     fireEvent.click(within(space).getByRole("button", { name: "Research" }));

@@ -70,6 +70,7 @@ impl Chats {
         }
     }
     pub async fn request(&self, settings: &AppSettings, action: &str, params: Value) -> Result<Value, String> {
+        if !settings.features().chat_mode && !matches!(action, "stop" | "interrupt" | "list" | "read") { return Err("Enable Chat in Settings → Features".into()); }
         // The public chat API never accepts cwd, access policies, local file paths, or arbitrary engine methods.
         let mut policy = settings.agent_policy.clone();
         if settings.chat_default_model.is_some() { policy.default_model = settings.chat_default_model.clone(); }

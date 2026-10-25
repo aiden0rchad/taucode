@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import {
   useEffect,
   useMemo,
@@ -160,6 +161,7 @@ export function WorkspaceHome({
   onAgentMdRefresh,
   onAgentMdSave,
 }: WorkspaceHomeProps) {
+  if (!useFeatures().git) showGitInitBanner = false;
   const [showIcon, setShowIcon] = useState(true);
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
   const iconPath = useMemo(() => buildIconPath(workspace.path), [workspace.path]);

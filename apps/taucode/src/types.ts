@@ -1,4 +1,6 @@
-export type EngineKind = "pi" | "codex" | "claude";
+export type EngineKind = string;
+export type EngineProtocol = "pi-rpc" | "codex-app-server" | "acp";
+export type EngineDefinition = { id: string; name: string; protocol: EngineProtocol; builtIn: boolean; command?: string; args?: string[]; env?: Record<string, string>; configDirEnv?: string; enabled: boolean; description?: string };
 export type ModelRef = { providerId: string; modelId: string };
 export type ProviderKind = "openai" | "anthropic" | "google" | "openrouter" | "groq" | "mistral" | "xai" | "deepseek" | "zai" | "ollama" | "lmstudio" | "openai-compatible";
 export type ProviderAuth = { type: "none" } | { type: "apiKey" } | { type: "env"; var: string } | { type: "command"; command: string; args: string[]; timeoutMs?: number };
@@ -298,6 +300,8 @@ export type McpConnectionResult = { ok: boolean; latencyMs: number; tools?: { na
 
 export type AppMode = "code" | "chat" | "work";
 export type AppSettings = {
+  features?: Partial<import("@settings/features").Features>;
+  engines?: EngineDefinition[];
   windowModes?: Record<string, AppMode>;
   chatDefaultModel?: ModelRef | null;
   computer?: import("@/features/computer/computer").ComputerSettings;

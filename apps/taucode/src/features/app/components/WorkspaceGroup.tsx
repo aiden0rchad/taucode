@@ -1,4 +1,3 @@
-import { Squircle } from "@/features/design-system/components/squircle/Squircle";
 
 type WorkspaceGroupProps = {
   toggleId: string | null;
@@ -16,13 +15,10 @@ export function WorkspaceGroup({
   name,
   showHeader,
   isCollapsed,
-  ungrouped = false,
-  isSelected = false,
   onToggleCollapse,
   children,
 }: WorkspaceGroupProps) {
   const isToggleable = Boolean(toggleId);
-  const Content = ungrouped ? Squircle : "div";
   return (
     <div className="workspace-group">
       {showHeader && (
@@ -71,7 +67,7 @@ export function WorkspaceGroup({
         </div>
       )}
       <div className={`workspace-group-list ${isCollapsed ? "collapsed" : ""}`}>
-        <Content className={`workspace-group-content${ungrouped ? ` project-group-card ungrouped-card${isSelected ? " is-selected" : ""}` : ""}`}>{children}</Content>
+        <div className="workspace-group-content">{children}</div>
       </div>
     </div>
   );

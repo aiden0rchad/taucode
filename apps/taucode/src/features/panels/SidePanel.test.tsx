@@ -148,3 +148,18 @@ it("automatically collapses the sidebar below 760px and allows the title toggle 
   expect(localStorage.getItem("codexmonitor.sidebarCollapsed")).toBe("false");
   vi.unstubAllGlobals();
 });
+
+it("removes disabled panel tools and browser subscriptions live", async () => {
+  const { FeatureSettings } = await import("@settings/features");
+  const view = render(shell());
+  fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+  fireEvent.click(screen.getByRole("button", { name: /Changes/ }));
+  view.rerender(<FeatureSettings.Provider value={{ features: { git: false, terminal: false, subagents: false, sideChats: false, browser: false } } as import("@/types").AppSettings}>{shell()}</FeatureSettings.Provider>);
+  for (const name of [/Changes/, /Terminal/, /Agents/, /Side chat/, /New page/]) expect(screen.queryByRole("button", { name })).toBeNull();
+  expect(screen.queryByRole("tab", { name: "Changes" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "URL or search" })).toBeNull();
+  await waitFor(() => expect(callbacks.size).toBe(0));
+  vi.mocked(browserRequest).mockClear();
+  fireEvent.keyDown(window, { key: "b", metaKey: true, shiftKey: true });
+  expect(browserRequest).not.toHaveBeenCalled();
+});

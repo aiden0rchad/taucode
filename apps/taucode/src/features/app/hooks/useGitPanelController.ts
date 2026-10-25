@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConversationItem,
@@ -41,6 +42,8 @@ export function useGitPanelController({
   prDiffsLoading: boolean;
   prDiffsError: string | null;
 }) {
+  const features = useFeatures();
+  if (!features.git) activeWorkspace = null;
   const [centerMode, setCenterMode] = useState<"chat" | "diff">("chat");
   const [selectedDiffPath, setSelectedDiffPath] = useState<string | null>(null);
   const [diffScrollRequestId, setDiffScrollRequestId] = useState(0);
@@ -52,6 +55,7 @@ export function useGitPanelController({
   const [filePanelMode, setFilePanelMode] = useState<
     "git" | "files" | "prompts" | "agents"
   >("git");
+  useEffect(() => { if (!features.git) { setCenterMode("chat"); setFilePanelMode("files"); } }, [features.git]);
   const [selectedPullRequest, setSelectedPullRequest] =
     useState<GitHubPullRequest | null>(null);
   const [selectedCommitSha, setSelectedCommitSha] = useState<string | null>(

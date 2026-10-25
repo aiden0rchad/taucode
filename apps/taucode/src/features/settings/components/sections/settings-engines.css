@@ -1,0 +1,41 @@
+.settings-group-title:has(.settings-group-actions) { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.settings-group-actions { display: inline-flex; }
+.settings-page .settings-row.engine-row { grid-template-columns: minmax(0, 1fr) auto; gap: 16px; }
+.engine-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.engine-icon { width: 32px; height: 32px; flex-shrink: 0; display: grid; place-items: center; border-radius: 9px; background: var(--surface-control); border: 1px solid var(--border-muted); color: var(--text-strong); font-size: 23px; }
+.engine-icon-omp { background: var(--surface-card-strong); color: var(--text-accent); }
+.engine-copy { min-width: 0; overflow-wrap: anywhere; }
+.engine-name, .engine-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.engine-name { color: var(--text-strong); font-size: 13px; }
+.engine-meta { margin-top: 5px; font-size: 11px; color: var(--text-muted); }
+.engine-protocol, .engine-default { border: 1px solid var(--border-muted); border-radius: 5px; padding: 1px 5px; font-size: 11px; font-weight: 500; }
+.engine-default { color: var(--text-accent); }
+.engine-row.is-disabled .engine-identity { opacity: .5; }
+.engine-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: nowrap; }
+.engine-actions progress { width: 64px; height: 5px; accent-color: var(--text-accent); }
+.engine-actions .mode-row { flex: none; }
+.engine-actions .mode-row-menu-trigger { position: static; opacity: 1; display: flex; padding: 6px; }
+.engine-actions .mode-row-menu { min-width: 190px; z-index: var(--z-tooltip); }
+.engine-dialog { z-index: var(--z-tooltip); }
+.engine-dialog-card { width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow: auto; padding: 24px; border-radius: var(--ds-radius-lg); }
+.engine-dialog .settings-page { padding: 0; }
+.engine-dialog .ds-modal-title { margin: 0 0 20px; }
+.engine-dialog .settings-field-row { grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr); }
+.engine-command, .engine-env-pair { display: flex; gap: 8px; align-items: center; }
+.engine-command input, .engine-env-pair input { min-width: 0; flex: 1; font-family: var(--code-font-family); }
+.engine-env { display: grid; gap: 8px; min-width: 0; }
+.engine-env > button { justify-self: start; }
+.engine-env-row .settings-toggle-subtitle { display: block; }
+.engine-dialog .settings-button, .engine-actions .settings-button, .settings-group-actions .settings-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.engine-footer-space { flex: 1; }
+.engine-error { color: var(--text-danger, #d65c5c); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.engine-test-result { font-size: 12px; white-space: pre-wrap; }
+.engine-details { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--code-font-family); font-size: 12px; }
+.settings-nav.settings-nav-subitem { padding-left: 30px; font-size: 12px; }
+@media (max-width: 540px) {
+  .settings-page .settings-row.engine-row { gap: 8px; }
+  .engine-actions { gap: 5px; }
+  .engine-identity { gap: 8px; }
+  .engine-dialog-card { padding: 16px; }
+  .engine-dialog .settings-field-row { grid-template-columns: minmax(0, 1fr); }
+}

@@ -31,6 +31,7 @@ pub(super) struct Process {
     touched: Mutex<Instant>,
     emit: Emit,
     graph: Option<CodegraphSetup>,
+    omp: bool,
 }
 impl Process {
     pub async fn spawn(
@@ -41,6 +42,7 @@ impl Process {
         idle: Duration,
         secrets: Vec<String>,
     ) -> Result<Arc<Self>, String> {
+        let omp = command.as_std().get_envs().any(|(k,v)| k == "TAUCODE_OMP" && v.is_some());
         command
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -66,6 +68,7 @@ impl Process {
             touched: Mutex::new(Instant::now()),
             emit,
             graph,
+            omp,
         });
         let reader = p.clone();
         let output_secrets = secrets.clone();
@@ -142,7 +145,8 @@ impl Process {
         });
         Ok(p)
     }
-    pub(super) async fn receive(self: &Arc<Self>, m: Value) {
+    pub(super) async fn receive(self: &Arc<Self>, mut m: Value) {
+        if self.omp && m["type"] == "agent_end" { m["type"] = json!("agent_settled"); }
         *self.touched.lock().await = Instant::now();
         if m["type"] == "response" {
             if let Some(id) = m["id"].as_str() {

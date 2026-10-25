@@ -59,7 +59,7 @@ export function SettingsSectionContainers({
   if (activeSection === "codex") {
     return <SettingsCodexSection {...orchestration.codexSectionProps} />;
   }
-  if (activeSection === "features") {
+  if (activeSection === "codex-flags") {
     return <SettingsFeaturesSection {...orchestration.featuresSectionProps} />;
   }
   return null;

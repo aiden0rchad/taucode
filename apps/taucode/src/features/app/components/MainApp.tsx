@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { exportMarkdownFile } from "@services/tauri";
 import { buildThreadTranscript } from "@utils/threadText";
 import { Checkpoints } from "@/features/checkpoints/Checkpoints";
@@ -96,6 +97,7 @@ const SettingsView = lazy(() =>
 );
 
 export default function MainApp({ settingsOnly = false, onCloseModeSettings }: { settingsOnly?: boolean; onCloseModeSettings?: () => void } = {}) {
+  const features = useFeatures();
   const [selectedEngine, setSelectedEngine] = useState<import("@/types").EngineKind | undefined>();
   const {
     appSettings,
@@ -1504,7 +1506,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
           prompts,
           files,
           onFileAutocompleteActiveChange: setFileAutocompleteActive,
-          dictationEnabled: appSettings.dictationEnabled && dictationReady,
+          dictationEnabled: features.dictation && appSettings.dictationEnabled && dictationReady,
           dictationState,
           dictationLevel,
           onToggleDictation: handleToggleDictation,
@@ -1545,7 +1547,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
 
       followUpMessageBehavior: appSettings.followUpMessageBehavior,
       composerFollowUpHintEnabled: appSettings.composerFollowUpHintEnabled,
-      dictationEnabled: appSettings.dictationEnabled,
+      dictationEnabled: features.dictation && appSettings.dictationEnabled,
       splitChatDiffView: appSettings.splitChatDiffView,
       gitDiffIgnoreWhitespaceChanges:
         appSettings.gitDiffIgnoreWhitespaceChanges,
@@ -1792,7 +1794,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
       } : null,
       messagesProps: {
         ...layoutSurfaces.primary.messagesProps,
-        onSideChat: itemId => void sideChats.create(itemId),
+        onSideChat: features.sideChats ? itemId => void sideChats.create(itemId) : undefined,
         sideChatDisabledReason: sideChats.messageDisabledReason ?? (sideChats.creating ? "Creating side chat…" : undefined),
         hasOlderHistory: Boolean(activeThreadId && historyCursorByThread[activeThreadId]),
         isLoadingHistory: Boolean(activeThreadId && historyLoadingByThread[activeThreadId]),
@@ -1806,7 +1808,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
 
   const sideChat = sideChats.current;
   const [splitSideChatId, setSplitSideChatId] = useState<string | null>(null);
-  const sideChatInSplit = Boolean(sideChat && splitSideChatId === sideChat.id);
+  const sideChatInSplit = Boolean(features.sideChats && sideChat && splitSideChatId === sideChat.id);
   useEffect(() => {
     if (import.meta.env.MODE === "uipreview") {
       void import("@/dev/uiPreview").then(({ selectSideChat }) => selectSideChat(activeThreadId, sideChats.open));
@@ -1920,11 +1922,11 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
   if (settingsOnly) return <div className="mode-settings-host" style={mainAppShellProps.appStyle}><AppModals {...mainAppShellProps.appModalsProps} settingsOpen onCloseSettings={onCloseModeSettings ?? mainAppShellProps.appModalsProps.onCloseSettings} /></div>;
   return <AgentsContext.Provider value={{ details: agentDetails, workspaceId: activeWorkspaceId, threadId: activeThreadId, itemsByThread,
     policy: appSettings.agentPolicy ? { ...appSettings.agentPolicy.subagents, ...activeWorkspace?.settings.agentPolicy?.subagents } : undefined }}>
-    <Checkpoints running={threadStatusById} onChanged={async (workspace, thread, text) => {
+    {features.checkpoints && <Checkpoints running={threadStatusById} onChanged={async (workspace, thread, text) => {
     await refreshThread(workspace, thread);
     if (text !== undefined) composerWorkspaceState.restoreDraftForThread(thread, text);
     if (text !== undefined && workspace === activeWorkspaceId && thread === activeThreadId) setPrefillDraft({ id: `rewind-${Date.now()}`, text, createdAt: Date.now() });
-  }} /><WorkspaceShell reservedShortcuts={Object.entries(appSettings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`code:${encodeURIComponent(activeWorkspaceId ?? "")}:${encodeURIComponent(activeThreadId ?? "")}`} code title={threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.name || activeWorkspace?.name || "taucode"}
+  }} />}<WorkspaceShell reservedShortcuts={Object.entries(appSettings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`code:${encodeURIComponent(activeWorkspaceId ?? "")}:${encodeURIComponent(activeThreadId ?? "")}`} code title={threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.name || activeWorkspace?.name || "taucode"}
     onNavigate={scope => { const [, workspace, thread] = scope.split(":").map(decodeURIComponent); if (workspace && thread) layoutSurfaces.primary.sidebarProps.onSelectThread(workspace, thread); else if (workspace) layoutSurfaces.primary.sidebarProps.onSelectWorkspace(workspace); else layoutSurfaces.primary.sidebarProps.onSelectHome(); }}
     actions={activeWorkspaceId && activeThreadId ? [
       { label: "Rename", onClick: () => handleRenameThread(activeWorkspaceId, activeThreadId) },
@@ -1939,7 +1941,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
       })),
       { id: "terminal", label: "Terminal", shortcut: formatShortcut(appSettings.toggleTerminalShortcut || "ctrl+`"), onOpen: openTerminalWithFocus, onClose: closeTerminalPanel, content: terminalDockNode },
       { id: "sidechat", label: "Side chat", shortcut: "⌘⇧K", target: sideChat?.id, content: sideChatInSplit ? null : sideChatNode, onClose: sideChats.close,
-        onOpen: tab => { setSplitSideChatId(null); if (tab.target && sideChat?.id !== tab.target && activeThreadId) sideChats.open({ id: tab.target, name: "Side chat", updatedAt: Date.now(), engine: parentEngine, sideOf: { threadId: activeThreadId, workspaceId: activeWorkspace.id, atItemId: null } }); },
+        onOpen: (tab: import("@/features/panels/panelState").PanelTab) => { setSplitSideChatId(null); if (tab.target && sideChat?.id !== tab.target && activeThreadId) sideChats.open({ id: tab.target, name: "Side chat", updatedAt: Date.now(), engine: parentEngine, sideOf: { threadId: activeThreadId, workspaceId: activeWorkspace.id, atItemId: null } }); },
       },
-    ] : []} searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><PanelToolRequest id="terminal" requestKey={layoutSurfaces.secondary.terminalDockProps.isOpen} /><PanelToolRequest id="sidechat" requestKey={sideChatInSplit ? null : sideChat?.id} /><MainAppShell {...mainAppShellProps} /></WorkspaceShell></AgentsContext.Provider>;
+    ].filter(tool => tool.id === "git" ? features.git : tool.id === "agents" ? features.subagents : tool.id === "terminal" ? features.terminal : tool.id === "sidechat" ? features.sideChats : true) : []} searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><PanelToolRequest id="terminal" requestKey={layoutSurfaces.secondary.terminalDockProps.isOpen} /><PanelToolRequest id="sidechat" requestKey={sideChatInSplit ? null : sideChat?.id} /><MainAppShell {...mainAppShellProps} /></WorkspaceShell></AgentsContext.Provider>;
 }

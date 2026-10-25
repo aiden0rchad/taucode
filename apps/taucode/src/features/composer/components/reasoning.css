@@ -106,3 +106,5 @@
 .reasoning-popover small, .reasoning-unavailable { color: var(--text-muted); }
 .reasoning-pills { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
 .reasoning-pills span { padding: 2px 7px; border: 1px solid var(--border-subtle); border-radius: 8px; font-size: 11px; }
+
+.reasoning-popover.effects-off, .reasoning-popover.effects-off *, .reasoning-popover.effects-off *::before, .reasoning-popover.effects-off *::after { animation: none !important; transition: none !important; }

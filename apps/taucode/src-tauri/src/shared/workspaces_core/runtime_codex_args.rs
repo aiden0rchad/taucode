@@ -204,7 +204,7 @@ mod tests {
             }),
             vec![],
             crate::types::AgentPolicy {
-                default_engine: crate::types::EngineKind::Codex,
+                default_engine: "codex".to_owned(),
                 ..Default::default()
             },
         )

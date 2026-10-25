@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GitCommitDiff, WorkspaceInfo } from "../../../types";
 import { getGitCommitDiff } from "../../../services/tauri";
@@ -20,6 +21,7 @@ export function useGitCommitDiffs(
   enabled: boolean,
   ignoreWhitespaceChanges: boolean,
 ) {
+  if (!useFeatures().git) activeWorkspace = null;
   const [state, setState] = useState<CommitDiffState>(emptyState);
   const requestIdRef = useRef(0);
   const workspaceIdRef = useRef<string | null>(activeWorkspace?.id ?? null);

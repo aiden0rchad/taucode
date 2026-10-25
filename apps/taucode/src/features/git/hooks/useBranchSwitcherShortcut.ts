@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useEffect } from "react";
 import { matchesShortcut } from "../../../utils/shortcuts";
 
@@ -12,6 +13,8 @@ export function useBranchSwitcherShortcut({
   isEnabled,
   onTrigger,
 }: UseBranchSwitcherShortcutOptions) {
+  const git = useFeatures().git;
+  isEnabled = isEnabled && git;
   useEffect(() => {
     if (!isEnabled || !shortcut) {
       return;

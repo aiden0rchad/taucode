@@ -742,6 +742,7 @@ pub(crate) async fn dictation_start(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<DictationSessionState, String> {
+    if !state.app_settings.lock().await.features().dictation { return Err("Dictation is disabled".into()); }
     let model_id = resolve_model_id(&state, None).await;
     let model_status = refresh_status(&app, &state, &model_id).await;
     if model_status.state != DictationModelState::Ready {

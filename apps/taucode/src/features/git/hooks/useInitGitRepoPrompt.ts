@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useEffect, useState } from "react";
 import type { WorkspaceInfo } from "../../../types";
 import { validateBranchName } from "../utils/branchValidation";
@@ -33,6 +34,7 @@ export function useInitGitRepoPrompt({
   refreshGitRemote: () => void;
   isBusy: boolean;
 }) {
+  if (!useFeatures().git) activeWorkspace = null;
   const [initGitRepoPrompt, setInitGitRepoPrompt] =
     useState<InitGitRepoPromptState | null>(null);
 
