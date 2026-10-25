@@ -35,6 +35,9 @@ pub(super) struct Translator {
     pub active: bool,
     pub model: Value,
     pub provider: String,
+    pub diagnostic_engine: String,
+    pub diagnostic_codegraph: bool,
+    pub diagnostic_provider_kind: String,
     pub connectors: HashMap<String, String>,
     pub access_mode: String,
     pub total: Value,
@@ -60,6 +63,9 @@ impl Translator {
             active: false,
             model: Value::Null,
             provider: String::new(),
+            diagnostic_engine: "pi".into(),
+            diagnostic_codegraph: false,
+            diagnostic_provider_kind: String::new(),
             connectors: HashMap::new(),
             access_mode: "ask".into(),
             total: json!({"totalTokens":0,"inputTokens":0,"cachedInputTokens":0,"cacheWriteInputTokens":0,"outputTokens":0,"reasoningOutputTokens":0}),
@@ -86,6 +92,7 @@ impl Translator {
     }
     fn event(&self, method: &str, mut params: Value) -> Value {
         params["threadId"] = json!(self.thread);
+        if taucode_diag_mcp::writer::enabled() && method=="turn/started" {params["engine"]=json!(self.diagnostic_engine);params["model"]=self.model["id"].clone();params["providerKind"]=json!(self.diagnostic_provider_kind);params["codegraph"]=json!(self.diagnostic_codegraph);}
         json!({"method":method,"params":params})
     }
     fn item_event(&self, method: &str, item: &Value) -> Value {
@@ -208,6 +215,7 @@ impl Translator {
             .or(u["cost"].as_f64())
             .unwrap_or(0.0);
         self.total["cost"] = json!(self.cost);
+        last["cost"]=json!(u["cost"]["total"].as_f64().or(u["cost"].as_f64()).unwrap_or(0.0));
         out.push(self.event("thread/tokenUsage/updated",json!({"turnId":self.turn_id(),"tokenUsage":{"last":last,"total":self.total,"modelContextWindow":self.model["contextWindow"]}})));
     }
     fn message_end(&mut self, m: &Value, out: &mut Vec<Value>) {

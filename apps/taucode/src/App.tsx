@@ -1,3 +1,4 @@
+import { DiagnosticBoundary } from "@/features/diagnostics/DiagnosticBoundary";
 import { lazy, Suspense } from "react";
 import { useThemedScrollbars } from '@/features/layout/hooks/useThemedScrollbars';
 import "./styles/base.css";
@@ -65,5 +66,5 @@ export default function App() {
     );
   }
 
-  return <><ModeShell renderSettings={onClose => <MainApp settingsOnly onCloseModeSettings={onClose} />}><MainApp /></ModeShell><ComputerApprovals /></>;
+  return <DiagnosticBoundary panel="app"><ModeShell renderSettings={onClose => <MainApp settingsOnly onCloseModeSettings={onClose} />}><MainApp /></ModeShell><ComputerApprovals /></DiagnosticBoundary>;
 }

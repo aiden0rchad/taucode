@@ -58,7 +58,9 @@ pub(crate) async fn computer_request(
         return Ok(json!({"ok":true}));
     }
     // Native control always belongs to the visible app on this Mac, with its HUD and kill switch.
-    state.computer.request(app, params).await
+    let result=state.computer.request(app, params).await;
+    if result.is_err(){taucode_diag_mcp::writer::record(||taucode_diag_mcp::core::event("error","computer","computer.request_failed","Computer request failed"));}
+    result
 }
 pub(crate) fn install(app: &AppHandle) -> Result<(), String> {
     let computer = app.state::<AppState>().computer.clone();

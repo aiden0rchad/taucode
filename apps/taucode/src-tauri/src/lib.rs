@@ -14,6 +14,7 @@ use tauri::WindowEvent;
 mod backend;
 mod codex;
 mod daemon_binary;
+mod diagnostics;
 mod dictation;
 mod event_sink;
 mod files;
@@ -131,6 +132,7 @@ pub fn run() {
             if let Err(error) = themes::watch(app.handle()) { eprintln!("Theme watcher unavailable: {error}"); }
             let _ = shared::engine_runtime::RESOURCES.set(app.path().resource_dir()?);
             let state = state::AppState::load(&app.handle());
+            diagnostics::initialize(app.handle(), &tauri::async_runtime::block_on(state.app_settings.lock()).clone()).map_err(std::io::Error::other)?;
             #[cfg(desktop)]
             tauri::async_runtime::block_on(state.browser.serve()).map_err(std::io::Error::other)?;
             #[cfg(desktop)]
@@ -233,6 +235,7 @@ pub fn run() {
             providers::provider_delete_api_key,
             providers::provider_test_and_fetch,
             connectors::connector_request,
+            diagnostics::diagnostics_request,
             settings::get_app_settings,
             settings::update_app_settings,
             settings::get_codex_config_path,
@@ -364,6 +367,7 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
+            taucode_diag_mcp::writer::stop();
             let state = app_handle.state::<state::AppState>();
             state.computer.stop();
             tauri::async_runtime::block_on(state.browser.shutdown());

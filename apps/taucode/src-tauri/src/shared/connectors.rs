@@ -9,7 +9,7 @@ use std::{
     path::Path,
 };
 
-pub(crate) const RESERVED: &[&str] = &["codegraph", "taucode-browser", "taucode-computer"];
+pub(crate) const RESERVED: &[&str] = &["codegraph", "taucode-browser", "taucode-computer", "taucode-diagnostics"];
 pub(crate) const OAUTH_REQUIRED: &str = "This server requires OAuth sign-in, which taucode doesn't support. Use a token/API-key configuration if the server offers one.";
 
 pub(crate) use crate::types::default_mcp_servers as defaults;
@@ -221,6 +221,11 @@ pub(crate) fn effective(
     let features = app.features();
     for entry in &mut entries {
         entry.enabled &= features.connectors && match entry.id.as_str() { "taucode-browser" => features.browser, "taucode-computer" => features.computer_use, _ => true };
+    }
+    if features.connectors && features.diagnostics && app.diagnostics.expose_to_agents {
+        let exe=std::env::current_exe().map_err(|e|e.to_string())?;
+        let bin=exe.parent().ok_or("Missing executable directory")?.join(if cfg!(windows) {"taucode-diag-mcp.exe"} else {"taucode-diag-mcp"});
+        entries.push(McpServerEntry { id:"taucode-diagnostics".into(),name:"Diagnostics".into(),enabled:true,transport:Some(Transport::Stdio {command:bin.to_string_lossy().into_owned(),args:vec!["--dir".into(),taucode_diag_mcp::core::default_dir().to_string_lossy().into_owned()],cwd:None,env:BTreeMap::new()}),tool_allowlist:None,tool_denylist:None,approval:Approval::Ask });
     }
     Ok(entries)
 }

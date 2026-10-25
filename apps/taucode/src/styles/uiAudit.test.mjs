@@ -26,7 +26,7 @@ it.each([960, 1136, 1440])("moves overflowing header actions into the menu at %i
 });
 it("orders settings and names switches from their row without overriding explicit names", () => {
   render(h(Fragment, null, h(SettingsNav, { activeSection: "providers", onSelectSection: () => {} }), h(SettingsToggleRow, { title: "Notifications" }, h(SettingsToggleSwitch, { pressed: false })), h(SettingsToggleRow, { title: "CodeGraph" }, h(SettingsToggleSwitch, { pressed: true, "aria-label": "Enable CodeGraph" }))));
-  expect(SETTINGS_GROUPS.flatMap(group => group.sections)).toEqual(["appearance", "features", "engines", "codex-flags", "providers", "agents", "connectors", "composer", "display", "shortcuts", "dictation", "git", "open-apps", "projects", "environments", "browser", "computer", "server", "import", "about"]);
+  expect(SETTINGS_GROUPS.flatMap(group => group.sections)).toEqual(["appearance", "features", "engines", "codex-flags", "providers", "agents", "connectors", "composer", "display", "shortcuts", "dictation", "diagnostics", "git", "open-apps", "projects", "environments", "browser", "computer", "server", "import", "about"]);
   expect(screen.getByRole("button", { name: "Models & Agents" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Enable CodeGraph" })).toBeTruthy();
@@ -58,8 +58,8 @@ it("gives selected sidebar rows at least 1.25:1 contrast in both themes", () => 
 it("uses distinct settings icons and shared switches throughout settings", () => {
   const { container } = render(h(SettingsNav, { activeSection: "providers", onSelectSection: () => {} }));
   const icons = [...container.querySelectorAll(".settings-nav svg")].map(icon => icon.getAttribute("class"));
-  expect(icons).toHaveLength(20);
-  expect(new Set(icons).size).toBe(20);
+  expect(icons).toHaveLength(21);
+  expect(new Set(icons).size).toBe(21);
   expect(icons[0]).toContain("lucide-palette");
   expect(icons[4]).toContain("lucide-key-round");
   const files = readdirSync("src/features/settings", { recursive: true }).filter(file => file.endsWith(".tsx") && !file.includes(".test."));

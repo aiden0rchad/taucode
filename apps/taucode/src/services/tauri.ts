@@ -1,6 +1,13 @@
 import { downloadDir } from "@tauri-apps/api/path";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { invoke as rawInvoke, Channel } from "@tauri-apps/api/core";
+import { configureDiagnostics, instrumentInvoke, diagnosticsEnabled, record } from "@/features/diagnostics/client";
+const invoke: typeof rawInvoke = (...args) => instrumentInvoke(args[0], () => rawInvoke(...args));
+export const diagnosticsRequest = <T = unknown>(action: string, params?: Record<string, unknown>) => rawInvoke<T>("diagnostics_request", { action, params });
+function configureJournal(settings: AppSettings) {
+  configureDiagnostics(settings, events => diagnosticsRequest("record", { events }));
+  return settings;
+}
 import type { ThemeFile, ThemeManifest } from '@/features/themes/validate';
 export const themesList = () => invoke<ThemeFile[]>('themes_list');
 export const themesSave = (manifest: ThemeManifest, replace = false) => invoke<void>('themes_save', { manifest, replace });
@@ -564,7 +571,7 @@ export async function respondToServerRequest(
     workspaceId,
     requestId,
     result: { decision },
-  });
+  }).then(result => { if (decision === "decline" && diagnosticsEnabled()) record({ kind: "warning", area: "agent", code: "agent.denied", message: "Approval denied" }); return result; });
 }
 
 export async function respondToUserInputRequest(
@@ -871,7 +878,7 @@ export function computerRequest<T = unknown>(params: Record<string, unknown>): P
 export function computerRequestPermissions(): Promise<{ screen: boolean; accessibility: boolean; unsupported?: boolean }> { return invoke("computer_request_permissions"); }
 
 export async function getAppSettings(): Promise<AppSettings> {
-  return invoke<AppSettings>("get_app_settings");
+  return invoke<AppSettings>("get_app_settings").then(configureJournal);
 }
 
 export function connectorRequest<T>(params: { action: "list" | "test" | "secrets" | "setSecret" | "deleteSecret"; id?: string; workspaceId?: string; name?: string; value?: string }): Promise<T> {
@@ -893,7 +900,8 @@ export async function isMobileRuntime(): Promise<boolean> {
 }
 
 export async function updateAppSettings(settings: AppSettings): Promise<AppSettings> {
-  return invoke<AppSettings>("update_app_settings", { settings });
+  if (!settings.features?.diagnostics) configureJournal(settings);
+  return invoke<AppSettings>("update_app_settings", { settings }).then(saved => { configureJournal(saved); if (diagnosticsEnabled()) record({ kind: "ux", area: "ui", code: "ui.settings_changed", message: "Settings updated" }); return saved; });
 }
 
 export async function setThreadAccessMode(workspaceId: string, threadId: string, accessMode: import("@/types").AccessMode): Promise<void> {
@@ -1247,7 +1255,7 @@ export const providerDeleteApiKey = (id: string) => invoke<void>("provider_delet
 export const providerTestAndFetch = (id: string, modelId?: string) => invoke<{ ok: boolean; latencyMs: number; models: import("../types").ProviderModel[]; error?: string }>("provider_test_and_fetch", { id, ...(modelId ? { modelId } : {}) });
 
 export function checkpointRequest(workspaceId: string, params: Record<string, unknown>): Promise<import("@/types").CheckpointResponse> {
-  return invoke("checkpoint_request", { workspaceId, params });
+  return invoke<import("@/types").CheckpointResponse>("checkpoint_request", { workspaceId, params }).then(result => { if (diagnosticsEnabled() && (params.action === "rewind" || params.action === "undo")) record({ kind: "warning", area: "agent", code: "agent.rewound", message: "User rewound or undid a turn", context: { threadId: params.threadId } }); return result; });
 }
 export function getSubagentTranscript(workspaceId: string, threadId: string, nodeId: string) {
   return invoke<{ messages: Record<string, unknown>[]; truncated: boolean }>("get_subagent_transcript", { workspaceId, threadId, nodeId });

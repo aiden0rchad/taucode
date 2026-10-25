@@ -22,6 +22,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.5.6", features = [] }
 
 [dependencies]
+taucode-diag-mcp = { path = "../../../crates/taucode-diag-mcp" }
 tauri = { version = "2.10.3", features = ["protocol-asset", "tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"

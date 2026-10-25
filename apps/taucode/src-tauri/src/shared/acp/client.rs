@@ -78,9 +78,13 @@ impl Client {
             use std::os::unix::process::CommandExt;
             command.as_std_mut().process_group(0);
         }
+        let diagnostic_start = taucode_diag_mcp::writer::enabled().then(std::time::Instant::now);
         let mut child = command
             .spawn()
-            .map_err(|e| format!("Cannot start Claude Code: {e}"))?;
+            .map_err(|e| { taucode_diag_mcp::writer::record(|| {let mut event=taucode_diag_mcp::core::event("error","engine","engine.spawn_failed","Engine spawn failed");event.context=serde_json::json!({"engine":"claude"});event.detail=serde_json::json!({"errorClass":format!("{:?}",e.kind())});event});e.to_string() })?;
+        taucode_diag_mcp::observe::spawned("claude",diagnostic_start);
+        let diagnostic_pid=child.id();
+        taucode_diag_mcp::observe::child(diagnostic_pid,"claude");
         let stdout = child.stdout.take().ok_or("ACP stdout unavailable")?;
         let stderr = child.stderr.take().ok_or("ACP stderr unavailable")?;
         let stdin = child.stdin.take().ok_or("ACP stdin unavailable")?;
@@ -112,7 +116,7 @@ impl Client {
                 }
                 let mut message: Value = match serde_json::from_slice(&line) {
                     Ok(v) => v,
-                    Err(_) => break "ACP returned invalid JSON".into(),
+                    Err(_) => {taucode_diag_mcp::writer::record(||taucode_diag_mcp::core::event("error","engine","engine.protocol_decode","ACP protocol decode failed"));break "ACP returned invalid JSON".into();},
                 };
                 redact_value(&mut message, &output_secrets);
                 *reader.touched.lock().await = Instant::now();
@@ -141,6 +145,7 @@ impl Client {
                     }
                 }
             };
+            if taucode_diag_mcp::writer::enabled() {if let Ok(Some(status))=reader.child.lock().await.try_wait(){taucode_diag_mcp::observe::exited(diagnostic_pid,status);}}
             reader.alive.store(false, Ordering::SeqCst);
             for (_, sender) in reader.pending.lock().await.drain() {
                 let _ = sender.send(Err(error.clone().into()));
@@ -150,6 +155,7 @@ impl Client {
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).split(b'\n');
             while let Ok(Some(line)) = lines.next_segment().await {
+                if taucode_diag_mcp::writer::snippets(){taucode_diag_mcp::observe::stderr(diagnostic_pid,&String::from_utf8_lossy(&line));}
                 stderr_handler(json!({"method":"codex/stderr","params":{"message":redact(String::from_utf8_lossy(&line).into_owned(), &secrets)}})).await;
             }
         });

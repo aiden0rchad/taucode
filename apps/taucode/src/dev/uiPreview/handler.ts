@@ -1,3 +1,4 @@
+import { createDiagnosticsFixture } from "./diagnostics";
 import { builtinIds, parseTheme, type ThemeFile, type ThemeManifest } from "@/features/themes/validate";
 import customTheme from "@/features/themes/fixtures/valid-custom.json";
 import { defaultFeatures, type Features } from '@settings/features';
@@ -12,6 +13,7 @@ const record = (value: unknown): Params => value && typeof value === "object" &&
 export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const state = createFixtures();
   const query = new URLSearchParams(search);
+  const diagnostics = createDiagnosticsFixture(query.get("diagnostics") === "empty");
   const mode = query.get("mode");
   if (query.get("dictation") === "ready") { state.settings.dictationEnabled = true; state.settings.features = { ...state.settings.features, dictation: true }; }
   for (const entry of (query.get('features') ?? '').split(',')) {
@@ -218,6 +220,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       }
       case "terminal_open": return { id: args.terminalId };
       case "terminal_write": case "terminal_resize": case "terminal_close": return null;
+      case "diagnostics_request": return diagnostics(String(args.action), params);
       case "provider_has_api_key": return false;
       case "provider_test_and_fetch": return { ok: true, latencyMs: 12, models: state.settings.providers?.find(p => p.id === args.id)?.models ?? [] };
       case "local_usage_snapshot": return { updatedAt: Date.now(), days: [], topModels: [], totals: { last7DaysTokens: 0, last30DaysTokens: 0, averageDailyTokens: 0, cacheHitRatePercent: 0, peakDay: null, peakDayTokens: 0 } };

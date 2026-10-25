@@ -175,6 +175,7 @@ export const Messages = memo(function Messages({
           key={item.id}
           item={item}
           isCopied={isCopied}
+          diagnosticThreadId={threadId}
           rewindAction={features.checkpoints && item.role === "user" && workspaceId && threadId ? <><RewindAction workspaceId={workspaceId} threadId={threadId} userItemId={item.id} running={isThinking} />{checkpointWarnings[item.id] && <span role="status">{checkpointWarnings[item.id]}</span>}</> : undefined}
           onSideChat={onSideChat}
           sideChatDisabledReason={sideChatDisabledReason}

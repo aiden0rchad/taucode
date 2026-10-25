@@ -6,6 +6,7 @@ import type { MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import Brain from "lucide-react/dist/esm/icons/brain";
 import Check from "lucide-react/dist/esm/icons/check";
+import { diagnosticsEnabled, openFeedback } from "@/features/diagnostics/client";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import Diff from "lucide-react/dist/esm/icons/diff";
 import FileDiffIcon from "lucide-react/dist/esm/icons/file-diff";
@@ -60,6 +61,7 @@ type WorkingIndicatorProps = {
 
 type MessageRowProps = MarkdownFileLinkProps & {
   rewindAction?: React.ReactNode;
+  diagnosticThreadId?: string | null;
   onSideChat?: (itemId: string) => void;
   sideChatDisabledReason?: string;
   onSendToMain?: (text: string) => void;
@@ -374,7 +376,7 @@ export const WorkingIndicator = memo(function WorkingIndicator({
 });
 
 export const MessageRow = memo(function MessageRow({
-  rewindAction,
+  rewindAction, diagnosticThreadId,
   onSideChat, sideChatDisabledReason, onSendToMain,
   item,
   isCopied,
@@ -483,6 +485,7 @@ export const MessageRow = memo(function MessageRow({
           />
         )}
         <div className="message-hover-actions">{rewindAction}
+        {item.role === "assistant" && diagnosticsEnabled() && <details><summary aria-label="Response actions">⋯</summary><button type="button" onClick={() => openFeedback({ responseId: item.id, threadId: diagnosticThreadId })}>Flag this response</button></details>}
         {item.role === "assistant" && (onSideChat || onSendToMain) && <div className="message-side-actions">
           {onSideChat && <span title={sideChatDisabledReason}><button type="button" className="ghost icon-button" aria-label="Side chat" title={sideChatDisabledReason || "Side chat"} disabled={Boolean(sideChatDisabledReason)} onClick={() => onSideChat(item.id)}><MessagesSquare aria-hidden /></button></span>}
           {onSendToMain && <button type="button" className="ghost icon-button" aria-label="Send to main" title="Send to main" onClick={() => onSendToMain(item.text)}><CornerUpLeft aria-hidden /></button>}

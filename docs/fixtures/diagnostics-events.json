@@ -1,0 +1,92 @@
+[
+  {
+    "v": 1,
+    "ts": "2026-10-25T21:04:00.000Z",
+    "run": "00000000-0000-4000-8000-000000000001",
+    "seq": 1,
+    "kind": "error",
+    "severity": "high",
+    "area": "engine",
+    "code": "engine.spawn_failed",
+    "message": "Engine spawn failed",
+    "fingerprint": "2f2ec4fbc5b76ac3",
+    "context": {
+      "codegraph": true,
+      "engine": "pi",
+      "model": "fixture-model",
+      "turnId": "turn-1"
+    },
+    "metrics": {},
+    "detail": {}
+  },
+  {
+    "v": 1,
+    "ts": "2026-10-25T21:04:01.000Z",
+    "run": "00000000-0000-4000-8000-000000000001",
+    "seq": 2,
+    "kind": "perf",
+    "severity": "low",
+    "area": "engine",
+    "code": "engine.first_token",
+    "message": "First token",
+    "fingerprint": "58a5131d2fa25a15",
+    "context": {
+      "codegraph": true,
+      "engine": "pi",
+      "model": "fixture-model",
+      "turnId": "turn-1"
+    },
+    "metrics": {
+      "durationMs": 1250
+    },
+    "detail": {}
+  },
+  {
+    "v": 1,
+    "ts": "2026-10-25T21:04:02.000Z",
+    "run": "00000000-0000-4000-8000-000000000001",
+    "seq": 3,
+    "kind": "usage",
+    "severity": "low",
+    "area": "agent",
+    "code": "agent.turn",
+    "message": "Turn completed",
+    "fingerprint": "854767b88721fa5e",
+    "context": {
+      "codegraph": true,
+      "engine": "pi",
+      "model": "fixture-model",
+      "turnId": "turn-1"
+    },
+    "metrics": {
+      "cachedTokens": 100,
+      "costUsd": 0.01,
+      "tokensIn": 1000,
+      "tokensOut": 200,
+      "toolCalls": 2
+    },
+    "detail": {}
+  },
+  {
+    "v": 1,
+    "ts": "2026-10-25T21:04:03.000Z",
+    "run": "00000000-0000-4000-8000-000000000001",
+    "seq": 4,
+    "kind": "feedback",
+    "severity": "low",
+    "area": "ui",
+    "code": "feedback.idea",
+    "message": "User idea",
+    "fingerprint": "0d02730a193846ad",
+    "context": {
+      "codegraph": true,
+      "engine": "pi",
+      "model": "fixture-model",
+      "turnId": "turn-1"
+    },
+    "metrics": {},
+    "detail": {
+      "note": "Please make retries easier to see"
+    }
+  }
+]

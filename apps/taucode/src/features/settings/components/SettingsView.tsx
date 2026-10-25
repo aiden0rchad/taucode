@@ -1,3 +1,5 @@
+import { DiagnosticsSettings } from "@/features/diagnostics/DiagnosticsSettings";
+import { DiagnosticBoundary } from "@/features/diagnostics/DiagnosticBoundary";
 import { FeatureSettings } from "@settings/features";
 import { SettingsTaucodeFeaturesSection } from "./sections/SettingsTaucodeFeaturesSection";
 import { SettingsEnginesSection } from "./sections/SettingsEnginesSection";
@@ -202,7 +204,7 @@ export function SettingsView({
               </div>
             )}
             <div className="settings-content">
-              {activeSection === "features" ? <SettingsTaucodeFeaturesSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
+              {activeSection === "diagnostics" ? <DiagnosticBoundary panel="settings"><DiagnosticsSettings appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /></DiagnosticBoundary> : activeSection === "features" ? <SettingsTaucodeFeaturesSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
                activeSection === "engines" ? <SettingsEnginesSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} onOpenCodexFlags={() => handleSelectSection("codex-flags")} onOpenCodexSetup={() => handleSelectSection("codex")} /> :
                activeSection === "computer" ? <SettingsComputerSection onManageEngines={manageEngines} appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> : activeSection === "browser" ? <SettingsBrowserSection onManageEngines={manageEngines} appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
                activeSection === "import" ? <SettingsImportSection /> :
