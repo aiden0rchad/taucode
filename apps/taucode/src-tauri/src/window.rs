@@ -52,6 +52,13 @@ pub(crate) fn apply_window_appearance(window: &Window, theme: &str) -> Result<()
         return handler(window, theme);
     }
 
+    // Theme ids (glass-dark, matrix, custom themes) are owned by the frontend applier via
+    // `window_set_material`; resetting the window theme here would undo the Glass material.
+    if !matches!(theme, "system" | "light" | "dark" | "dim") {
+        return Ok(());
+    }
+    eprintln!("{}", serde_json::json!({"level":"info","event":"window_appearance_applied","theme":theme}));
+
     #[cfg(desktop)]
     {
         let next_theme = match theme {
