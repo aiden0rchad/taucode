@@ -4,6 +4,46 @@ import { builtins, resolveTheme, selectTheme } from './builtins';
 import { validateTheme } from './validate';
 import { rgba, composite, contrast } from './contrast';
 import { themeTokens } from './tokens';
+import { cardStyle } from './cardStyle';
+it('limits new border styling to Glass and Neon and resets inherited CSS keys', () => {
+  for (const theme of builtins) {
+    if (theme.id.startsWith('glass-')) {
+      expect(theme.shape.corners).toBe('squircle');
+      expect(theme.border).toMatchObject({angle:160,highlight:true});
+      expect(theme.border.gradient).toHaveLength(3);
+    } else if (theme.id === 'cyberpunk-neon') {
+      expect(theme.shape).toEqual({corners:'chamfer',chamfer:10});
+      expect(theme.border).toEqual({gradient:['#ff2bd6','#a855f7','#00e5ff'],angle:135});
+      expect(cardStyle(theme,false)['--card-neon-glow']).toBe('0');
+      expect(cardStyle(theme,false)['--card-neon-fill']).toBe('1');
+    } else {
+      expect(theme.shape).toBeUndefined();
+      expect(theme.border).toBeUndefined();
+      expect(cardStyle(theme)).toMatchObject({'--card-corners':'squircle','--card-border-stops':'0','--card-border-highlight':'0','--card-border-1':'transparent'});
+    }
+  }
+  const inherited = resolveTheme({schemaVersion:1,id:'custom',name:'Custom',appearance:'dark',extends:'cyberpunk-neon',tokens:{}});
+  expect(inherited.shape.corners).toBe('chamfer');
+  expect(resolveTheme({...inherited,border:{}}).border.gradient).toBeUndefined();
+});
+it('separates the average Glass Light edge from its sidebar by at least 1.3:1', () => {
+  const theme = resolveTheme(builtins.find(t => t.id === 'glass-light'));
+  const renderer = readFileSync('src/features/design-system/components/squircle/Squircle.tsx','utf8');
+  const hairline = rgba(renderer.match(/className="squircle-hairline"[^>]*stroke="([^"]+)"/)[1]);
+  const stops = theme.border.gradient.map(rgba);
+  for (const desktop of ['#ffffff','#bdbdc2']) {
+    const sidebar = composite(rgba(theme.tokens['--surface-sidebar']),rgba(desktop));
+    const edge = composite(hairline,sidebar);
+    const samples = Array.from({length:101},(_,i) => {
+      const position = i/50, index = Math.min(1,Math.floor(position)), t = position-index;
+      const a = composite(stops[index],edge), b = composite(stops[index+1],edge);
+      return a.map((v,j) => v*(1-t)+b[j]*t);
+    });
+    // The 2px hairline under a 1px gradient contributes half the painted edge.
+    const average = edge.slice(0,3).map((v,i) => (v+samples.reduce((sum,c) => sum+c[i],0)/samples.length)/2).concat(1);
+    expect(contrast(average,sidebar)).toBeGreaterThanOrEqual(1.3);
+  }
+});
 it('paints swatches over a checkerboard with the shared one-pixel inset squircle ring', () => {
   const css = readFileSync('src/features/themes/themes.css','utf8');
   const rule = selector => css.split(selector+' {')[1].split('}')[0];

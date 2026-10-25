@@ -390,6 +390,7 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 .sidebar .project-group-card {
   --squircle-background: color-mix(in srgb, var(--surface-sidebar), var(--text-primary) 3%);
   --squircle-border: var(--tree-line);
+  --squircle-border-active: var(--tree-line-active);
   padding: 4px;
   overflow: visible;
   margin: 0;
@@ -398,7 +399,7 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 .sidebar .workspace-group-content { gap: 6px; }
 .sidebar .work-space { margin-bottom: 6px; }
 .sidebar .work-space > .workspace-row { margin: 0 0 2px; }
-.composer-shell.squircle { --squircle-background: var(--surface-composer); padding: 1px; }
+.composer-shell.squircle { --squircle-border-active: var(--border-accent); --squircle-background: var(--surface-composer); padding: 1px; }
 .composer-shell.squircle:focus-within { --squircle-border: var(--border-accent); }
 .settings-window.squircle { --squircle-background: var(--surface-app); padding: 1px; }
 .side-panel-tools .squircle:hover { --squircle-background: var(--surface-hover); background: transparent; }

@@ -6,6 +6,8 @@ export type ThemeManifest = {
   fonts?: { ui?: string; mono?: string; prose?: string };
   window?: { translucent: boolean; material: 'none' | 'sidebar' | 'underWindow' | 'hudWindow' };
   effects?: { digitalRain?: boolean; neonGlow?: boolean };
+  shape?: { corners?: 'squircle' | 'chamfer' | 'round'; chamfer?: number };
+  border?: { gradient?: string[]; angle?: number; highlight?: boolean };
 };
 export type ThemeFile = { file: string; manifest?: ThemeManifest; error?: string };
 const safe = (s: string) => s.length <= 120 && !/url\(|image-set\(|expression|[@;{}\\<]/i.test(s);
@@ -49,7 +51,7 @@ export function validColor(s: string): boolean {
 export function validateTheme(input: unknown): string[] {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return ['Theme must be an object'];
   const t = input as Record<string, unknown>, errors: string[] = [];
-  const keys = ['$schema','schemaVersion','id','name','author','version','description','appearance','extends','tokens','fonts','window','effects'];
+  const keys = ['$schema','schemaVersion','id','name','author','version','description','appearance','extends','tokens','fonts','window','effects','shape','border'];
   for (const key of Object.keys(t)) if (!keys.includes(key)) errors.push(`Unknown field: ${key}`);
   if (t.schemaVersion !== 1) errors.push(typeof t.schemaVersion === 'number' && t.schemaVersion > 1 ? 'Theme made for a newer taucode' : 'schemaVersion must be 1');
   if (typeof t.id !== 'string' || !/^[a-z0-9-]{1,40}$/.test(t.id)) errors.push('id must contain 1–40 lowercase letters, digits or hyphens');
@@ -71,6 +73,9 @@ export function validateTheme(input: unknown): string[] {
   if (t.fonts !== undefined && (!object(t.fonts) || Object.entries(t.fonts).some(([k,v]) => !['ui','mono','prose'].includes(k) || typeof v !== 'string' || !validFont(v)))) errors.push('Invalid local font stack');
   if (t.window !== undefined && (!object(t.window) || Object.keys(t.window).some(k => !['translucent','material'].includes(k)) || typeof t.window.translucent !== 'boolean' || !['none','sidebar','underWindow','hudWindow'].includes(t.window.material as string))) errors.push('Invalid window material');
   if (t.effects !== undefined && (!object(t.effects) || Object.entries(t.effects).some(([k,v]) => !['digitalRain','neonGlow'].includes(k) || typeof v !== 'boolean'))) errors.push('Invalid effects');
+  const range = (v: unknown, min: number, max: number) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
+  if (t.shape !== undefined && (!object(t.shape) || Object.entries(t.shape).some(([k,v]) => k === 'corners' ? !['squircle','chamfer','round'].includes(v as string) : k === 'chamfer' ? !range(v,4,20) : true))) errors.push('Invalid shape');
+  if (t.border !== undefined && (!object(t.border) || Object.entries(t.border).some(([k,v]) => k === 'gradient' ? !Array.isArray(v) || v.length < 2 || v.length > 4 || v.some(c => typeof c !== 'string' || !validColor(c)) : k === 'angle' ? !range(v,0,360) : k === 'highlight' ? typeof v !== 'boolean' : true))) errors.push('Invalid border');
   return errors;
 }
 export function parseTheme(json: string): ThemeManifest {

@@ -24,7 +24,7 @@ Save a UTF-8 `*.taucode-theme.json` file:
 }
 ```
 
-`schemaVersion`, `id`, `name`, `appearance` and `tokens` are required. IDs contain 1–40 lowercase ASCII letters, digits or hyphens. Built-in IDs are reserved. `author`, `version` and `description` are optional metadata. `$schema` enables editor completion. `extends` selects a built-in except System; without it, the appearance selects Light or Dark. Tokens, fonts, window and effects inherit from that base. Appearance is `light` or `dark` and controls native color scheme, syntax highlighting and terminal colors. Font keys are `ui`, `mono`, `prose`. Window material is `none`, `sidebar`, `underWindow` or `hudWindow`; translucency must be enabled to apply a material. `effects.digitalRain` enables an empty-state animation, capped at 20 fps and disabled by reduced motion or the per-theme Animated background preference.
+`schemaVersion`, `id`, `name`, `appearance` and `tokens` are required. IDs contain 1–40 lowercase ASCII letters, digits or hyphens. Built-in IDs are reserved. `author`, `version` and `description` are optional metadata. `$schema` enables editor completion. `extends` selects a built-in except System; without it, the appearance selects Light or Dark. Tokens, fonts, window, effects, shape and border inherit from that base. Appearance is `light` or `dark` and controls native color scheme, syntax highlighting and terminal colors. Font keys are `ui`, `mono`, `prose`. Window material is `none`, `sidebar`, `underWindow` or `hudWindow`; translucency must be enabled to apply a material. `effects.digitalRain` enables an empty-state animation, capped at 20 fps and disabled by reduced motion or the per-theme Animated background preference.
 
 Cyberpunk Neon pairs magenta primary actions with cyan links and focus rings on deep violet surfaces. Its static glows can be disabled with **Glow effects** in Appearance, independently of animation and reduced-motion preferences. Both effect fields are optional booleans. Custom themes can inherit Cyberpunk Neon or enable either effect in the editor.
 
@@ -36,6 +36,31 @@ Cyberpunk Neon pairs magenta primary actions with cyan links and focus rings on 
 | `effects.digitalRain` | boolean | Empty-state animation; respects reduced motion and Animated background. |
 | `effects.neonGlow` | boolean | Static accent, focus, selected-row and heading glows; controlled by Glow effects. |
 <!-- effects:end -->
+
+## Shape and border
+
+All fields are optional in schema v1. Omitted shape and border objects inherit from the base; an explicit empty object resets that group to defaults. Solid squircles remain the default. Round uses the circular `--radius-window` radius. Chamfer cuts the top-left and bottom-right corners, retains 2px rounding on the other corners and clamps cuts to one-third of the smaller side.
+
+```json
+{
+  "shape": { "corners": "chamfer", "chamfer": 10 },
+  "border": { "gradient": ["#ff2bd6", "#a855f7", "#00e5ff"], "angle": 135, "highlight": false }
+}
+```
+
+Glass Dark and Glass Light use silver gradients at 160° with an inner top highlight. Glass Light adds a dark separating hairline. Cyberpunk Neon uses the example above, a subtly lit fill, and a static gradient glow controlled by **Glow effects**. Selected cards brighten the gradient; solid cards retain their active border color. Thread rows retain their own styling.
+
+Gradient stops accept the same safe colors and allowlisted token references as color tokens. Angles follow CSS gradients (0° points up, 90° right). Without a gradient, the solid border is used. The editor's **Shape & border** controls and gallery previews use the shared Squircle renderer.
+
+<!-- shape:start -->
+| Field | Values | Default |
+| --- | --- | --- |
+| `shape.corners` | squircle, round, chamfer | squircle |
+| `shape.chamfer` | 4–20 px | 10 |
+| `border.gradient` | 2–4 safe colors | Solid border |
+| `border.angle` | 0–360 degrees | 135 |
+| `border.highlight` | boolean | false |
+<!-- shape:end -->
 
 ## Validation and safety
 

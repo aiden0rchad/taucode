@@ -21,13 +21,30 @@
   overflow: visible;
   stroke: var(--squircle-border, var(--border-subtle));
 }
-.squircle-svg.squircle-clip { clip-path: var(--squircle-clip); }
+.squircle.squircle-svg.squircle-clip { overflow: visible; }
+.squircle-content {
+  display: inherit;
+  flex: 1;
+  flex-direction: inherit;
+  grid-template-columns: inherit;
+  grid-template-rows: inherit;
+  gap: inherit;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.squircle-svg > .squircle-content { clip-path: var(--squircle-clip); }
+.squircle-gradient:is(.is-selected, .composer-shell:focus-within, .theme-preview-composer:focus-within) > .squircle-border > .squircle-stroke { filter: var(--squircle-active-filter); }
+.squircle-gradient:is(.is-selected, .composer-shell:focus-within, .theme-preview-composer:focus-within) > .squircle-border > .squircle-glow { opacity: .6; }
+.squircle:not(.squircle-gradient):is(.is-selected, .composer-shell:focus-within) > .squircle-border { stroke: var(--squircle-border-active, var(--squircle-border, var(--border-subtle))); }
+.squircle.squircle-neon.squircle { --squircle-background: linear-gradient(180deg, color-mix(in srgb, var(--surface-card) 92%, white 8%), var(--surface-card)); }
 @supports (corner-shape: squircle) {
   .squircle-native.squircle-clip { corner-shape: squircle; overflow: hidden; }
-  .squircle > .squircle-background {
+  .squircle-native > .squircle-background {
     border-radius: var(--radius-window);
     corner-shape: squircle;
     border: 1px solid var(--squircle-border, var(--border-subtle));
   }
-  .squircle > .squircle-border { display: none; }
+  .squircle-native > .squircle-border { display: none; }
 }

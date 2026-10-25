@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "shape-test",
+  "name": "Shape test",
+  "appearance": "dark",
+  "tokens": {},
+  "border": {
+    "gradient": [
+      "#fff",
+      "#fff",
+      "#fff",
+      "#fff",
+      "#fff"
+    ]
+  }
+}

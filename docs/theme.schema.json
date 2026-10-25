@@ -394,6 +394,50 @@
           "type": "boolean"
         }
       }
+    },
+    "shape": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "corners": {
+          "enum": [
+            "squircle",
+            "chamfer",
+            "round"
+          ],
+          "default": "squircle"
+        },
+        "chamfer": {
+          "type": "number",
+          "minimum": 4,
+          "maximum": 20,
+          "default": 10
+        }
+      }
+    },
+    "border": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gradient": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/color"
+          }
+        },
+        "angle": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 360,
+          "default": 135
+        },
+        "highlight": {
+          "type": "boolean",
+          "default": false
+        }
+      }
     }
   },
   "$defs": {

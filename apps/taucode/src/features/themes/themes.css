@@ -16,6 +16,9 @@
 .theme-card-select > small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 28px 0 6px; color: var(--text-muted); }
 .theme-custom-chip { font-size: 11px; padding: 2px 5px; border-radius: 5px; border: 1px solid var(--border-subtle); color: var(--text-muted); }
 .theme-mini, .theme-app-preview { --preview-ui: var(--ui-font-family); --preview-mono: var(--code-font-family); --preview-prose: var(--ui-font-family); font-family: var(--preview-ui); }
+.theme-mini.squircle, .theme-app-preview.squircle { --squircle-background: var(--surface-app); }
+.theme-preview-project.squircle { --squircle-background: var(--surface-card); }
+.theme-preview-composer.squircle { --squircle-background: var(--surface-composer); }
 .theme-mini { position: relative; display: flex; height: 116px; border-radius: 8px; overflow: hidden; background: var(--surface-app); color: var(--text-primary); font-size: 11px; border: 1px solid var(--border-subtle); }
 .theme-mini-sidebar { width: 27%; background: var(--surface-sidebar); padding: 16px 7px; display: grid; align-content: start; gap: 10px; }
 .theme-mini-project { height: 7px; width: 70%; background: var(--text-muted); opacity: .4; border-radius: 3px; }
@@ -57,6 +60,10 @@
 .theme-token-label small { line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .theme-token-controls { display: flex; min-width: 0; align-items: center; gap: 7px; }
 .theme-color-swatch { flex: 0 0 24px; width: 24px; height: 24px; --squircle-border: var(--border-strong); }
+.theme-color-swatch { --card-corners: squircle; --card-border-stops: 0; --card-border-highlight: 0; --card-neon-fill: 0; --card-light-edge: 0; }
+.theme-border-swatch { width: 24px; height: 24px; flex-shrink: 0; border: 1px solid var(--border-strong); border-radius: 4px; }
+.theme-gradient-stop { gap: 8px; }
+.theme-gradient-stop .settings-input { min-width: 0; }
 .theme-color-swatch > .squircle-background { background: linear-gradient(var(--theme-swatch-color), var(--theme-swatch-color)), repeating-conic-gradient(#d1d1d1 0% 25%, #ececec 0% 50%); background-size: auto, 8px 8px; }
 .theme-color-swatch input[type="color"] { display: block; width: 24px; height: 24px; border: 0; padding: 0; cursor: pointer; opacity: 0; }
 .theme-color-swatch:focus-within { --squircle-border: var(--border-accent); }

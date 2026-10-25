@@ -23,6 +23,28 @@ beforeEach(async () => {
   await reloadThemes();
 });
 afterEach(cleanup);
+it('edits shape and gradient stops, saves them, and isolates gallery previews', async () => {
+  render(<ThemeGallery settings={{...buildDefaultSettings(),theme:'dark'}} update={vi.fn(async () => {})} />);
+  const neon = screen.getByRole('button',{name:'Apply Cyberpunk Neon'}).querySelector('.theme-mini') as HTMLElement;
+  expect(neon.style.getPropertyValue('--card-corners')).toBe('chamfer');
+  expect(neon.querySelectorAll('stop'), neon.outerHTML).toHaveLength(3);
+  fireEvent.click(screen.getByRole('button',{name:'New theme'}));
+  fireEvent.change(screen.getByLabelText('Search tokens'),{target:{value:'no-matching-token'}});
+  fireEvent.click(screen.getByRole('button',{name:'Chamfer'}));
+  fireEvent.change(screen.getByLabelText(/Cut size/),{target:{value:'14'}});
+  fireEvent.click(screen.getByRole('button',{name:'Border gradient'}));
+  fireEvent.click(screen.getByRole('button',{name:'Add stop'}));
+  fireEvent.click(screen.getByRole('button',{name:'Add stop'}));
+  expect(screen.getByRole('button',{name:'Add stop'})).toHaveProperty('disabled',true);
+  fireEvent.click(screen.getByRole('button',{name:'Remove stop 4'}));
+  fireEvent.change(screen.getByLabelText('Stop 1'),{target:{value:'#123456'}});
+  fireEvent.change(screen.getByLabelText(/Angle ·/),{target:{value:'160'}});
+  fireEvent.click(screen.getByRole('button',{name:'Top highlight'}));
+  expect(screen.getByTestId('theme-preview').dataset.cardCorners).toBe('chamfer');
+  fireEvent.click(screen.getByRole('button',{name:'Save theme'}));
+  await waitFor(() => expect(themesSave).toHaveBeenCalledWith(expect.objectContaining({shape:{corners:'chamfer',chamfer:14},border:{gradient:['#123456','#00e5ff','#a855f7'],angle:160,highlight:true}}),false));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+});
 it.each(builtins)('duplicates $name with no Reset icons or redundant tokens', async theme => {
   render(<ThemeGallery settings={{...buildDefaultSettings(),theme:theme.id}} update={vi.fn(async () => {})} />);
   fireEvent.click(screen.getByRole('button',{name:'New theme'}));

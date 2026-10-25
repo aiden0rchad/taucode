@@ -73,7 +73,7 @@ fn custom_id(id: &str) -> Result<(), String> {
 pub(crate) fn validate(t: &Value) -> Result<(), String> {
     let obj = t.as_object().ok_or("Theme must be an object")?;
     for k in obj.keys() {
-        if !["$schema","schemaVersion","id","name","author","version","description","appearance","extends","tokens","fonts","window","effects"].contains(&k.as_str()) { return Err(format!("Unknown field: {k}")); }
+        if !["$schema","schemaVersion","id","name","author","version","description","appearance","extends","tokens","fonts","window","effects","shape","border"].contains(&k.as_str()) { return Err(format!("Unknown field: {k}")); }
     }
     if t["schemaVersion"].as_f64() != Some(1.) { return Err(if t["schemaVersion"].as_f64().unwrap_or(0.) > 1. { "Theme made for a newer taucode" } else { "schemaVersion must be 1" }.into()); }
     if !valid_id(t["id"].as_str().unwrap_or("")) { return Err("Invalid theme id".into()); }
@@ -116,6 +116,23 @@ pub(crate) fn validate(t: &Value) -> Result<(), String> {
     if let Some(v) = t.get("effects") {
         let obj = v.as_object().ok_or("Invalid effects")?;
         if obj.iter().any(|(k,v)| !["digitalRain","neonGlow"].contains(&k.as_str()) || !v.is_boolean()) { return Err("Invalid effects".into()); }
+    }
+    if let Some(v) = t.get("shape") {
+        let obj = v.as_object().ok_or("Invalid shape")?;
+        if obj.iter().any(|(k,v)| match k.as_str() {
+            "corners" => v.as_str().is_none_or(|s| !["squircle","chamfer","round"].contains(&s)),
+            "chamfer" => v.as_f64().is_none_or(|n| !(4.0..=20.0).contains(&n)),
+            _ => true,
+        }) { return Err("Invalid shape".into()); }
+    }
+    if let Some(v) = t.get("border") {
+        let obj = v.as_object().ok_or("Invalid border")?;
+        if obj.iter().any(|(k,v)| match k.as_str() {
+            "gradient" => v.as_array().is_none_or(|a| !(2..=4).contains(&a.len()) || a.iter().any(|c| c.as_str().is_none_or(|s| !color(s)))),
+            "angle" => v.as_f64().is_none_or(|n| !(0.0..=360.0).contains(&n)),
+            "highlight" => !v.is_boolean(),
+            _ => true,
+        }) { return Err("Invalid border".into()); }
     }
     Ok(())
 }
