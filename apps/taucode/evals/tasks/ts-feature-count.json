@@ -2,13 +2,11 @@
   "id": "ts-feature-count",
   "repo": "ts-lib",
   "category": "feature",
-  "tags": [
-    "smoke"
-  ],
-  "prompt": "Implement count, including __proto__ safely. Run node --test --test-name-pattern=\"^count$\".",
+  "tags": [],
+  "prompt": "Implement count, including __proto__ safely. Run node --test --test-name-pattern=\"^count$\" test/lib.test.js.",
   "setup": [],
   "check": {
-    "command": "node --test --test-name-pattern=\"^count$\"",
+    "command": "node --test --test-name-pattern=\"^count$\" test/lib.test.js",
     "expectExit": 0
   },
   "extraChecks": [],

@@ -1,0 +1,19 @@
+{
+  "id": "ts-refactor-records",
+  "repo": "ts-lib",
+  "category": "refactor",
+  "tags": [
+    "hard"
+  ],
+  "prompt": "Refactor hard/records/parser.ts around a new lazy generator parseLines(Iterable<string>). Keep the public parseRecords(text) and parseConfig(text) APIs, whitespace rules, last-key-wins behavior and exact SyntaxError line numbers stable. Both existing functions must delegate to parseLines. Do not consume a source until next() or read ahead; support a one-shot iterable. Preserve the existing API tests and add the new streaming behavior needed by streaming.test.ts. Run node --test hard/records/*.test.ts.",
+  "setup": [],
+  "check": {
+    "command": "node --test hard/records/*.test.ts",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

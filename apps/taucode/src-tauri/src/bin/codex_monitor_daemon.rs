@@ -1657,7 +1657,7 @@ mod tests {
         run_async_test(async {
             let dir=make_temp_dir("eval-rpc"); let state=test_state(&dir);
             let suites=rpc::handle_rpc_request(&state,"eval_request",json!({"action":"suites","params":{}}),"test".into()).await.unwrap();
-            assert_eq!(suites.as_array().unwrap().len(),24);
+            assert_eq!(suites.as_array().unwrap().len(),28);
             let plan=json!({"engines":["pi","omp"],"models":["lab/model"],"tags":["smoke"],"codegraph":[false,true]});
             let preview=rpc::handle_rpc_request(&state,"eval_request",json!({"action":"plan","params":plan}),"test".into()).await.unwrap();
             assert_eq!(preview["cells"],32); assert_eq!(preview["tasks"],8);

@@ -2,13 +2,11 @@
   "id": "ts-bugfix-clamp",
   "repo": "ts-lib",
   "category": "bugfix",
-  "tags": [
-    "smoke"
-  ],
-  "prompt": "Fix clamp to enforce both bounds. Run node --test --test-name-pattern=\"^clamp$\".",
+  "tags": [],
+  "prompt": "Fix clamp to enforce both bounds. Run node --test --test-name-pattern=\"^clamp$\" test/lib.test.js.",
   "setup": [],
   "check": {
-    "command": "node --test --test-name-pattern=\"^clamp$\"",
+    "command": "node --test --test-name-pattern=\"^clamp$\" test/lib.test.js",
     "expectExit": 0
   },
   "extraChecks": [],

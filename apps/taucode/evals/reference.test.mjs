@@ -30,7 +30,7 @@ for(const file of readdirSync(join(root,'tasks')).sort()) {
    const env={PATH:process.env.PATH,HOME:dir,TMPDIR:dir,PYTHONDONTWRITEBYTECODE:'1'};
    const shell=command=>spawnSync('/bin/sh',['-c',command],{cwd:dir,env,timeout:10000,encoding:'utf8'});
    for(const setup of task.setup) assert.equal(shell(setup).status,0);
-   const check=()=>shell(task.check.command).status===task.check.expectExit && task.extraChecks.every(c=>readFileSync(join(dir,c.file),'utf8').includes(c.contains)) && task.answerContains.every(token=>existsSync(join(dir,'.answer')) && readFileSync(join(dir,'.answer'),'utf8').includes(token));
+   const check=()=>shell(task.check.command).status===task.check.expectExit && task.extraChecks.every(c=>existsSync(join(dir,c.file)) && readFileSync(join(dir,c.file),'utf8').includes(c.contains)) && task.answerContains.every(token=>existsSync(join(dir,'.answer')) && readFileSync(join(dir,'.answer'),'utf8').includes(token));
    assert.equal(check(),false,'base must fail');
    const patch=spawnSync('git',['apply',join(root,'solutions',task.id+'.patch')],{cwd:dir,env,encoding:'utf8'});
    assert.equal(patch.status,0,patch.stderr);
@@ -40,7 +40,15 @@ for(const file of readdirSync(join(root,'tasks')).sort()) {
 }
 test('suite distribution',()=>{
  const counts=Object.fromEntries(['question','bugfix','feature','refactor','browser','computerUse'].map(k=>[k,catalog.tasks.filter(t=>t.category===k).length]));
- assert.deepEqual(counts,{question:6,bugfix:8,feature:6,refactor:2,browser:1,computerUse:1});
- assert.equal(catalog.tasks.filter(t=>t.tags.includes('smoke')).length,8);
+ assert.deepEqual(counts,{question:6,bugfix:10,feature:7,refactor:3,browser:1,computerUse:1});
+ const smoke=catalog.tasks.filter(t=>t.tags.includes('smoke'));
+ assert.equal(smoke.length,8);
+ assert.equal(smoke.filter(t=>t.repo==='ts-lib'&&t.category==='bugfix').length,2);
+ assert.equal(smoke.filter(t=>t.repo==='ts-lib'&&t.category==='feature'&&!t.tags.includes('hard')).length,1);
+ for(const category of ['bugfix','feature']) assert.equal(smoke.filter(t=>t.repo==='py-cli'&&t.category===category).length,1);
+ for(const category of ['question','refactor']) assert.equal(smoke.filter(t=>t.category===category).length,1);
+ assert.equal(catalog.tasks.filter(t=>t.tags.includes('hard')).length,4);
+ assert.equal(smoke.filter(t=>t.tags.includes('hard')).length,2);
+ assert.ok(smoke.some(t=>t.id==='ts-feature-discount'));
 });
 

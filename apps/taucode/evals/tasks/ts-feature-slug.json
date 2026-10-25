@@ -2,13 +2,11 @@
   "id": "ts-feature-slug",
   "repo": "ts-lib",
   "category": "feature",
-  "tags": [
-    "smoke"
-  ],
-  "prompt": "Implement slug: trim, lowercase, collapse whitespace to hyphens. Run node --test --test-name-pattern=\"^slug$\".",
+  "tags": [],
+  "prompt": "Implement slug: trim, lowercase, collapse whitespace to hyphens. Run node --test --test-name-pattern=\"^slug$\" test/lib.test.js.",
   "setup": [],
   "check": {
-    "command": "node --test --test-name-pattern=\"^slug$\"",
+    "command": "node --test --test-name-pattern=\"^slug$\" test/lib.test.js",
     "expectExit": 0
   },
   "extraChecks": [],

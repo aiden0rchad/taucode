@@ -2,7 +2,9 @@
   "id": "q-python",
   "repo": "py-cli",
   "category": "question",
-  "tags": [],
+  "tags": [
+    "smoke"
+  ],
   "prompt": "Which standard library classes are imported by cli.py?",
   "setup": [],
   "check": {

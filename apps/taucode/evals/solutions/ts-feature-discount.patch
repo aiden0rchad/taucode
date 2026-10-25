@@ -1,0 +1,45 @@
+--- a/hard/invoice/money.ts
++++ b/hard/invoice/money.ts
+@@ -1 +1,12 @@
+ export const sum = (xs:number[]) => xs.reduce((a,b)=>a+b,0);
++export function allocateDiscount(amounts:number[],discount:number):number[] {
++  const total=sum(amounts);
++  if(!Number.isInteger(discount)||discount<0||amounts.some(n=>!Number.isInteger(n)||n<0)||discount>total) throw new RangeError('discount');
++  if(total===0) return amounts.map(()=>0);
++  const exact=amounts.map(n=>n*discount/total);
++  const shares=exact.map(Math.floor);
++  const order=exact.map((n,i)=>({i,fraction:n-shares[i]})).sort((a,b)=>b.fraction-a.fraction||a.i-b.i);
++  const remaining=discount-sum(shares);
++  for(let i=0;i<remaining;i++) shares[order[i].i]++;
++  return shares;
++}
+--- a/hard/invoice/checkout.ts
++++ b/hard/invoice/checkout.ts
+@@ -1,3 +1,5 @@
++import {allocateDiscount} from './money.ts';
+ export function checkout(amounts:number[],discount:number) {
+-  return amounts.map(amount=>amount-discount);
++  const shares=allocateDiscount(amounts,discount);
++  return amounts.map((amount,i)=>amount-shares[i]);
+ }
+--- a/hard/invoice/quote.ts
++++ b/hard/invoice/quote.ts
+@@ -1,5 +1,6 @@
+-import {sum} from './money.ts';
++import {sum,allocateDiscount} from './money.ts';
+ export function quote(lines:{id:string; cents:number}[],discount:number) {
+-  const items=lines.map(line=>({...line,cents:line.cents-discount}));
++  const shares=allocateDiscount(lines.map(line=>line.cents),discount);
++  const items=lines.map((line,i)=>({...line,cents:line.cents-shares[i]}));
+   return {items,total:sum(items.map(line=>line.cents))};
+ }
+--- /dev/null
++++ b/hard/invoice/money.test.ts
+@@ -0,0 +1,7 @@
++import {test} from 'node:test';
++import assert from 'node:assert/strict';
++import {allocateDiscount} from './money.ts';
++test('allocator handles remainders without mutating frozen input',()=>{
++  const amounts=Object.freeze([2,3,5]);
++  assert.deepEqual(allocateDiscount(amounts as unknown as number[],3),[1,1,1]);
++});

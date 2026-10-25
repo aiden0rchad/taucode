@@ -2,10 +2,11 @@
 import {afterEach,beforeEach,expect,it,vi} from "vitest";
 import {act,cleanup,fireEvent,render,screen,waitFor,within} from "@testing-library/react";
 import {EvalsView} from "./EvalsView";
-import {planCount,roleSettings,type EvalResult} from "./evals";
+import {planCount,roleSettings,metric,type EvalResult} from "./evals";
 import {createFixtures} from "@/dev/uiPreview/fixtures";
 import {createEvalFixture} from "@/dev/uiPreview/evals";
 import {evalRequest,engineRuntime} from "@services/tauri";
+const evalStyles=(await vi.importActual<{readFileSync:(path:string,encoding:"utf8")=>string}>("node:fs")).readFileSync("src/features/evals/evals.css","utf8");
 let progress:(event:{runId:string;status:string})=>void;
 vi.mock("@services/tauri",()=>({evalRequest:vi.fn(),engineRuntime:vi.fn()}));
 vi.mock("@services/events",()=>({subscribeEvalProgress:vi.fn(fn=>{progress=fn;return()=>{};})}));
@@ -25,15 +26,15 @@ it("counts the matrix and requires explicit confirmation before spending",async(
  await screen.findByText("Run · cancelled");
 });
 it("shows A/B deltas, sortable highlighted comparisons and read-only transcripts",async()=>{
- render(<EvalsView appSettings={settings} onUpdateAppSettings={vi.fn()} />);
+ render(<EvalsView full appSettings={settings} onUpdateAppSettings={vi.fn()} />);
  const history=await screen.findByRole("button",{name:/10\/22\/2026.*completed/});
  fireEvent.click(history);
  await screen.findByText("Run · completed");
  fireEvent.change(screen.getByLabelText("Compare against run A"),{target:{value:"eval-a"}});
  await screen.findByRole("table",{name:"A/B deltas"});
- expect(screen.getByRole("table",{name:"A/B deltas"}).querySelector(".evals-regression")?.textContent).toBe("-50.0%");
- fireEvent.click(screen.getByRole("button",{name:"Tokens"}));
- expect(screen.getByRole("button",{name:"Tokens"}).closest("th")?.getAttribute("aria-sort")).toBe("ascending");
+ expect(within(screen.getByRole("table",{name:"A/B deltas"})).getByText("-50.0%").className).toBe("evals-regression");
+ fireEvent.click(screen.getByRole("button",{name:"Tokens (eff.)"}));
+ expect(screen.getByRole("button",{name:"Tokens (eff.)"}).closest("th")?.getAttribute("aria-sort")).toBe("ascending");
  expect(document.querySelector(".evals-best")).toBeTruthy();
  fireEvent.click(screen.getByRole("button",{name:/pi \/ openai\/gpt-5/}));
  fireEvent.click(screen.getAllByRole("button",{name:"Open transcript (read-only)"})[0]);
@@ -63,12 +64,12 @@ it("handles filters and named role model refs containing slashes",()=>{
 });
 it("sorts multiple configurations independently",async()=>{
  const base=fixture("run",{runId:"eval-a"}) as EvalResult;
- base.summary.push({...base.summary[0],config:"omp/openai/gpt-5/false",engine:"omp",tokens:100,passRate:0.5});
- render(<EvalsView appSettings={settings} onUpdateAppSettings={vi.fn()} />);
+ base.summary[1]={...base.summary[1],tokens:100,passRate:0.5};
+ render(<EvalsView full appSettings={settings} onUpdateAppSettings={vi.fn()} />);
  fireEvent.click(await screen.findByRole("button",{name:/10\/21\/2026.*completed/}));
  await screen.findByText("Run · completed");
- fireEvent.click(screen.getByRole("button",{name:"Tokens"}));
- const table=screen.getByRole("button",{name:"Tokens"}).closest("table")!;
+ fireEvent.click(screen.getByRole("button",{name:"Tokens (eff.)"}));
+ const table=screen.getByRole("button",{name:"Tokens (eff.)"}).closest("table")!;
  expect(within(table).getAllByRole("row")[1].textContent).toContain("omp");
 });
 
@@ -103,4 +104,52 @@ it("keeps preparing runs active and displays the installation message",async()=>
  await screen.findByText("Preparing pi…");
  expect((screen.getByRole("button",{name:"Start run"}) as HTMLButtonElement).disabled).toBe(true);
  expect(screen.getByRole("button",{name:"Cancel run"})).toBeTruthy();
+});
+
+it("renders one Settings summary card per configuration and opens that run",async()=>{
+ const open=vi.fn();
+ render(<EvalsView initialRunId="eval-b" appSettings={settings} onUpdateAppSettings={vi.fn()} onOpenFull={open}/>);
+ const cards=await screen.findByLabelText("Configuration summaries");
+ const result=fixture("run",{runId:"eval-b"}) as EvalResult;
+ expect(within(cards).getAllByRole("article")).toHaveLength(result.summary.length);
+ for(const row of result.summary) expect(within(cards).getByRole("article",{name:`${row.engine} / ${row.model} · cg:off`})).toBeTruthy();
+ expect(within(cards).getByText("50.0%")).toBeTruthy();
+ expect(within(cards).getByText("unknown")).toBeTruthy();
+ expect(screen.getByText("App preview · pi 1.4.0 · omp 18.12.6")).toBeTruthy();
+ expect(screen.queryByRole("table",{name:"Configuration comparison"})).toBeNull();
+ fireEvent.click(screen.getByRole("button",{name:"Open results"}));
+ expect(open).toHaveBeenCalledWith("eval-b");
+});
+
+it.each([1024,1440])("keeps full results headers unwrapped at %ipx and opens matrix transcripts",async width=>{
+ vi.stubGlobal("innerWidth",width);
+ const result=fixture("run",{runId:"eval-b"}) as EvalResult;
+ result.run.cells[1].output="x".repeat(3000)+"AssertionError: frequency map";
+ result.run.cells.push({...result.run.cells[0],id:"repeat-2",repeat:1});
+ render(<><style>{evalStyles}</style><EvalsView full initialRunId="eval-b" appSettings={settings} onUpdateAppSettings={vi.fn()}/></>);
+ const table=await screen.findByRole("table",{name:"Configuration comparison"});
+ expect(within(table).getAllByRole("columnheader").map(h=>h.textContent)).toEqual(["Configuration","Pass","Tokens (eff.)","Cache","Cost","Tools","1st token","Wall","Errors"]);
+ for(const header of table.querySelectorAll("th,th button")) expect(getComputedStyle(header).whiteSpace).toBe("nowrap");
+ expect(getComputedStyle(table.querySelector("th")!).position).toBe("sticky");
+ expect(getComputedStyle(table.parentElement!).overflowX).toBe("auto");
+ expect(within(table).getByText("2.1k")).toBeTruthy();
+ expect(within(table).getByText("1.5s")).toBeTruthy();
+ expect(screen.queryByLabelText("Configuration summaries")).toBeNull();
+ const matrix=screen.getByRole("table",{name:"Task by configuration"});
+ expect(within(matrix).getAllByRole("row")).toHaveLength(3);
+ expect(within(matrix).getAllByRole("button")).toHaveLength(5);
+ const failed=within(matrix).getByRole("button",{name:/failed/});
+ expect(failed.title).toHaveLength(2000);
+ expect(failed.title.endsWith("AssertionError: frequency map")).toBe(true);
+ fireEvent.click(failed);
+ expect(screen.getByLabelText("Read-only transcript").textContent).toContain("Implemented the task");
+ vi.unstubAllGlobals();
+});
+
+it("formats comparison units without converting unknown values to zero",()=>{
+ expect(metric("tokens",36600)).toBe("36.6k");
+ expect(metric("firstTokenMs",18500)).toBe("18.5s");
+ expect(metric("costUsd",null)).toBe("unknown");
+ expect(metric("costUsd",0)).toBe("$0.0000");
+ expect(metric("cacheRate",0.375)).toBe("37.5%");
 });

@@ -37,15 +37,16 @@ write('repos/py-cli/test_cli.py','import unittest\nimport ast\nimport inspect\ni
 write('repos/web-page/index.html','<!doctype html><html lang="en"><title>Inventory</title><h1>Inventory</h1><p id="value"></p><script src="app.js"></script></html>\n')
 write('repos/web-page/app.js',"document.querySelector('#value').textContent = 'Inventory: ' + (31 * 7);\n")
 tasks=[]
+smoke={'ts-bugfix-range','ts-bugfix-reservations','ts-feature-chunk','py-bugfix-parse','py-feature-frequency','q-python','py-refactor-total','ts-feature-discount'}
 def add(id,repo,category,prompt,command,filename,before,after,extra=None,answer=None,requires=None):
-    t=dict(id=id,repo=repo,category=category,tags=['smoke'] if len(tasks)<8 else [],prompt=prompt,setup=[],check=dict(command=command,expectExit=0),extraChecks=extra or [],answerContains=answer or [],requires=requires or [],timeoutSec=180,maxTurns=3)
+    t=dict(id=id,repo=repo,category=category,tags=['smoke'] if id in smoke else [],prompt=prompt,setup=[],check=dict(command=command,expectExit=0),extraChecks=extra or [],answerContains=answer or [],requires=requires or [],timeoutSec=180,maxTurns=3)
     tasks.append(t)
     write(f'tasks/{id}.json',json.dumps(t,indent=2)+'\n')
     patch=''.join(difflib.unified_diff(before.splitlines(True),after.splitlines(True),fromfile='a/'+filename if before else '/dev/null',tofile='b/'+filename))
     write(f'solutions/{id}.patch',patch)
 for repo,rows,src,file in [('ts-lib',js,source,'src/lib.js'),('py-cli',py,pysource,'cli.py')]:
     for n,args,base,solution,_,category,prompt in rows:
-        command=f'node --test --test-name-pattern="^{n}$"' if repo=='ts-lib' else f'python3 -m unittest test_cli.Tests.test_{n}'
+        command=f'node --test --test-name-pattern="^{n}$" test/lib.test.js' if repo=='ts-lib' else f'python3 -m unittest test_cli.Tests.test_{n}'
         extra=[]
         old = f'export const {n} = ({args}) => {base};' if repo=='ts-lib' else f'def {n}({args}):\n    {base}'
         new = f"export const {n} = ({args}) => {solution};" if repo=="ts-lib" else f"def {n}({args}):\n    {solution}"
@@ -60,6 +61,8 @@ for id,repo,prompt,answer in [
 ]: add(id,repo,'question',prompt,'true','.answer','',answer+'\n',answer=answer.split())
 for id,require,prompt in [('browser-inventory','browser','Use the browser'),('computer-inventory','computerUse','Use computer use')]:
     add(id,'web-page',require,prompt+' to open {{url}} and report the rendered Inventory number.','true','.answer','','217\n',answer=['217'],requires=[require])
+from hard_tasks import add_hard_tasks
+add_hard_tasks(add,write,tasks)
 catalog={'tasks':tasks,'repos':{}}
 for repo in ['ts-lib','py-cli','web-page']:
     catalog['repos'][repo]={str(p.relative_to(ROOT/'repos'/repo)):p.read_text() for p in sorted((ROOT/'repos'/repo).rglob('*')) if p.is_file() and '__pycache__' not in p.parts}

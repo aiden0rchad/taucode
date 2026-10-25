@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppSettings } from "@/types";
 import { ModeShell, ModeSwitcher, modeShortcut } from "./ModeShell";
@@ -7,8 +7,20 @@ import { getAppSettings, setWindowMode } from "@services/tauri";
 vi.mock("@services/tauri", () => ({ getAppSettings: vi.fn(), setWindowMode: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/features/work/WorkView", () => ({ WorkView: () => <><ModeSwitcher /><p>Work content</p></> }));
 vi.mock("./ChatView", () => ({ ChatView: () => <><ModeSwitcher /><p>Chat content</p></> }));
+vi.mock("@/features/evals/EvalsView", () => ({ EvalsView: ({full,initialRunId,onClose}:{full:boolean;initialRunId?:string;onClose:()=>void}) => <section aria-label="Full eval results"><p>{full?initialRunId:"compact"}</p><button onClick={onClose}>Close results</button></section> }));
 vi.mock("@/features/layout/hooks/useWindowLabel", () => ({ useWindowLabel: () => "second-window" }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+it("opens the selected evaluation in the main area and returns to the previous mode",async()=>{
+ vi.mocked(getAppSettings).mockResolvedValue({windowModes:{"second-window":"code"}} as unknown as AppSettings);
+ render(<ModeShell><p>Code content</p></ModeShell>);
+ await screen.findByText("Code content");
+ act(()=>{window.dispatchEvent(new CustomEvent("taucode:evals-full",{detail:{runId:"eval-b"}}));});
+ expect(screen.getByLabelText("Full eval results").textContent).toContain("eval-b");
+ expect(screen.getByText("Code content").parentElement?.style.display).toBe("none");
+ fireEvent.click(screen.getByRole("button",{name:"Close results"}));
+ expect(screen.queryByLabelText("Full eval results")).toBeNull();
+ expect(screen.getByText("Code content").parentElement?.style.display).toBe("contents");
+});
 describe("mode switching", () => {
   it("restores this window's mode and persists changes", async () => {
     vi.mocked(getAppSettings).mockResolvedValue({ windowModes: { main: "code", "second-window": "chat" } } as unknown as AppSettings);

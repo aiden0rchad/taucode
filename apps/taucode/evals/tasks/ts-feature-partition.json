@@ -3,10 +3,10 @@
   "repo": "ts-lib",
   "category": "feature",
   "tags": [],
-  "prompt": "Implement partition(xs,fn), preserving order in both groups. Run node --test --test-name-pattern=\"^partition$\".",
+  "prompt": "Implement partition(xs,fn), preserving order in both groups. Run node --test --test-name-pattern=\"^partition$\" test/lib.test.js.",
   "setup": [],
   "check": {
-    "command": "node --test --test-name-pattern=\"^partition$\"",
+    "command": "node --test --test-name-pattern=\"^partition$\" test/lib.test.js",
     "expectExit": 0
   },
   "extraChecks": [],

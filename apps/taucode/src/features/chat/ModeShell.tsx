@@ -49,8 +49,8 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [evalsFull, setEvalsFull] = useState(false);
-  useEffect(() => { const open = () => setEvalsFull(true); window.addEventListener("taucode:evals-full", open); return () => window.removeEventListener("taucode:evals-full", open); }, []);
+  const [evalsFull, setEvalsFull] = useState<{runId?:string}|null>(null);
+  useEffect(() => { const open = (event:Event) => setEvalsFull({runId:(event as CustomEvent<{runId?:string}>).detail?.runId}); window.addEventListener("taucode:evals-full", open); return () => window.removeEventListener("taucode:evals-full", open); }, []);
   useThemePreference(settings ?? { theme: "system" }, () => {
     if (!settings) return;
     const next = { ...settings, theme: "system" };
@@ -90,7 +90,7 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   if (!loaded) return null;
   return <FeatureSettings.Provider value={settings}>{settings?.features?.diagnostics && <><FeedbackComposer /><DiagnosticsCommands /></>}<ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings }}>
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
-    {evalsFull && settings && <main className="evals-full"><EvalsView appSettings={settings} onUpdateAppSettings={async next => { const saved = await updateAppSettings(next); setSettings(saved); return saved; }} onClose={() => setEvalsFull(false)} /></main>}
+    {evalsFull && settings && <main className="evals-full"><EvalsView full initialRunId={evalsFull.runId} appSettings={settings} onUpdateAppSettings={async next => { const saved = await updateAppSettings(next); setSettings(saved); return saved; }} onClose={() => setEvalsFull(null)} /></main>}
     <div style={{ display: evalsFull ? "none" : "contents" }}>
     {mode === "code" && <SidebarEngine.Provider value={settings?.agentPolicy?.defaultEngine ?? "pi"}>{children}</SidebarEngine.Provider>}
     {mode === "chat" && settings && <ChatView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}

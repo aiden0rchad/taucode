@@ -1,6 +1,7 @@
 import {useEffect,useId,useLayoutEffect,useRef,useState,type CSSProperties} from "react";
 import {createPortal} from "react-dom";
-import {Check,Minus,Plus,Puzzle,Search,Sparkles,Terminal,X} from "lucide-react";
+import {Check,Minus,Plus,Search,X} from "lucide-react";
+import {EvalEngineIcon} from "./EvalsResults";
 import type {EngineRuntimeStatus} from "@services/tauri";
 import {PopoverSurface} from "@/features/design-system/components/popover/PopoverPrimitives";
 import {SettingsButton,SettingsFieldRow,SettingsSegmented,SettingsTextField} from "@/features/design-system/components/settings/SettingsPrimitives";
@@ -43,8 +44,7 @@ export function EvalsRunForm({plan,onChange,tasks,engines,models,runtimes}:{plan
   <SettingsFieldRow className="settings-field-row-long" title="Engines" subtitle="Select the runtimes to compare."><div className="evals-chips" role="group" aria-label="Engines">{engines.map(engine=>{
    const status=runtimes.find(r=>r.engine===(engine.id==="claude"?"claude-acp":engine.id));
    const state=status?.state??"unknown";
-   const Icon=engine.id==="codex"?Terminal:engine.id==="claude"?Sparkles:!["pi","omp"].includes(engine.id)?Puzzle:null;
-   return <SettingsButton key={engine.id} className="evals-chip" aria-pressed={plan.engines.includes(engine.id)} title={status?.message} onClick={()=>toggle("engines",engine.id)}><span className="evals-engine-icon" aria-hidden>{Icon?<Icon size={16}/>:engine.id==="omp"?"ϖ":"π"}</span><span>{engine.name}</span><span className={"evals-status-dot "+state} aria-hidden /><small>{state==="pending"?"will install":state}</small></SettingsButton>;
+   return <SettingsButton key={engine.id} className="evals-chip" aria-pressed={plan.engines.includes(engine.id)} title={status?.message} onClick={()=>toggle("engines",engine.id)}><EvalEngineIcon engine={engine.id}/><span>{engine.name}</span><span className={"evals-status-dot "+state} aria-hidden /><small>{state==="pending"?"will install":state}</small></SettingsButton>;
   })}</div></SettingsFieldRow>
   <SettingsFieldRow className="settings-field-row-long" title="Models" subtitle="Choose one or more models from your providers."><ModelPicker models={models} selected={plan.models} onChange={ids=>onChange({...plan,models:ids})}/></SettingsFieldRow>
   {(["tags","categories"] as const).map(key=><SettingsFieldRow className="settings-field-row-long" key={key} title={key==="tags"?"Tags":"Categories"} subtitle="No selection includes all."><div className="evals-chips" role="group" aria-label={key==="tags"?"Tags":"Categories"}>{[...new Set(tasks.flatMap(t=>key==="tags"?t.tags:[t.category]))].map(value=><SettingsButton key={value} className="evals-chip" aria-pressed={plan[key].includes(value)} onClick={()=>toggle(key,value)}>{value}</SettingsButton>)}</div></SettingsFieldRow>)}

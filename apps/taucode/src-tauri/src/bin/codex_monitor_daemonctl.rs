@@ -1510,19 +1510,49 @@ async fn run_evals(args:&CliArgs,data:&Path,listen:&str,token:Option<&str>)->Res
             let mut params=args.eval_params.clone(); params["runId"]=json!(id); params["baseline"]=json!(baseline);
             client.request("gate",params).await?
         } else {status.clone()};
-        if args.json { println!("{result}"); }
+        if args.json {
+            let mut output=status.clone();
+            if gate { output.as_object_mut().unwrap().extend(result.as_object().unwrap().clone()); }
+            println!("{output}");
+        }
         else {
-            println!("Run {id} · {}",status["run"]["status"].as_str().unwrap_or("unknown"));
-            println!("{:<55} {:>8} {:>12}  Regression","Configuration","Pass","Tokens");
-            let rows=if gate {&result["rows"]} else {&result["summary"]};
-            for row in rows.as_array().into_iter().flatten() {
-                println!("{:<55} {:>7.1}% {:>12.0}  {}",row["config"].as_str().unwrap_or(""),row["passRate"].as_f64().unwrap_or(0.)*100.,row["tokens"].as_f64().unwrap_or(0.),row["regressed"].as_bool().unwrap_or(false));
-            }
+            println!("{}",format_eval_summary(&status,if gate {Some(&result)} else {None}));
         }
         if gate && result["passed"]!=true { return Err("Eval regression gate failed".into()); }
         if status["run"]["status"]!="completed" { return Err(status["run"]["message"].as_str().unwrap_or("Eval run did not complete").into()); }
         return Ok(());
     }
+}
+
+fn format_eval_summary(status:&Value,gate:Option<&Value>)->String {
+    let run=&status["run"];
+    let created=run["createdAt"].as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
+    let ended=run["cells"].as_array().into_iter().flatten().filter_map(|c|c["completedAt"].as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok())).max();
+    let duration=created.zip(ended).map(|(start,end)|format!("{:.1}s",(end-start).num_milliseconds().max(0) as f64/1000.)).unwrap_or_else(||"duration unknown".into());
+    let versions=run["environment"]["engines"].as_array().into_iter().flatten().filter(|e|{
+        let id=e["engine"].as_str().unwrap_or("");
+        run["plan"]["engines"].as_array().is_some_and(|selected|selected.contains(&json!(if id=="claude-acp" {"claude"} else {id})))
+    }).map(|e|format!("{} {}",e["engine"].as_str().unwrap_or("unknown"),e["version"].as_str().unwrap_or("unknown"))).collect::<Vec<_>>().join(" · ");
+    let mut lines=vec![format!("Run {} · {} · {} · App {} · {}",run["id"].as_str().unwrap_or("unknown"),run["status"].as_str().unwrap_or("unknown"),duration,run["environment"]["appVersion"].as_str().unwrap_or("unknown"),if versions.is_empty(){"Engine versions unknown"}else{&versions})];
+    let rows:Vec<_>=status["summary"].as_array().into_iter().flatten().collect();
+    let config=|r:&Value|format!("{} / {} · cg:{}",r["engine"].as_str().unwrap_or("unknown"),r["model"].as_str().unwrap_or("unknown"),if r["codegraph"]==true {"on"}else{"off"});
+    let width=rows.iter().map(|r|config(r).chars().count()).max().unwrap_or(0).max(13);
+    lines.push(format!("{:<width$} {:>8} {:>13} {:>8} {:>12} {:>7} {:>10} {:>10} {:>7}{}","Configuration","Pass","Tokens (eff.)","Cache","Cost","Tools","1st token","Wall","Errors",if gate.is_some(){"  Regression"}else{""}));
+    for row in rows {
+        let metric=|key:&str|row[key].as_f64().map(|n|match key {
+            "passRate"|"cacheRate"=>format!("{:.1}%",n*100.),
+            "tokens"=>format!("{:.1}k",n/1000.),
+            "wallMs"|"firstTokenMs"=>format!("{:.1}s",n/1000.),
+            "costUsd"=>format!("${n:.4}"),
+            _=>format!("{n:.0}"),
+        }).unwrap_or_else(||"unknown".into());
+        let regression=gate.map(|g|{
+            let value=g["rows"].as_array().and_then(|rows|rows.iter().find(|r|r["config"]==row["config"])).and_then(|r|r["regressed"].as_bool());
+            format!("  {}",match value {Some(true)=>"yes",Some(false)=>"no",None=>"unknown"})
+        }).unwrap_or_default();
+        lines.push(format!("{:<width$} {:>8} {:>13} {:>8} {:>12} {:>7} {:>10} {:>10} {:>7}{}",config(row),metric("passRate"),metric("tokens"),metric("cacheRate"),metric("costUsd"),metric("toolCalls"),metric("firstTokenMs"),metric("wallMs"),metric("errors"),regression));
+    }
+    lines.join("\n")
 }
 
 fn print_eval_preparing(run:&Value,last:&mut String) {
@@ -1536,6 +1566,16 @@ fn print_eval_preparing(run:&Value,last:&mut String) {
 #[cfg(test)]
 mod eval_cli_tests {
  use super::*;
+ #[test] fn summary_includes_environment_metrics_unknowns_and_gate_result() {
+  let status=json!({"run":{"id":"eval-test","status":"completed","createdAt":"2026-10-25T00:00:00Z","plan":{"engines":["pi","omp"]},"environment":{"appVersion":"test","engines":[{"engine":"pi","version":"1.4.0"},{"engine":"omp","version":"18.12.6"},{"engine":"codex","version":"unused"}]},"cells":[{"completedAt":"2026-10-25T00:04:30Z"}]},"summary":[{"config":"omp/lab/GLM 5.3/false","engine":"omp","model":"lab/GLM 5.3","codegraph":false,"passRate":1.,"tokens":39400,"cacheRate":0.25,"costUsd":null,"toolCalls":50,"firstTokenMs":20500,"wallMs":30300,"errors":0}]});
+  let gate=json!({"rows":[{"config":"omp/lab/GLM 5.3/false","regressed":true}]});
+  let text=format_eval_summary(&status,Some(&gate));
+  for expected in ["Run eval-test","270.0s","App test","pi 1.4.0 · omp 18.12.6","omp / lab/GLM 5.3 · cg:off","Tokens (eff.)","Cache","Cost","Tools","1st token","Wall","Errors","100.0%","39.4k","25.0%","unknown","20.5s","30.3s","Regression","yes"] {assert!(text.contains(expected),"missing {expected}: {text}");}
+  assert!(!text.contains("unused"));assert!(!text.contains("/false"));
+  assert!(!format_eval_summary(&status,None).contains("Regression"));
+  let mut priced=status.clone();priced["summary"][0]["costUsd"]=json!(0.125);priced["summary"][0]["firstTokenMs"]=Value::Null;priced["summary"][0]["codegraph"]=json!(true);
+  let text=format_eval_summary(&priced,None);assert!(text.contains("$0.1250"));assert!(text.contains("cg:on"));assert!(text.contains("unknown"));
+ }
  #[test] fn globals_work_before_after_and_between_subcommands() {
   for arguments in [
    vec!["--listen","127.0.0.1:4732","--data-dir","/eval-data","--insecure-no-auth","--json","evals","run","--engines","pi,omp","--models","lab/GLM 5.3"],

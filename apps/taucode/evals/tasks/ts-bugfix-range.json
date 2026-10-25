@@ -5,10 +5,10 @@
   "tags": [
     "smoke"
   ],
-  "prompt": "Fix range(n): it returns n+1 items. Run node --test --test-name-pattern=\"^range$\".",
+  "prompt": "Fix range(n): it returns n+1 items. Run node --test --test-name-pattern=\"^range$\" test/lib.test.js.",
   "setup": [],
   "check": {
-    "command": "node --test --test-name-pattern=\"^range$\"",
+    "command": "node --test --test-name-pattern=\"^range$\" test/lib.test.js",
     "expectExit": 0
   },
   "extraChecks": [],

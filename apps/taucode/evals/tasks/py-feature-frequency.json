@@ -2,7 +2,9 @@
   "id": "py-feature-frequency",
   "repo": "py-cli",
   "category": "feature",
-  "tags": [],
+  "tags": [
+    "smoke"
+  ],
   "prompt": "Implement frequency using the standard library. Run python3 -m unittest test_cli.Tests.test_frequency.",
   "setup": [],
   "check": {

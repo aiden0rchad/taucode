@@ -1,7 +1,9 @@
 # Evals
 
 Settings → Evals compares engines and provider/model pairs against an offline,
-versioned task suite. **Open full view** opens the same page in the main area.
+versioned task suite. Settings shows one compact result card per configuration;
+**Open results** opens that run in the main area. **Open full view** also opens
+the main-area evaluator without requiring a selected run.
 Select engines, models, tags/categories, Codegraph, repeats, concurrency and optional
 token/dollar caps. The preview counts the matrix and estimates tokens from prior
 completed runs. **Start run → Confirm start** spends provider tokens.
@@ -11,8 +13,12 @@ Pending runtimes install once before any cells are scheduled; the UI and CLI sho
 Disabled, missing and errored engines are rejected with their name and state.
 
 Progress updates arrive through `eval/progress`. Cancel stops active sessions and
-cancels queued cells. Results show sortable configuration summaries, highlighted
-best values, individual check output, errors, and saved read-only transcripts.
+cancels queued cells. Cards show pass rate, median effective tokens, cache share,
+cost, tool calls and median wall time, with best values highlighted. The full view
+adds sortable comparisons with a sticky configuration column and horizontal
+scrolling. Times use seconds and token counts use k. Its task × configuration
+matrix shows each repeat separately: hover for the check output tail and click
+for the saved read-only transcript. Run headers show recorded app/engine versions.
 Select a history run as B and another as A to see configuration and task deltas.
 Expand a configuration to select a policy role; **Confirm default** writes only
 that role's model reference. Engine defaults are unchanged.
@@ -35,6 +41,12 @@ local throwaway daemon without a token. Ctrl-C requests cancellation. `--keep-wo
 cell directories. Exit status is nonzero on RPC errors, incomplete runs, or a failed
 regression gate. A regular completed run may contain failed cells; use the gate
 to enforce thresholds.
+
+The CLI summary includes run ID, elapsed duration and recorded versions, followed
+by Pass, Tokens (eff.), Cache, Cost, Tools, 1st token, Wall and Errors for each
+engine/model and `cg:on/off`. Missing costs/timings remain `unknown`. Gate output
+adds a Regression column. `--json` includes the full run and summary, plus gate
+fields when running a gate.
 
 The Tauri command and daemon method share:
 `eval_request {action, params}`. Actions: `suites`, `plan`, `start`, `status`,
@@ -98,11 +110,20 @@ disables that cap for the run. Deleting a run deletes its workdirs too.
 ## Task authoring and offline checks
 
 `apps/taucode/evals/task.schema.json` defines task records. The suite contains six
-questions, eight fixes, six features, two refactors, one browser and one optional
-computer task; eight tasks have the smoke tag. Fixtures use only Node built-ins
-and Python's standard library.
+questions, ten fixes, seven features, three refactors, one browser and one optional
+computer task (28 total). Fixtures use Node built-ins (including native TypeScript
+stripping for the hard TS tasks) and Python's standard library.
 
-Edit `evals/generate.py` to add a task or fixture, then regenerate:
+The eight smoke tasks are `ts-bugfix-range`, `ts-bugfix-reservations`,
+`ts-feature-chunk`, `py-bugfix-parse`, `py-feature-frequency`, `q-python`,
+`py-refactor-total`, and `ts-feature-discount`. The two hard smoke tasks cover
+atomic multi-file reservations and proportional discount allocation across two
+call sites. The other `hard` tasks cover Python stdin/argument handling and a lazy
+TypeScript parser refactor with stable public APIs. Every task's reference check
+requires base failure and patched success; distribution assertions enforce the
+smoke language/category mix and the four hard tasks.
+
+Edit `evals/generate.py` or `evals/hard_tasks.py` to add a task or fixture, then regenerate:
 
 ```sh
 python3 apps/taucode/evals/generate.py

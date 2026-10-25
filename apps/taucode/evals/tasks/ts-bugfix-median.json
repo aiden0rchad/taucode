@@ -2,13 +2,11 @@
   "id": "ts-bugfix-median",
   "repo": "ts-lib",
   "category": "bugfix",
-  "tags": [
-    "smoke"
-  ],
-  "prompt": "Fix median of odd nonempty arrays without mutating input. Run node --test --test-name-pattern=\"^median$\".",
+  "tags": [],
+  "prompt": "Fix median of odd nonempty arrays without mutating input. Run node --test --test-name-pattern=\"^median$\" test/lib.test.js.",
   "setup": [],
   "check": {
-    "command": "node --test --test-name-pattern=\"^median$\"",
+    "command": "node --test --test-name-pattern=\"^median$\" test/lib.test.js",
     "expectExit": 0
   },
   "extraChecks": [],
