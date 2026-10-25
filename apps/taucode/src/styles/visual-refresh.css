@@ -234,3 +234,5 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 .work-readonly-folders:not([open]) summary svg { transform: rotate(-90deg); }
 
 @container (max-width: 640px) { .open-app-text { display: none; } .main-header .open-app-action { width: 28px; padding-inline: 0; } }
+
+.composer-context-row select { appearance: none; background: transparent; border: 0; color: inherit; font: inherit; max-width: 160px; }

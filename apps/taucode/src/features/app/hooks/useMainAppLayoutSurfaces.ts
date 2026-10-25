@@ -19,6 +19,7 @@ type GitDiffPanelProps = LayoutNodesOptions["git"]["gitDiffPanelProps"];
 type UseMainAppLayoutSurfacesArgs = {
   appSettings: Pick<
     AppSettings,
+    | "agentPolicy"
     | "composerCodeBlockCopyUseModifier"
     | "showMessageFilePath"
     | "openAppTargets"
@@ -487,6 +488,7 @@ function buildPrimarySurface({
           engine, onSelectEngine,
   models,
           selectedModelId,
+          defaultModelId: appSettings.agentPolicy?.defaultModel ? `${appSettings.agentPolicy.defaultModel.providerId}/${appSettings.agentPolicy.defaultModel.modelId}` : undefined,
           onSelectModel,
           reasoningOptions,
           selectedEffort,

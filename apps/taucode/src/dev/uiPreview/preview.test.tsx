@@ -133,12 +133,17 @@ it.each(["chat", "work"])("keeps %s controls in two groups and shows available d
   const mic = await screen.findByRole("button", { name: "Start dictation" });
   const right = mic.closest(".composer-shell-actions");
   expect(right).toBeTruthy();
-  expect(screen.getByRole("combobox", { name: mode === "chat" ? "Chat model" : "Work model" }).closest(".composer-shell-actions")).toBe(right);
+  expect(right?.querySelectorAll(".reasoning-control")).toHaveLength(1);
+  expect(screen.queryByRole("combobox", { name: mode === "chat" ? "Chat model" : "Work model" })).toBeNull();
+  expect(screen.getByRole("combobox", { name: "Access mode" }).closest(".composer-shell-left")).toBeTruthy();
   expect(document.querySelector(".composer-shell-toolbar")?.children).toHaveLength(2);
   if (mode === "work") {
     expect(screen.getByRole("combobox", { name: "Space" }).closest(".composer-shell-left")).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Access mode" }).closest(".composer-shell-left")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Queue" }).closest(".composer-shell-actions")).toBe(right);
+    expect(screen.queryByRole("button", { name: "Queue task" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add attachments and tools" }));
+    expect(screen.getByRole("button", { name: "Queue task" }).closest('[role="dialog"]')).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
     expect(document.querySelector(".work-readonly-folders summary svg.lucide-chevron-down")).toBeTruthy();
     for (const [name, icon] of [["Organize a folder", "folder-tree"], ["Research brief", "file-search"], ["Spreadsheet from documents", "table"], ["Slide deck from notes", "presentation"], ["Clean up downloads", "trash-2"]]) {
       expect(screen.getByRole("button", { name }).querySelector(`.lucide-${icon}`)).toBeTruthy();

@@ -93,6 +93,15 @@ function ComposerHarness({
 }
 
 describe("Composer send triggers", () => {
+  it("keeps access on the left and one model control before mic and send", () => {
+    const { container } = render(<ComposerHarness onSend={vi.fn()} />);
+    expect(screen.getByRole("combobox", { name: "Access mode" }).closest(".composer-shell-left")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Select model · ?" }).closest(".composer-shell-actions")).toBeTruthy();
+    expect(container.querySelectorAll(".reasoning-control")).toHaveLength(1);
+    expect(screen.queryByRole("combobox", { name: "Model" })).toBeNull();
+    expect(container.querySelector(".composer-select-wrap--effort")).toBeNull();
+    expect(container.querySelectorAll(".composer-shell-actions button")).toHaveLength(3);
+  });
   it("opens Code tools and inserts a file mention", () => {
     render(<ComposerHarness onSend={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Add attachments and tools" }));

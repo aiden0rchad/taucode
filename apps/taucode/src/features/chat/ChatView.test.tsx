@@ -45,6 +45,10 @@ describe("Chat UI", () => {
     render(<ChatView settings={settings} onOpenSettings={onOpenSettings} />); await open();
     expect(screen.getByRole("heading", { level: 2, name: "Original answer" })).toBeTruthy();
     expect(screen.getByText("Original question").tagName).toBe("STRONG");
+    expect(screen.getByRole("combobox", { name: "Access mode" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("combobox", { name: "Access mode" }).closest(".composer-shell-left")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "one · ?" }).closest(".composer-shell-actions")).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "Chat model" })).toBeNull();
     expect(screen.getByRole("button", { name: "Browser" }).closest(".main-header-actions")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
     expect(onOpenSettings).toHaveBeenCalledOnce();
@@ -86,15 +90,17 @@ describe("Chat UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("fork", { threadId: "chat", model: "p/one", beforeUserItemId: "user" }));
     await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("send", { threadId: "fork", input: [{ type: "text", text: "Edited question" }] }));
-    await waitFor(() => expect(screen.getByLabelText("Chat model")).not.toHaveProperty("disabled", true));
-    fireEvent.change(screen.getByLabelText("Chat model"), { target: { value: "p/two" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "one · ?" })).not.toHaveProperty("disabled", true));
+    fireEvent.click(screen.getByRole("button", { name: "one · ?" }));
+    fireEvent.click(screen.getByRole("button", { name: "one" }));
+    fireEvent.click(screen.getByRole("option", { name: "two" }));
     await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("fork", { threadId: "fork", model: "p/two", beforeUserItemId: undefined }));
   });
   it("regenerates on a fork, streams text, and stops only the active chat", async () => {
     render(<ChatView settings={settings} />); await open();
     fireEvent.click(screen.getByRole("button", { name: "Regenerate last answer" }));
     await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("send", { threadId: "fork", input: [{ type: "text", text: "**Original question**" }] }));
-    await waitFor(() => expect(screen.getByLabelText("Chat model")).not.toHaveProperty("disabled", true));
+    await waitFor(() => expect(screen.getByRole("button", { name: "one · ?" })).not.toHaveProperty("disabled", true));
     act(() => {
       listener({ workspace_id: "chats", message: { method: "turn/started", params: { threadId: "fork" } } });
       listener({ workspace_id: "chats", message: { method: "item/agentMessage/delta", params: { threadId: "fork", itemId: "stream", delta: "Streaming answer" } } });

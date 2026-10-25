@@ -1,6 +1,6 @@
 import { ReasoningControl, type ReasoningControlProps } from "./ReasoningControl";
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
-import { ArrowUp, Plus, Square } from "lucide-react";
+import { ArrowUp, Plus, Settings2, Square } from "lucide-react";
 import { useMenuController } from "@app/hooks/useMenuController";
 import { AnchoredPopover } from "@/features/design-system/components/popover/AnchoredPopover";
 
@@ -40,4 +40,8 @@ export function ComposerSendButton({ running, disabled, disabledReason, onSend, 
 }) {
   const title = running ? `Stop${runningHint ? " · " + runningHint : ""}` : disabled ? disabledReason : `${label} · Enter to send, Shift+Enter for a new line`;
   return <span title={title}><button type="button" className={`composer-action ${running ? "is-stop" : "is-send"}`} aria-label={running ? "Stop" : label} title={title} disabled={!running && disabled} onClick={running ? onStop : onSend}>{running ? <Square aria-hidden /> : <ArrowUp aria-hidden />}</button></span>;
+}
+
+export function ComposerAccessControl({ value, onChange, disabled, title }: { value: "ask" | "read-only" | "full-access"; onChange?: (value: "ask" | "read-only" | "full-access") => void; disabled?: boolean; title?: string }) {
+  return <label className="composer-chip composer-access-chip" title={title}><Settings2 size={14} aria-hidden /><select aria-label="Access mode" value={value} disabled={disabled || !onChange} onChange={event => onChange?.(event.target.value as typeof value)}><option value="ask">Ask</option><option value="read-only">Read-only</option><option value="full-access">Full access</option></select></label>;
 }

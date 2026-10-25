@@ -19,22 +19,28 @@ export function AnchoredPopover({ anchorRef, surfaceRef, style, ...props }: Prop
       const top = (viewport?.offsetTop ?? 0) + 8;
       const width = (viewport?.width ?? window.innerWidth) - 16;
       surface.style.maxWidth = `${Math.max(0, width)}px`;
-      surface.style.maxHeight = `${Math.max(0, rect.top - top - 8)}px`;
+      surface.style.setProperty("--popover-available-height", `${Math.max(0, rect.top - top - 8)}px`);
+      surface.style.maxHeight = `min(var(--popover-max-height, 100vh), ${Math.max(0, rect.top - top - 8)}px)`;
       // Layout dimensions exclude the popover's entry-animation scale.
       surface.style.left = `${Math.max(left, Math.min(rect.left, left + width - surface.offsetWidth))}px`;
-      surface.style.top = `${Math.max(top, rect.top - surface.offsetHeight - 8)}px`;
+      // Keep the bottom edge fixed as the content grows or shrinks upward.
+      surface.style.bottom = `${window.innerHeight - rect.top + 8}px`;
     };
     place();
+    const onScroll = (event: Event) => {
+      if (event.target instanceof Node && surface.contains(event.target)) return;
+      place();
+    };
     window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
+    window.addEventListener("scroll", onScroll, true);
     window.visualViewport?.addEventListener("resize", place);
     window.visualViewport?.addEventListener("scroll", place);
     return () => {
       window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.visualViewport?.removeEventListener("resize", place);
       window.visualViewport?.removeEventListener("scroll", place);
     };
   }, [anchorRef, surfaceRef]);
-  return createPortal(<PopoverSurface {...props} ref={surfaceRef} style={{ color: "var(--text-primary)", ...style, position: "fixed", bottom: "auto", right: "auto", minWidth: 0, boxSizing: "border-box", overflowY: "auto", zIndex: 1000 }} />, document.body);
+  return createPortal(<PopoverSurface {...props} ref={surfaceRef} style={{ color: "var(--text-primary)", ...style, position: "fixed", top: "auto", right: "auto", minWidth: 0, boxSizing: "border-box", overflowY: "auto", zIndex: 1000 }} />, document.body);
 }

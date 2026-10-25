@@ -9,8 +9,6 @@ import type {
 } from "react";
 import type { AutocompleteItem } from "../hooks/useComposerAutocomplete";
 import { ComposerShell, ComposerSendButton } from "./ComposerShell";
-import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
-import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
 import Mic from "lucide-react/dist/esm/icons/mic";
 import Square from "lucide-react/dist/esm/icons/square";
 import X from "lucide-react/dist/esm/icons/x";
@@ -26,6 +24,7 @@ import type { ReviewPromptState, ReviewPromptStep } from "../../threads/hooks/us
 
 type ComposerInputProps = {
   toolbar?: ReactNode;
+  controls?: ReactNode;
   addMenu?: ReactNode;
   engine?: import("@/types").EngineKind;
   text: string;
@@ -86,7 +85,7 @@ type ComposerInputProps = {
 };
 
 export function ComposerInput({
-  toolbar, addMenu,
+  toolbar, controls, addMenu,
   engine = "codex",
   text,
   disabled,
@@ -212,20 +211,7 @@ export function ComposerInput({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <ComposerShell toolbar={toolbar} menu={<><button type="button" disabled={disabled || !onAddAttachment} title={!onAddAttachment ? "Image attachment is unavailable" : "Attach images"} onClick={onAddAttachment}>Attach images</button>{addMenu}</>} actions={          <div className="composer-input-actions">
-            {onToggleExpand && (
-              <button
-                className={`composer-action composer-action--expand${
-                  isExpanded ? " is-active" : ""
-                }`}
-                onClick={onToggleExpand}
-                disabled={disabled}
-                aria-label={isExpanded ? "Collapse input" : "Expand input"}
-                title={isExpanded ? "Collapse input" : "Expand input"}
-              >
-                {isExpanded ? <ChevronDown aria-hidden /> : <ChevronUp aria-hidden />}
-              </button>
-            )}
+        <ComposerShell toolbar={toolbar} controls={controls} menu={<><button type="button" disabled={disabled || !onAddAttachment} title={!onAddAttachment ? "Image attachment is unavailable" : "Attach images"} onClick={onAddAttachment}>Attach images</button>{addMenu}{onToggleExpand && <button type="button" disabled={disabled} onClick={onToggleExpand}>{isExpanded ? "Collapse input" : "Expand input"}</button>}</>} actions={          <div className="composer-input-actions">
             <button
               className={`composer-action composer-action--mic${
                 isDictationBusy ? " is-active" : ""

@@ -98,11 +98,17 @@ describe("Work mode", () => {
     await screen.findByRole("option", { name: "Research" });
     fireEvent.change(screen.getByRole("combobox", { name: "Space" }), { target: { value: "space" } });
     expect(screen.getByRole("combobox", { name: "Access mode" })).toHaveProperty("value", "ask");
+    const left = screen.getByRole("combobox", { name: "Access mode" }).closest(".composer-shell-left");
+    expect(left).toBeTruthy();
+    expect(left?.querySelectorAll("select")[0]).toBe(screen.getByRole("combobox", { name: "Access mode" }));
+    expect(left?.querySelectorAll("select")[1]).toBe(screen.getByRole("combobox", { name: "Space" }));
+    expect(screen.queryByRole("combobox", { name: "Work model" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Research brief" }));
     fireEvent.click(screen.getByRole("button", { name: "Add attachments and tools" }));
     fireEvent.click(screen.getByRole("button", { name: "Attach files to space" }));
     await screen.findByText("copied-notes.pdf");
-    fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add attachments and tools" }));
+    fireEvent.click(screen.getByRole("button", { name: "Queue task" }));
     await waitFor(() => expect(workRequest).toHaveBeenCalledWith("create", expect.objectContaining({ spaceId: "space", model: "local/test", accessMode: "ask", runNow: false, attachments: [".taucode/uploads/copied-notes.pdf"] })));
     expect(await screen.findByText(/Waiting for an available slot/)).toBeTruthy();
   });

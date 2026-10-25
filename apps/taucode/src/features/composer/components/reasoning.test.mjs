@@ -19,7 +19,13 @@ it("disables reasoning animations and particles for reduced motion", () => {
 it("reserves stable popover, heading and chip geometry with animated snapping", () => {
   const css = postcss.parse(readFileSync("src/features/composer/components/reasoning.css", "utf8"));
   const rule = selector => Object.fromEntries(css.nodes.find(node => node.selector === selector).nodes.map(node => [node.prop, node.value]));
-  expect(rule(".reasoning-popover")).toMatchObject({ width: "320px", height: "176px", "overflow-x": "hidden" });
+  expect(rule(".reasoning-popover")).toMatchObject({ width: "300px", padding: "12px 14px", "--popover-max-height": "360px", "overflow-x": "hidden" });
+  expect(rule(".reasoning-popover").height).toBeUndefined();
+  expect(rule(".reasoning-popover")["min-height"]).toBeUndefined();
+  expect(rule(".reasoning-heading")).toMatchObject({ height: "40px", "align-items": "center" });
+  expect(rule(".reasoning-slider").margin).toBe("15px 0 3px");
+  expect(rule(".reasoning-notice:empty").display).toBe("none");
+  expect(rule(".composer-model-options")["overflow-y"]).toBe("auto");
   expect(rule(".reasoning-chip-label").display).toBe("grid");
   expect(rule(".reasoning-chip-label > span")["grid-area"]).toBe("1 / 1");
   expect(rule(".reasoning-chip-sizer").visibility).toBe("hidden");
@@ -60,4 +66,15 @@ it("keeps particle base durations fixed in CSS between 4.5 and 5.5 seconds", () 
   const durations = [];
   css.walkRules(/^\.reasoning-particle:nth-child/, rule => rule.walkDecls("animation-duration", declaration => durations.push(declaration.value)));
   expect(durations).toEqual(["5.25s", "5s", "4.75s", "4.5s"]);
+});
+
+it("pushes views in opposite directions using transform and opacity only", () => {
+  const css = postcss.parse(readFileSync("src/features/composer/components/reasoning.css", "utf8"));
+  for (const direction of ["in", "out"]) {
+    const frames = css.nodes.find(node => node.type === "atrule" && node.params === "reasoning-view-" + direction);
+    frames.walkDecls(declaration => expect(["transform", "opacity"]).toContain(declaration.prop));
+  }
+  const offset = selector => css.nodes.find(node => node.selector === selector).nodes.find(node => node.prop === "--view-offset").value;
+  expect(offset(".reasoning-view.forward")).toBe("24px");
+  expect(offset(".reasoning-view.back")).toBe("-24px");
 });

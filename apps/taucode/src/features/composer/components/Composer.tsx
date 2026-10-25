@@ -36,7 +36,8 @@ import { useComposerKeyDown } from "../hooks/useComposerKeyDown";
 import { useComposerSuggestionStyle } from "../hooks/useComposerSuggestionStyle";
 import { usePromptHistory } from "../hooks/usePromptHistory";
 import { ComposerInput } from "./ComposerInput";
-import { ComposerMetaBar } from "./ComposerMetaBar";
+import { ComposerAccessControl } from "./ComposerShell";
+import { ComposerMetaBar, ComposerEngineControl } from "./ComposerMetaBar";
 import { ComposerQueue } from "./ComposerQueue";
 import { isMacPlatform } from "../../../utils/platformPaths";
 import type { CodexArgsOption } from "../../threads/utils/codexArgsProfiles";
@@ -62,8 +63,9 @@ type ComposerProps = {
   onSelectCollaborationMode: (id: string | null) => void;
   engine?: import("@/types").EngineKind;
   onSelectEngine?: (engine: import("@/types").EngineKind) => void;
-  models: (Pick<import("@/types").ModelOption, "id" | "displayName" | "model" | "providerId" | "providerName" | "engines">)[];
+  models: (Pick<import("@/types").ModelOption, "id" | "displayName" | "model" | "providerId" | "providerName" | "engines" | "reasoning" | "acpReasoning">)[];
   selectedModelId: string | null;
+  defaultModelId?: string | null;
   onSelectModel: (id: string) => void;
   reasoningOptions: string[];
   selectedEffort: string | null;
@@ -174,13 +176,11 @@ export const Composer = memo(function Composer({
   onSelectCollaborationMode,
   engine = "codex", onSelectEngine,
   models,
-  selectedModelId,
+  selectedModelId, defaultModelId,
   onSelectModel,
-  reasoningOptions,
   selectedEffort,
   onSelectEffort,
   selectedServiceTier,
-  reasoningSupported,
   codexArgsOptions = [],
   selectedCodexArgsOverride = null,
   onSelectCodexArgsOverride,
@@ -190,7 +190,6 @@ export const Composer = memo(function Composer({
 
   prompts,
   files,
-  contextUsage = null,
   queuedMessages = [],
   queuePausedReason = null,
   onEditQueued,
@@ -581,29 +580,18 @@ export const Composer = memo(function Composer({
         </div>
       ) : null}
       <ComposerInput
-        toolbar={<ComposerMetaBar
+        toolbar={<ComposerAccessControl value={accessMode === "current" ? "ask" : accessMode} disabled={disabled} onChange={mode => onSelectAccessMode(mode === "ask" ? "current" : mode)} />}
+        controls={<ComposerMetaBar
         disabled={disabled}
-        collaborationModes={collaborationModes}
-        selectedCollaborationModeId={selectedCollaborationModeId}
-        onSelectCollaborationMode={onSelectCollaborationMode}
         engine={engine}
         onSelectEngine={onSelectEngine}
         models={models}
-        selectedModelId={selectedModelId}
+        selectedModelId={selectedModelId} defaultModelId={defaultModelId}
         onSelectModel={onSelectModel}
-        reasoningOptions={reasoningOptions}
         selectedEffort={selectedEffort}
         onSelectEffort={onSelectEffort}
-        selectedServiceTier={selectedServiceTier}
-        reasoningSupported={reasoningSupported}
-        codexArgsOptions={codexArgsOptions}
-        selectedCodexArgsOverride={selectedCodexArgsOverride}
-        onSelectCodexArgsOverride={onSelectCodexArgsOverride}
-        accessMode={accessMode}
-        onSelectAccessMode={onSelectAccessMode}
-        contextUsage={contextUsage}
       />}
-        addMenu={<><button type="button" onClick={() => applyTextInsertion(`${text}@`, text.length + 1)}>Mention a file</button>{collaborationModes.some(mode => mode.id === "plan") && <button type="button" onClick={() => onSelectCollaborationMode(selectedCollaborationModeId === "plan" ? "default" : "plan")}>Plan mode</button>}</>}
+        addMenu={<><button type="button" onClick={() => applyTextInsertion(`${text}@`, text.length + 1)}>Mention a file</button>{collaborationModes.some(mode => mode.id === "plan") && <button type="button" onClick={() => onSelectCollaborationMode(selectedCollaborationModeId === "plan" ? "default" : "plan")}>Plan mode</button>}{collaborationModes.some(mode => !["default", "plan"].includes(mode.id)) && <label>Mode<select aria-label="Collaboration mode" value={selectedCollaborationModeId ?? ""} onChange={event => onSelectCollaborationMode(event.target.value || null)}>{collaborationModes.map(mode => <option key={mode.id} value={mode.id}>{mode.label}</option>)}</select></label>}{codexArgsOptions.length > 1 && <label>Codex args profile<select aria-label="Codex args profile" value={selectedCodexArgsOverride ?? ""} onChange={event => onSelectCodexArgsOverride?.(event.target.value || null)}>{codexArgsOptions.map(option => <option key={option.value || "default"} value={option.value}>{option.label}</option>)}</select></label>}</>}
         engine={engine}
         text={text}
         disabled={disabled}
@@ -660,7 +648,8 @@ export const Composer = memo(function Composer({
         onReviewPromptConfirmCustom={onReviewPromptConfirmCustom}
       />
 
-      {context && <div className="composer-context-row"><span><Folder aria-hidden />{context.worktree ? "Worktree" : "Local"}</span>{context.branch && <span><GitBranch aria-hidden />{context.branch}</span>}<span><Cpu aria-hidden />{engine === "claude" ? "Claude Code" : engine}</span>{context.sideChat && <span><MessagesSquare aria-hidden />Side chat</span>}</div>}
+      {selectedServiceTier === "fast" && <span className="composer-tier-note" aria-label="Fast mode enabled">Fast</span>}
+      {context && <div className="composer-context-row"><span><Folder aria-hidden />{context.worktree ? "Worktree" : "Local"}</span>{context.branch && <span><GitBranch aria-hidden />{context.branch}</span>}<span><Cpu aria-hidden /><ComposerEngineControl engine={engine} models={models} selectedModelId={selectedModelId} onSelectModel={onSelectModel} onSelectEngine={onSelectEngine} disabled={disabled} /></span>{context.sideChat && <span><MessagesSquare aria-hidden />Side chat</span>}</div>}
       {isEmpty && <div className="starter-pills">{[{ prompt: "Explore this project", Icon: FolderTree }, { prompt: "Fix a bug", Icon: Bug }, { prompt: "Build a feature", Icon: Hammer }].map(({ prompt, Icon }) => <button key={prompt} type="button" onClick={() => { setComposerText(prompt); textareaRef.current?.focus(); }}><Icon aria-hidden />{prompt}</button>)}</div>}
     </footer>
   );

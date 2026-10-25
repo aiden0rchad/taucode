@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { ComposerMetaBar } from "./ComposerMetaBar";
+import { ComposerMetaBar, ComposerEngineControl } from "./ComposerMetaBar";
 import { engineRuntime } from "@services/tauri";
 vi.mock("@services/tauri", () => ({ engineRuntime: vi.fn().mockResolvedValue([]) }));
 afterEach(cleanup);
@@ -15,13 +15,13 @@ it("groups registry models, disables incompatible engines and shows the engine b
     selectedServiceTier: null, reasoningSupported: false, accessMode: "read-only" as const, onSelectAccessMode: vi.fn(),
   };
   const { rerender } = render(<ComposerMetaBar {...props} engine="codex" />);
+  fireEvent.click(screen.getByRole("button", { name: "B · ?" }));
+  fireEvent.click(screen.getByRole("button", { name: "B" }));
   const option = within(screen.getByRole("group", { name: "Anthropic" })).getByRole("option") as HTMLOptionElement;
   expect(option.disabled).toBe(true);
   expect(option.title).toContain("Unavailable for codex");
-  expect(screen.getByLabelText("Thread engine").textContent).toBe("codex");
   rerender(<ComposerMetaBar {...props} engine="pi" />);
   expect((screen.getByRole("option", { name: "A" }) as HTMLOptionElement).disabled).toBe(false);
-  expect(screen.getByLabelText("Thread engine").textContent).toBe("pi");
 });
 it("shows Claude availability and limits an existing Claude thread to its provider models", async () => {
   const props = {
@@ -30,13 +30,12 @@ it("shows Claude availability and limits an existing Claude thread to its provid
     selectedModelId: "a/model", onSelectModel: vi.fn(), reasoningOptions: [], selectedEffort: null, onSelectEffort: vi.fn(), selectedServiceTier: null,
     reasoningSupported: false, accessMode: "current" as const, onSelectAccessMode: vi.fn(),
   };
-  const { rerender } = render(<ComposerMetaBar {...props} engine="claude" onSelectEngine={vi.fn()} />);
+  const { rerender } = render(<ComposerEngineControl {...props} engine="claude" onSelectEngine={vi.fn()} />);
   expect((screen.getByRole("option", { name: "Claude Code (ACP)" }) as HTMLOptionElement).disabled).toBe(false);
-  expect((screen.getByRole("option", { name: "A" }) as HTMLOptionElement).disabled).toBe(false);
-  rerender(<ComposerMetaBar {...props} models={[]} engine="claude" onSelectEngine={vi.fn()} />);
+  rerender(<ComposerEngineControl {...props} models={[]} engine="claude" onSelectEngine={vi.fn()} />);
   expect((screen.getByRole("option", { name: /Claude Code \(ACP\)/ }) as HTMLOptionElement).disabled).toBe(true);
   expect(screen.getByRole("option", { name: /Claude Code \(ACP\)/ }).textContent).toContain("Anthropic-compatible");
   vi.mocked(engineRuntime).mockResolvedValue([{ engine: "claude-acp", state: "installing", message: "Installing runtime" }]);
-  rerender(<ComposerMetaBar {...props} engine="pi" onSelectEngine={vi.fn()} />);
+  rerender(<ComposerEngineControl {...props} engine="pi" onSelectEngine={vi.fn()} />);
   await waitFor(() => expect(screen.getByRole("option", { name: /Claude Code \(ACP\)/ }).textContent).toContain("Installing runtime"));
 });

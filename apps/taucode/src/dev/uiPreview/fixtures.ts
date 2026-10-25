@@ -35,6 +35,7 @@ export function createFixtures(now = Date.now()) {
       { id: "openai", name: "OpenAI", kind: "openai", enabled: true, auth: { type: "none" }, models: [
         { id: "gpt-5", reasoning: reasoning(["low", "medium", "high", "xhigh", "max"]), displayName: "GPT-5", enabled: true, contextWindow: 200000, supportsTools: true, supportsImages: true },
         { id: "gpt-5-mini", reasoning: { ...reasoning(["low", "high", "max"]), default: "high" }, displayName: "GPT-5 mini · Extended reasoning preview", enabled: true, contextWindow: 128000, supportsTools: true, supportsImages: true },
+        ...Array.from({ length: 4 }, (_, index) => ({ id: `preview-model-${index + 1}`, displayName: `Preview model ${index + 1}`, enabled: true, reasoning: reasoning(["low", "medium", "high"]) })),
       ] },
       { id: "anthropic", name: "Anthropic", kind: "anthropic", enabled: true, auth: { type: "none" }, models: [
         { id: "toggle-model", displayName: "Thinking toggle", enabled: true, reasoning: { ...reasoning(["off", "high"], "thinking-toggle"), default: "high" } },

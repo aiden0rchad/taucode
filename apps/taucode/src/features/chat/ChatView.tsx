@@ -4,8 +4,8 @@ import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
 import { ComposerDictation } from "@/features/composer/components/ComposerDictation";
 import { NewConversationRow } from "@/features/chat/NewConversationRow";
 import { formatRelativeTimeShort } from "@utils/time";
-import { Globe, X, PanelLeft, Lightbulb, Calendar, PenLine, Pencil, RotateCcw, Copy, Search, ChevronDown } from "lucide-react";
-import { ComposerShell, ComposerSendButton } from "@/features/composer/components/ComposerShell";
+import { Globe, X, PanelLeft, Lightbulb, Calendar, PenLine, Pencil, RotateCcw, Copy, Search } from "lucide-react";
+import { ComposerShell, ComposerSendButton, ComposerAccessControl } from "@/features/composer/components/ComposerShell";
 import { getFileTypeIconUrl } from "@utils/fileTypeIcons";
 import { useEffect, useRef, useState } from "react";
 import type { AppSettings } from "@/types";
@@ -29,7 +29,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const chat = useChat();
   const { sidebarCollapsed } = useSidebarState();
   const updateSettings = useModeSettings(settings);
-  const models = (settings.providers ?? []).filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => ({ ...m, key: `${p.id}/${m.id}`, label: `${p.name} · ${m.displayName || m.id}` })));
+  const models = (settings.providers ?? []).filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => ({ ...m, provider: p.name, key: `${p.id}/${m.id}`, label: `${p.name} · ${m.displayName || m.id}` })));
   const [model, setModel] = useState(modelKey(settings.chatDefaultModel ?? settings.agentPolicy?.defaultModel) || models[0]?.key || "");
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -48,7 +48,6 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [dragOver, setDragOver] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   const active = chat.chats.find(c => c.id === chat.active);
-  const modelPickerRef = useRef<HTMLSelectElement>(null);
   const capability = models.find(m => m.key === model)?.reasoning;
   const reasoning = useReasoningSelection(model, chat.active, capability);
   const users = chat.messages.filter(m => m.role === "user");
@@ -96,11 +95,11 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
     if (action === "trash" && chat.active === id) { chat.setActive(null); clearDraft(); }
     await chat.refresh();
   });
-  const selectModel = (next: string) => { void run(async () => {
+  const selectModel = (next: string) => run(async () => {
     if (attachments.some(a => a.url) && models.find(m => m.key === next)?.supportsImages === false) throw new Error("Remove images before selecting a text-only model.");
     if (chat.active) { const id = await chat.fork(chat.active, next); if (reasoning.requested || reasoning.level) localStorage.setItem(threadEffortKey(id), reasoning.requested || reasoning.level!); setEditing(undefined); }
     setModel(next);
-  }); };
+  });
 
   const web = active ? Boolean(active.chat.web) : newWeb;
   const toggleWeb = () => { if (active) { void mutate("web", active.id, { web: !web }); } else setNewWeb(!web); };
@@ -153,15 +152,12 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
       </div>
       <form className="chat-composer chat-column" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }} onDrop={e => { e.preventDefault(); setDragOver(false); if (!disabled) addFiles(Array.from(e.dataTransfer.files)); }}>
         <input ref={fileInput} hidden type="file" aria-label="Attach files" multiple disabled={disabled} onChange={e => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
-        <ComposerShell reasoning={{ modelName: models.find(m => m.key === model)?.displayName || models.find(m => m.key === model)?.id, modelPickerRef, capability, value: reasoning.requested, onChange: reasoning.onChange, disabled, onOpenSettings }} menu={<><button type="button" disabled={disabled} onClick={() => fileInput.current?.click()}>Attach files or images</button>{settings.mcpServers?.some(c => c.id === "taucode-browser" && c.enabled) && <button type="button" disabled={disabled} aria-pressed={web} onClick={toggleWeb}><Globe aria-hidden />{web ? "Turn off Web" : "Turn on Web"}</button>}<button type="button" disabled={disabled || !model} onClick={() => { void run(async () => {
+        <ComposerShell reasoning={{ modelName: models.find(m => m.key === model)?.displayName || models.find(m => m.key === model)?.id, models: models.map(m => ({ id: m.key, name: m.displayName || m.id, provider: m.provider })), selectedModelId: model, defaultModelId: settings.agentPolicy?.defaultModel ? settings.agentPolicy.defaultModel.providerId + "/" + settings.agentPolicy.defaultModel.modelId : undefined, onSelectModel: selectModel, capability, value: reasoning.requested, onChange: reasoning.onChange, disabled, onOpenSettings }} menu={<><button type="button" disabled={disabled} onClick={() => fileInput.current?.click()}>Attach files or images</button>{settings.mcpServers?.some(c => c.id === "taucode-browser" && c.enabled) && <button type="button" disabled={disabled} aria-pressed={web} onClick={toggleWeb}><Globe aria-hidden />{web ? "Turn off Web" : "Turn on Web"}</button>}<button type="button" disabled={disabled || !model} onClick={() => { void run(async () => {
           const value = defaultModel === model ? "" : model;
           const updated = await updateAppSettings({ ...await getAppSettings(), chatDefaultModel: modelRef(value) });
           updateSettings?.(updated);
           setDefaultModel(value);
-        }); }}>{defaultModel === model ? "Use policy default" : "Make chat default"}</button></>} toolbar={<>{web && <button type="button" className="composer-chip" disabled={disabled} onClick={toggleWeb} title="Turn off Web"><Globe aria-hidden />Web<X aria-hidden /></button>}</>} controls={<label className="composer-model-chip"><span className="provider-dot" aria-hidden>{models.find(m => m.key === model)?.label[0] || "M"}</span><select ref={modelPickerRef} aria-label="Chat model" value={model} disabled={disabled} onChange={e => selectModel(e.target.value)}>
-          {!models.length && <option value="">Enable a provider in Code → Settings</option>}
-          {models.map(m => <option value={m.key} key={m.key}>{m.label}</option>)}
-        </select><ChevronDown aria-hidden /></label>} actions={<> <ComposerDictation settings={settings} disabled={busy || chat.running} onBusyChange={setDictating} onTranscript={text => setDraft(current => current + (current && !/\s$/.test(current) ? " " : "") + text)} onError={chat.setError} onOpenSettings={onOpenSettings} /><ComposerSendButton running={chat.running} disabled={busy || dictating || !model || (!draft.trim() && !attachments.length)} disabledReason={dictating ? "Finish dictation first" : busy ? "Please wait" : !model ? "Choose a model in Settings" : "Write a message or add an attachment"} onSend={send} onStop={() => { void run(() => chatRequest("stop", { threadId: chat.active })); }} /></>}>
+        }); }}>{defaultModel === model ? "Use policy default" : "Make chat default"}</button></>} toolbar={<><ComposerAccessControl value="read-only" title="Chat has no file or command access" />{web && <button type="button" className="composer-chip" disabled={disabled} onClick={toggleWeb} title="Turn off Web"><Globe aria-hidden />Web<X aria-hidden /></button>}</>} actions={<> <ComposerDictation settings={settings} disabled={busy || chat.running} onBusyChange={setDictating} onTranscript={text => setDraft(current => current + (current && !/\s$/.test(current) ? " " : "") + text)} onError={chat.setError} onOpenSettings={onOpenSettings} /><ComposerSendButton running={chat.running} disabled={busy || dictating || !model || (!draft.trim() && !attachments.length)} disabledReason={dictating ? "Finish dictation first" : busy ? "Please wait" : !model ? "Choose a model in Settings" : "Write a message or add an attachment"} onSend={send} onStop={() => { void run(() => chatRequest("stop", { threadId: chat.active })); }} /></>}>
         {dragOver && <div className="composer-drop-overlay">Drop files or images</div>}
         {!!attachments.length && <ul className="chat-attachments">{attachments.map((a, index) => <li key={index}><img src={a.url || getFileTypeIconUrl(a.name)} alt="" />{a.name}<button type="button" disabled={busy} aria-label={`Remove ${a.name}`} onClick={() => setAttachments(current => current.filter((_, i) => i !== index))}><X aria-hidden /></button></li>)}</ul>}
         {editing && <div className="chat-editing">Editing the last message · creates a new branch <button type="button" onClick={clearDraft}>Cancel</button></div>}

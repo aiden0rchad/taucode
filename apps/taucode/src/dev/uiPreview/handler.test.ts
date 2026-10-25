@@ -27,8 +27,8 @@ describe("UI preview IPC", () => {
     const fixtures = createFixtures();
     expect(fixtures.settings.providers).toHaveLength(2);
     expect(fixtures.workspaces).toHaveLength(2);
-    expect(fixtures.threads).toHaveLength(11);
-    expect(fixtures.settings.providers!.flatMap(p => p.models.map(m => m.reasoning?.levels.length ?? null))).toEqual([5, 3, 2, 0, null, 3]);
+    expect(fixtures.threads).toHaveLength(15);
+    expect(fixtures.settings.providers!.flatMap(p => p.models.map(m => m.reasoning?.levels.length ?? null))).toEqual([5, 3, 3, 3, 3, 3, 2, 0, null, 3]);
     expect(fixtures.settings.providers![0].models[1]).toMatchObject({ displayName: "GPT-5 mini · Extended reasoning preview", reasoning: { default: "high" } });
     expect(fixtures.settings.providers![1].models[0].reasoning?.default).toBe("high");
     for (const p of fixtures.settings.providers!) for (const m of p.models) expect(fixtures.threads.some(t => t.modelProvider === p.id && t.model === m.id)).toBe(true);

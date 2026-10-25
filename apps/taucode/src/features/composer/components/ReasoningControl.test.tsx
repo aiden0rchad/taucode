@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ReasoningControl } from "./ReasoningControl";
-import { useReasoningSelection } from "@/features/models/reasoning";
+import { useReasoningSelection, threadEffortKey } from "@/features/models/reasoning";
 import { ModelReasoningSettings } from "@settings/components/sections/ModelReasoningSettings";
 import type { ReasoningCapability } from "@/types";
+import { useState } from "react";
 
 const cap: ReasoningCapability = { supported: true, levels: ["low", "high", "max"], default: "low", control: "effort", source: "api", detectedAt: 1 };
 beforeEach(() => localStorage.clear());
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 it("keeps the anchor and chip sizing stable across level changes until resize or scroll", () => {
   const capability = { ...cap, levels: ["low", "medium", "high", "xhigh", "max"] };
   let left = 360;
@@ -17,20 +18,20 @@ it("keeps the anchor and chip sizing stable across level changes until resize or
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(176);
   const observe = vi.spyOn(ResizeObserver.prototype, "observe");
   const { rerender } = render(<ReasoningControl capability={capability} value="low" onChange={vi.fn()} />);
-  const chip = screen.getByRole("button", { name: "Reasoning: Low" });
-  const width = chip.style.minWidth;
+  const chip = screen.getByRole("button", { name: "Model · Low" });
+  const width = (chip.querySelector(".reasoning-chip-label") as HTMLElement).style.minWidth;
   const sizers = chip.querySelectorAll(".reasoning-chip-sizer");
-  expect(width).toBe("calc(6ch + 30px)");
+  expect(width).toBe("6ch");
   expect(Array.from(sizers, element => element.textContent)).toEqual(["Low", "Medium", "High", "XHigh", "Max"]);
   fireEvent.click(chip);
   const dialog = screen.getByRole("dialog");
-  const placement = [dialog.style.left, dialog.style.top];
+  const placement = [dialog.style.left, dialog.style.bottom];
   const reads = rect.mock.calls.length;
   left += 23;
   for (const value of capability.levels) {
     rerender(<ReasoningControl capability={capability} value={value} onChange={vi.fn()} />);
-    expect([dialog.style.left, dialog.style.top]).toEqual(placement);
-    expect(chip.style.minWidth).toBe(width);
+    expect([dialog.style.left, dialog.style.bottom]).toEqual(placement);
+    expect((chip.querySelector(".reasoning-chip-label") as HTMLElement).style.minWidth).toBe(width);
     expect(chip.querySelectorAll(".reasoning-chip-sizer")).toHaveLength(5);
   }
   expect(rect.mock.calls).toHaveLength(reads);
@@ -41,28 +42,44 @@ it("keeps the anchor and chip sizing stable across level changes until resize or
   fireEvent.scroll(window);
   expect(dialog.style.left).toBe("400px");
 });
-it("shows the model picker and resets to the model default", () => {
-  const onChange = vi.fn();
-  const modelPickerRef = { current: null as HTMLSelectElement | null };
-  render(<><select ref={modelPickerRef} aria-label="Existing model picker"><option>Test model</option></select><ReasoningControl capability={cap} value="max" onChange={onChange} modelName="Test model" modelPickerRef={modelPickerRef} /></>);
-  const showPicker = vi.fn();
-  modelPickerRef.current!.showPicker = showPicker;
-  fireEvent.click(screen.getByRole("button", { name: "Reasoning: Max" }));
+it("swaps to the model list without moving the portal and resets the model default", async () => {
+  vi.stubGlobal("innerHeight", 900);
+  const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 360, top: 820 } as DOMRect);
+  const height = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(110);
+  const onChange = vi.fn(), onSelectModel = vi.fn();
+  render(<ReasoningControl capability={cap} value="max" onChange={onChange} modelName="Test model" selectedModelId="test" defaultModelId="other" models={[{ id: "test", name: "Test model", provider: "One" }, { id: "other", name: "Other model", provider: "Two" }]} onSelectModel={onSelectModel} />);
+  fireEvent.click(screen.getByRole("button", { name: "Test model · Max" }));
+  const dialog = screen.getByRole("dialog");
+  const placement = [dialog.style.left, dialog.style.bottom];
+  expect(dialog.style.bottom).toBe("88px");
+  expect(dialog.style.top).toBe("auto");
+  const reads = rect.mock.calls.length;
   expect(document.querySelector(".reasoning-level")?.textContent).toBe("Max");
   expect(document.querySelectorAll(".reasoning-tick")).toHaveLength(3);
-  expect(document.querySelector(".reasoning-stops")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Reset to model default" }));
   expect(onChange).toHaveBeenCalledWith("low");
+  height.mockReturnValue(360);
   fireEvent.click(screen.getByRole("button", { name: "Test model" }));
-  expect(showPicker).toHaveBeenCalledOnce();
-  expect(document.activeElement).toBe(modelPickerRef.current);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByRole("listbox", { name: "Models" })).toBeTruthy();
+  expect(screen.getByRole("option", { name: "Test model" }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.queryByRole("searchbox")).toBeNull();
+  expect(screen.getByRole("group", { name: "One" })).toBeTruthy();
+  fireEvent.scroll(screen.getByRole("listbox"));
+  expect([dialog.style.left, dialog.style.bottom]).toEqual(placement);
+  height.mockReturnValue(110);
+  fireEvent.click(screen.getByRole("option", { name: /Default/ }));
+  await waitFor(() => expect(screen.getByRole("slider")).toBeTruthy());
+  expect(onSelectModel).toHaveBeenCalledWith("other");
+  expect(screen.getByRole("dialog")).toBe(dialog);
+  expect([dialog.style.left, dialog.style.bottom]).toEqual(placement);
+  expect(rect.mock.calls).toHaveLength(reads);
+  expect(dialog.style.bottom).toBe("88px");
 });
 it("drags continuously, then commits and animates to the nearest supported stop", () => {
   vi.stubGlobal("PointerEvent", MouseEvent);
   const change = vi.fn();
   const { rerender } = render(<ReasoningControl capability={cap} value="low" onChange={change} />);
-  fireEvent.click(screen.getByRole("button", { name: "Reasoning: Low" }));
+  fireEvent.click(screen.getByRole("button", { name: "Model · Low" }));
   const slider = screen.getByRole("slider");
   const dialog = screen.getByRole("dialog");
   vi.spyOn(slider, "getBoundingClientRect").mockReturnValue({ left: 0, width: 236 } as DOMRect);
@@ -99,14 +116,15 @@ it("portals above the chip, shifts inside viewport margins, and keeps slider cli
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(160);
   const change = vi.fn();
   const { container } = render(<div style={{ overflow: "hidden" }}><ReasoningControl capability={cap} value="low" onChange={change} /></div>);
-  const trigger = screen.getByRole("button", { name: "Reasoning: Low" });
+  const trigger = screen.getByRole("button", { name: "Model · Low" });
   fireEvent.click(trigger);
   const dialog = screen.getByRole("dialog");
   expect(dialog.parentElement).toBe(document.body);
   expect(container.contains(dialog)).toBe(false);
   expect(dialog.style.position).toBe("fixed");
+  expect(dialog.style.top).toBe("auto");
   expect(dialog.style.left).toBe("360px");
-  expect(dialog.style.top).toBe("652px");
+  expect(dialog.style.bottom).toBe("88px");
   expect(document.activeElement).toBe(screen.getByRole("slider"));
   fireEvent.mouseDown(screen.getByRole("slider"));
   fireEvent.change(screen.getByRole("slider"), { target: { value: "1" } });
@@ -118,7 +136,7 @@ it("portals above the chip, shifts inside viewport margins, and keeps slider cli
   left = -20; top = 700;
   fireEvent.scroll(window);
   expect(dialog.style.left).toBe("8px");
-  expect(dialog.style.top).toBe("532px");
+  expect(dialog.style.bottom).toBe("208px");
   vi.stubGlobal("innerWidth", 300);
   fireEvent.resize(window);
   expect(dialog.style.maxWidth).toBe("284px");
@@ -129,7 +147,7 @@ it("portals above the chip, shifts inside viewport margins, and keeps slider cli
 it("uses exactly the detected stops, keyboard navigation and clamp notice without a source line", () => {
   const change = vi.fn();
   render(<ReasoningControl capability={cap} value="medium" onChange={change} />);
-  fireEvent.click(screen.getByRole("button", { name: "Reasoning: Low (adjusted for model)" }));
+  fireEvent.click(screen.getByRole("button", { name: "Model · Low (adjusted for model)" }));
   const slider = screen.getByRole("slider");
   expect(slider.getAttribute("max")).toBe("2");
   expect(slider.getAttribute("aria-valuetext")).toBe("Low");
@@ -145,7 +163,7 @@ it.each([["low", "high", "max"], ["off", "high"], ["low", "medium", "high", "xhi
   const capability = { ...cap, levels };
   const { container, rerender } = render(<ReasoningControl capability={capability} value={levels[levels.length - 1]} onChange={vi.fn()} />);
   const chip = screen.getByRole("button");
-  expect(chip.querySelector(".lucide-flame")).toBeTruthy();
+  expect(chip.querySelector(".reasoning-chip-label")?.textContent).toContain(levels[levels.length - 1] === "high" ? "High" : "Max");
   expect(chip.querySelector(".lucide-brain-cog")).toBeNull();
   expect(container.querySelector(".reasoning-ember")).toBeNull();
   fireEvent.click(chip);
@@ -173,14 +191,18 @@ it.each([["low", "high", "max"], ["off", "high"], ["low", "medium", "high", "xhi
   fireEvent.click(chip);
   expect(document.querySelector(".reasoning-ember")).toBeNull();
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(chip.querySelector(".lucide-flame")).toBeTruthy();
+  expect(chip.querySelector(".reasoning-chip-label")?.textContent).toContain(levels[levels.length - 1] === "high" ? "High" : "Max");
 });
-it("hides unsupported models and links unknown ones to Settings", () => {
+it("opens models for unsupported models and links unknown ones to Settings", () => {
   const settings = vi.fn();
   const { rerender } = render(<ReasoningControl capability={{ ...cap, supported: false }} onChange={vi.fn()} />);
-  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.getByRole("button", { name: "Model" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Model" }));
+  expect(screen.getByRole("listbox")).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
   rerender(<ReasoningControl onChange={vi.fn()} onOpenSettings={settings} />);
-  fireEvent.click(screen.getByRole("button", { name: "Reasoning: ?" }));
+  fireEvent.click(screen.getByRole("button", { name: "Model · ?" }));
   fireEvent.click(screen.getByRole("button", { name: "Detect in Settings" })); expect(settings).toHaveBeenCalledOnce();
 });
 it("remembers thread levels and model defaults and clamps after switching models", () => {
@@ -206,4 +228,102 @@ it("shows Settings pills, saves overrides, resets and probes only on click", () 
   rerender(<ModelReasoningSettings model={updated} disabled={false} onChange={change} onDetect={detect} />);
   fireEvent.click(screen.getByText("Reset to detected")); expect(change.mock.calls[1][0].reasoning).toEqual(cap);
   expect(detect).not.toHaveBeenCalled(); fireEvent.click(screen.getByText("Detect reasoning")); expect(detect).toHaveBeenCalledOnce();
+});
+it("searches and navigates registry models, clamps reasoning, and returns to the slider", async () => {
+  const models = Array.from({ length: 9 }, (_, index) => ({ id: String(index), name: "Model " + index, provider: index < 5 ? "Provider A" : "Provider B" }));
+  function Harness() {
+    const [selected, setSelected] = useState("0");
+    const capability = selected === "0" ? cap : { ...cap, levels: ["low", "high"] };
+    const reasoning = useReasoningSelection(selected, "thread-models", capability);
+    return <ReasoningControl modelName={"Model " + selected} models={models} selectedModelId={selected} defaultModelId="0" onSelectModel={setSelected} capability={capability} value={reasoning.requested || "max"} onChange={reasoning.onChange} />;
+  }
+  localStorage.setItem(threadEffortKey("thread-models"), "max");
+  render(<Harness />);
+  fireEvent.click(screen.getByRole("button", { name: "Model 0 · Max" }));
+  const dialog = screen.getByRole("dialog");
+  const position = [dialog.style.left, dialog.style.bottom];
+  fireEvent.click(screen.getByRole("button", { name: "Model 0" }));
+  const search = screen.getByRole("searchbox", { name: "Search models" });
+  expect(document.activeElement).toBe(search);
+  fireEvent.change(search, { target: { value: "Model 7" } });
+  expect(screen.getAllByRole("option")).toHaveLength(1);
+  fireEvent.keyDown(search, { key: "ArrowDown" });
+  const option = screen.getByRole("option", { name: "Model 7" });
+  expect(document.activeElement).toBe(option);
+  fireEvent.click(option);
+  await waitFor(() => expect(screen.getByRole("slider").getAttribute("aria-valuetext")).toBe("High"));
+  expect(screen.getByRole("button", { name: "Model 7 · High (adjusted for model)" })).toBeTruthy();
+  expect(screen.getByRole("dialog")).toBe(dialog);
+  expect([dialog.style.left, dialog.style.bottom]).toEqual(position);
+  await waitFor(() => expect(dialog.querySelector(".outgoing")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "Model 7" }));
+  fireEvent.keyDown(screen.getByRole("searchbox", { name: "Search models" }), { key: "ArrowDown" });
+  expect(document.activeElement).toBe(screen.getByRole("option", { name: /Default/ }));
+  fireEvent.keyDown(document.activeElement!, { key: "End" });
+  expect(document.activeElement).toBe(screen.getByRole("option", { name: "Model 8" }));
+  fireEvent.keyDown(document.activeElement!, { key: "Home" });
+  expect(document.activeElement).toBe(screen.getByRole("option", { name: /Default/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to reasoning" }));
+  expect(screen.getByRole("slider")).toBeTruthy();
+});
+
+it("keeps model-selection failures in the list and reports them", async () => {
+  render(<ReasoningControl modelName="Plain" capability={{ ...cap, supported: false }} onChange={vi.fn()} models={[{ id: "other", name: "Other" }]} onSelectModel={async () => { throw new Error("Switch failed"); }} />);
+  fireEvent.click(screen.getByRole("button", { name: "Plain" }));
+  expect(screen.queryByRole("slider")).toBeNull();
+  fireEvent.click(screen.getByRole("option", { name: "Other" }));
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Error: Switch failed");
+  expect(screen.getByRole("listbox")).toBeTruthy();
+});
+
+it("pushes both views, animates measured height, restores focus, and handles Escape", () => {
+  vi.useFakeTimers();
+  const cancel = vi.fn();
+  const animate = vi.fn(() => ({ cancel }));
+  Object.defineProperty(HTMLElement.prototype, "animate", { configurable: true, value: animate });
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains("reasoning-popover") ? 110 : 240;
+  });
+  render(<ReasoningControl capability={cap} onChange={vi.fn()} models={[{ id: "one", name: "One" }]} onSelectModel={vi.fn()} />);
+  const chip = screen.getByRole("button", { name: "Model · Low" });
+  fireEvent.click(chip);
+  const dialog = screen.getByRole("dialog");
+  const bottom = dialog.style.bottom;
+  fireEvent.click(screen.getByRole("button", { name: "Model" }));
+  expect(dialog.querySelector(".forward.outgoing")).toBeTruthy();
+  expect(dialog.querySelector(".forward.incoming")).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByRole("option", { name: "One" }));
+  expect(animate).toHaveBeenLastCalledWith([{ height: "110px" }, { height: "266px" }], { duration: 220, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" });
+  act(() => vi.advanceTimersByTime(220));
+  expect(dialog.querySelectorAll(".reasoning-view")).toHaveLength(1);
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  expect(dialog.querySelector(".back.incoming")).toBeTruthy();
+  expect(dialog.querySelector(".back.outgoing")).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Model" }));
+  expect(dialog.style.bottom).toBe(bottom);
+  act(() => vi.advanceTimersByTime(220));
+  expect(dialog.querySelectorAll(".reasoning-view")).toHaveLength(1);
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(chip);
+  expect(cancel).toHaveBeenCalledTimes(2);
+  delete (HTMLElement.prototype as Partial<HTMLElement>).animate;
+});
+
+it("swaps instantly with reduced motion and animates model selection back otherwise", async () => {
+  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
+  render(<ReasoningControl capability={cap} onChange={vi.fn()} models={[{ id: "one", name: "One" }]} onSelectModel={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Model · Low" }));
+  fireEvent.click(screen.getByRole("button", { name: "Model" }));
+  const dialog = screen.getByRole("dialog");
+  expect(dialog.querySelectorAll(".reasoning-view")).toHaveLength(1);
+  expect(dialog.querySelector(".incoming")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Back to reasoning" }));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Model" }));
+  expect(dialog.querySelector(".outgoing")).toBeNull();
+  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
+  fireEvent.click(screen.getByRole("button", { name: "Model" }));
+  fireEvent.click(screen.getByRole("option", { name: "One" }));
+  await waitFor(() => expect(dialog.querySelector(".back.incoming")).toBeTruthy());
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Model" }));
 });

@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type RefObject } from "react";
-import { BrainCog, ChevronDown, Flame, RotateCcw, Zap } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, Flame, RotateCcw, Zap } from "lucide-react";
 import type { ReasoningCapability } from "@/types";
 import { useMenuController } from "@app/hooks/useMenuController";
 import { AnchoredPopover } from "@/features/design-system/components/popover/AnchoredPopover";
 import { clampReasoning, reasoningLabel } from "@/features/models/reasoning";
 import { useReasoningAnimationSpeed } from "./useReasoningAnimationSpeed";
+import { ComposerModelList, type ComposerModel } from "./ComposerModelList";
 import "./reasoning.css";
 
 export type ReasoningControlProps = {
@@ -15,17 +16,48 @@ export type ReasoningControlProps = {
   unavailable?: string;
   onOpenSettings?: () => void;
   modelName?: string;
-  modelPickerRef?: RefObject<HTMLSelectElement | null>;
+  models?: ComposerModel[];
+  selectedModelId?: string | null;
+  defaultModelId?: string | null;
+  onSelectModel?: (id: string) => void | boolean | Promise<void | boolean>;
 };
-export function ReasoningControl({ capability, value, onChange, disabled, unavailable, onOpenSettings, modelName = "Model", modelPickerRef }: ReasoningControlProps) {
+export function ReasoningControl({ capability, value, onChange, disabled, unavailable, onOpenSettings, modelName = "Model", models = [], selectedModelId, defaultModelId, onSelectModel }: ReasoningControlProps) {
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<number | null>(null);
-  const menu = useMenuController({ popoverRef: popover, onDismiss: () => trigger.current?.focus() });
+  const [view, setView] = useState<"slider" | "models">("slider");
+  const [outgoing, setOutgoing] = useState<"slider" | "models" | null>(null);
+  const previousHeight = useRef(0);
+  const returning = useRef(false);
+  const switchView = (next: "slider" | "models") => {
+    if (next === view) return;
+    previousHeight.current = popover.current?.offsetHeight ?? 0;
+    returning.current = next === "slider";
+    setOutgoing(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? null : view);
+    setView(next);
+  };
+  const [selecting, setSelecting] = useState(false);
+  const [modelError, setModelError] = useState("");
+  const menu = useMenuController({ closeOnEscape: view === "slider", popoverRef: popover, onDismiss: () => trigger.current?.focus() });
+  useLayoutEffect(() => {
+    if (!menu.isOpen || !outgoing) return;
+    const surface = popover.current!;
+    const incoming = surface.querySelector<HTMLElement>(".reasoning-view.incoming")!;
+    const animation = surface.animate?.(
+      [{ height: previousHeight.current + "px" }, { height: incoming.offsetHeight + 26 + "px" }],
+      { duration: 220, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+    );
+    const timer = window.setTimeout(() => setOutgoing(null), 220);
+    return () => { window.clearTimeout(timer); animation?.cancel(); };
+  }, [menu.isOpen, view, outgoing]);
   useEffect(() => {
-    if (menu.isOpen) popover.current?.querySelector<HTMLInputElement>("input")?.focus();
-    else setDrag(null);
-  }, [menu.isOpen]);
+    if (menu.isOpen) {
+      const surface = popover.current?.querySelector<HTMLElement>(".reasoning-view:not(.outgoing)");
+      const target = view === "models" ? surface?.querySelector<HTMLElement>('input[type="search"]') ?? surface?.querySelector<HTMLElement>('[role="option"]:not(:disabled)') : (returning.current ? surface?.querySelector<HTMLElement>(".reasoning-model") : surface?.querySelector<HTMLElement>('input[type="range"]')) ?? surface?.querySelector<HTMLElement>('.reasoning-model');
+      target?.focus();
+    }
+    else { setDrag(null); setOutgoing(null); }
+  }, [menu.isOpen, view]);
   const level = clampReasoning(capability, value);
   const adjusted = !!value && !!level && value !== level;
   const unknown = !capability || !level;
@@ -38,9 +70,8 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
   const chipLabel = level ? reasoningLabel(level) : "?";
   const labels = levels.length ? levels.map(reasoningLabel) : ["?"];
   const heat = last > 0 ? position / last : 1;
-  useReasoningAnimationSpeed(popover, menu.isOpen && !!level && !unavailable, heat);
-  if (unavailable) return <span className="reasoning-unavailable" title={unavailable} aria-label={unavailable}><BrainCog size={14} aria-hidden /></span>;
-  if (capability?.supported === false) return null;
+  useReasoningAnimationSpeed(popover, menu.isOpen && view === "slider" && !!level && !unavailable, heat);
+  const noReasoning = capability?.supported === false || !!unavailable;
   const burning = !unknown && position === last;
   const warm = !unknown && !burning && Math.round(position) === last - 1;
   const sliderStyle = {
@@ -53,29 +84,31 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
     return Math.max(0, Math.min(1, (event.clientX - rect.left - 18) / Math.max(1, rect.width - 36))) * last;
   };
   const select = (next: number) => { setDrag(null); onChange(levels[Math.max(0, Math.min(last, next))]); };
+  const selectModel = async (id: string) => {
+    if (!onSelectModel) return;
+    if (id === selectedModelId) { switchView("slider"); return; }
+    setSelecting(true); setModelError("");
+    try { if (await onSelectModel(id) !== false) { switchView("slider"); setDrag(null); } }
+    catch (error) { setModelError(String(error)); }
+    finally { setSelecting(false); }
+  };
   return <div className="reasoning-control" ref={menu.containerRef}>
-    <button ref={trigger} type="button" className="ghost composer-chip reasoning-chip" style={{ minWidth: `calc(${Math.max(...labels.map(text => text.length))}ch + 30px)` }} aria-label={`Reasoning: ${chipLabel}${adjusted ? " (adjusted for model)" : ""}`} aria-haspopup="dialog" aria-expanded={menu.isOpen} disabled={disabled} onClick={menu.toggle} title={adjusted ? `${reasoningLabel(value!)} is unavailable; using ${chipLabel}` : "Reasoning effort"}>
-      {!unknown && index === last ? <Flame className="reasoning-flame" size={14} aria-hidden /> : <BrainCog size={14} aria-hidden />}
-      <span className="reasoning-chip-label">{labels.map(text => <span className="reasoning-chip-sizer" aria-hidden="true" key={text}>{text}</span>)}<span>{chipLabel}</span></span>
+    <button ref={trigger} type="button" className="ghost composer-chip reasoning-chip" style={sliderStyle} aria-label={`${modelName}${noReasoning ? "" : ` · ${chipLabel}`}${adjusted && !noReasoning ? " (adjusted for model)" : ""}`} aria-haspopup="dialog" aria-expanded={menu.isOpen} disabled={disabled} onClick={() => { if (!menu.isOpen) { returning.current = false; setOutgoing(null); setView(noReasoning ? "models" : "slider"); setModelError(""); } menu.toggle(); }} title={unavailable || (adjusted ? `${reasoningLabel(value!)} is unavailable; using ${chipLabel}` : "Model and reasoning")}>
+      <span className="reasoning-chip-model">{modelName}</span>
+      {!noReasoning && <span className={`reasoning-chip-label${unknown ? " unknown" : ""}`} style={{ minWidth: `${Math.max(...labels.map(text => text.length))}ch` }}>{labels.map(text => <span className="reasoning-chip-sizer" aria-hidden="true" key={text}>{text}</span>)}<span>{chipLabel}</span></span>}<ChevronDown size={12} aria-hidden />
     </button>
-    {menu.isOpen && <AnchoredPopover anchorRef={trigger} surfaceRef={popover} className={`reasoning-popover${burning ? " burning" : warm ? " warm" : ""}${drag !== null ? " dragging" : ""}`} style={sliderStyle} role="dialog" aria-label="Reasoning effort">
-      {unknown ? <><p>Reasoning capabilities are unknown.</p><button type="button" onClick={onOpenSettings ?? (() => window.dispatchEvent(new Event("taucode:provider-settings")))}>Detect in Settings</button></> : <>
+    {menu.isOpen && <AnchoredPopover anchorRef={trigger} surfaceRef={popover} className={`reasoning-popover${burning ? " burning" : warm ? " warm" : ""}${drag !== null ? " dragging" : ""}`} style={sliderStyle} role="dialog" aria-label={view === "models" ? "Select model" : "Model and reasoning"} onKeyDown={event => { if (event.key === "Escape" && view === "models") { event.preventDefault(); event.stopPropagation(); switchView("slider"); } }}>
+      {(["slider", "models"] as const).filter(panel => panel === view || panel === outgoing).map(panel => <div key={panel} className={`reasoning-view${outgoing ? ` ${view === "models" ? "forward" : "back"} ${panel === outgoing ? "outgoing" : "incoming"}` : ""}`} aria-hidden={panel === outgoing || undefined} inert={panel === outgoing ? true : undefined}>
+      {panel === "models" ? <><div className="reasoning-model-heading"><button type="button" aria-label="Back to reasoning" onClick={() => switchView("slider")}><ChevronLeft size={16} aria-hidden /></button><strong>Select model</strong></div><ComposerModelList models={models} selectedId={selectedModelId} defaultId={defaultModelId} disabled={disabled || selecting} onSelect={selectModel} />{modelError && <p role="alert">{modelError}</p>}</> : <>
         <div className="reasoning-heading">
-          <span className="reasoning-heading-icon" aria-hidden="true">{burning ? <Flame className="reasoning-flame" size={22} /> : <Zap size={22} />}</span>
+          <span className="reasoning-heading-icon" aria-hidden="true">{!noReasoning && (burning ? <Flame className="reasoning-flame" size={22} /> : <Zap size={22} />)}</span>
           <div className="reasoning-heading-center">
-            <span className="reasoning-level">{label}</span>
-            <button type="button" className="reasoning-model" title={modelName} disabled={!modelPickerRef || disabled} onClick={() => {
-              const picker = modelPickerRef?.current;
-              if (!picker || picker.disabled) return;
-              menu.close();
-              picker.focus();
-              if (picker.showPicker) picker.showPicker();
-              else picker.click();
-            }}><span>{modelName}</span><ChevronDown size={12} aria-hidden /></button>
+            <span className="reasoning-level">{noReasoning ? "Model" : label}</span>
+            <button type="button" className="reasoning-model" title={modelName} disabled={!onSelectModel || disabled} onClick={() => switchView("models")}><span>{modelName}</span><ChevronRight size={12} aria-hidden /></button>
           </div>
-          <button type="button" className="reasoning-reset" title="Reset to model default" aria-label="Reset to model default" onClick={() => { setDrag(null); onChange(clampReasoning(capability, capability.default)!); }}><RotateCcw size={16} aria-hidden /></button>
+          <button type="button" className="reasoning-reset" disabled={unknown || noReasoning} title="Reset to model default" aria-label="Reset to model default" onClick={() => { setDrag(null); onChange(clampReasoning(capability, capability?.default)!); }}><RotateCcw size={16} aria-hidden /></button>
         </div>
-        <div className="reasoning-slider">
+        {noReasoning ? <p className="reasoning-empty">{unavailable || "This model does not support reasoning."}</p> : unknown ? <div className="reasoning-empty"><p>Reasoning capabilities are unknown.</p><button type="button" onClick={onOpenSettings ?? (() => window.dispatchEvent(new Event("taucode:provider-settings")))}>Detect in Settings</button></div> : <div className="reasoning-slider">
           <div className="reasoning-rail" aria-hidden="true">
             <span className="reasoning-fill">{Array.from({ length: 10 }, (_, dot) => <span className="reasoning-particle" key={dot} style={{ left: `${dot * 8}%`, top: `${20 + (dot % 3) * 25}%`, width: `${2 + dot % 2}px`, height: `${2 + dot % 2}px`, "--particle-drift": `${24 + (dot % 3) * 10}px`, "--particle-opacity": 0.35 + (dot % 3) * 0.125, animationDelay: `${dot * -0.43}s` } as CSSProperties} />)}</span>
             {levels.map((stop, stopIndex) => <span className="reasoning-tick" key={stop} style={{ left: `${last > 0 ? stopIndex / last * 100 : 0}%` }} />)}
@@ -90,9 +123,10 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
               const next = { ArrowRight: index + 1, ArrowUp: index + 1, ArrowLeft: index - 1, ArrowDown: index - 1, Home: 0, End: last }[event.key];
               if (next !== undefined) { event.preventDefault(); select(next); }
             }} />
-        </div>
+        </div>}
         <p className="reasoning-notice" role="status">{adjusted ? `${reasoningLabel(value!)} is unavailable; using ${chipLabel}.` : ""}</p>
       </>}
+      </div>)}
     </AnchoredPopover>}
   </div>;
 }
