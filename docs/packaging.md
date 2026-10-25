@@ -17,15 +17,19 @@ debug helpers. Plain `cargo build --bins` and `cargo test` do not require staged
 sidecars: `build.rs` leaves copying external binaries and resources to the CLI
 bundler, avoiding overwriting Cargo output with stale helper binaries.
 
-The Rust and native C/C++ compiler wrappers remap this checkout to `/taucode` in
-compiler paths and `__FILE__` diagnostics. The native wrapper also replaces vendored
-OpenSSL's generated build-directory module/engine search macros with system paths
-under `/usr/lib/openssl`; the vendored build disables shared modules and ships none.
-This prevents unused OpenSSL metadata and Whisper assertions from leaking build paths.
-The staging hook invalidates Whisper’s cached CMake build once per wrapper revision
-because that dependency does not track compiler environment changes. Before bundling,
-`strip -S` removes Swift archive debug symbols, then the hook checks every app/helper
-binary for the checkout path. Signing happens after stripping.
+Path remapping applies only to release invocations. `release-macos.sh` launches
+Tauri through `release-build.mjs`, which appends `--remap-path-prefix` to existing
+Rust flags (preserving encoded flags when supplied) and selects the native C/C++
+wrappers through child-process `CC`/`CXX`. The release bundling helper uses the same
+environment. `.cargo/config.toml` only enables offline mode; `cargo test`, `tauri dev`
+and `tauri build --debug` receive no remapping flags or compiler wrappers.
+
+The native wrappers remap `__FILE__` diagnostics and replace vendored OpenSSL's
+build-directory module/engine search macros with system paths under `/usr/lib/openssl`;
+the vendored build disables shared modules and ships none. The release helper
+invalidates only Whisper's release cache when its compiler configuration changes,
+because that dependency does not track compiler environment changes. `strip -S`
+removes Swift archive debug symbols before the release path check and signing.
 The bundle check rejects any remaining literal checkout path in the app and helper
 binaries. Development engine/diagnostics fallbacks exist only in debug builds or
 tests; production resolves engine sources from bundle resources and installs them
@@ -104,15 +108,21 @@ xcrun stapler staple path/to/taucode.dmg
 
 ### Entitlements
 
-`src-tauri/Entitlements.plist` is used for the app and nested executable signatures:
+Signing and verification share the policy in `scripts/entitlements.mjs`.
+`check-bundle.mjs` reads each Mach-O's signed entitlements with
+`codesign -d --entitlements :-` and requires exact keys and values, including
+rejecting extra keys set to false. It also checks the app bundle signature.
 
-| Entitlement | Purpose |
-| --- | --- |
-| `com.apple.security.cs.allow-jit` | Node/V8 JIT under hardened runtime. WKWebView runs web content in Apple's own process. |
-| `com.apple.security.cs.allow-unsigned-executable-memory` | Compatibility with Node/V8 and Bun/native engine executable-memory allocation. |
-| `com.apple.security.cs.disable-library-validation` | npm engines load native `.node` modules downloaded into application data; these are not signed with the app's Developer ID. |
-| `com.apple.security.automation.apple-events` | User-approved computer-use automation of other apps. |
-| `com.apple.security.device.audio-input` | Existing dictation microphone capture under hardened runtime. |
+| Binary | Entitlements file / keys | Purpose |
+| --- | --- | --- |
+| Main app `codex-monitor` and app bundle | `Entitlements.plist`: `com.apple.security.device.audio-input`, `com.apple.security.automation.apple-events` | Dictation and user-approved app automation. WKWebView content runs in Apple's process, so the app needs no JIT or library-validation exception. |
+| Bundled `node` and `bun` | `Entitlements.runtime.plist`: `com.apple.security.cs.allow-jit`, `com.apple.security.cs.allow-unsigned-executable-memory`, `com.apple.security.cs.disable-library-validation` | JIT execution and native `.node` modules installed into app data without the app's signing identity. Bun currently arrives through omp installation; this policy also covers it if bundled. |
+| `codex_monitor_daemon`, `codex_monitor_daemonctl`, `taucode-diag-mcp` | None; hardened runtime only | No JIT or unsigned native modules. The daemon's computer-use path uses ScreenCaptureKit, Accessibility and CGEvent/TCC, not Apple Events. Its `osascript` notification fallback is debug-only. |
+| `uv`, other native resource executables/libraries | None; hardened runtime only | No process-level JIT or automation privileges needed. Native modules inherit the Node process's capabilities. |
+
+`sign-dev.sh` delegates to the same per-binary signer. Node receives runtime
+entitlements during staging; uv receives none. The final release signer applies
+the correct profile to every executable and seals the app last.
 
 Screen Recording and Accessibility are TCC grants, not entitlements. The setup
 checklist only preflights them. Its buttons open the exact macOS privacy panes;
@@ -123,7 +133,7 @@ launching the app never automatically requests or changes these grants.
 ```sh
 node --check scripts/bundle-node.mjs
 node --check scripts/check-bundle.mjs
-node --test scripts/release-manifest.test.mjs
+node --test scripts/release-manifest.test.mjs scripts/packaging-policy.test.mjs
 bash -n scripts/release-macos.sh scripts/sign-macos.sh scripts/sign-dev.sh
 node scripts/check-bundle.mjs src-tauri/target/release/bundle/macos/taucode.app
 ```

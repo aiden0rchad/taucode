@@ -2,7 +2,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, realpathSync, r
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createHash } from "node:crypto";
+import { entitlementsFile } from "./entitlements.mjs";
 
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const staging = join(app, "src-tauri/target/engine-resources");
@@ -54,19 +54,9 @@ writeFileSync(join(uvDest, "VERSION"), execFileSync(uv, ["--version"]));
 // Tauri signs sidecars but not Mach-O resources. Give plain `tauri build` valid
 // ad-hoc runtime signatures; release-macos.sh replaces them with the chosen ID.
 for (const binary of [join(dest, "bin/node"), join(uvDest, "uv")]) {
+  const entitlements = entitlementsFile(binary === join(dest, "bin/node") ? "Contents/Resources/node/bin/node" : "Contents/Resources/uv/uv");
   execFileSync("/usr/bin/codesign", ["--force", "--sign", "-", "--options", "runtime", "--timestamp=none",
-    "--entitlements", join(app, "src-tauri/Entitlements.plist"), binary], { stdio: "inherit" });
-}
-
-// whisper-rs-sys does not track CC/CXX changes. Invalidate its cached CMake
-// compiler once when adopting/updating these wrappers, before Cargo starts.
-const profile = process.env.TAURI_ENV_DEBUG === "true" ? "dev" : "release";
-const stamp = join(staging, `.native-remap-${profile}`);
-const nativeHash = createHash("sha256").update(app).update(readFileSync(join(app, "scripts/remap-clang.sh"))).digest("hex");
-if (!existsSync(stamp) || readFileSync(stamp, "utf8") !== nativeHash) {
-  execFileSync("cargo", ["clean", "--package", "whisper-rs-sys", "--profile", profile], { cwd: join(app, "src-tauri"), stdio: "inherit" });
-  mkdirSync(staging, { recursive: true });
-  writeFileSync(stamp, nativeHash);
+    ...(entitlements ? ["--entitlements", entitlements] : []), binary], { stdio: "inherit" });
 }
 
 console.log(`Staged Node ${readFileSync(join(dest, "VERSION"), "utf8").trim()}, npm and uv (${expected})`);

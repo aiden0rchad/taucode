@@ -1,3 +1,4 @@
+import { verifyEntitlements } from "./entitlements.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
@@ -41,10 +42,12 @@ function* files(dir) {
 for (const path of files(app)) {
   if (execFileSync("/usr/bin/file", ["-b", path], { encoding: "utf8" }).includes("Mach-O")) {
     execFileSync("/usr/bin/codesign", ["--verify", "--strict", path], { stdio: "pipe" });
+    verifyEntitlements(app, path);
   }
 }
 execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
-console.log(`Contents, checkout-path and signing checks passed (${nodeVersion})`);
+verifyEntitlements(app, app);
+console.log(`Contents, checkout-path, signing and entitlement checks passed (${nodeVersion})`);
 
 async function freePort() {
   const server = net.createServer();

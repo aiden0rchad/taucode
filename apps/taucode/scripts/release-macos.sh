@@ -25,7 +25,7 @@ trap 'rm -f "$MARKER"; if [[ -n "$STAGING" ]]; then rm -rf "$STAGING"; fi' EXIT
 env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_API_KEY -u APPLE_API_KEY_PATH \
   -u APPLE_API_ISSUER -u APPLE_CERTIFICATE -u APPLE_CERTIFICATE_PASSWORD \
   -u APPLE_TEAM_ID APPLE_SIGNING_IDENTITY=- \
-  ./node_modules/.bin/tauri build --bundles app,dmg
+  node "$SCRIPT_DIR/release-build.mjs" ./node_modules/.bin/tauri build --bundles app,dmg
 APP="$TARGET/release/bundle/macos/taucode.app"
 bash "$SCRIPT_DIR/sign-macos.sh" "$APP"
 node "$SCRIPT_DIR/check-bundle.mjs" "$APP"

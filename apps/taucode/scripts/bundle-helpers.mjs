@@ -1,3 +1,4 @@
+import { buildEnvironment, prepareRelease } from "./release-build.mjs";
 import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -9,8 +10,10 @@ const arch = process.env.TAURI_ENV_ARCH;
 const target = arch ? `${{ arm64: "aarch64", x64: "x86_64" }[arch] || arch}-apple-darwin` : host;
 if (target !== host) throw new Error("Cross-compilation is unsupported: build on the target architecture");
 const debug = process.env.TAURI_ENV_DEBUG === "true";
+const env = buildEnvironment(debug);
+if (!debug) prepareRelease(env);
 const helpers = ["codex_monitor_daemon", "codex_monitor_daemonctl", "taucode-diag-mcp"];
-execFileSync("cargo", ["build", "--offline", "--features", "custom-protocol", ...(debug ? [] : ["--release"]), "--bins"], { cwd: root, stdio: "inherit" });
+execFileSync("cargo", ["build", "--offline", "--features", "custom-protocol", ...(debug ? [] : ["--release"]), "--bins"], { cwd: root, env, stdio: "inherit" });
 mkdirSync(join(root, "binaries"), { recursive: true });
 const output = resolve(root, process.env.CARGO_TARGET_DIR || "target", debug ? "debug" : "release");
 if (!debug) {

@@ -1,9 +1,2 @@
 [net]
 offline = true
-
-[build]
-rustc-wrapper = "../scripts/remap-rustc.sh"
-
-[env]
-CC = { value = "../scripts/remap-clang.sh", relative = true }
-CXX = { value = "../scripts/remap-clang++.sh", relative = true }
