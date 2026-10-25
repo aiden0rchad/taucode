@@ -1,6 +1,7 @@
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import type { WorkspaceInfo } from "@/types";
+import { SETTINGS_ROUTE_SECTION_IDS } from "@settings/components/settingsTypes";
 import type { SettingsSection } from "@app/hooks/useSettingsModalState";
 import { createPreviewHandler } from "./handler";
 
@@ -32,6 +33,7 @@ export function installUiPreview(search = window.location.search) {
       }
       return null;
     }
+    if (command === "terminal_open") setTimeout(() => { void emit("terminal-output", { workspaceId: args.workspaceId, terminalId: args.terminalId, data: "taucode preview\r\n$ npm test\r\nAll tests passed.\r\n$ " }); }, 100);
     return preview.handler(command, payload);
   });
   const tauri = window as unknown as {
@@ -68,6 +70,6 @@ export function selectCode(
   const thread = preview.state.threads.find(t => t.id === query.get("thread")) ?? preview.state.threads[0];
   if (thread && workspaces.some(w => w.id === thread.workspaceId)) select(thread.workspaceId, thread.id);
   const section = query.get("settings");
-  const sections: SettingsSection[] = ["projects", "display", "about", "dictation", "shortcuts", "open-apps", "git", "codex", "features"];
+  const sections = SETTINGS_ROUTE_SECTION_IDS.filter(s => s !== "profile");
   if (section) openSettings(sections.find(s => s === section) ?? "display");
 }

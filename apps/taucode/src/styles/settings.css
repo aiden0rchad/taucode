@@ -221,7 +221,7 @@
   justify-content: center;
   border-radius: 999px;
   padding: 2px 8px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--text-strong);
@@ -238,7 +238,7 @@
 }
 
 .settings-mobile-remote-last {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-faint);
 }
 
@@ -547,7 +547,7 @@
 }
 
 .settings-agents-inline-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--text-muted);
@@ -1289,3 +1289,25 @@
     background: var(--surface-topbar);
   }
 }
+
+.settings-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.settings-section-heading h2 { margin-top: 0; }
+.settings-section-heading > button { flex-shrink: 0; }
+.settings-card-list { display: grid; gap: 12px; }
+.settings-card { padding: 16px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-card); }
+.settings-card .settings-toggle-row { margin: 0; padding: 0; border: 0; }
+.settings-toggle-row > :first-child { min-width: 0; }
+.settings-row-controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
+.provider-title { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.provider-badge { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-card-strong); }
+.provider-endpoint, .provider-status { display: block; margin-top: 6px; color: var(--text-subtle); overflow-wrap: anywhere; font-size: 11.5px; }
+.provider-status[role="alert"] { color: var(--text-error, #d96b6b); }
+.provider-delete-confirm { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.provider-delete-confirm button + button { margin-left: 8px; }
+.registry-settings .settings-toggle, .registry-policy .settings-toggle { flex-shrink: 0; }
+@media (max-width: 700px) { .settings-card .settings-toggle-row { flex-wrap: wrap; gap: 12px; } }
+
+.settings-field-row, .registry-settings .settings-field-row, .registry-policy .settings-field-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid var(--border-muted); border-radius: 12px; background: var(--surface-card); }
+.settings-field-info { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.settings-field-row > input, .settings-field-row > select, .settings-field-row > textarea { flex: 0 1 55%; width: 55%; min-width: 0; }
+@media (max-width: 700px) { .settings-field-row, .registry-settings .settings-field-row, .registry-policy .settings-field-row { flex-wrap: wrap; } .settings-field-row > input, .settings-field-row > select, .settings-field-row > textarea { flex-basis: 100%; width: 100%; } }

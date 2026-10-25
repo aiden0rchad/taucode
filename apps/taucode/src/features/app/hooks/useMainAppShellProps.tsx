@@ -1,4 +1,3 @@
-import { SidebarCollapseButton } from "@/features/layout/components/SidebarToggleControls";
 import type { ComponentProps } from "react";
 import { MainAppShell } from "@app/components/MainAppShell";
 
@@ -61,7 +60,6 @@ export function useMainAppShellProps({
 
   const desktopTopbarLeftNodeWithToggle = !topbar.isCompact ? (
     <div className="topbar-leading">
-      <SidebarCollapseButton {...shell.sidebarToggleProps} />
       {topbar.desktopTopbarLeftNode}
     </div>
   ) : (

@@ -5,7 +5,7 @@ import { matchesShortcut } from "@utils/shortcuts";
 import { isMacPlatform } from "@utils/platformPaths";
 
 type Turn = { workspace: string; thread: string; turn: string };
-export function useBrowserController() {
+export function useBrowserController(shortcut = true) {
   const [open, setOpen] = useState(() => localStorage.getItem("taucode.browser.open") === "true");
   const [width, setWidth] = useState(() => Math.min(900, Math.max(320, Number(localStorage.getItem("taucode.browser.width")) || 520)));
   const [calls, setCalls] = useState<Record<string, Turn>>({});
@@ -13,10 +13,11 @@ export function useBrowserController() {
   useEffect(() => { localStorage.setItem("taucode.browser.open", String(open)); }, [open]);
   useEffect(() => { localStorage.setItem("taucode.browser.width", String(width)); }, [width]);
   useEffect(() => {
+    if (!shortcut) return;
     const key = (e: KeyboardEvent) => { if (matchesShortcut(e, isMacPlatform() ? "cmd+shift+b" : "ctrl+shift+b")) { e.preventDefault(); e.stopPropagation(); toggle(); } };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
-  }, [toggle]);
+  }, [toggle, shortcut]);
   useEffect(() => subscribeAppServerEvents(event => {
     const message = event.message;
     const params = (message.params ?? {}) as Record<string, unknown>;

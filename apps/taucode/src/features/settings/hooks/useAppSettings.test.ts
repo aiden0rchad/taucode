@@ -112,7 +112,7 @@ describe("useAppSettings", () => {
         uiScale: 0.1,
         uiFontFamily: expect.stringContaining("system-ui"),
         codeFontFamily: expect.stringContaining("ui-monospace"),
-        codeFontSize: 9,
+        codeFontSize: 11,
         notificationSoundsEnabled: false,
       }),
     );

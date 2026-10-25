@@ -478,6 +478,7 @@ export function Markdown({
     return resolvedPath;
   };
   const components: Components = {
+    input: ({ checked, type, disabled }) => <input type={type} disabled={disabled} checked={checked} readOnly aria-label={checked ? "Completed task" : "Incomplete task"} />,
     table: ({ children }) => (
       <div className="markdown-table-wrap">
         <table className="markdown-table">{children}</table>

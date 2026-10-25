@@ -19,11 +19,7 @@
   background: var(--surface-messages);
   color: var(--text-strong);
 }
-.registry-settings input[type="checkbox"], .registry-policy input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-}
-.registry-settings button, .registry-policy button {
+.registry-settings button:not(.settings-toggle):not(.primary):not(.icon-button), .registry-policy button:not(.settings-toggle) {
   padding: 8px 12px;
   border: 1px solid var(--border-muted);
   border-radius: 6px;

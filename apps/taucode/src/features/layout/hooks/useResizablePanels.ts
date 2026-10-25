@@ -10,8 +10,8 @@ const STORAGE_KEY_TERMINAL_PANEL = "codexmonitor.terminalPanelHeight";
 const STORAGE_KEY_DEBUG_PANEL = "codexmonitor.debugPanelHeight";
 const MIN_CHAT_DIFF_SPLIT_POSITION_PERCENT = 20;
 const MAX_CHAT_DIFF_SPLIT_POSITION_PERCENT = 80;
-const MIN_RIGHT_PANEL_WIDTH = 270;
-const MAX_RIGHT_PANEL_WIDTH = 420;
+const MIN_RIGHT_PANEL_WIDTH = 320;
+const MAX_RIGHT_PANEL_WIDTH = 900;
 const MIN_PLAN_PANEL_HEIGHT = 140;
 const MAX_PLAN_PANEL_HEIGHT = 420;
 const MIN_TERMINAL_PANEL_HEIGHT = 140;
@@ -19,7 +19,7 @@ const MAX_TERMINAL_PANEL_HEIGHT = 480;
 const MIN_DEBUG_PANEL_HEIGHT = 120;
 const MAX_DEBUG_PANEL_HEIGHT = 420;
 const DEFAULT_CHAT_DIFF_SPLIT_POSITION_PERCENT = 50;
-const DEFAULT_RIGHT_PANEL_WIDTH = 230;
+const DEFAULT_RIGHT_PANEL_WIDTH = 360;
 const DEFAULT_PLAN_PANEL_HEIGHT = 220;
 const DEFAULT_TERMINAL_PANEL_HEIGHT = 220;
 const DEFAULT_DEBUG_PANEL_HEIGHT = 180;
@@ -353,6 +353,7 @@ export function useResizablePanels() {
     isResizing: isResizing || sidebarResizing,
     sidebarWidth,
     rightPanelWidth,
+    setRightPanelWidth,
     planPanelHeight,
     terminalPanelHeight,
     debugPanelHeight,

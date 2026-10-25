@@ -1,10 +1,10 @@
 import { threadEffortKey, useReasoningSelection } from "@/features/models/reasoning";
-import { SidebarResizeHandle, SidebarCollapseButton } from "@/features/layout/components/SidebarResizeHandle";
+import { SidebarResizeHandle } from "@/features/layout/components/SidebarResizeHandle";
 import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
 import { ComposerDictation } from "@/features/composer/components/ComposerDictation";
 import { NewConversationRow } from "@/features/chat/NewConversationRow";
 import { formatRelativeTimeShort } from "@utils/time";
-import { Globe, X, PanelLeft, Lightbulb, Calendar, PenLine, Pencil, RotateCcw, Copy, Search } from "lucide-react";
+import { Globe, X, Lightbulb, Calendar, PenLine, Pencil, RotateCcw, Copy, Search } from "lucide-react";
 import { ComposerShell, ComposerSendButton, ComposerAccessControl } from "@/features/composer/components/ComposerShell";
 import { getFileTypeIconUrl } from "@utils/fileTypeIcons";
 import { useEffect, useRef, useState } from "react";
@@ -17,17 +17,15 @@ import { ModeSwitcher, useModeSettings } from "./ModeShell";
 import { chatGroups, chatMarkdown, chatTitle, inlineAttachment, readAttachment, type Attachment } from "./chat";
 import { useChat } from "./useChat";
 import Trash from "lucide-react/dist/esm/icons/trash-2";
-import Download from "lucide-react/dist/esm/icons/download";
-import { BrowserDock } from "@/features/browser/BrowserDock";
+import { WorkspaceShell } from "@/features/panels/SidePanel";
 import { SidebarBottomRail } from "@app/components/SidebarBottomRail";
-import { ModeHeader } from "./ModeHeader";
 import { RowMenu } from "./RowMenu";
 
 const examples = [{ label: "Explore an idea", prompt: "Explain something surprising about the ocean", Icon: Lightbulb }, { label: "Plan a weekend", prompt: "Help me plan a relaxing weekend", Icon: Calendar }, { label: "Write a story", prompt: "Give me three ideas for a short story", Icon: PenLine }];
 
 export function ChatView({ settings, onOpenSettings = () => {} }: { settings: AppSettings; onOpenSettings?: () => void }) {
   const chat = useChat();
-  const { sidebarCollapsed } = useSidebarState();
+  const { sidebarCollapsed, setSidebarCollapsed } = useSidebarState();
   const updateSettings = useModeSettings(settings);
   const models = (settings.providers ?? []).filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => ({ ...m, provider: p.name, key: `${p.id}/${m.id}`, label: `${p.name} · ${m.displayName || m.id}` })));
   const [model, setModel] = useState(modelKey(settings.chatDefaultModel ?? settings.agentPolicy?.defaultModel) || models[0]?.key || "");
@@ -35,13 +33,14 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [editing, setEditing] = useState<string>();
   const searchInput = useRef<HTMLInputElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [trash, setTrash] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dictating, setDictating] = useState(false);
   const [rename, setRename] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [showList, setShowList] = useState(true);
+
   const [defaultModel, setDefaultModel] = useState(modelKey(settings.chatDefaultModel));
   const [newWeb, setNewWeb] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -104,12 +103,12 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const web = active ? Boolean(active.chat.web) : newWeb;
   const toggleWeb = () => { if (active) { void mutate("web", active.id, { web: !web }); } else setNewWeb(!web); };
 
-  return <BrowserDock searchUrl={settings.browser?.searchUrl} onInterrupt={() => chatRequest("stop", { threadId: chat.active }).then(() => {})}><div className={`chat-layout${sidebarCollapsed ? " sidebar-collapsed" : ""}${showList ? " chat-list-open" : ""}`}>
-    <SidebarResizeHandle /><SidebarCollapseButton />
+  return <WorkspaceShell reservedShortcuts={Object.entries(settings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`chat:${chat.active ?? "new"}`} title={active ? chatTitle(active) : "New chat"} onNavigate={scope => { const id = scope.slice(5); if (id === "new") chat.setActive(null); else void chat.open(id); }} actions={active ? [{ label: "Rename", onClick: () => { setRename(active.id); setName(chatTitle(active)); } }, { label: "Copy", onClick: () => { void navigator.clipboard.writeText(chatMarkdown(chatTitle(active), chat.messages)).catch(e => chat.setError(String(e))); } }, { label: "Export", onClick: () => { void run(() => exportMarkdownFile(chatMarkdown(chatTitle(active), chat.messages), "chat.md", "Export chat")); } }, { label: "Move to Trash", onClick: () => { void mutate("trash", active.id); } }] : []} searchUrl={settings.browser?.searchUrl} onInterrupt={() => chatRequest("stop", { threadId: chat.active }).then(() => {})}><div className={`chat-layout${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+    <SidebarResizeHandle />
     <aside className="sidebar chat-sidebar" aria-label="Chats">
       <ModeSwitcher />
-      <NewConversationRow label="New chat" disabled={busy} shortcut={settings.newAgentShortcut} handleShortcut onSearch={() => searchInput.current?.focus()} onNew={() => { chat.setActive(null); clearDraft(); setNewWeb(false); setModel(defaultModel || modelKey(settings.agentPolicy?.defaultModel) || models[0]?.key || ""); setTrash(false); setShowList(false); }} />
-      <label className="sidebar-search"><Search aria-hidden /><input ref={searchInput} type="search" aria-label="Search chats" placeholder="Search chats" value={search} onChange={e => setSearch(e.target.value)} /></label>
+      {!searchOpen && <NewConversationRow label="New chat" disabled={busy} shortcut={settings.newAgentShortcut} handleShortcut onSearch={() => setSearchOpen(true)} onNew={() => { chat.setActive(null); clearDraft(); setNewWeb(false); setModel(defaultModel || modelKey(settings.agentPolicy?.defaultModel) || models[0]?.key || ""); setTrash(false); if (window.innerWidth < 760) setSidebarCollapsed(true); }} />}
+      {searchOpen && <label className="sidebar-search is-open"><Search aria-hidden /><input autoFocus onKeyDown={e => { if (e.key === "Escape") { setSearch(""); setSearchOpen(false); } }} ref={searchInput} type="search" aria-label="Search chats" placeholder="Search chats" value={search} onChange={e => setSearch(e.target.value)} /><button type="button" className="ghost icon-button" aria-label="Close search" onClick={() => { setSearch(""); setSearchOpen(false); }}><X aria-hidden /></button></label>}
       <div className="chat-list">
         {Object.entries(chatGroups(chat.chats, search, trash)).map(([group, entries]) => entries.length > 0 && <section key={group} aria-label={group}>
           <h2 className="sidebar-section-header"><span className="sidebar-section-title">{group}</span></h2>
@@ -120,7 +119,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
           ]}>
             {rename === entry.id ? <form onSubmit={e => { e.preventDefault(); void mutate("rename", entry.id, { title: name }).then(success => { if (success) setRename(null); }); }}>
               <input autoFocus aria-label="Chat title" maxLength={200} value={name} onChange={e => setName(e.target.value)} /><button disabled={busy || !name.trim()}>Save</button><button type="button" onClick={() => setRename(null)}>Cancel</button>
-            </form> : <button className={`thread-row has-secondary-line${chat.active === entry.id ? " active" : ""}${entry.chat.pinned ? " is-pinned" : ""}`} aria-label={chatTitle(entry)} aria-current={chat.active === entry.id ? "page" : undefined} disabled={busy || trash} onClick={() => { void run(async () => { await chat.open(entry.id); clearDraft(); setShowList(false); }); }}>
+            </form> : <button className={`thread-row has-secondary-line${chat.active === entry.id ? " active" : ""}${entry.chat.pinned ? " is-pinned" : ""}`} aria-label={chatTitle(entry)} aria-current={chat.active === entry.id ? "page" : undefined} disabled={busy || trash} onClick={() => { void run(async () => { await chat.open(entry.id); clearDraft(); if (window.innerWidth < 760) setSidebarCollapsed(true); }); }}>
               <span className={`thread-status ${entry.running ? "processing" : "ready"}`} aria-label={entry.running ? "Running" : "Ready"} />
               <span className="thread-content"><span className="thread-name">{chatTitle(entry)}</span><span className="thread-details">{trash ? "Restore within 30 days" : `${entry.model || "Chat"} · ${formatRelativeTimeShort(entry.updatedAt * 1000)}`}</span></span>
             </button>}
@@ -131,9 +130,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
       <SidebarBottomRail onOpenSettings={onOpenSettings} onOpenDebug={() => {}} showDebugButton={false}><button className="ghost sidebar-utility-button" aria-label={trash ? "Back to chats" : "Trash"} title={trash ? "Back to chats" : "Trash"} aria-pressed={trash} onClick={() => setTrash(!trash)}><Trash size={14} aria-hidden /></button></SidebarBottomRail>
     </aside>
     <main className={`chat-main${!chat.messages.length ? " is-empty" : ""}`}>
-      <ModeHeader title={active ? chatTitle(active) : "New chat"} navigation={<button className="ghost main-header-action chat-list-toggle" aria-expanded={showList} onClick={() => setShowList(!showList)} aria-label="Chats" title="Chats"><PanelLeft aria-hidden /></button>}>
-        {active && <button className="ghost main-header-action" title="Export as Markdown" aria-label="Export as Markdown" disabled={busy} onClick={() => { void run(async () => { await exportMarkdownFile(chatMarkdown(chatTitle(active), chat.messages), "chat.md", "Export chat as Markdown"); }); }}><Download size={14} aria-hidden /></button>}
-      </ModeHeader>
+
       <div className="chat-scroll" role="log" aria-label="Conversation" aria-live="polite">
         <div className="chat-column">
           {!chat.messages.length && <div className="chat-empty"><span className="chat-eyebrow">A little room to think</span><h1>What’s on your mind?</h1><p>Ask a question, explore an idea, or bring something to read.</p></div>}
@@ -168,5 +165,5 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
       </form>
       {!chat.messages.length && <div className="chat-examples starter-pills">{examples.map(({ label, prompt, Icon }) => <button key={label} onClick={() => setDraft(prompt)}><Icon aria-hidden />{label}</button>)}</div>}
     </main>
-  </div></BrowserDock>;
+  </div></WorkspaceShell>;
 }

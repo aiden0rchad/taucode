@@ -292,7 +292,7 @@ describe("GitDiffPanel", () => {
 
   it("shows Agent edits option in mode selector", () => {
     render(<GitDiffPanel {...baseProps} />);
-    const options = screen.getAllByRole("option", { name: "Agent edits" });
+    const options = screen.getAllByRole("button", { name: "Agent edits" });
     expect(options.length).toBeGreaterThan(0);
   });
 
@@ -335,4 +335,18 @@ describe("GitDiffPanel", () => {
     );
   });
 
+});
+
+it("places the view switcher and totals before an in-flow collapsible plan, branch and commit box", () => {
+  const onModeChange = vi.fn();
+  const { container } = render(<GitDiffPanel {...baseProps} totalAdditions={12} totalDeletions={3} onModeChange={onModeChange} planSection={<details className="changes-plan" open><summary>Plan</summary><p>Inspect changes</p></details>} />);
+  const toolbar = within(container).getByRole("group", { name: "Git panel view" });
+  const header = toolbar.closest(".git-panel-header")!;
+  expect(header.contains(within(container).getByLabelText("Change totals"))).toBe(true);
+  expect(within(container).getByLabelText("Change totals").textContent).toBe("+12 / −3");
+  expect(header.nextElementSibling?.tagName).toBe("DETAILS");
+  expect(header.nextElementSibling?.nextElementSibling?.className).toBe("git-panel-overview");
+  fireEvent.click(within(toolbar).getByRole("button", { name: "Log" }));
+  expect(onModeChange).toHaveBeenCalledWith("log");
+  expect(container.querySelector('.git-panel-select')).toBeNull();
 });

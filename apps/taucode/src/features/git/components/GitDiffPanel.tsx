@@ -1,14 +1,10 @@
 import type { GitHubIssue, GitHubPullRequest, GitLogEntry } from "../../../types";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { Menu, MenuItem } from "@tauri-apps/api/menu";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import FileText from "lucide-react/dist/esm/icons/file-text";
-import GitBranch from "lucide-react/dist/esm/icons/git-branch";
-import ScrollText from "lucide-react/dist/esm/icons/scroll-text";
-import Search from "lucide-react/dist/esm/icons/search";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PanelTabId } from "../../layout/components/PanelTabs";
 import { PanelShell } from "../../layout/components/PanelShell";
@@ -60,6 +56,7 @@ type GitDiffPanelProps = {
   onApplyWorktreeChanges?: () => void | Promise<void>;
   onRevertAllChanges?: () => void | Promise<void>;
   branchName: string;
+  planSection?: ReactNode;
   totalAdditions: number;
   totalDeletions: number;
   fileStatus: string;
@@ -160,6 +157,7 @@ export function GitDiffPanel({
   onApplyWorktreeChanges,
   onRevertAllChanges: _onRevertAllChanges,
   branchName,
+  planSection,
   totalAdditions,
   totalDeletions,
   fileStatus,
@@ -246,19 +244,6 @@ export function GitDiffPanel({
     unstagedFiles,
     onSelectFile,
   });
-
-  const ModeIcon = useMemo(() => {
-    switch (mode) {
-      case "log":
-        return ScrollText;
-      case "issues":
-        return Search;
-      case "prs":
-        return GitBranch;
-      default:
-        return FileText;
-    }
-  }, [mode]);
 
   const pushNeedsSync = useMemo(() => hasPushSyncConflict(pushError), [pushError]);
   const pushErrorMessage = useMemo(() => {
@@ -536,18 +521,12 @@ export function GitDiffPanel({
   const logUpstreamLabel = logUpstream ? `Upstream ${logUpstream}` : "";
   const showAheadSection = Boolean(logUpstream && logAhead > 0);
   const showBehindSection = Boolean(logUpstream && logBehind > 0);
-  const hasDiffTotals = totalAdditions > 0 || totalDeletions > 0;
   const perFileEditCount = perFileDiffGroups.reduce(
     (total, group) => total + group.edits.length,
     0,
   );
   const perFileDiffStatusLabel = `${perFileDiffGroups.length} files · ${perFileEditCount} edits`;
-  const diffTotalsLabel = `+${totalAdditions} / -${totalDeletions}`;
-  const diffStatusLabel = hasDiffTotals
-    ? [logUpstream ? logSyncLabel : null, diffTotalsLabel].filter(Boolean).join(" · ")
-    : logUpstream
-      ? `${logSyncLabel} · ${fileStatus}`
-      : fileStatus;
+  const diffStatusLabel = logUpstream ? `${logSyncLabel} · ${fileStatus}` : fileStatus;
   const hasGitRoot = Boolean(gitRoot && gitRoot.trim());
   const showGitRootPanel =
     isMissingRepo(error) ||
@@ -643,27 +622,15 @@ export function GitDiffPanel({
       onFilePanelModeChange={onFilePanelModeChange}
       headerClassName="git-panel-header"
       headerRight={
-        <div className="git-panel-actions" role="group" aria-label="Git panel">
-          <div className="git-panel-select">
-            <span className="git-panel-select-icon" aria-hidden>
-              <ModeIcon />
-            </span>
-            <select
-              className="git-panel-select-input"
-              value={mode}
-              onChange={(event) => onModeChange(event.target.value as GitDiffPanelProps["mode"])}
-              aria-label="Git panel view"
-            >
-              <option value="diff">Diff</option>
-              <option value="perFile">Agent edits</option>
-              <option value="log">Log</option>
-              <option value="issues">Issues</option>
-              <option value="prs">PRs</option>
-            </select>
+        <div className="changes-toolbar">
+          <div className="changes-views" role="group" aria-label="Git panel view">
+            {([['diff', 'Diff'], ['perFile', 'Edits'], ['log', 'Log'], ['issues', 'Issues'], ['prs', 'PRs']] as const).map(([value, label]) => <button key={value} type="button" aria-label={value === "perFile" ? "Agent edits" : label} aria-pressed={mode === value} onClick={() => onModeChange(value)}>{label}</button>)}
           </div>
+          <span className="changes-totals" aria-label="Change totals"><span>+{totalAdditions}</span> / <span>−{totalDeletions}</span></span>
         </div>
       }
     >
+      {planSection}
       <div className="git-panel-overview">
         <div className="git-panel-overview-status">
           <GitPanelModeStatus

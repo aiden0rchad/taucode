@@ -97,15 +97,9 @@ export function DesktopLayout({
   splitChatDiffView,
   messagesNode,
   gitDiffViewerNode,
-  gitDiffPanelNode,
-  planPanelNode,
   composerNode,
-  terminalDockNode,
   debugPanelNode,
-  hasActivePlan,
   onSidebarResizeStart,
-  onRightPanelResizeStart,
-  onPlanPanelResizeStart,
   onChatDiffSplitPositionResizeStart,
 }: DesktopLayoutProps) {
   const diffLayerRef = useRef<HTMLDivElement | null>(null);
@@ -213,26 +207,6 @@ export function DesktopLayout({
               )}
             </div>
 
-            <div
-              className="right-panel-resizer"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize right panel"
-              onMouseDown={onRightPanelResizeStart}
-            />
-            <div className={`right-panel ${hasActivePlan ? "" : "plan-collapsed"}`}>
-              <div className="right-panel-drag-strip" />
-              <div className="right-panel-top">{gitDiffPanelNode}</div>
-              <div
-                className="right-panel-divider"
-                role="separator"
-                aria-orientation="horizontal"
-                aria-label="Resize plan panel"
-                onMouseDown={onPlanPanelResizeStart}
-              />
-              <div className="right-panel-bottom">{planPanelNode}</div>
-            </div>
-            {terminalDockNode}
             {debugPanelNode}
           </>
         )}

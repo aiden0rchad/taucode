@@ -20,7 +20,7 @@ describe("provider registry settings", () => {
   it("saves Anthropic compatibility and enables the Claude default engine", async () => {
     const save = vi.fn().mockResolvedValue(undefined);
     const { rerender } = render(<SettingsProvidersSection appSettings={{ providers: [provider] } as AppSettings} onUpdateAppSettings={save} />);
-    fireEvent.click(screen.getByText("Edit Local"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Local" }));
     fireEvent.click(screen.getByLabelText("Anthropic-compatible (/v1/messages)"));
     fireEvent.click(screen.getByText("Save provider"));
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ providers: [expect.objectContaining({ anthropicCompatible: true })] })));
@@ -34,7 +34,7 @@ describe("provider registry settings", () => {
     const save = vi.fn().mockResolvedValue(undefined);
     const commandProvider: ProviderEntry = { ...provider, auth: { type: "command", command: "/bin/key", args: [] } };
     render(<SettingsProvidersSection appSettings={{ providers: [commandProvider] } as AppSettings} onUpdateAppSettings={save} />);
-    fireEvent.click(screen.getByText("Edit Local"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Local" }));
     expect((screen.getByLabelText("Auth timeout (ms)") as HTMLInputElement).value).toBe("15000");
     fireEvent.change(screen.getByLabelText("Auth timeout (ms)"), { target: { value: "30000" } });
     fireEvent.click(screen.getByText("Save provider"));
@@ -53,7 +53,7 @@ describe("provider registry settings", () => {
     fireEvent.change(key, { target: { value: "super-secret" } });
     fireEvent.change(screen.getByLabelText("Model ID"), { target: { value: "manual/model" } });
     fireEvent.click(screen.getByText("Add model ID manually"));
-    expect((screen.getByLabelText("manual/model") as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByLabelText("manual/model").getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByText("Save provider"));
     await waitFor(() => expect(providerSetApiKey).toHaveBeenCalledWith("custom", "super-secret"));
     expect(screen.queryByDisplayValue("super-secret")).toBeNull();
@@ -61,12 +61,12 @@ describe("provider registry settings", () => {
   it("renders fetch latency, model toggles and actionable failures", async () => {
     vi.mocked(providerTestAndFetch).mockResolvedValueOnce({ ok: true, latencyMs: 42, models: [{ id: "fetched", enabled: true }] }).mockResolvedValueOnce({ ok: false, latencyMs: 2, models: [], error: "API key rejected" });
     render(<Providers initial={[provider]} />);
-    fireEvent.click(screen.getByText("Edit Local"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Local" }));
     fireEvent.click(screen.getByText("Test & fetch models"));
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("42 ms"));
-    expect((screen.getByLabelText("fetched") as HTMLInputElement).checked).toBe(true);
+    await waitFor(() => expect(screen.getByText("42 ms")).toBeTruthy());
+    expect(screen.getByLabelText("fetched").getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByLabelText("fetched"));
-    expect((screen.getByLabelText("fetched") as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByLabelText("fetched").getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(screen.getByText("Test & fetch models"));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("API key rejected"));
   });
@@ -94,4 +94,25 @@ describe("provider registry settings", () => {
     expect((screen.getAllByLabelText("Max concurrent")[1] as HTMLInputElement).value).toBe("2");
     expect((screen.getAllByLabelText("Max per turn")[1] as HTMLInputElement).value).toBe("8");
   });
+});
+
+it("renders a provider card with a shared toggle, test status, icon actions and delete confirmation", async () => {
+  render(<Providers initial={[provider]} />);
+  const toggle = screen.getByRole("button", { name: "Enable Local" });
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  expect(toggle.closest(".provider-card")).toBeTruthy();
+  expect(document.querySelector('input[type="checkbox"]')).toBeNull();
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("false"));
+  vi.mocked(providerTestAndFetch).mockResolvedValue({ ok: true, latencyMs: 15, models: [{ id: "fetched", enabled: true }] });
+  fireEvent.click(screen.getByRole("button", { name: "Test & fetch Local" }));
+  await waitFor(() => expect(screen.getByText(/1 models · tested/)).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: "Delete Local" }));
+  expect(screen.getByRole("alertdialog", { name: "Delete Local?" })).toBeTruthy();
+  expect(screen.getByRole("article", { name: "Local provider" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Delete Local" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete provider" }));
+  await waitFor(() => expect(screen.queryByRole("article", { name: "Local provider" })).toBeNull());
 });

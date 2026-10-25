@@ -26,10 +26,10 @@ it("detects a project tree, defaults to non-archived, reports progress and suppo
   fireEvent.click(screen.getByRole("button", { name: "Detect local sources" }));
   expect(await screen.findByText("Active clock")).toBeTruthy();
   expect(screen.queryByText("Archived clock")).toBeNull();
-  expect((screen.getByRole("checkbox", { name: "Active clock" }) as HTMLInputElement).checked).toBe(true);
-  fireEvent.click(screen.getByRole("checkbox", { name: "Include archived" }));
+  expect(screen.getByRole("button", { name: "Active clock" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Include archived" }));
   expect(screen.getByText("Archived clock")).toBeTruthy();
-  fireEvent.click(screen.getByRole("checkbox", { name: "Active clock" }));
+  fireEvent.click(screen.getByRole("button", { name: "Active clock" }));
   fireEvent.click(screen.getByRole("button", { name: "Import selected (1)" }));
   await waitFor(() => expect(importRequest).toHaveBeenCalledWith("run", { keys: ["codex:2"] }));
   expect(screen.getByRole("progressbar", { name: "Import progress" })).toBeTruthy();

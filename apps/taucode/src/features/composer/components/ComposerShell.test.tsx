@@ -40,3 +40,12 @@ it("opens add controls, closes on selection and Escape, and grows the editor", (
   expect(screen.queryByText("Attach files")).toBeNull();
   expect(screen.getByRole("textbox").style.height).toBe("48px");
 });
+
+it("keeps the compact model chip's full accessible name and reasoning level", () => {
+  render(<ComposerShell menu={<button>Attach</button>} actions={null} reasoning={{ modelName: "gpt-5", capability: { supported: true, levels: ["low", "high"], default: "high", control: "effort", source: "user", detectedAt: 0 }, value: "high", onChange: vi.fn() }}><textarea aria-label="Message" /></ComposerShell>);
+  const chip = screen.getByRole("button", { name: "gpt-5 · High" });
+  expect(chip.querySelector(".reasoning-chip-model")?.textContent).toBe("gpt-5");
+  expect(chip.querySelector(".reasoning-chip-dot")?.getAttribute("aria-hidden")).toBe("true");
+  fireEvent.click(chip);
+  expect(screen.getByRole("dialog", { name: "Model and reasoning" })).toBeTruthy();
+});

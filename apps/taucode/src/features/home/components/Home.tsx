@@ -2,7 +2,6 @@ import type {
   LocalUsageSnapshot,
 } from "../../../types";
 import { HomeActions } from "./HomeActions";
-import { BrowserToggle } from "@/features/browser/BrowserDock";
 import { HomeLatestAgentsSection } from "./HomeLatestAgentsSection";
 import { HomeUsageSection } from "./HomeUsageSection";
 import type {
@@ -46,7 +45,7 @@ export function Home({
 }: HomeProps) {
   return (
     <div className="home">
-      <header className="main-header-actions home-header-actions"><BrowserToggle /></header>
+      <header className="main-header-actions home-header-actions"></header>
       <div className="home-hero">
         <div className="home-title">taucode</div>
         <div className="home-subtitle">

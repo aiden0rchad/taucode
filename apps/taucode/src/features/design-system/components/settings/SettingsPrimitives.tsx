@@ -1,4 +1,5 @@
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import { createContext, useContext, useId, type ComponentPropsWithoutRef, type ReactNode } from "react";
+const ToggleLabel = createContext<string | undefined>(undefined);
 import { joinClassNames } from "../classNames";
 
 type SettingsSectionProps = {
@@ -51,14 +52,16 @@ export function SettingsToggleRow({
   className,
   children,
 }: SettingsToggleRowProps) {
+  const labelId = useId();
   return (
+    <ToggleLabel.Provider value={labelId}>
     <div className={joinClassNames("settings-toggle-row", className)}>
       <div>
-        <div className="settings-toggle-title">{title}</div>
+        <div id={labelId} className="settings-toggle-title">{title}</div>
         {subtitle ? <div className="settings-toggle-subtitle">{subtitle}</div> : null}
       </div>
       {children}
-    </div>
+    </div></ToggleLabel.Provider>
   );
 }
 
@@ -75,14 +78,20 @@ export function SettingsToggleSwitch({
   className,
   ...props
 }: SettingsToggleSwitchProps) {
+  const labelId = useContext(ToggleLabel);
   return (
     <button
       type="button"
       className={joinClassNames("settings-toggle", pressed && "on", className)}
       aria-pressed={pressed}
+      aria-labelledby={props["aria-label"] ? undefined : labelId}
       {...props}
     >
       <span className="settings-toggle-knob" />
     </button>
   );
+}
+
+export function SettingsFieldRow({ title, subtitle, children, className, ...props }: Omit<ComponentPropsWithoutRef<"label">, "title"> & { title: ReactNode; subtitle?: ReactNode }) {
+  return <label {...props} className={joinClassNames("settings-field-row", className)}><span className="settings-field-info"><span className="settings-toggle-title">{title}</span>{subtitle && <span className="settings-toggle-subtitle">{subtitle}</span>}</span>{children}</label>;
 }

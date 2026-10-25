@@ -1,8 +1,10 @@
+import { exportMarkdownFile } from "@services/tauri";
+import { buildThreadTranscript } from "@utils/threadText";
 import { Checkpoints } from "@/features/checkpoints/Checkpoints";
 import { useModeSettings } from "@/features/chat/ModeShell";
 import { AgentsContext, agentThreadDetails } from "@/features/agents/agents";
 import { useSideChats, sideChatQuote } from "@/features/sidechats/useSideChats";
-import { SideChatPane, SideChatSplit } from "@/features/sidechats/SideChatPane";
+import { SideChatPane } from "@/features/sidechats/SideChatPane";
 import { modelKey } from "@/features/settings/registry";
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import successSoundUrl from "@/assets/success-notification.mp3";
@@ -82,7 +84,9 @@ import {
 import { useAppShellOrchestration } from "@app/orchestration/useLayoutOrchestration";
 import { normalizeCodexArgsInput } from "@/utils/codexArgsInput";
 import { subscribeTrayOpenThread } from "@services/events";
-import { BrowserDock } from "@/features/browser/BrowserDock";
+import { WorkspaceShell, PanelToolRequest } from "@/features/panels/SidePanel";
+import { buildGitNodes } from "@/features/layout/hooks/layoutNodes/buildGitNodes";
+import { formatShortcut } from "@utils/shortcuts";
 import { AppModals } from "./AppModals";
 
 const SettingsView = lazy(() =>
@@ -1809,8 +1813,8 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
     }
   }, [workspaces, layoutSurfaces.primary.sidebarProps.onSelectThread, modalActions.openSettings]);
 
-  const mainMessagesNode = showWorkspaceHome ? workspaceHomeNode : sideChat && activeWorkspace ? (
-    <SideChatSplit compact={isCompact} main={<>{messagesNode}{composerNode}</>}>
+  const mainMessagesNode = showWorkspaceHome ? workspaceHomeNode : messagesNode;
+  const sideChatNode = sideChat && activeWorkspace ? (
       <SideChatPane key={sideChat.id} chat={sideChat}
         items={itemsByThread[sideChat.id] ?? []}
         running={threadStatusById[sideChat.id]?.isProcessing ?? false}
@@ -1830,8 +1834,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
           [composerWorkspaceState.activeDraft, sideChatQuote(sideChat.title, text)].filter(Boolean).join("\n\n")
         )}
       />
-    </SideChatSplit>
-  ) : messagesNode;
+  ) : <button onClick={() => void sideChats.create()} disabled={sideChats.creating || Boolean(sideChats.disabledReason)}>Start side chat</button>;
   const compactThreadConnectionState: "live" | "polling" | "disconnected" =
     !activeWorkspace?.connected
       ? "disconnected"
@@ -1873,7 +1876,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
       activeWorkspace: Boolean(activeWorkspace),
       sidebarNode,
       messagesNode: mainMessagesNode,
-      composerNode: sideChat && !showWorkspaceHome ? null : composerNode,
+      composerNode,
       approvalToastsNode,
       updateToastNode,
       errorToastsNode,
@@ -1912,5 +1915,22 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
     await refreshThread(workspace, thread);
     if (text !== undefined) composerWorkspaceState.restoreDraftForThread(thread, text);
     if (text !== undefined && workspace === activeWorkspaceId && thread === activeThreadId) setPrefillDraft({ id: `rewind-${Date.now()}`, text, createdAt: Date.now() });
-  }} /><BrowserDock searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><MainAppShell {...mainAppShellProps} /></BrowserDock></AgentsContext.Provider>;
+  }} /><WorkspaceShell reservedShortcuts={Object.entries(appSettings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`code:${encodeURIComponent(activeWorkspaceId ?? "")}:${encodeURIComponent(activeThreadId ?? "")}`} code title={threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.name || activeWorkspace?.name || "taucode"}
+    onNavigate={scope => { const [, workspace, thread] = scope.split(":").map(decodeURIComponent); if (workspace && thread) layoutSurfaces.primary.sidebarProps.onSelectThread(workspace, thread); else if (workspace) layoutSurfaces.primary.sidebarProps.onSelectWorkspace(workspace); else layoutSurfaces.primary.sidebarProps.onSelectHome(); }}
+    actions={activeWorkspaceId && activeThreadId ? [
+      { label: "Rename", onClick: () => handleRenameThread(activeWorkspaceId, activeThreadId) },
+      { label: "Copy", onClick: () => { void layoutSurfaces.primary.mainHeaderProps?.onCopyThread?.(); } },
+      { label: "Export", onClick: () => { void exportMarkdownFile(buildThreadTranscript(activeItems), "thread.md", "Export thread").catch(error => console.error(error)); } },
+      { label: "Archive", onClick: handleArchiveActiveThread },
+    ] : []}
+    tools={activeWorkspace ? [
+      ...(["git", "files", "agents", "prompts"] as const).map(id => ({ id, label: { git: "Changes", files: "Files", agents: "Agents", prompts: "Prompts" }[id], shortcut: id === "git" ? "⌃⇧G" : id === "files" ? "⌘P" : undefined,
+        onOpen: () => layoutSurfaces.git.gitDiffPanelProps.onFilePanelModeChange(id),
+        content: buildGitNodes({ ...layoutSurfaces.git, filePanelMode: id, gitDiffPanelProps: { ...layoutSurfaces.git.gitDiffPanelProps, planSection: hasActivePlan ? <details className="changes-plan" open><summary>Plan</summary>{planPanelNode}</details> : null } }).gitDiffPanelNode,
+      })),
+      { id: "terminal", label: "Terminal", shortcut: formatShortcut(appSettings.toggleTerminalShortcut || "ctrl+`"), onOpen: openTerminalWithFocus, onClose: closeTerminalPanel, content: terminalDockNode },
+      { id: "sidechat", label: "Side chat", shortcut: "⌘⇧K", target: sideChat?.id, content: sideChatNode, onClose: sideChats.close,
+        onOpen: tab => { if (tab.target && sideChat?.id !== tab.target && activeThreadId) sideChats.open({ id: tab.target, name: "Side chat", updatedAt: Date.now(), engine: parentEngine, sideOf: { threadId: activeThreadId, workspaceId: activeWorkspace.id, atItemId: null } }); },
+      },
+    ] : []} searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><PanelToolRequest id="terminal" requestKey={layoutSurfaces.secondary.terminalDockProps.isOpen} /><PanelToolRequest id="sidechat" requestKey={sideChat?.id} /><MainAppShell {...mainAppShellProps} /></WorkspaceShell></AgentsContext.Provider>;
 }

@@ -11,5 +11,5 @@ export function SidebarResizeHandle({ onMouseDown }: { onMouseDown?: MouseEventH
 }
 export function SidebarCollapseButton() {
   const { sidebarCollapsed, setSidebarCollapsed } = useSidebarState();
-  return <button className="ghost icon-button mode-sidebar-toggle" aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => setSidebarCollapsed(!sidebarCollapsed)}><PanelLeft size={16} aria-hidden /></button>;
+  return <button data-tauri-drag-region="false" className="ghost icon-button mode-sidebar-toggle" aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => setSidebarCollapsed(!sidebarCollapsed)}><PanelLeft size={16} aria-hidden /></button>;
 }

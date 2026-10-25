@@ -183,26 +183,6 @@ button.window-caption-control:focus-visible,
 }
 
 
-@media (max-width: 960px) {
-  .app {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    flex-direction: row;
-    align-items: center;
-    overflow-x: auto;
-  }
-
-  .content {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar-resizer {
-    display: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

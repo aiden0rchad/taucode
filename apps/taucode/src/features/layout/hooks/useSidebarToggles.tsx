@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 
 import { useSidebarState } from "./useSidebarState";
 const RIGHT_PANEL_COLLAPSED_KEY = "codexmonitor.rightPanelCollapsed";
@@ -19,6 +19,12 @@ export function useSidebarToggles({ isCompact }: UseSidebarTogglesOptions) {
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(() =>
     readStoredBool(RIGHT_PANEL_COLLAPSED_KEY),
   );
+
+  useLayoutEffect(() => {
+    const sync = (event: Event) => setRightPanelCollapsed(!(event as CustomEvent<boolean>).detail);
+    window.addEventListener("taucode:panel-visibility", sync);
+    return () => window.removeEventListener("taucode:panel-visibility", sync);
+  }, []);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -42,12 +48,14 @@ export function useSidebarToggles({ isCompact }: UseSidebarTogglesOptions) {
   const collapseRightPanel = () => {
     if (!isCompact) {
       setRightPanelCollapsed(true);
+      window.dispatchEvent(new CustomEvent("taucode:panel-toggle", { detail: false }));
     }
   };
 
   const expandRightPanel = () => {
     if (!isCompact) {
       setRightPanelCollapsed(false);
+      window.dispatchEvent(new CustomEvent("taucode:panel-toggle", { detail: true }));
     }
   };
 

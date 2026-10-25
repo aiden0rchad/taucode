@@ -161,9 +161,10 @@ export function ThreadRow({
       onClick={() => onSelectThread(workspaceId, thread.id)}
       onContextMenu={(event) => onShowThreadMenu(event, workspaceId, thread.id, canPin)}
       role="button"
+      aria-label={thread.name}
       tabIndex={0}
       onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
+        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
           event.preventDefault();
           onSelectThread(workspaceId, thread.id);
         }

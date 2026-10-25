@@ -420,7 +420,7 @@
 }
 
 .review-badge {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: 2px 6px;
@@ -680,7 +680,7 @@
 
 .tool-inline-status {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-subtle);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -823,7 +823,7 @@
 }
 
 .tool-inline-change-kind {
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   color: var(--text-subtle);
 }
@@ -985,7 +985,7 @@
 
 .tool-group-body .tool-inline-command {
   padding: 1px 6px;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.2;
   border-radius: 6px;
 }
@@ -993,7 +993,7 @@
 .tool-group-body .tool-inline-detail,
 .tool-group-body .explore-inline-item,
 .tool-group-body .user-input-inline-entry {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.35;
 }
 
@@ -1044,7 +1044,7 @@
 }
 
 .tool-label {
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-fainter);
@@ -1083,7 +1083,7 @@
 }
 
 .file-change-kind {
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   color: var(--text-subtle);
 }
@@ -1137,7 +1137,7 @@
   border: 1px solid var(--border-subtle);
   padding: 1px 5px;
   border-radius: 6px;
-  font-size: 0.97em;
+  font-size: max(11px, 0.97em);
 }
 
 .message .markdown .message-file-link {
@@ -1163,7 +1163,7 @@
 .message .markdown .message-file-link-name {
   font-family: var(--code-font-family);
   font-weight: 520;
-  font-size: 0.88em;
+  font-size: max(11px, 0.88em);
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -1176,13 +1176,13 @@
   border: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--surface-control) 78%, var(--surface-app));
   color: var(--text-muted);
-  font-size: 0.64em;
+  font-size: max(11px, 0.64em);
   line-height: 1.35;
   letter-spacing: 0.02em;
 }
 
 .message .markdown .message-file-link-path {
-  font-size: 0.62em;
+  font-size: max(11px, 0.62em);
   line-height: 1.2;
   color: var(--text-faint);
   white-space: nowrap;
@@ -1211,7 +1211,7 @@
   padding: 4px 8px;
   background: var(--surface-control);
   border-bottom: 1px solid var(--border-strong);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -1225,7 +1225,7 @@
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: 2px 8px;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-stronger);
@@ -1328,7 +1328,7 @@
   z-index: 1;
   background: color-mix(in srgb, var(--surface-control) 90%, var(--surface-app));
   border-bottom: 1px solid var(--border-strong);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1451,10 +1451,10 @@
 .message .markdown a,
 .message .markdown a:visited {
   color: var(--message-link-color);
-  font-size: 0.98em;
+  font-size: max(11px, 0.98em);
 }
 
 .message .markdown a code {
   color: var(--message-link-color);
-  font-size: 0.97em;
+  font-size: max(11px, 0.97em);
 }

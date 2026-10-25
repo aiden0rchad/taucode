@@ -6,7 +6,7 @@ import { WorkView } from "./WorkView";
 import { workRequest, workOutput, workAttachment, pickWorkAttachments } from "@services/tauri";
 
 const events = vi.hoisted(() => ({ listener: (_event: unknown) => {}, importsChanged: () => {} }));
-vi.mock("@services/tauri", () => ({
+vi.mock("@services/tauri", () => ({ subscribeBrowser: vi.fn().mockResolvedValue(() => {}), browserRequest: vi.fn().mockResolvedValue(undefined),
   workRequest: vi.fn(), workOutput: vi.fn(), workAttachment: vi.fn(),
   pickWorkspacePath: vi.fn(), pickWorkspacePaths: vi.fn(), pickWorkAttachments: vi.fn(),
   checkpointRequest: vi.fn(),
@@ -24,6 +24,7 @@ function task(id: string, status: WorkTask["status"]): WorkTask {
   return { id, spaceId: "space", threadId: id, title: id, brief: "Make a brief", attachments: [], model: "local/test", accessMode: "ask", status, plan: [], outputs: [], pending: [], error: null };
 }
 beforeEach(() => {
+  localStorage.clear();
   state = { spaces: [{ id: "space", kind: "work", name: "Research", path: "/synthetic", readOnlyFolders: [] }], tasks: [], concurrency: 2 };
   vi.mocked(workRequest).mockImplementation(async (action, params) => {
     if (action === "list") return structuredClone(state);

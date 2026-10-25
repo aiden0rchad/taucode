@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Check from "lucide-react/dist/esm/icons/check";
-import { BrowserToggle } from "@/features/browser/BrowserDock";
 import { HeaderActions } from "./HeaderActions";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import Terminal from "lucide-react/dist/esm/icons/terminal";
@@ -78,7 +77,6 @@ type MainHeaderProps = {
 export function MainHeader({
   engine,
   workspace,
-  parentName = null,
   worktreeLabel = null,
   disableBranchMenu = false,
   parentPath = null,
@@ -192,10 +190,7 @@ export function MainHeader({
     <header className="main-header" data-tauri-drag-region>
       <div className="workspace-header">
         <div className="workspace-title-line">
-          <span className="workspace-title">
-            {parentName ? parentName : workspace.name}
-            {engine && <span className="engine-badge">{engine}</span>}
-          </span>
+          {engine && <span className="engine-badge">{engine}</span>}
           <span className="workspace-separator" aria-hidden>
             ›
           </span>
@@ -574,7 +569,7 @@ export function MainHeader({
             <Check className="main-header-icon-check" size={14} />
           </span>
         </button>
-        {extraActionsNode ?? <BrowserToggle />}
+        {extraActionsNode}
       </HeaderActions>
     </header>
   );

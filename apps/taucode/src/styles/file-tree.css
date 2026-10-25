@@ -222,7 +222,7 @@
 }
 
 .file-preview-warning {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-faint);
@@ -292,7 +292,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-fainter);
 }
 

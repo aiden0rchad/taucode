@@ -1,3 +1,4 @@
+import { SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useEffect, useState } from "react";
 import type { ImportDetection, ImportEntry, ImportLog, ImportProgress, ImportedTranscript } from "@/types";
 import { importRequest, pickImportExport } from "@services/tauri";
@@ -68,7 +69,7 @@ export function SettingsImportSection({ historyOnly = false }: { historyOnly?: b
     {!historyOnly && <>
       <div className="import-actions"><button disabled={disabled} onClick={() => void run(() => detect())}>Detect local sources</button><button disabled={disabled} onClick={() => void run(async () => { const path = await pickImportExport(); if (path) await detect(path); })}>Import chats from export file…</button></div>
       {detection && <>
-        <label><input type="checkbox" checked={archived} disabled={disabled} onChange={e => { setArchived(e.target.checked); toggle(detection.entries.filter(v => v.archived && v.kind !== "skipped"), e.target.checked); }} />Include archived</label>
+        <SettingsToggleRow  title={<>Include archived</>}><SettingsToggleSwitch pressed={archived} disabled={disabled} onClick={() => { setArchived(!(archived)); toggle(detection.entries.filter(v => v.archived && v.kind !== "skipped"), !(archived)); }} /></SettingsToggleRow>
         {detection.warnings.map((warning, i) => <p key={i} role="status">{warning}</p>)}
         {sources.length === 0 && <p>No supported local history found.</p>}
         {sources.map(source => {
@@ -82,11 +83,8 @@ export function SettingsImportSection({ historyOnly = false }: { historyOnly?: b
               const selectable = entries.filter(e => e.kind !== "skipped");
               return <details className="import-project" key={project} open>
                 <summary>{project}</summary>
-                <label><input type="checkbox" aria-label={`Select ${source} ${project}`} disabled={disabled || !selectable.length} checked={selectable.length > 0 && selectable.every(e => selected.has(e.key))} onChange={e => toggle(selectable, e.target.checked)} />Select project</label>
-                {entries.map(entry => <label className="import-entry" key={entry.key}>
-                  <input type="checkbox" disabled={disabled || entry.kind === "skipped"} checked={selected.has(entry.key)} onChange={e => toggle([entry], e.target.checked)} />
-                  <span>{entry.title}{entry.archived && <small>Archived</small>}{entry.missingCwd && <small>Missing folder: {entry.cwd} — read-only history</small>}{entry.needsSecrets && <small>Needs secrets — configure in Connectors</small>}{entry.warning && <small>{entry.warning}</small>}</span>
-                </label>)}
+                <SettingsToggleRow  title={<>Select project</>}><SettingsToggleSwitch aria-label={`Select ${source} ${project}`} disabled={disabled || !selectable.length} pressed={selectable.length > 0 && selectable.every(e => selected.has(e.key))} onClick={() => toggle(selectable, !(selectable.length > 0 && selectable.every(e => selected.has(e.key))))} /></SettingsToggleRow>
+                {entries.map(entry => <SettingsToggleRow className="import-entry" key={entry.key} title={<><span>{entry.title}{entry.archived && <small>Archived</small>}{entry.missingCwd && <small>Missing folder: {entry.cwd} — read-only history</small>}{entry.needsSecrets && <small>Needs secrets — configure in Connectors</small>}{entry.warning && <small>{entry.warning}</small>}</span></>}><SettingsToggleSwitch disabled={disabled || entry.kind === "skipped"} pressed={selected.has(entry.key)} onClick={() => toggle([entry], !(selected.has(entry.key)))} /></SettingsToggleRow>)}
               </details>;
             })}
           </details>;

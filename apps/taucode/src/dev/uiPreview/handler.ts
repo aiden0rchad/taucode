@@ -1,3 +1,4 @@
+import type { BrowserState } from "@/features/browser/browser";
 import type { AppSettings, ImportLog, WorkTask, WorkspaceInfo } from "@/types";
 import { assistantMessage, createFixtures, diff, makeThread, userMessage, type PreviewThread } from "./fixtures";
 
@@ -16,6 +17,19 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const warned = new Set<string>();
   const logs: ImportLog[] = [];
   let sequence = 0;
+  const browser: BrowserState = { tabs: query.get("panel") === "browser" ? [{ id: "preview-page", title: "Example", url: "https://example.com/", loading: false }] : [], active: query.get("panel") === "browser" ? "preview-page" : "" };
+  const browserChannels = new Map<string, { channel: unknown; index: number }>();
+  const broadcastBrowser = () => {
+    for (const entry of browserChannels.values()) {
+      const channel = record(entry.channel);
+      if (typeof channel.onmessage === "function") channel.onmessage(structuredClone(browser));
+      else {
+        const callback = typeof channel.id === "number" ? channel.id : Number(String(entry.channel).replace("__CHANNEL__:", ""));
+        const internals = (window as unknown as { __TAURI_INTERNALS__: { runCallback: (id: number, value: unknown) => void } }).__TAURI_INTERNALS__;
+        if (Number.isFinite(callback)) internals.runCallback(callback, { message: structuredClone(browser), index: entry.index++ });
+      }
+    }
+  };
   const id = (prefix: string) => `${prefix}-preview-${++sequence}`;
   const page = (data: unknown[]) => ({ result: { data, nextCursor: null } });
   const response = (thread?: PreviewThread) => ({ result: { thread: thread ?? makeThread("missing", "", "New conversation") } });
@@ -173,8 +187,17 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "connector_request": return params.action === "list" || params.action === "secrets" ? [] : { ok: true, tools: [] };
       case "computer_request": return { running: false, approval: null, steps: [], error: null };
       case "computer_request_permissions": return { screen: false, accessibility: false, unsupported: true };
-      case "browser_subscribe": return "preview-browser";
-      case "browser_request": return { tabs: [], activeTabId: null, available: false };
+      case "browser_subscribe": { const subscription = id("browser"); browserChannels.set(subscription, { channel: args.channel, index: 0 }); broadcastBrowser(); return subscription; }
+      case "browser_unsubscribe": browserChannels.delete(String(args.id)); return null;
+      case "browser_request": {
+        if (params.action === "new") { browser.active = id("page"); browser.tabs.push({ id: browser.active, title: "New page", url: "about:blank", loading: false }); }
+        if (params.action === "activate") browser.active = String(params.id);
+        if (params.action === "close") { browser.tabs = browser.tabs.filter(t => t.id !== params.id); if (browser.active === params.id) browser.active = browser.tabs[0]?.id ?? ""; }
+        if (params.action === "navigate") { const tab = browser.tabs.find(t => t.id === browser.active); if (tab) { tab.url = String(params.url); tab.title = tab.url === "about:blank" ? "New page" : new URL(tab.url).hostname; } }
+        broadcastBrowser(); return null;
+      }
+      case "terminal_open": return { id: args.terminalId };
+      case "terminal_write": case "terminal_resize": case "terminal_close": return null;
       case "provider_has_api_key": return false;
       case "provider_test_and_fetch": return { ok: true, latencyMs: 12, models: state.settings.providers?.find(p => p.id === args.id)?.models ?? [] };
       case "local_usage_snapshot": return { updatedAt: Date.now(), days: [], topModels: [], totals: { last7DaysTokens: 0, last30DaysTokens: 0, averageDailyTokens: 0, cacheHitRatePercent: 0, peakDay: null, peakDayTokens: 0 } };
@@ -215,7 +238,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "connect_workspace": case "set_workspace_runtime_codex_args": case "set_thread_access_mode":
       case "thread_live_subscribe": case "thread_live_unsubscribe": case "turn_interrupt":
       case "menu_set_accelerators": case "set_tray_recent_threads": case "set_tray_session_usage":
-      case "browser_unsubscribe": case "work_output": case "provider_set_api_key": case "provider_delete_api_key":
+      case "work_output": case "provider_set_api_key": case "provider_delete_api_key":
       case "plugin:window|set_title": case "plugin:window|set_theme": case "plugin:window|set_effects":
       case "plugin:webview|set_webview_zoom": return null;
       default: return unknown(command);

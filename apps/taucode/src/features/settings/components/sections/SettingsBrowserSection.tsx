@@ -1,3 +1,4 @@
+import { SettingsFieldRow } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useState } from "react";
 import type { AppSettings } from "@/types";
 import { browserRequest } from "@services/tauri";
@@ -14,7 +15,7 @@ export function SettingsBrowserSection({ appSettings, onUpdateAppSettings }: { a
   const [error, setError] = useState("");
   const run = async (action: () => Promise<void>) => { setBusy(true); setError(""); setMessage(""); try { await action(); } catch (e) { setError(String(e)); } finally { setBusy(false); } };
   return <section className="settings-section registry-settings">
-    <h2>Browser</h2><p className="settings-subtitle">A shared browser for you, Pi and Codex. Website sign-ins stay in the local browser profile. Toggle the pane with ⌘/Ctrl Shift B.</p>
+    <h2>Browser</h2><p className="settings-subtitle">A shared browser for you, Pi and Codex. Website sign-ins stay in the local browser profile. Open a browser tab with ⌘/Ctrl Shift B.</p>
     <form onSubmit={e => { e.preventDefault(); void run(async () => {
       const url = new URL(draft.searchUrl.split("{query}").join("test"));
       if (!["http:","https:"].includes(url.protocol) || !draft.searchUrl.includes("{query}")) throw new Error("Search URL must use HTTP(S) and contain {query}");
@@ -23,12 +24,12 @@ export function SettingsBrowserSection({ appSettings, onUpdateAppSettings }: { a
       setMessage("Saved. Browser binary changes apply on next browser start; origin and approval changes apply on next engine start.");
     }); }}>
       <fieldset disabled={busy} className="connector-fields"><legend>Browser preferences</legend>
-        <label>Browser binary<input value={draft.binary ?? ""} placeholder="Auto-detect Chrome, Edge, Chromium" onChange={e => setDraft({ ...draft, binary: e.target.value || null })} /></label>
+        <SettingsFieldRow  title={<>Browser binary</>}><input value={draft.binary ?? ""} placeholder="Auto-detect Chrome, Edge, Chromium" onChange={e => setDraft({ ...draft, binary: e.target.value || null })} /></SettingsFieldRow>
         <label>Allowed origins (one per line)<textarea value={allow} onChange={e => setAllow(e.target.value)} /></label>
         <label>Blocked origins (one per line)<textarea value={block} onChange={e => setBlock(e.target.value)} /></label>
-        <label>Browser tool approval<select value={draft.approval} onChange={e => setDraft({ ...draft, approval: e.target.value as "ask" | "auto" })}><option value="ask">Ask before changes</option><option value="auto">Automatic</option></select></label>
+        <SettingsFieldRow  title={<>Browser tool approval</>}><select value={draft.approval} onChange={e => setDraft({ ...draft, approval: e.target.value as "ask" | "auto" })}><option value="ask">Ask before changes</option><option value="auto">Automatic</option></select></SettingsFieldRow>
         <p className="settings-subtitle">Snapshots, screenshots, console, network, tabs and navigation never ask. Clicks, typing, scripts and other changes follow this setting.</p>
-        <label>Search URL<input value={draft.searchUrl} onChange={e => setDraft({ ...draft, searchUrl: e.target.value })} /></label>
+        <SettingsFieldRow  title={<>Search URL</>}><input value={draft.searchUrl} onChange={e => setDraft({ ...draft, searchUrl: e.target.value })} /></SettingsFieldRow>
         <p className="settings-subtitle">Use {"{query}"} for the search term. Downloads are saved to ~/Downloads.</p>
         <button type="submit">Save browser settings</button>
       </fieldset>

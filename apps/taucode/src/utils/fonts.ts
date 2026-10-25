@@ -5,7 +5,7 @@ export const DEFAULT_CODE_FONT_FAMILY =
   'ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Segoe UI Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
 
 export const CODE_FONT_SIZE_DEFAULT = 11;
-export const CODE_FONT_SIZE_MIN = 9;
+export const CODE_FONT_SIZE_MIN = 11;
 export const CODE_FONT_SIZE_MAX = 16;
 
 export function normalizeFontFamily(

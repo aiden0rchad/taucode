@@ -45,11 +45,12 @@ export function WorkspaceCard({
       <div
         className={`workspace-row ${isActive ? "active" : ""}`}
         role="button"
+      aria-label={workspace.name}
         tabIndex={0}
         onClick={() => onSelectWorkspace(workspace.id)}
         onContextMenu={(event) => onShowWorkspaceMenu(event, workspace.id)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
+          if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
             event.preventDefault();
             onSelectWorkspace(workspace.id);
           }
@@ -106,7 +107,7 @@ export function WorkspaceCard({
           {!workspace.connected && (
             <span
               className="connect"
-              title="Connect workspace context to the shared Codex server"
+              title="Connect workspace to its engine"
               onClick={(event) => {
                 event.stopPropagation();
                 onConnectWorkspace(workspace);

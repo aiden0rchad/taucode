@@ -782,14 +782,7 @@ export function SettingsAgentsSection({
                   placeholder="Multiline per-agent developer instructions."
                   disabled={isUpdating}
                 />
-                <label className="settings-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={renameManagedFile}
-                    onChange={(event) => setRenameManagedFile(event.target.checked)}
-                  />
-                  Rename managed config file when agent name changes
-                </label>
+                <SettingsToggleRow className="settings-checkbox" title={<>Rename managed config file when agent name changes</>}><SettingsToggleSwitch pressed={renameManagedFile} onClick={() => setRenameManagedFile(!(renameManagedFile))} /></SettingsToggleRow>
                 <div className="settings-agents-actions">
                   <button
                     type="button"

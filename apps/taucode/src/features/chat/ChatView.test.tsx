@@ -10,7 +10,7 @@ let listener: (event: AppServerEvent) => void;
 let nativeDrop: (event: { payload: { type: string; paths: string[] } }) => void;
 vi.mock("@services/dragDrop", () => ({ subscribeWindowDragDrop: (callback: typeof nativeDrop) => { nativeDrop = callback; return () => {}; } }));
 vi.mock("@services/events", () => ({ subscribeAppServerEvents: (callback: typeof listener) => { listener = callback; return () => {}; } }));
-vi.mock("@services/tauri", () => ({ chatRequest: vi.fn(), exportMarkdownFile: vi.fn().mockResolvedValue(null), getAppSettings: vi.fn(), updateAppSettings: vi.fn(), readChatAttachment: vi.fn() }));
+vi.mock("@services/tauri", () => ({ subscribeBrowser: vi.fn().mockResolvedValue(() => {}), browserRequest: vi.fn().mockResolvedValue(undefined), chatRequest: vi.fn(), exportMarkdownFile: vi.fn().mockResolvedValue(null), getAppSettings: vi.fn(), updateAppSettings: vi.fn(), readChatAttachment: vi.fn() }));
 vi.mock("./ModeShell", () => ({ ModeSwitcher: () => <nav aria-label="App mode" />, useModeSettings: () => undefined }));
 const settings = { providers: [{ id: "p", name: "Local", enabled: true, models: [{ id: "one", enabled: true }, { id: "two", enabled: true, supportsImages: false }] }], agentPolicy: { defaultModel: { providerId: "p", modelId: "one" } }, mcpServers: [] } as unknown as AppSettings;
 let rows: Chat[];
@@ -19,6 +19,7 @@ const thread = (id: string) => ({ id, model: "one", modelProvider: "p", turns: [
   { id: "assistant", type: "agentMessage", text: "## Original answer" },
 ] }] });
 beforeEach(() => {
+  localStorage.clear();
   rows = [{ id: "chat", model: "one", modelProvider: "p", createdAt: 1, updatedAt: Date.now() / 1000, chat: { title: "My conversation", pinned: false, deletedAt: null } }];
   vi.mocked(chatRequest).mockImplementation(async (action, params = {}) => {
     if (action === "list") return rows;
@@ -49,7 +50,7 @@ describe("Chat UI", () => {
     expect(screen.getByRole("combobox", { name: "Access mode" }).closest(".composer-shell-left")).toBeTruthy();
     expect(screen.getByRole("button", { name: "one · ?" }).closest(".composer-shell-actions")).toBeTruthy();
     expect(screen.queryByRole("combobox", { name: "Chat model" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Browser" }).closest(".main-header-actions")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Toggle side panel" }).closest(".workspace-titlebar")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
     expect(onOpenSettings).toHaveBeenCalledOnce();
   });
@@ -69,6 +70,7 @@ describe("Chat UI", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Actions for My conversation" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Pin" }));
     expect(await screen.findByRole("region", { name: "Pinned" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Search conversations" }));
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "missing" } });
     expect(screen.queryByRole("button", { name: "My conversation" })).toBeNull();
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
@@ -82,8 +84,9 @@ describe("Chat UI", () => {
   });
   it("forks before edit-resend and model changes; exports local markdown", async () => {
     render(<ChatView settings={settings} />); await open();
-    fireEvent.click(screen.getByRole("button", { name: "Export as Markdown" }));
-    await waitFor(() => expect(exportMarkdownFile).toHaveBeenCalledWith(expect.stringContaining("Original answer"), "chat.md", "Export chat as Markdown"));
+    fireEvent.click(screen.getByRole("button", { name: "Actions for thread" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Export" }));
+    await waitFor(() => expect(exportMarkdownFile).toHaveBeenCalledWith(expect.stringContaining("Original answer"), "chat.md", "Export chat"));
     await waitFor(() => expect(screen.getByRole("button", { name: "Edit and resend" })).not.toHaveProperty("disabled", true));
     fireEvent.click(screen.getByRole("button", { name: "Edit and resend" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "Edited question" } });

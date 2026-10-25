@@ -47,10 +47,7 @@
 @media (max-width: 600px) {
   .chat-work { grid-template-rows: auto 1fr; }
   .chat-work .chat-sidebar { display: flex; }
-  .chat-layout { grid-template-columns: minmax(0, 1fr); }
-  .chat-sidebar { display: none; }
-  .chat-list-open .chat-sidebar { display: flex; }
-  .chat-list-open .chat-main { display: none; }
+  .chat-layout:not(.sidebar-collapsed) .chat-sidebar { display: flex; }
   .chat-list-toggle { display: inline-block; }
   .chat-main .main-topbar { padding: 10px 12px; }
   .chat-scroll { padding: 0 16px 20px; }
@@ -67,7 +64,7 @@
 .chat-list .thread-row { width: 100%; min-width: 0; padding-right: 32px; }
 .chat-list .thread-row.is-nested { width: calc(100% - 2px); }
 .chat-list .thread-details { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
-.chat-list .thread-details { color: var(--text-faint); font-size: 10px; }
+.chat-list .thread-details { color: var(--text-faint); font-size: 11px; }
 .work-space .thread-row { --thread-indent: 12px; }
 .mode-row { position: relative; margin-bottom: 5px; }
 .mode-row-menu-trigger { position: absolute; right: 5px; top: 8px; padding: 4px; opacity: 0; }

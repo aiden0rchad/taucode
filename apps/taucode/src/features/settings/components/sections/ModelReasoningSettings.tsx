@@ -1,3 +1,4 @@
+import { SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import type { ProviderModel, ReasoningCapability } from "@/types";
 import { reasoningLabel, reasoningLevels } from "@/features/models/reasoning";
 import "@/features/composer/components/reasoning.css";
@@ -13,8 +14,8 @@ export function ModelReasoningSettings({ model, disabled, onChange, onDetect }: 
     <legend>Reasoning</legend>
     <div className="reasoning-pills">{cap ? cap.supported ? cap.levels.map(level => <span key={level}>{reasoningLabel(level)}</span>) : <span>Not supported</span> : <span>Unknown</span>}</div>
     {cap && <small>{cap.source === "api" ? "from provider API" : cap.source === "user" ? "set manually" : cap.source === "probe" ? "detected by request" : "estimated"}</small>}
-    <label><input type="checkbox" aria-label={`Supports reasoning: ${model.id}`} checked={cap?.supported ?? false} onChange={e => override(e.target.checked, cap?.levels.length ? cap.levels : ["low", "medium", "high"])} />Supports reasoning</label>
-    {cap?.supported && <div>{reasoningLevels.map(level => <label key={level}><input type="checkbox" aria-label={`${reasoningLabel(level)}: ${model.id}`} checked={cap.levels.includes(level)} onChange={e => override(true, reasoningLevels.filter(l => l === level ? e.target.checked : cap.levels.includes(l)))} />{reasoningLabel(level)}</label>)}</div>}
+    <SettingsToggleRow  title={<>Supports reasoning</>}><SettingsToggleSwitch aria-label={`Supports reasoning: ${model.id}`} pressed={cap?.supported ?? false} onClick={() => override(!(cap?.supported ?? false), cap?.levels.length ? cap.levels : ["low", "medium", "high"])} /></SettingsToggleRow>
+    {cap?.supported && <div>{reasoningLevels.map(level => <SettingsToggleRow key={level} title={<>{reasoningLabel(level)}</>}><SettingsToggleSwitch aria-label={`${reasoningLabel(level)}: ${model.id}`} pressed={cap.levels.includes(level)} onClick={() => override(true, reasoningLevels.filter(l => l === level ? !(cap.levels.includes(level)) : cap.levels.includes(l)))} /></SettingsToggleRow>)}</div>}
     <button type="button" disabled={cap?.source !== "user"} onClick={() => onChange({ ...model, reasoning: model.detectedReasoning ?? null })}>Reset to detected</button>
     <button type="button" onClick={onDetect} title="Sends one minimal request to the provider; usage may be billed">Detect reasoning</button>
     <small>Detection sends one minimal request.</small>

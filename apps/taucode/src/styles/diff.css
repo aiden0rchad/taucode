@@ -114,7 +114,7 @@
 
 .diff-branch-label,
 .git-root-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -313,7 +313,7 @@
 }
 
 .git-root-tag {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -332,7 +332,7 @@
 }
 
 .git-panel-overview .git-log-sync {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-faint);
 }
 
@@ -482,7 +482,7 @@
 }
 
 .per-file-group-count {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -532,7 +532,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   border: 1px solid var(--border-subtle);
   color: var(--text-faint);
@@ -565,7 +565,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -784,7 +784,7 @@
   display: grid;
   place-items: center;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   border: 1px solid transparent;
   line-height: 1;
@@ -876,7 +876,7 @@
 }
 
 .diff-dir {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-faint);
   white-space: nowrap;
   overflow: hidden;
@@ -1089,7 +1089,7 @@
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .git-pr-time {
@@ -1099,7 +1099,7 @@
 }
 
 .git-pr-pill {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   padding: 3px 7px;
   border-radius: 999px;
@@ -1370,7 +1370,7 @@
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-emphasis);
   background: var(--cm-surface-panel-hover);

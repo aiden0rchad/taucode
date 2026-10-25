@@ -46,7 +46,7 @@ export function useAppShellOrchestration({
 
   const appClassName = `app ${isCompact ? "layout-compact" : "layout-desktop"}${
     isPhone ? " layout-phone" : ""
-  }${isTablet ? " layout-tablet" : ""}${!isCompact && sidebarCollapsed ? " sidebar-collapsed" : ""}${
+  }${isTablet ? " layout-tablet" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     !isCompact && rightPanelCollapsed ? " right-panel-collapsed" : ""
   }${isWindows ? " is-windows" : ""}`;
 

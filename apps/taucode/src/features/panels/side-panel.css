@@ -1,0 +1,133 @@
+.workspace-shell { --layout-sidebar-column: 280px; height: 100dvh; display: flex; flex-direction: column; color: var(--text-primary); background: var(--surface-messages); font-size: 13px; }
+.workspace-titlebar { height: 40px; min-height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 80px; border-bottom: 1px solid var(--border-subtle); background: var(--surface-sidebar); }
+.workspace-titlebar:has(+ .workspace-body .is-windows) { padding-left: 12px; padding-right: 150px; }
+.titlebar-navigation { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.workspace-titlebar .mode-sidebar-toggle { position: static; transform: none; display: inline-flex; }
+.titlebar-title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 100%; }
+.titlebar-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.workspace-titlebar > .mode-row { width: 28px; flex-shrink: 0; }
+.workspace-titlebar .mode-row-menu-trigger { position: static; opacity: 1; }
+.workspace-body { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.workspace-main { flex: 1; min-width: 0; height: 100%; overflow: hidden; }
+.workspace-main > .app, .workspace-main > .chat-layout { height: 100%; --app-height: 100%; --sidebar-top-padding: 8px !important; }
+.workspace-main .sidebar .mode-switcher { margin-top: 0; }
+.workspace-main .main { grid-template-columns: minmax(0, 1fr); }
+.workspace-main .main-topbar { padding-left: 16px; padding-top: 6px; }
+.workspace-main .main-topbar .workspace-title { display: none; }
+.workspace-main .main-topbar .workspace-separator { display: none; }
+.workspace-main .main-header { min-width: 0; flex-wrap: nowrap; }
+.workspace-main .main-topbar-left { min-width: 0; flex: 1; }
+.workspace-main .workspace-title-line { min-width: 0; }
+.workspace-main .workspace-branch-menu, .workspace-main .workspace-branch-static-row { min-width: 40px; max-width: 180px; flex: 0 1 auto; }
+.workspace-main .workspace-branch-button, .workspace-main .workspace-branch-static-button { max-width: 100%; min-width: 0; }
+.workspace-main .workspace-branch { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.workspace-main .chat-sidebar { min-height: 0; display: flex; flex-direction: column; }
+.workspace-main .chat-list { min-height: 0; flex: 1 1 0; }
+.workspace-main .sidebar-bottom-rail { flex-shrink: 0; }
+.workspace-main .work-task-view { grid-template-columns: minmax(0, 1fr); }
+.workspace-main .chat-scroll { padding-inline: 32px; }
+.workspace-main .chat-column { max-width: 780px; }
+.workspace-main .chat-composer { width: calc(100% - 64px); }
+.workspace-main .chat-pane { min-height: 0; }
+.workspace-main .chat-pane-messages { min-height: 0; }
+.workspace-main .messages { padding-inline: 32px; scroll-padding-bottom: var(--composer-clearance, 180px); }
+.workspace-main .messages-inner { max-width: 780px; width: 100%; margin-inline: auto; }
+.workspace-main .composer { padding-inline: 32px; }
+.workspace-main .composer > * { max-width: 780px; margin-inline: auto; }
+.workspace-main .chat-pane-composer { position: static; flex-shrink: 0; }
+.tabbed-side-panel { position: relative; flex: 0 0 auto; min-width: 320px; max-width: calc(100vw - 80px); display: flex; flex-direction: column; border-left: 1px solid var(--border-subtle); background: var(--surface-sidebar); min-height: 0; }
+.side-panel-resizer { position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; cursor: col-resize; z-index: 5; }
+.side-panel-tabbar { display: flex; align-items: center; gap: 2px; padding: 4px; min-height: 40px; border-bottom: 1px solid var(--border-subtle); }
+.side-panel-tabs { display: flex; min-width: 0; flex: 1; overflow-x: auto; scrollbar-width: thin; }
+.side-panel-tab { display: flex; flex-shrink: 0; border-right: 1px solid var(--border-subtle); }
+.side-panel-tab button { border: 0; background: transparent; color: var(--text-subtle); display: flex; align-items: center; gap: 6px; padding: 6px; }
+.side-panel-tab [role="tab"] { max-width: 160px; }
+.side-panel-tab [aria-selected="true"] { color: var(--text-strong); background: var(--surface-card-strong); border-radius: 6px; }
+.side-panel-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-panel-content { flex: 1; min-height: 0; min-width: 0; overflow: auto; display: flex; flex-direction: column; }
+.side-panel-content > * { min-width: 0; }
+.side-panel-content .browser-pane, .side-panel-content .side-chat-pane { flex: 1; height: 100%; min-height: 0; }
+.side-panel-content .terminal-panel { display: flex; flex: 1; height: 100%; min-height: 200px; flex-direction: column; }
+.side-panel-content .terminal-panel-resizer { display: none; }
+.side-panel-content .terminal-body { flex: 1; min-height: 0; }
+.side-panel-content .work-inspector { border: 0; width: auto; padding: 16px; }
+.side-panel-content .diff-header { flex-wrap: wrap; gap: 8px; }
+.side-panel-content .diff-header-actions { flex-wrap: wrap; min-width: 0; }
+.side-panel-content .diff-list { min-height: 80px; }
+.side-panel-content pre { overflow: auto; }
+.side-panel-new { padding: 20px 16px; }
+.side-panel-new input { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--border-subtle); background: var(--surface-card); color: var(--text-primary); border-radius: 8px; font: inherit; }
+.side-panel-new h2 { font-size: 11.5px; font-weight: 600; color: var(--text-subtle); margin: 24px 0 10px; }
+.side-panel-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.side-panel-tools button, .side-panel-suggested button { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 40px; padding: 8px; text-align: left; color: var(--text-primary); background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: 8px; font-size: 11.5px; }
+.side-panel-tools button:hover, .side-panel-suggested button:hover { background: var(--surface-hover); }
+.side-panel-tools kbd { margin-left: auto; font-size: 11px; color: var(--text-subtle); white-space: nowrap; }
+.side-panel-suggested { display: grid; gap: 6px; }
+.side-panel-suggested span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-panel-suggested p { color: var(--text-subtle); font-size: 11.5px; }
+.work-file { display: block; width: 100%; text-align: left; padding: 8px; border: 0; color: var(--text-primary); background: transparent; overflow-wrap: anywhere; }
+.settings-nav-group { margin: 12px 10px 4px; font-size: 11.5px; color: var(--text-subtle); }
+.workspace-main .chat-main .main-topbar:has(.main-header-actions-content:empty) { display: none; }
+@media (max-width: 700px) { .tabbed-side-panel { position: absolute; right: 0; top: 40px; bottom: 0; z-index: 20; max-width: 100vw; } }
+
+.workspace-main > .app { width: 100%; min-height: 0; }
+.workspace-main .sidebar .thread-details, .workspace-main .sidebar .workspace-summary, .workspace-main .engine-badge, .workspace-main time { font-size: 11.5px; }
+.work-concurrency-popover { z-index: 100; padding: 12px; }
+.workspace-main .launch-script-cluster { min-width: 0; flex-shrink: 1; }
+.workspace-main .launch-script-button { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-main .main-header-actions.has-overflow .main-header-overflow-trigger { display: flex; }
+.workspace-main .main-header-actions.has-overflow .main-header-actions-content { display: none; }
+.workspace-main .main-header-actions.has-overflow .main-header-actions-content.is-open { display: flex; position: absolute; right: 0; top: 100%; flex-direction: column; align-items: stretch; min-width: 220px; padding: 8px; background: var(--surface-sidebar); border: 1px solid var(--border-subtle); border-radius: 8px; z-index: 30; }
+.workspace-main .main-header-actions { position: relative; }
+.workspace-main .messages { padding-bottom: var(--composer-clearance, 180px); }
+
+.tabbed-side-panel[hidden], .side-panel-tool-content[hidden] { display: none; }
+.side-panel-tool-content { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.workspace-main .tablet-nav { padding-top: 8px; }
+.workspace-main .app.layout-tablet.sidebar-collapsed { grid-template-columns: var(--tablet-nav-width, 72px) 0 minmax(0, 1fr); }
+
+.chat-pane { --composer-clearance: 180px; }
+.browser-toolbar > .mode-row { flex: 0 0 24px; }
+.browser-toolbar .mode-row-menu-trigger { position: static; opacity: 1; }
+.browser-toolbar > button { padding: 4px; flex: 0 0 24px; }
+
+.workspace-main .main { --conversation-column-width: 780px; }
+.workspace-main .app .main-topbar { padding-inline: 16px; }
+.workspace-main .main .messages-full { margin-top: 0; padding-top: 14px; }
+.workspace-main .chat-layout .sidebar-search { position: static; flex-shrink: 0; height: auto; min-height: 32px; }
+.workspace-titlebar { position: relative; }
+.workspace-titlebar .window-caption-controls { position: static; height: 40px; margin-right: -12px; }
+.workspace-titlebar .window-caption-control { height: 40px; }
+.workspace-titlebar:has(.window-caption-controls) { padding-left: 12px; padding-right: 12px; }
+@media (prefers-color-scheme: light) { :root:not([data-theme]) .sidebar .thread-row.active { background: #d0d4dd; } }
+
+.side-panel-suggested img { width: 16px; height: 16px; object-fit: contain; }
+.workspace-shell { --caption-font-size: 11.5px; }
+.workspace-main .thread-time, .workspace-main .workspace-summary, .settings-help { font-size: var(--caption-font-size, 11.5px); }
+
+/* The panel becomes a sheet before it squeezes the conversation below 520px. */
+.workspace-body { position: relative; }
+.tabbed-side-panel.is-overlay { position: absolute; inset: 0 0 0 auto; z-index: 41; max-width: 100%; box-shadow: -12px 0 32px #0003; }
+.side-panel-scrim { position: absolute; inset: 0; z-index: 40; border: 0; border-radius: 0; background: #0006; cursor: pointer; }
+.titlebar-actions, .titlebar-actions .work-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.side-panel-tool-content > .ds-panel { flex: 0 0 auto; min-height: 100%; }
+.side-panel-tool-content .git-panel-header { position: static; flex: 0 0 auto; flex-wrap: nowrap; }
+.changes-toolbar { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
+.changes-views { display: flex; min-width: 0; flex: 1; overflow-x: auto; background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: 6px; }
+.changes-views button { flex: 1 0 auto; border: 0; border-radius: 4px; padding: 5px 6px; font-size: 11px; color: var(--text-subtle); background: transparent; }
+.changes-views button[aria-pressed="true"] { color: var(--text-strong); background: var(--surface-card-strong); }
+.changes-totals { flex-shrink: 0; font-size: 11px; white-space: nowrap; }
+.changes-totals > :first-child { color: #47d488; }
+.changes-totals > :last-child { color: var(--text-error, #d96b6b); }
+.changes-plan { position: static; flex: 0 0 auto; padding-block: 8px; border-bottom: 1px solid var(--border-subtle); }
+.changes-plan summary { cursor: pointer; color: var(--text-subtle); font-size: 11.5px; }
+.changes-plan .plan-panel { height: auto; margin: 10px 0 0; }
+.changes-plan .plan-header { display: none; }
+.side-panel-tool-content .git-panel-overview { flex-shrink: 0; }
+.work-inspector h2 small { font-size: var(--minimum-font-size, 11px); }
+/* One explicit row: chrome and overlays must not create implicit grid tracks. */
+.workspace-main > :is(.app.layout-desktop, .chat-layout) { grid-template-columns: var(--layout-sidebar-column) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.workspace-main > :is(.app.layout-desktop, .chat-layout) > .sidebar { grid-column: 1; grid-row: 1; min-width: 0; }
+.workspace-main > :is(.app.layout-desktop, .chat-layout) > :is(.main, .chat-main) { grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; }
+.workspace-shell.sidebar-overlay .workspace-main > :is(.app.layout-desktop, .chat-layout) > .sidebar { position: absolute; inset: 0 auto 0 0; z-index: 30; width: var(--sidebar-width); }
+.workspace-shell.sidebar-overlay .workspace-main > :is(.app.layout-desktop, .chat-layout) > .sidebar-resizer { display: none; }

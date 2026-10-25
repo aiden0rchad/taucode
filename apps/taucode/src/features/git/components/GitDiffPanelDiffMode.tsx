@@ -249,6 +249,7 @@ export function GitDiffModeContent({
           <div className="commit-message-input-wrapper">
             <textarea
               className="commit-message-input"
+              aria-label="Commit message"
               placeholder="Commit message..."
               value={commitMessage}
               onChange={(event) => onCommitMessageChange?.(event.target.value)}

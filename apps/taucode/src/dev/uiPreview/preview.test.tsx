@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, getRoles } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { StrictMode, type ReactNode } from "react";
@@ -12,7 +12,7 @@ vi.mock("@pierre/diffs/react", async () => ({
   WorkerPoolContextProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
-beforeEach(() => { vi.stubGlobal("innerWidth", 1440); });
+beforeEach(() => { localStorage.clear(); vi.stubGlobal("innerWidth", 1440); });
 afterEach(async () => { cleanup(); localStorage.removeItem("taucode.browser.open"); await new Promise(resolve => setTimeout(resolve, 50)); clearMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 it.each([
@@ -39,8 +39,8 @@ it.each([
   if (query.includes("mode=")) {
     expect(screen.getByRole("navigation", { name: "App mode" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open settings" }).closest(".sidebar-bottom-rail")).toBeTruthy();
-    const browser = screen.getByRole("button", { name: "Browser" });
-    expect(browser.closest(".main-header-actions")).toBeTruthy();
+    const toggle = screen.getByRole("button", { name: "Toggle side panel" });
+    expect(toggle.closest(".workspace-titlebar")).toBeTruthy();
     expect(document.querySelector(".browser-toggle")).toBeNull();
     if (query.includes("mode=code")) expect(screen.getByPlaceholderText("Ask taucode to do something…")).toBeTruthy();
     if (query.includes("composer=attachments")) expect(document.querySelectorAll(".chat-attachments li")).toHaveLength(2);
@@ -65,27 +65,32 @@ it.each(["code", "chat", "work"])("toggles the browser from the %s header", asyn
   window.history.replaceState(null, "", `/?mode=${mode}&thread=thread-rich`);
   installUiPreview();
   render(<App />);
-  fireEvent.click(await screen.findByRole("button", { name: "Browser" }));
-  expect(await screen.findByRole("button", { name: "Close browser pane" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Browser" }));
-  expect(screen.queryByRole("button", { name: "Close browser pane" })).toBeNull();
+  if (mode === "code") await screen.findByText(/Update the greeting, run the tests/);
+  if (mode === "chat") await screen.findByText(/A starting point/);
+  if (mode === "work") await screen.findByRole("tab", { name: "Task" });
+  fireEvent.click(await screen.findByRole("button", { name: "Actions for thread" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+  expect(await screen.findByRole("region", { name: "Browser" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+  expect(screen.queryByRole("region", { name: "Browser" })).toBeNull();
 });
 
-it("opens header overflow actions and returns keyboard focus on Escape", async () => {
+it("keeps Work title actions and returns overflow focus on Escape at narrow widths", async () => {
   vi.stubGlobal("innerWidth", 640);
   vi.stubEnv("MODE", "uipreview");
   window.history.replaceState(null, "", "/?mode=work&task=task-running");
-  installUiPreview();
-  render(<App />);
-  const trigger = await screen.findByRole("button", { name: "Header actions" });
+  installUiPreview(); render(<App />);
+  await screen.findByRole("button", { name: "Stop task" });
+  fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+  const trigger = screen.getByRole("button", { name: "Actions for thread" });
   fireEvent.click(trigger);
-  const menu = screen.getByRole("dialog", { name: "Header actions" });
+  const menu = screen.getByRole("menu", { name: "Actions for thread" });
   expect(menu.contains(document.activeElement)).toBe(true);
   expect(screen.getByRole("button", { name: "Stop task" }).textContent).toBe("Stop");
   expect(screen.getByRole("button", { name: "Stop all tasks" }).textContent).toBe("");
-  expect(document.querySelector(".main-header .thread-state-chip.processing")?.textContent).toBe("running");
+  expect(document.querySelector(".workspace-titlebar .thread-state-chip.processing")?.textContent).toBe("running");
   fireEvent.keyDown(menu, { key: "Escape" });
-  expect(screen.queryByRole("dialog", { name: "Header actions" })).toBeNull();
+  expect(screen.queryByRole("menu", { name: "Actions for thread" })).toBeNull();
   expect(document.activeElement).toBe(trigger);
 });
 
@@ -106,6 +111,10 @@ it("shows one non-Git state without a branch chip or error toast", async () => {
   installUiPreview();
   const error = vi.spyOn(console, "error");
   render(<App />);
+  await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => expect(document.querySelector(".titlebar-title")?.textContent).not.toBe("taucode"));
+  fireEvent.click(await screen.findByRole("button", { name: "Toggle side panel" }));
+  fireEvent.click(await screen.findByRole("button", { name: /Changes/ }));
   expect(await screen.findByText("This workspace is not a Git repository.")).toBeTruthy();
   expect(screen.getAllByRole("button", { name: "Initialize Git" })).toHaveLength(1);
   expect(document.querySelector(".workspace-branch-menu")).toBeNull();
@@ -163,4 +172,109 @@ it("keeps Chat actions outside the user bubble", async () => {
   const edit = await screen.findByRole("button", { name: "Edit and resend" });
   expect(edit.closest(".chat-message-body")).toBeNull();
   expect(edit.closest(".chat-message")?.querySelector(".chat-message-body .markdown")).toBeTruthy();
+});
+
+it("honors the providers settings deep link", async () => {
+  vi.stubEnv("MODE", "uipreview");
+  window.history.replaceState(null, "", "/?settings=providers");
+  installUiPreview(); render(<App />);
+  await screen.findByRole("dialog", { name: "Settings" });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Providers" }).getAttribute("aria-current")).toBe("page"));
+});
+it.each(["new", "browser"])("renders the %s panel preview fixture", async panel => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+  vi.stubEnv("MODE", "uipreview");
+  window.history.replaceState(null, "", `/?mode=chat&chat=chat-1&panel=${panel}`);
+  installUiPreview(); render(<App />);
+  await screen.findByText(/A starting point/);
+  expect(screen.getByRole("complementary", { name: "Side panel" })).toBeTruthy();
+  if (panel === "browser") expect(await screen.findByRole("tab", { name: "Example" })).toBeTruthy();
+  else expect(screen.getByRole("heading", { name: "Tools" })).toBeTruthy();
+});
+
+it.each(["?mode=code&thread=thread-plan&panel=new", "?mode=chat&chat=chat-1", "?mode=work&task=task-running", "?settings=display", "?settings=providers"])("names the controls at %s", async query => {
+  vi.stubEnv("MODE", "uipreview");
+  window.history.replaceState(null, "", "/" + query); installUiPreview(); render(<App />);
+  await screen.findByRole("button", { name: "Open settings" });
+  if (query.includes("settings")) await screen.findByRole("dialog", { name: "Settings" });
+  else if (query.includes("mode=code")) await screen.findByRole("textbox", { name: "Message" });
+  else if (query.includes("mode=chat")) await screen.findByText(/A starting point/);
+  else await screen.findByText("Review the notes, identify the key findings, and write a concise report in outputs/.");
+  const unnamed = Object.entries(getRoles(document.body)).filter(([role]) => ["button", "textbox", "searchbox", "combobox", "checkbox", "spinbutton", "slider"].includes(role)).flatMap(([role, elements]) => {
+    const named = new Set(screen.queryAllByRole(role, { name: /\S/ }));
+    return elements.filter(element => !named.has(element)).map(element => element.outerHTML.slice(0, 240));
+  });
+  expect(unnamed).toEqual([]);
+});
+
+it.each(["chat", "work"])("keeps %s actions in the title row without a secondary header", async mode => {
+  vi.stubEnv("MODE", "uipreview");
+  window.history.replaceState(null, "", mode === "chat" ? "/?mode=chat&chat=chat-1" : "/?mode=work&task=task-running");
+  installUiPreview(); render(<App />);
+  if (mode === "chat") await screen.findByText(/A starting point/);
+  else await screen.findByRole("button", { name: "Stop task" });
+  expect(document.querySelector(".chat-main .main-topbar")).toBeNull();
+  if (mode === "work") expect(screen.getByRole("button", { name: "Stop task" }).closest(".workspace-titlebar")).toBeTruthy();
+  else {
+    fireEvent.click(screen.getByRole("button", { name: "Actions for thread" }));
+    expect(screen.getByRole("menuitem", { name: "Export" })).toBeTruthy();
+  }
+});
+it("uses desktop chrome and a panel sheet at 960px", async () => {
+  vi.stubGlobal("innerWidth", 960); vi.stubEnv("MODE", "uipreview");
+  window.history.replaceState(null, "", "/?mode=code&thread=thread-rich&panel=new");
+  installUiPreview(); render(<App />);
+  await screen.findByText(/Update the greeting, run the tests/);
+  expect(document.querySelector(".tablet-nav")).toBeNull();
+  expect(document.querySelector(".app.layout-desktop")).toBeTruthy();
+  expect(screen.getByRole("dialog", { name: "Side panel" }).classList.contains("is-overlay")).toBe(true);
+  expect(screen.getByRole("button", { name: "Dismiss side panel" })).toBeTruthy();
+});
+
+it.each(["code", "chat", "work"].flatMap(mode => [760, 960, 1180, 1440].map(width => ({ mode, width }))))("keeps the $mode conversation beside its sidebar in a $width px shell", async ({ mode, width }) => {
+  vi.stubEnv("MODE", "uipreview");
+  // The container deliberately differs from innerWidth (1440).
+  const rect = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains("workspace-shell") ? { width, height: 700, top: 0, left: 0, right: width, bottom: 700, x: 0, y: 0, toJSON: () => ({}) } : rect.call(this);
+  });
+  const query = mode === "code" ? "mode=code&thread=thread-rich" : mode === "chat" ? "mode=chat&chat=chat-1" : "mode=work&task=new";
+  window.history.replaceState(null, "", "/?" + query);
+  installUiPreview(); render(<App />);
+  const input = mode === "code" ? await screen.findByPlaceholderText("Ask taucode to do something…") : await screen.findByRole("textbox", { name: mode === "chat" ? "Message" : "Task brief" });
+  const shell = document.querySelector<HTMLElement>(".workspace-shell")!;
+  await waitFor(() => expect(shell.style.getPropertyValue("--sidebar-width")).toBe(`${Math.min(280, width - 520)}px`));
+  const conversation = input.closest(mode === "code" ? ".main" : ".chat-main")!;
+  expect(conversation).toBeTruthy();
+  expect(conversation.querySelector(mode === "code" ? ".messages" : ".chat-scroll")).toBeTruthy();
+  expect(input.closest(".composer-shell")).toBeTruthy();
+  const sidebar = conversation.parentElement!.querySelector(":scope > .sidebar")!;
+  expect(sidebar).toBeTruthy();
+  for (const panelOpen of [false, true]) {
+    if (panelOpen) fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+    const sidebarWidth = parseFloat(shell.style.getPropertyValue("--sidebar-width"));
+    const sidebarColumn = parseFloat(shell.style.getPropertyValue("--layout-sidebar-column"));
+    const panel = shell.querySelector<HTMLElement>(".tabbed-side-panel")!;
+    const panelColumn = panelOpen && !panel.classList.contains("is-overlay") ? parseFloat(shell.style.getPropertyValue("--right-panel-width")) : 0;
+    expect(sidebarColumn).toBe(sidebarWidth);
+    expect(sidebarWidth).toBeLessThanOrEqual(280);
+    expect(width - sidebarColumn - panelColumn).toBeGreaterThanOrEqual(520);
+    expect(conversation.contains(input)).toBe(true);
+  }
+});
+
+it.each(["code", "chat", "work"].flatMap(mode => [500, 740].map(width => ({ mode, width }))))("reopens the $mode sidebar as a sheet without replacing the conversation at $width px", async ({ mode, width }) => {
+  vi.stubGlobal("innerWidth", width); vi.stubEnv("MODE", "uipreview");
+  window.history.replaceState(null, "", "/?" + (mode === "code" ? "mode=code&thread=thread-rich" : mode === "chat" ? "mode=chat&chat=chat-1" : "mode=work&task=new"));
+  installUiPreview(); render(<App />);
+  const input = mode === "code" ? await screen.findByPlaceholderText("Ask taucode to do something…") : await screen.findByRole("textbox", { name: mode === "chat" ? "Message" : "Task brief" });
+  const shell = document.querySelector<HTMLElement>(".workspace-shell")!;
+  expect(shell.classList.contains("sidebar-overlay")).toBe(true);
+  expect(shell.style.getPropertyValue("--layout-sidebar-column")).toBe("0px");
+  fireEvent.click(await screen.findByRole("button", { name: "Expand sidebar" }));
+  expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeTruthy();
+  expect(shell.style.getPropertyValue("--layout-sidebar-column")).toBe("0px");
+  expect(input.closest(mode === "code" ? ".main" : ".chat-main")).toBeTruthy();
+  expect(input.closest(".composer-shell")).toBeTruthy();
+  expect(document.querySelector(".tablet-nav")).toBeNull();
 });

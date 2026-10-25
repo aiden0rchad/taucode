@@ -194,6 +194,7 @@ export function SettingsView({
               </div>
             )}
             <div className="settings-content">
+              {activeSection === "agents" && <div className="settings-inline-actions"><button onClick={() => handleSelectSection("codex")}>Codex engine</button><button onClick={() => handleSelectSection("features")}>Engine features</button></div>}
               {["agents", "browser", "computer"].includes(activeSection) && <SettingsRuntimeSetup />}
               {activeSection === "computer" ? <SettingsComputerSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> : activeSection === "browser" ? <SettingsBrowserSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
                activeSection === "import" ? <SettingsImportSection /> :

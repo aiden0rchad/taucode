@@ -1,9 +1,13 @@
+import { buildThreadTranscript } from "@utils/threadText";
+import { exportMarkdownFile } from "@services/tauri";
+import { WorkConcurrency } from "./WorkConcurrency";
+import { WorkFiles } from "./WorkFiles";
 import { useReasoningSelection } from "@/features/models/reasoning";
-import { SidebarResizeHandle, SidebarCollapseButton } from "@/features/layout/components/SidebarResizeHandle";
+import { SidebarResizeHandle } from "@/features/layout/components/SidebarResizeHandle";
 import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
 import { ComposerDictation } from "@/features/composer/components/ComposerDictation";
 import { NewConversationRow } from "@/features/chat/NewConversationRow";
-import { Folder, X, PanelLeft, FolderTree, FileSearch, Table, Presentation, Trash2, CheckCircle2, Circle, ExternalLink, FolderOpen, Eye, Copy, Terminal, LoaderCircle, Search, ChevronDown, FilePenLine, Globe, Bot, ListChecks, CircleAlert } from "lucide-react";
+import { Folder, X, FolderTree, FileSearch, Table, Presentation, Trash2, CheckCircle2, Circle, ExternalLink, FolderOpen, Eye, Copy, Terminal, LoaderCircle, Search, ChevronDown, FilePenLine, Globe, Bot, ListChecks, CircleAlert } from "lucide-react";
 import { ComposerShell, ComposerSendButton, ComposerAccessControl } from "@/features/composer/components/ComposerShell";
 import { getFileTypeIconUrl } from "@utils/fileTypeIcons";
 import { createElement, useCallback, useEffect, useRef, useState } from "react";
@@ -17,10 +21,8 @@ import { templates, useWork, workGroups } from "./useWork";
 import "./work.css";
 import Square from "lucide-react/dist/esm/icons/square";
 import Plus from "lucide-react/dist/esm/icons/plus";
-import Settings2 from "lucide-react/dist/esm/icons/settings-2";
-import { BrowserDock } from "@/features/browser/BrowserDock";
+import { WorkspaceShell } from "@/features/panels/SidePanel";
 import { SidebarBottomRail } from "@app/components/SidebarBottomRail";
-import { ModeHeader } from "@/features/chat/ModeHeader";
 import { RowMenu } from "@/features/chat/RowMenu";
 
 const templateIcons = { "Organize a folder": FolderTree, "Research brief": FileSearch, "Spreadsheet from documents": Table, "Slide deck from notes": Presentation, "Clean up downloads": Trash2 };
@@ -43,8 +45,9 @@ function InputRequest({ request, busy, respond }: { request: WorkRequest; busy: 
 
 export function WorkView({ settings, onOpenSettings = () => {} }: { settings: AppSettings; onOpenSettings?: () => void }) {
   const work = useWork();
-  const { sidebarCollapsed } = useSidebarState();
+  const { sidebarCollapsed, setSidebarCollapsed } = useSidebarState();
   const searchInput = useRef<HTMLInputElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [collapsedSpaces, setCollapsedSpaces] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -56,7 +59,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [attachments, setAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [dictating, setDictating] = useState(false);
-  const [showList, setShowList] = useState(true);
+
   const [folder, setFolder] = useState("");
   const [readOnlyFolders, setReadOnlyFolders] = useState<string[]>([]);
   const tasksRef = useRef(work.state.tasks);
@@ -86,9 +89,9 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const create = (runNow: boolean) => run(async () => {
     if (busy || dictating || !brief.trim() || !selectedSpace || !model) return;
     const created = await work.mutate<WorkTask>("create", { spaceId: selectedSpace, brief, model, accessMode: access, attachments, runNow, effort: reasoning.level });
-    work.setActive(created.id); setBrief(""); setAttachments([]); setShowList(false);
+    work.setActive(created.id); setBrief(""); setAttachments([]); if (window.innerWidth < 760) setSidebarCollapsed(true);
   });
-  const selectTask = (id: string) => { work.setActive(id); setSpaceId(""); setShowList(false); };
+  const selectTask = (id: string) => { work.setActive(id); setSpaceId(""); if (window.innerWidth < 760) setSidebarCollapsed(true); };
   const taskButton = (entry: WorkTask) => <RowMenu key={entry.id} label={entry.title} actions={[
     { label: "Open task", onClick: () => selectTask(entry.id) },
     ...(["running", "needs-input", "queued"].includes(entry.status) ? [{ label: "Stop task", disabled: busy, onClick: () => { void run(() => work.mutate("stop", { taskId: entry.id })); } }] : []),
@@ -97,17 +100,29 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     const task = tasksRef.current.find(t => t.threadId === params.threadId);
     return workRequest("checkpoint", { taskId: task?.id, request: params });
   }, []);
-  return <BrowserDock searchUrl={settings.browser?.searchUrl} onInterrupt={() => work.active ? workRequest("stop", { taskId: work.active }).then(() => {}) : undefined}><div className={"chat-layout work-layout" + (sidebarCollapsed ? " sidebar-collapsed" : "") + (showList ? " chat-list-open" : "")}>
-    <SidebarResizeHandle /><SidebarCollapseButton />
+  const taskMarkdown = task ? `# ${task.title}\n\n${task.brief}\n\n${buildThreadTranscript(work.items)}` : "";
+  const taskPanel = task ? (<aside className="work-inspector" aria-label="Task details">
+          <section aria-label="Plan"><h2>Plan</h2>{task.plan.length ? <><progress className="plan-progress" aria-label="Plan completion" max={task.plan.length} value={task.plan.filter(step => step.status === "completed").length} /><ul className="work-plan">{task.plan.map((step, index) => <li key={index}><span role="checkbox" aria-label={step.step} aria-checked={step.status === "completed"}>{step.status === "completed" ? <CheckCircle2 aria-hidden /> : <Circle aria-hidden />}</span><span>{step.step}</span></li>)}</ul></> : <p className="chat-muted">The task’s checklist will appear here.</p>}</section>
+          <section aria-label="Outputs"><h2>Outputs <small>{task.outputs.length}</small></h2>{!task.outputs.length && <p className="chat-muted">Created and modified files will appear here.</p>}
+            {task.outputs.map(path => <div className="work-output" key={path}><img className="file-type-icon" src={getFileTypeIconUrl(path)} alt="" /><strong title={path}>{path.split("/").pop()}</strong><div className="work-actions">{(["open", "reveal", ...(/\.(png|jpe?g|gif|webp|pdf)$/i.test(path) ? ["preview"] : [])] as const).map(action => <button className="ghost icon-button" key={action} aria-label={action === "open" ? "Open" : action === "reveal" ? "Reveal in Finder" : "Quick Look"} title={action === "open" ? "Open" : action === "reveal" ? "Reveal in Finder" : "Quick Look"} disabled={busy} onClick={() => { void run(() => workOutput(task.id, path, action as "open" | "reveal" | "preview")); }}>{action === "open" ? <ExternalLink aria-hidden /> : action === "reveal" ? <FolderOpen aria-hidden /> : <Eye aria-hidden />}</button>)}</div></div>)}
+          </section>
+        </aside>) : null;
+  return <WorkspaceShell titleActions={<>
+        {task && <div className="work-actions"><span className={`thread-state-chip ${task.status === "running" ? "processing" : task.status === "needs-input" ? "reviewing" : "ready"}`} role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && <button className="ghost main-header-action" aria-label="Stop task" title="Stop task" disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop</button>}
+          {task.threadId && !task.importId && <RewindAction workspaceId={task.spaceId} threadId={task.threadId} running={active} />}
+        </div>}
+        {work.state.tasks.some(t => ["running", "needs-input"].includes(t.status)) && <button className="ghost main-header-action" aria-label="Stop all tasks" title="Stop all tasks" disabled={busy} onClick={() => { void run(() => work.mutate("stop-all")); }}><Square size={14} aria-hidden /></button>}
+      </>} reservedShortcuts={Object.entries(settings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`work:${work.active ?? "new"}`} title={task?.title || "New task"} actions={task ? [{ label: "Copy", onClick: () => { void run(() => navigator.clipboard.writeText(taskMarkdown)); } }, { label: "Export", onClick: () => { void run(() => exportMarkdownFile(taskMarkdown, "task.md", "Export task")); } }] : []} onNavigate={scope => work.setActive(scope.slice(5) === "new" ? null : scope.slice(5))} tools={task ? [{ id: "task", label: "Task", content: taskPanel }, { id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={task.spaceId} /> }] : selectedSpace ? [{ id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={selectedSpace} /> }] : []} searchUrl={settings.browser?.searchUrl} onInterrupt={() => work.active ? workRequest("stop", { taskId: work.active }).then(() => {}) : undefined}><div className={"chat-layout work-layout" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
+    <SidebarResizeHandle />
     <aside className="sidebar chat-sidebar" aria-label="Spaces and tasks">
       <ModeSwitcher />
-      <NewConversationRow label="New task" disabled={busy} shortcut={settings.newAgentShortcut} handleShortcut onSearch={() => searchInput.current?.focus()} onNew={() => { work.setActive(null); setShowList(false); }} />
-      <label className="sidebar-search"><Search aria-hidden /><input ref={searchInput} type="search" aria-label="Search tasks" placeholder="Search tasks" value={search} onChange={e => setSearch(e.target.value)} /></label>
-      <div className="sidebar-section-header"><span className="sidebar-section-title">Spaces</span><div className="mode-section-actions"><button className="ghost sidebar-title-add" aria-label="Add space…" title="Add space…" disabled={busy} onClick={() => { void run(async () => { const path = await pickWorkspacePath(); if (path) { setFolder(path); setReadOnlyFolders([]); work.setActive(null); setShowList(false); } }); }}><Plus size={14} aria-hidden /></button><details className="mode-section-menu"><summary aria-label="Space options" title="Space options"><Settings2 size={14} aria-hidden /></summary><div className="ds-popover"><label className="work-concurrency">Concurrent tasks <select aria-label="Concurrent tasks" value={work.state.concurrency} disabled={busy} onChange={e => { void run(() => work.mutate("concurrency", { count: Number(e.target.value) })); }}>{[1,2,3,4,5,6,7,8].map(n => <option key={n}>{n}</option>)}</select></label></div></details></div></div>
+      {!searchOpen && <NewConversationRow label="New task" disabled={busy} shortcut={settings.newAgentShortcut} handleShortcut onSearch={() => setSearchOpen(true)} onNew={() => { work.setActive(null); if (window.innerWidth < 760) setSidebarCollapsed(true); }} />}
+      {searchOpen && <label className="sidebar-search is-open"><Search aria-hidden /><input autoFocus onKeyDown={e => { if (e.key === "Escape") { setSearch(""); setSearchOpen(false); } }} ref={searchInput} type="search" aria-label="Search tasks" placeholder="Search tasks" value={search} onChange={e => setSearch(e.target.value)} /><button type="button" className="ghost icon-button" aria-label="Close search" onClick={() => { setSearch(""); setSearchOpen(false); }}><X aria-hidden /></button></label>}
+      <div className="sidebar-section-header"><span className="sidebar-section-title">Spaces</span><div className="mode-section-actions"><button className="ghost sidebar-title-add" aria-label="Add space…" title="Add space…" disabled={busy} onClick={() => { void run(async () => { const path = await pickWorkspacePath(); if (path) { setFolder(path); setReadOnlyFolders([]); work.setActive(null); if (window.innerWidth < 760) setSidebarCollapsed(true); } }); }}><Plus size={14} aria-hidden /></button><WorkConcurrency value={work.state.concurrency} disabled={busy} onChange={count => { void run(() => work.mutate("concurrency", { count })); }} /></div></div>
       <div className="chat-list">
         <section aria-label="Needs input inbox" className="work-inbox"><h2 className="sidebar-section-header"><span className="sidebar-section-title">Needs input · {needs.length}</span></h2>{needs.filter(t => t.title.toLowerCase().includes(search.toLowerCase())).map(taskButton)}{!needs.length && <p className="chat-muted">You’re all caught up.</p>}</section>
         {work.state.spaces.map(space => <section className="work-space" key={space.id} aria-label={space.name}>
-          <h2 className="sidebar-section-header" title={space.path}><button className="ghost sidebar-section-title work-space-toggle" aria-expanded={!collapsedSpaces.includes(space.id)} onClick={() => setCollapsedSpaces(current => current.includes(space.id) ? current.filter(id => id !== space.id) : [...current, space.id])}><ChevronDown aria-hidden />{space.name}</button><button type="button" className="ghost sidebar-title-add" aria-label={`New task in ${space.name}`} title={`New task in ${space.name}`} disabled={busy || space.readOnly} onClick={() => { setSpaceId(space.id); work.setActive(null); setShowList(false); }}><Plus aria-hidden /></button></h2>
+          <h2 className="sidebar-section-header" title={space.path}><button className="ghost sidebar-section-title work-space-toggle" aria-expanded={!collapsedSpaces.includes(space.id)} onClick={() => setCollapsedSpaces(current => current.includes(space.id) ? current.filter(id => id !== space.id) : [...current, space.id])}><ChevronDown aria-hidden />{space.name}</button><button type="button" className="ghost sidebar-title-add" aria-label={`New task in ${space.name}`} title={`New task in ${space.name}`} disabled={busy || space.readOnly} onClick={() => { setSpaceId(space.id); work.setActive(null); if (window.innerWidth < 760) setSidebarCollapsed(true); }}><Plus aria-hidden /></button></h2>
           {space.readOnly && <p className="chat-muted">Read-only history. Choose an available space to continue.</p>}
           {!!space.readOnlyFolders.length && <details className="work-readonly-folders"><summary><ChevronDown aria-hidden />{space.readOnlyFolders.length} read-only folders</summary>{space.readOnlyFolders.map(path => <p key={path} className="chat-muted">{path}</p>)}</details>}
           {!collapsedSpaces.includes(space.id) && workGroups.map(([label, statuses]) => {
@@ -119,12 +134,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       <SidebarBottomRail onOpenSettings={onOpenSettings} onOpenDebug={() => {}} showDebugButton={false} />
     </aside>
     <main className="chat-main">
-      <ModeHeader title={task?.title || "New task"} navigation={<button className="ghost main-header-action chat-list-toggle" aria-expanded={showList} onClick={() => setShowList(!showList)} aria-label="Spaces" title="Spaces"><PanelLeft aria-hidden /></button>}>
-        {task && <div className="work-actions"><span className={`thread-state-chip ${task.status === "running" ? "processing" : task.status === "needs-input" ? "reviewing" : "ready"}`} role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && <button className="ghost main-header-action" aria-label="Stop task" title="Stop task" disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop</button>}
-          {task.threadId && !task.importId && <RewindAction workspaceId={task.spaceId} threadId={task.threadId} running={active} />}
-        </div>}
-        {work.state.tasks.some(t => ["running", "needs-input"].includes(t.status)) && <button className="ghost main-header-action" aria-label="Stop all tasks" title="Stop all tasks" disabled={busy} onClick={() => { void run(() => work.mutate("stop-all")); }}><Square size={14} aria-hidden /></button>}
-      </ModeHeader>
+
       {work.error && <p role="alert" className="work-error">{work.error}</p>}
       {folder && <section className="work-add-space" aria-label="New space"><h2>New space</h2><p>{folder}</p><p className="chat-muted">This is the folder where tasks can create files. Add other folders for reading only.</p>
         {readOnlyFolders.map(path => <p key={path}>{path}<button onClick={() => setReadOnlyFolders(current => current.filter(p => p !== path))}>Remove</button></p>)}
@@ -150,12 +160,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
             }); }}>Continue</button>
           </section> : !active && task.status !== "queued" && <button onClick={() => { setBrief("Continue this task:\n" + task.brief + "\n\nReviewed plan:\n" + task.plan.map(p => "- " + p.step).join("\n") + "\n\nAsk before changing any existing files."); setSpaceId(task.spaceId); setAccess("ask"); setModel(task.model); work.setActive(null); }}>Continue as a new task…</button>}
         </div></div>
-        <aside className="work-inspector" aria-label="Task details">
-          <section aria-label="Plan"><h2>Plan</h2>{task.plan.length ? <><progress className="plan-progress" aria-label="Plan completion" max={task.plan.length} value={task.plan.filter(step => step.status === "completed").length} /><ul className="work-plan">{task.plan.map((step, index) => <li key={index}><span role="checkbox" aria-label={step.step} aria-checked={step.status === "completed"}>{step.status === "completed" ? <CheckCircle2 aria-hidden /> : <Circle aria-hidden />}</span><span>{step.step}</span></li>)}</ul></> : <p className="chat-muted">The task’s checklist will appear here.</p>}</section>
-          <section aria-label="Outputs"><h2>Outputs <small>{task.outputs.length}</small></h2>{!task.outputs.length && <p className="chat-muted">Created and modified files will appear here.</p>}
-            {task.outputs.map(path => <div className="work-output" key={path}><img className="file-type-icon" src={getFileTypeIconUrl(path)} alt="" /><strong title={path}>{path.split("/").pop()}</strong><div className="work-actions">{(["open", "reveal", ...(/\.(png|jpe?g|gif|webp|pdf)$/i.test(path) ? ["preview"] : [])] as const).map(action => <button className="ghost icon-button" key={action} aria-label={action === "open" ? "Open" : action === "reveal" ? "Reveal in Finder" : "Quick Look"} title={action === "open" ? "Open" : action === "reveal" ? "Reveal in Finder" : "Quick Look"} disabled={busy} onClick={() => { void run(() => workOutput(task.id, path, action as "open" | "reveal" | "preview")); }}>{action === "open" ? <ExternalLink aria-hidden /> : action === "reveal" ? <FolderOpen aria-hidden /> : <Eye aria-hidden />}</button>)}</div></div>)}
-          </section>
-        </aside>
+
       </div> : <div className="chat-scroll"><div className="chat-column">
         <div className="chat-empty work-empty"><span className="chat-eyebrow">A space for getting things done</span><h1>What would you like to make?</h1><p>Bring a folder and a brief. Follow the plan, review requests, and find the finished files here.</p>
 
@@ -175,6 +180,6 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       </div></div>}
     </main>
     <Checkpoints requestCheckpoint={checkpoints} running={Object.fromEntries(work.state.tasks.filter(t => t.threadId).map(t => [t.threadId!, { isProcessing: ["running","needs-input"].includes(t.status) }]))} onChanged={async (_space, thread) => { const task = tasksRef.current.find(t => t.threadId === thread); if (task) await work.read(task); await work.refresh(); }} />
-  </div></BrowserDock>;
+  </div></WorkspaceShell>;
 }
 

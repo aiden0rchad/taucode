@@ -1,3 +1,5 @@
+import { downloadDir } from "@tauri-apps/api/path";
+import { openPath } from "@tauri-apps/plugin-opener";
 import { invoke, Channel } from "@tauri-apps/api/core";
 export function importRequest<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
   return invoke<T>("import_request", { action, params });
@@ -1253,3 +1255,5 @@ export async function pickWorkAttachments(): Promise<string[]> {
   const selection = await open({ directory: false, multiple: true });
   return selection ? Array.isArray(selection) ? selection : [selection] : [];
 }
+
+export async function openBrowserDownloads(): Promise<void> { await openPath(await downloadDir()); }

@@ -94,7 +94,7 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
   };
   return <div className="reasoning-control" ref={menu.containerRef}>
     <button ref={trigger} type="button" className="ghost composer-chip reasoning-chip" style={sliderStyle} aria-label={`${modelName}${noReasoning ? "" : ` · ${chipLabel}`}${adjusted && !noReasoning ? " (adjusted for model)" : ""}`} aria-haspopup="dialog" aria-expanded={menu.isOpen} disabled={disabled} onClick={() => { if (!menu.isOpen) { returning.current = false; setOutgoing(null); setView(noReasoning ? "models" : "slider"); setModelError(""); } menu.toggle(); }} title={unavailable || (adjusted ? `${reasoningLabel(value!)} is unavailable; using ${chipLabel}` : "Model and reasoning")}>
-      <span className="reasoning-chip-model">{modelName}</span>
+      <span className="reasoning-chip-model">{modelName}</span>{!noReasoning && <span className="reasoning-chip-dot" aria-hidden />}
       {!noReasoning && <span className={`reasoning-chip-label${unknown ? " unknown" : ""}`} style={{ minWidth: `${Math.max(...labels.map(text => text.length))}ch` }}>{labels.map(text => <span className="reasoning-chip-sizer" aria-hidden="true" key={text}>{text}</span>)}<span>{chipLabel}</span></span>}<ChevronDown size={12} aria-hidden />
     </button>
     {menu.isOpen && <AnchoredPopover anchorRef={trigger} surfaceRef={popover} className={`reasoning-popover${burning ? " burning" : warm ? " warm" : ""}${drag !== null ? " dragging" : ""}`} style={sliderStyle} role="dialog" aria-label={view === "models" ? "Select model" : "Model and reasoning"} onKeyDown={event => { if (event.key === "Escape" && view === "models") { event.preventDefault(); event.stopPropagation(); switchView("slider"); } }}>
