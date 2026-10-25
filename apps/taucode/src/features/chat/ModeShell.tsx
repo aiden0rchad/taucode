@@ -1,4 +1,5 @@
 import { SetupChecklist, type SetupSection } from "@/features/onboarding/SetupChecklist";
+import { EvalsView } from "@/features/evals/EvalsView";
 import { FeedbackComposer, DiagnosticsCommands } from "@/features/diagnostics/FeedbackComposer";
 import { diagnosticContext, record } from "@/features/diagnostics/client";
 import { FeatureSettings, features, useFeatures } from "@settings/features";
@@ -50,6 +51,8 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [setupSection, setSetupSection] = useState<SetupSection>();
+  const [evalsFull, setEvalsFull] = useState<{runId?:string}|null>(null);
+  useEffect(() => { const open = (event:Event) => setEvalsFull({runId:(event as CustomEvent<{runId?:string}>).detail?.runId}); window.addEventListener("taucode:evals-full", open); return () => window.removeEventListener("taucode:evals-full", open); }, []);
   useThemePreference(settings ?? { theme: "system" }, () => {
     if (!settings) return;
     const next = { ...settings, theme: "system" };
@@ -89,9 +92,12 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   if (!loaded) return null;
   return <FeatureSettings.Provider value={settings}>{settings?.features?.diagnostics && <><FeedbackComposer /><DiagnosticsCommands /></>}<ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings }}>
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
+    {evalsFull && settings && <main className="evals-full"><EvalsView full initialRunId={evalsFull.runId} appSettings={settings} onUpdateAppSettings={async next => { const saved = await updateAppSettings(next); setSettings(saved); return saved; }} onClose={() => setEvalsFull(null)} /></main>}
+    <div style={{ display: evalsFull ? "none" : "contents" }}>
     {mode === "code" && <SidebarEngine.Provider value={settings?.agentPolicy?.defaultEngine ?? "pi"}>{children}</SidebarEngine.Provider>}
     {mode === "chat" && settings && <ChatView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
     {mode === "work" && settings && <WorkView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
+    </div>
     <SetupChecklist onNavigate={section => {
       if (mode === "code" && !settingsOpen) window.dispatchEvent(new CustomEvent("taucode:setup-settings", { detail: section }));
       else { setSetupSection(section); setSettingsOpen(true); }

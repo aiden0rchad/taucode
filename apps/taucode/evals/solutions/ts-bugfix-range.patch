@@ -1,0 +1,8 @@
+--- a/src/lib.js
++++ b/src/lib.js
+@@ -1,4 +1,4 @@
+-export const range = (n) => Array.from({length:n+1},(_,i)=>i);
++export const range = (n) => Array.from({length:n},(_,i)=>i);
+ export const sum = (xs) => xs.reduce((a,b)=>a+b,1);
+ export const unique = (xs) => xs;
+ export const clamp = (n,lo,hi) => Math.max(lo,Math.max(hi,n));

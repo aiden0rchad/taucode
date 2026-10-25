@@ -1294,3 +1294,4 @@ export async function openSetupPrivacy(pane: "screen" | "accessibility") {
   const { openUrl } = await import("@tauri-apps/plugin-opener");
   await openUrl(`x-apple.systempreferences:com.apple.preference.security?${pane === "screen" ? "Privacy_ScreenCapture" : "Privacy_Accessibility"}`);
 }
+export const evalRequest = <T = unknown>(action: string, params: object = {}) => invoke<T>("eval_request", { action, params });

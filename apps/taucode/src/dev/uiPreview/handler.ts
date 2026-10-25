@@ -1,3 +1,4 @@
+import { createEvalFixture } from "./evals";
 import { createDiagnosticsFixture } from "./diagnostics";
 import { builtinIds, parseTheme, type ThemeFile, type ThemeManifest } from "@/features/themes/validate";
 import customTheme from "@/features/themes/fixtures/valid-custom.json";
@@ -13,6 +14,7 @@ const record = (value: unknown): Params => value && typeof value === "object" &&
 export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const state = createFixtures();
   const query = new URLSearchParams(search);
+  const evals = createEvalFixture(publish);
   const diagnostics = createDiagnosticsFixture(query.get("diagnostics") === "empty");
   const mode = query.get("mode");
   if (query.get("dictation") === "ready") { state.settings.dictationEnabled = true; state.settings.features = { ...state.settings.features, dictation: true }; }
@@ -221,6 +223,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       }
       case "terminal_open": return { id: args.terminalId };
       case "terminal_write": case "terminal_resize": case "terminal_close": return null;
+      case "eval_request": return evals(String(args.action), params);
       case "diagnostics_request": return diagnostics(String(args.action), params);
       case "provider_has_api_key": return false;
       case "provider_test_and_fetch": return { ok: true, latencyMs: 12, models: state.settings.providers?.find(p => p.id === args.id)?.models ?? [] };

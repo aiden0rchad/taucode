@@ -1,0 +1,20 @@
+{
+  "id": "ts-bugfix-reservations",
+  "repo": "ts-lib",
+  "category": "bugfix",
+  "tags": [
+    "smoke",
+    "hard"
+  ],
+  "prompt": "Investigate the failing inventory tests in hard/inventory. Stock identity is the exact (SKU, warehouse) pair; either string may contain colons. Fix batch reservations so duplicate lines are aggregated and the entire batch is atomic on failure. Preserve the Store and reserve APIs and never mutate requests. Run node --test hard/inventory/check.test.ts.",
+  "setup": [],
+  "check": {
+    "command": "node --test hard/inventory/check.test.ts",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

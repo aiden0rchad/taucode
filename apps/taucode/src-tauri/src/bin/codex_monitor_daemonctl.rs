@@ -1,3 +1,5 @@
+#[path = "../proxy_cli.rs"]
+mod proxy_cli;
 #[path = "../daemon_binary.rs"]
 mod daemon_binary;
 #[allow(dead_code)]
@@ -33,6 +35,8 @@ const DAEMON_RPC_TIMEOUT: Duration = Duration::from_millis(700);
 #[derive(Debug, Clone)]
 struct CliArgs {
     command: CliCommand,
+    eval_action: Option<String>,
+    eval_params: Value,
     listen: Option<String>,
     token: Option<String>,
     data_dir: Option<PathBuf>,
@@ -43,6 +47,7 @@ struct CliArgs {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CliCommand {
+    Evals,
     Start,
     Stop,
     Status,
@@ -72,6 +77,7 @@ enum DaemonProbe {
 type DaemonLines = tokio::io::Lines<BufReader<OwnedReadHalf>>;
 
 fn main() {
+    proxy_cli::dispatch();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build();
@@ -87,7 +93,7 @@ fn main() {
 
 async fn run() -> Result<(), String> {
     let args = parse_args()?;
-    let data_dir = resolve_data_dir(args.data_dir);
+    let data_dir = resolve_data_dir(args.data_dir.clone());
     let settings = load_settings(&data_dir);
 
     let listen_addr = resolve_listen_addr(args.listen.as_deref(), settings.as_ref())?;
@@ -98,6 +104,7 @@ async fn run() -> Result<(), String> {
     };
 
     match args.command {
+        CliCommand::Evals => run_evals(&args, &data_dir, &listen_addr, token.as_deref()).await?,
         CliCommand::CommandPreview => {
             let daemon_path = resolve_daemon_path(args.daemon_path.as_deref())?;
             let preview = daemon_command_preview(
@@ -147,25 +154,13 @@ async fn run() -> Result<(), String> {
 }
 
 fn parse_args() -> Result<CliArgs, String> {
-    let mut args = env::args().skip(1);
-
-    let Some(first) = args.next() else {
-        return Err(usage());
-    };
-
-    if matches!(first.as_str(), "-h" | "--help" | "help") {
-        print!("{}", usage());
-        std::process::exit(0);
-    }
-
-    let command = match first.as_str() {
-        "start" => CliCommand::Start,
-        "stop" => CliCommand::Stop,
-        "status" => CliCommand::Status,
-        "command-preview" => CliCommand::CommandPreview,
-        _ => return Err(format!("Unknown command: {first}\n\n{}", usage())),
-    };
-
+    parse_args_from(env::args().skip(1))
+}
+fn parse_args_from(input:impl IntoIterator<Item=String>)->Result<CliArgs,String> {
+    let mut args=input.into_iter();
+    let mut command=None;
+    let mut eval_action=None;
+    let mut eval_params = json!({});
     let mut listen: Option<String> = None;
     let mut token: Option<String> = None;
     let mut data_dir: Option<PathBuf> = None;
@@ -175,6 +170,30 @@ fn parse_args() -> Result<CliArgs, String> {
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "start" | "stop" | "status" | "command-preview" | "evals" if command.is_none() => {
+                command=Some(match arg.as_str() {"start"=>CliCommand::Start,"stop"=>CliCommand::Stop,"status"=>CliCommand::Status,"evals"=>CliCommand::Evals,_=>CliCommand::CommandPreview});
+            },
+            "run" | "gate" if command==Some(CliCommand::Evals) && eval_action.is_none()=>eval_action=Some(arg),
+
+            "--engines" | "--models" | "--tags" | "--ids" | "--categories" if command == Some(CliCommand::Evals) => {
+                let value=args.next().ok_or("Missing list value")?;
+                eval_params[arg.trim_start_matches("--")]=json!(value.split(',').map(str::to_owned).collect::<Vec<_>>());
+            },
+            "--codegraph" if command == Some(CliCommand::Evals) => {
+                eval_params["codegraph"]=match args.next().as_deref() { Some("both")=>json!([false,true]),Some("on")=>json!([true]),Some("off")=>json!([false]),_=>return Err("Use --codegraph on, off or both".into()) };
+            },
+            "--repeats" | "--concurrency" | "--max-total-tokens" if command == Some(CliCommand::Evals) => {
+                let key=if arg=="--max-total-tokens" {"maxTotalTokens"} else {arg.trim_start_matches("--")};
+                eval_params[key]=json!(args.next().ok_or("Missing number")?.parse::<u64>().map_err(|e|e.to_string())?);
+            },
+            "--max-cost" | "--max-pass-drop" | "--max-token-increase" if command == Some(CliCommand::Evals) => {
+                let key=match arg.as_str() {"--max-cost"=>"maxCost","--max-pass-drop"=>"maxPassDrop",_=>"maxTokenIncrease"};
+                let n=args.next().ok_or("Missing number")?.parse::<f64>().map_err(|e|e.to_string())?;
+                if !n.is_finite() || n<0. { return Err("Threshold must be finite and nonnegative".into()); }
+                eval_params[key]=json!(n);
+            },
+            "--baseline" if command == Some(CliCommand::Evals) => eval_params["baseline"]=json!(args.next().ok_or("Missing baseline")?),
+            "--keep-workdirs" if command == Some(CliCommand::Evals) => eval_params["keepWorkdirs"]=json!(true),
             "--listen" => {
                 let value = args.next().ok_or("--listen requires a value")?;
                 let trimmed = value.trim();
@@ -214,7 +233,7 @@ fn parse_args() -> Result<CliArgs, String> {
                 insecure_no_auth = true;
                 token = None;
             }
-            "-h" | "--help" => {
+            "-h" | "--help" | "help" => {
                 print!("{}", usage());
                 std::process::exit(0);
             }
@@ -222,8 +241,12 @@ fn parse_args() -> Result<CliArgs, String> {
         }
     }
 
+    let command=command.ok_or_else(usage)?;
+    if command==CliCommand::Evals && eval_action.is_none() { return Err("Use evals run or evals gate".into()); }
     Ok(CliArgs {
         command,
+        eval_action,
+        eval_params,
         listen,
         token,
         data_dir,
@@ -236,10 +259,10 @@ fn parse_args() -> Result<CliArgs, String> {
 fn usage() -> String {
     format!(
         "\
-USAGE:\n  codex-monitor-daemonctl <command> [options]\n\n\
-COMMANDS:\n  start              Start daemon (auto-restarts mismatched daemon if safe)\n  stop               Stop daemon\n  status             Show daemon status\n  command-preview    Print equivalent daemon start command\n\n\
+USAGE:\n  codex-monitor-daemonctl [global options] <command> [options]\n\n\
+COMMANDS:\n  evals run --engines pi,omp --models provider/model [--tags smoke] [--codegraph both] [--insecure-no-auth]\n  evals gate --baseline <runId|latest-passing> [--tags smoke] [--max-pass-drop 0.1] [--max-token-increase 0.25]\n  start              Start daemon (auto-restarts mismatched daemon if safe)\n  stop               Stop daemon\n  status             Show daemon status\n  command-preview    Print equivalent daemon start command\n\n\
 OPTIONS:\n  --listen <addr>        Bind/listen address (default derived from settings, fallback: {DEFAULT_LISTEN_ADDR})\n  --token <token>        Remote backend token override\n  --data-dir <path>      App data dir (contains settings.json/workspaces.json)\n  --daemon-path <path>   Explicit path to codex-monitor-daemon binary\n  --insecure-no-auth     Start/probe daemon without auth token (dev only)\n  --json                 Print JSON output\n  -h, --help             Show this help\n\n\
-NOTES:\n  - Defaults read token/host from <data-dir>/settings.json\n  - If no --data-dir is provided, default app data dir is used for this platform\n"
+NOTES:\n  - Global options are accepted before or after the subcommand.\n  - Use --insecure-no-auth for a local throwaway daemon without a token.\n  - Defaults read token/host from <data-dir>/settings.json\n  - If no --data-dir is provided, default app data dir is used for this platform\n"
     )
 }
 
@@ -513,7 +536,11 @@ async fn send_rpc_request(
 }
 
 async fn read_rpc_response(lines: &mut DaemonLines, expected_id: u64) -> Result<Value, String> {
-    let deadline = Instant::now() + DAEMON_RPC_TIMEOUT;
+    read_rpc_response_with_timeout(lines, expected_id, DAEMON_RPC_TIMEOUT).await
+}
+
+async fn read_rpc_response_with_timeout(lines: &mut DaemonLines, expected_id: u64, duration: Duration) -> Result<Value, String> {
+    let deadline = Instant::now() + duration;
     loop {
         let now = Instant::now();
         if now >= deadline {
@@ -547,7 +574,7 @@ async fn send_and_expect_result(
     params: Value,
 ) -> Result<Value, String> {
     send_rpc_request(writer, id, method, params).await?;
-    let response = read_rpc_response(lines, id).await?;
+    let response = if method == "eval_request" { read_rpc_response_with_timeout(lines, id, Duration::from_secs(120)).await? } else { read_rpc_response(lines, id).await? };
     if let Some(message) = parse_daemon_error_message(&response) {
         return Err(message);
     }
@@ -1411,4 +1438,163 @@ tcp        0      0 0.0.0.0:47320           0.0.0.0:*               LISTEN      
 "#;
         assert_eq!(parse_netstat_listener_pid(output, 4732), None);
     }
+}
+
+enum EvalClient {
+    Local(codex_monitor_lib::evals::LocalEvals),
+    Remote {writer:OwnedWriteHalf,lines:DaemonLines,id:u64},
+}
+impl EvalClient {
+    async fn shutdown(&self) { if let Self::Local(service)=self { service.shutdown().await; } }
+    async fn request(&mut self,action:&str,params:Value)->Result<Value,String> {
+        match self {
+            Self::Local(service)=>service.request(action,params).await,
+            Self::Remote {writer,lines,id}=>{
+                *id+=1;
+                send_and_expect_result(writer,lines,*id,"eval_request",json!({"action":action,"params":params})).await
+            }
+        }
+    }
+}
+
+async fn run_evals(args:&CliArgs,data:&Path,listen:&str,token:Option<&str>)->Result<(),String> {
+    let mut client=match probe_daemon(listen,token).await {
+        DaemonProbe::NotReachable=>EvalClient::Local(codex_monitor_lib::evals::LocalEvals::new(data.to_path_buf())),
+        DaemonProbe::NotDaemon=>return Err("The selected address is not a daemon".into()),
+        DaemonProbe::Running{..}=>{
+            let stream=TcpStream::connect(daemon_connect_addr(listen).ok_or("Invalid daemon address")?).await.map_err(|e|e.to_string())?;
+            let (reader,mut writer)=stream.into_split(); let mut lines=BufReader::new(reader).lines();
+            if let Some(token)=token { send_and_expect_result(&mut writer,&mut lines,1,"auth",json!({"token":token})).await?; }
+            EvalClient::Remote {writer,lines,id:2}
+        }
+    };
+    let mut plan=args.eval_params.clone();
+    let gate=args.eval_action.as_deref()==Some("gate");
+    let mut baseline=plan["baseline"].as_str().map(str::to_owned);
+    if gate {
+        let id=baseline.as_deref().ok_or("evals gate requires --baseline")?;
+        let id=if id=="latest-passing" {
+            let runs=client.request("runs",json!({})).await?;
+            runs.as_array().ok_or("Invalid runs")?.iter().find(|r|r["status"]=="completed" && r["summary"].as_array().is_some_and(|s|!s.is_empty() && s.iter().all(|s|s["passRate"]==1.))).and_then(|r|r["id"].as_str()).ok_or("No passing baseline")?.to_owned()
+        } else {id.into()};
+        baseline=Some(id.clone());
+        let old=client.request("run",json!({"runId":id})).await?;
+        let overrides=plan.clone(); plan=old["run"]["plan"].clone();
+        for (key,value) in overrides.as_object().ok_or("Invalid plan")? { plan[key]=value.clone(); }
+    }
+    for key in ["baseline","maxPassDrop","maxTokenIncrease"] { plan.as_object_mut().unwrap().remove(key); }
+    let result=client.request("start",plan).await?;
+    let id=result["runId"].as_str().ok_or("Missing runId")?;
+    let mut last_preparing=String::new();
+    print_eval_preparing(&result,&mut last_preparing);
+    loop {
+        tokio::select! {
+            _=tokio::signal::ctrl_c()=>{
+                client.request("cancel",json!({"runId":id})).await?;
+                let _=tokio::time::timeout(Duration::from_secs(10),async {
+                    loop {
+                        if !matches!(client.request("status",json!({"runId":id})).await?["run"]["status"].as_str(),Some("running"|"preparing")) {return Ok::<(),String>(());}
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                }).await;
+                client.shutdown().await;
+                return Err(format!("Cancellation requested for {id}"));
+            },
+            _=tokio::time::sleep(Duration::from_millis(500))=>{},
+        }
+        let status=client.request("status",json!({"runId":id})).await?;
+        print_eval_preparing(&status["run"],&mut last_preparing);
+        if matches!(status["run"]["status"].as_str(),Some("running"|"preparing")) { continue; }
+        client.shutdown().await;
+        let result=if gate {
+            let mut params=args.eval_params.clone(); params["runId"]=json!(id); params["baseline"]=json!(baseline);
+            client.request("gate",params).await?
+        } else {status.clone()};
+        if args.json {
+            let mut output=status.clone();
+            if gate { output.as_object_mut().unwrap().extend(result.as_object().unwrap().clone()); }
+            println!("{output}");
+        }
+        else {
+            println!("{}",format_eval_summary(&status,if gate {Some(&result)} else {None}));
+        }
+        if gate && result["passed"]!=true { return Err("Eval regression gate failed".into()); }
+        if status["run"]["status"]!="completed" { return Err(status["run"]["message"].as_str().unwrap_or("Eval run did not complete").into()); }
+        return Ok(());
+    }
+}
+
+fn format_eval_summary(status:&Value,gate:Option<&Value>)->String {
+    let run=&status["run"];
+    let created=run["createdAt"].as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
+    let ended=run["cells"].as_array().into_iter().flatten().filter_map(|c|c["completedAt"].as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok())).max();
+    let duration=created.zip(ended).map(|(start,end)|format!("{:.1}s",(end-start).num_milliseconds().max(0) as f64/1000.)).unwrap_or_else(||"duration unknown".into());
+    let versions=run["environment"]["engines"].as_array().into_iter().flatten().filter(|e|{
+        let id=e["engine"].as_str().unwrap_or("");
+        run["plan"]["engines"].as_array().is_some_and(|selected|selected.contains(&json!(if id=="claude-acp" {"claude"} else {id})))
+    }).map(|e|format!("{} {}",e["engine"].as_str().unwrap_or("unknown"),e["version"].as_str().unwrap_or("unknown"))).collect::<Vec<_>>().join(" · ");
+    let mut lines=vec![format!("Run {} · {} · {} · App {} · {}",run["id"].as_str().unwrap_or("unknown"),run["status"].as_str().unwrap_or("unknown"),duration,run["environment"]["appVersion"].as_str().unwrap_or("unknown"),if versions.is_empty(){"Engine versions unknown"}else{&versions})];
+    let rows:Vec<_>=status["summary"].as_array().into_iter().flatten().collect();
+    let config=|r:&Value|format!("{} / {} · cg:{}",r["engine"].as_str().unwrap_or("unknown"),r["model"].as_str().unwrap_or("unknown"),if r["codegraph"]==true {"on"}else{"off"});
+    let width=rows.iter().map(|r|config(r).chars().count()).max().unwrap_or(0).max(13);
+    lines.push(format!("{:<width$} {:>8} {:>13} {:>8} {:>12} {:>7} {:>10} {:>10} {:>7}{}","Configuration","Pass","Tokens (eff.)","Cache","Cost","Tools","1st token","Wall","Errors",if gate.is_some(){"  Regression"}else{""}));
+    for row in rows {
+        let metric=|key:&str|row[key].as_f64().map(|n|match key {
+            "passRate"|"cacheRate"=>format!("{:.1}%",n*100.),
+            "tokens"=>format!("{:.1}k",n/1000.),
+            "wallMs"|"firstTokenMs"=>format!("{:.1}s",n/1000.),
+            "costUsd"=>format!("${n:.4}"),
+            _=>format!("{n:.0}"),
+        }).unwrap_or_else(||"unknown".into());
+        let regression=gate.map(|g|{
+            let value=g["rows"].as_array().and_then(|rows|rows.iter().find(|r|r["config"]==row["config"])).and_then(|r|r["regressed"].as_bool());
+            format!("  {}",match value {Some(true)=>"yes",Some(false)=>"no",None=>"unknown"})
+        }).unwrap_or_default();
+        lines.push(format!("{:<width$} {:>8} {:>13} {:>8} {:>12} {:>7} {:>10} {:>10} {:>7}{}",config(row),metric("passRate"),metric("tokens"),metric("cacheRate"),metric("costUsd"),metric("toolCalls"),metric("firstTokenMs"),metric("wallMs"),metric("errors"),regression));
+    }
+    lines.join("\n")
+}
+
+fn print_eval_preparing(run:&Value,last:&mut String) {
+    if run["status"]=="preparing" {
+        if let Some(message)=run["message"].as_str() {
+            if message!=last { eprintln!("{message}"); *last=message.into(); }
+        }
+    }
+}
+
+#[cfg(test)]
+mod eval_cli_tests {
+ use super::*;
+ #[test] fn summary_includes_environment_metrics_unknowns_and_gate_result() {
+  let status=json!({"run":{"id":"eval-test","status":"completed","createdAt":"2026-10-25T00:00:00Z","plan":{"engines":["pi","omp"]},"environment":{"appVersion":"test","engines":[{"engine":"pi","version":"1.4.0"},{"engine":"omp","version":"18.12.6"},{"engine":"codex","version":"unused"}]},"cells":[{"completedAt":"2026-10-25T00:04:30Z"}]},"summary":[{"config":"omp/lab/GLM 5.3/false","engine":"omp","model":"lab/GLM 5.3","codegraph":false,"passRate":1.,"tokens":39400,"cacheRate":0.25,"costUsd":null,"toolCalls":50,"firstTokenMs":20500,"wallMs":30300,"errors":0}]});
+  let gate=json!({"rows":[{"config":"omp/lab/GLM 5.3/false","regressed":true}]});
+  let text=format_eval_summary(&status,Some(&gate));
+  for expected in ["Run eval-test","270.0s","App test","pi 1.4.0 · omp 18.12.6","omp / lab/GLM 5.3 · cg:off","Tokens (eff.)","Cache","Cost","Tools","1st token","Wall","Errors","100.0%","39.4k","25.0%","unknown","20.5s","30.3s","Regression","yes"] {assert!(text.contains(expected),"missing {expected}: {text}");}
+  assert!(!text.contains("unused"));assert!(!text.contains("/false"));
+  assert!(!format_eval_summary(&status,None).contains("Regression"));
+  let mut priced=status.clone();priced["summary"][0]["costUsd"]=json!(0.125);priced["summary"][0]["firstTokenMs"]=Value::Null;priced["summary"][0]["codegraph"]=json!(true);
+  let text=format_eval_summary(&priced,None);assert!(text.contains("$0.1250"));assert!(text.contains("cg:on"));assert!(text.contains("unknown"));
+ }
+ #[test] fn globals_work_before_after_and_between_subcommands() {
+  for arguments in [
+   vec!["--listen","127.0.0.1:4732","--data-dir","/eval-data","--insecure-no-auth","--json","evals","run","--engines","pi,omp","--models","lab/GLM 5.3"],
+   vec!["evals","run","--listen","127.0.0.1:4732","--engines","pi,omp","--models","lab/GLM 5.3","--data-dir","/eval-data","--insecure-no-auth","--json"],
+   vec!["evals","--data-dir","/eval-data","--json","run","--engines","pi,omp","--models","lab/GLM 5.3","--listen","127.0.0.1:4732","--insecure-no-auth"],
+  ] {
+   let parsed=parse_args_from(arguments.into_iter().map(str::to_owned)).unwrap();
+   assert_eq!(parsed.command,CliCommand::Evals);assert_eq!(parsed.eval_action.as_deref(),Some("run"));
+   assert_eq!(parsed.listen.as_deref(),Some("127.0.0.1:4732"));assert_eq!(parsed.data_dir,Some("/eval-data".into()));
+   assert!(parsed.insecure_no_auth && parsed.json);assert_eq!(parsed.eval_params["models"],json!(["lab/GLM 5.3"]));
+   assert_eq!(parsed.eval_params["engines"],json!(["pi","omp"]));
+  }
+  assert_eq!(parse_args_from(["--json","status"].map(str::to_owned)).unwrap().command,CliCommand::Status);
+  assert!(parse_args_from(["--listen"].map(str::to_owned)).is_err());
+  assert!(parse_args_from(["evals"].map(str::to_owned)).is_err());
+ }
+ #[test] fn preparing_output_is_deduplicated() {
+  let mut last=String::new();let state=json!({"status":"preparing","message":"Preparing pi…"});
+  print_eval_preparing(&state,&mut last);assert_eq!(last,"Preparing pi…");
+  print_eval_preparing(&state,&mut last);assert_eq!(last,"Preparing pi…");
+ }
 }

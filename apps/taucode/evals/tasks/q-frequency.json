@@ -1,0 +1,19 @@
+{
+  "id": "q-frequency",
+  "repo": "py-cli",
+  "category": "question",
+  "tags": [],
+  "prompt": "What does frequency currently return?",
+  "setup": [],
+  "check": {
+    "command": "true",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [
+    "{}"
+  ],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

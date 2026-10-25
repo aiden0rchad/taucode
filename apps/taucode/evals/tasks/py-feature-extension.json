@@ -1,0 +1,17 @@
+{
+  "id": "py-feature-extension",
+  "repo": "py-cli",
+  "category": "feature",
+  "tags": [],
+  "prompt": "Implement extension, returning lowercase final extension or empty string. Run python3 -m unittest test_cli.Tests.test_extension.",
+  "setup": [],
+  "check": {
+    "command": "python3 -m unittest test_cli.Tests.test_extension",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

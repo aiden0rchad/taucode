@@ -6,10 +6,11 @@ import { ModeShell, ModeSwitcher, modeShortcut, useModeSettings } from "./ModeSh
 import { getAppSettings, setWindowMode, windowSetMaterial } from "@services/tauri";
 import { applyTheme } from '@/features/themes/applyTheme';
 import { builtins } from '@/features/themes/builtins';
-vi.mock("@services/tauri", () => ({ getAppSettings: vi.fn(), setWindowMode: vi.fn().mockResolvedValue(undefined), themesList: vi.fn(async () => []), windowSetMaterial: vi.fn(async () => {}) }));
+vi.mock("@services/tauri", () => ({ getAppSettings: vi.fn(), setWindowMode: vi.fn().mockResolvedValue(undefined), themesList: vi.fn(async () => []), windowSetMaterial: vi.fn(async () => {}), updateAppSettings: vi.fn(async (settings: unknown) => settings) }));
 vi.mock("@/features/onboarding/SetupChecklist", () => ({ SetupChecklist: () => null }));
 vi.mock("@/features/work/WorkView", () => ({ WorkView: () => <><ModeSwitcher /><p>Work content</p></> }));
 vi.mock("./ChatView", () => ({ ChatView: () => <><ModeSwitcher /><p>Chat content</p></> }));
+vi.mock("@/features/evals/EvalsView", () => ({ EvalsView: ({full,initialRunId,onClose}:{full:boolean;initialRunId?:string;onClose:()=>void}) => <section aria-label="Full eval results"><p>{full?initialRunId:"compact"}</p><button onClick={onClose}>Close results</button></section> }));
 vi.mock("@/features/layout/hooks/useWindowLabel", () => ({ useWindowLabel: () => "second-window" }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 it('keeps the cached theme while shell and code settings load', async () => {
@@ -29,6 +30,17 @@ it('keeps the cached theme while shell and code settings load', async () => {
   expect(screen.getByText('Code loading')).toBeTruthy();
   expect(document.documentElement.dataset.themeId).toBe('glass-dark');
   expect(windowSetMaterial).not.toHaveBeenCalled();
+});
+it("opens the selected evaluation in the main area and returns to the previous mode",async()=>{
+ vi.mocked(getAppSettings).mockResolvedValue({windowModes:{"second-window":"code"}} as unknown as AppSettings);
+ render(<ModeShell><p>Code content</p></ModeShell>);
+ await screen.findByText("Code content");
+ act(()=>{window.dispatchEvent(new CustomEvent("taucode:evals-full",{detail:{runId:"eval-b"}}));});
+ expect(screen.getByLabelText("Full eval results").textContent).toContain("eval-b");
+ expect(screen.getByText("Code content").parentElement?.style.display).toBe("none");
+ fireEvent.click(screen.getByRole("button",{name:"Close results"}));
+ expect(screen.queryByLabelText("Full eval results")).toBeNull();
+ expect(screen.getByText("Code content").parentElement?.style.display).toBe("contents");
 });
 describe("mode switching", () => {
   it("restores this window's mode and persists changes", async () => {

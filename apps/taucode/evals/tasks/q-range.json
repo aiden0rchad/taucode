@@ -1,0 +1,20 @@
+{
+  "id": "q-range",
+  "repo": "ts-lib",
+  "category": "question",
+  "tags": [],
+  "prompt": "Which file exports range, and what is its current length for n=3?",
+  "setup": [],
+  "check": {
+    "command": "true",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [
+    "src/lib.js",
+    "4"
+  ],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

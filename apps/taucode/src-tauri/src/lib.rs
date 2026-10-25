@@ -35,6 +35,7 @@ mod shared;
 mod state;
 mod chats;
 mod work;
+pub mod evals;
 mod import_commands;
 mod storage;
 mod tailscale;
@@ -215,6 +216,7 @@ pub fn run() {
             themes::themes_import, themes::themes_export, themes::themes_open_folder, themes::themes_reveal_file,
             themes::window_set_material,
             work::work_request,
+            evals::eval_request,
             work::work_attachment,
             work::work_output,
             chats::chat_request,

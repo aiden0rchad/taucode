@@ -1,0 +1,17 @@
+{
+  "id": "ts-feature-count",
+  "repo": "ts-lib",
+  "category": "feature",
+  "tags": [],
+  "prompt": "Implement count, including __proto__ safely. Run node --test --test-name-pattern=\"^count$\" test/lib.test.js.",
+  "setup": [],
+  "check": {
+    "command": "node --test --test-name-pattern=\"^count$\" test/lib.test.js",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

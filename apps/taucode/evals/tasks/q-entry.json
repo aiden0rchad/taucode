@@ -1,0 +1,19 @@
+{
+  "id": "q-entry",
+  "repo": "py-cli",
+  "category": "question",
+  "tags": [],
+  "prompt": "Which function does the CLI call with sys.argv[1]?",
+  "setup": [],
+  "check": {
+    "command": "true",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [
+    "parse"
+  ],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

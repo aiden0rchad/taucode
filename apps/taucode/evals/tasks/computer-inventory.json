@@ -1,0 +1,21 @@
+{
+  "id": "computer-inventory",
+  "repo": "web-page",
+  "category": "computerUse",
+  "tags": [],
+  "prompt": "Use computer use to open {{url}} and report the rendered Inventory number.",
+  "setup": [],
+  "check": {
+    "command": "true",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [
+    "217"
+  ],
+  "requires": [
+    "computerUse"
+  ],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

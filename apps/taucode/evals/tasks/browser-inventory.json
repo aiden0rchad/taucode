@@ -1,0 +1,21 @@
+{
+  "id": "browser-inventory",
+  "repo": "web-page",
+  "category": "browser",
+  "tags": [],
+  "prompt": "Use the browser to open {{url}} and report the rendered Inventory number.",
+  "setup": [],
+  "check": {
+    "command": "true",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [
+    "217"
+  ],
+  "requires": [
+    "browser"
+  ],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

@@ -1,0 +1,9 @@
+--- a/src/lib.js
++++ b/src/lib.js
+@@ -6,5 +6,5 @@
+ export const slug = (s) => s.toLowerCase();
+ export const chunk = (xs,n) => [];
+ export const count = (xs) => {};
+-export const partition = (xs,fn) => [xs,[]];
++export const partition = (xs,fn) => [xs.filter(fn),xs.filter(x=>!fn(x))];
+ export const even = (xs) => xs.filter(x=>x%2===0).map(x=>x*2);

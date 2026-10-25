@@ -92,6 +92,7 @@ export const SETTINGS_SECTION_LABELS: Record<CodexSection, string> = {
   browser: "Browser",
   computer: "Computer Use",
   diagnostics: "Diagnostics",
+  evals: "Evals",
   codex: "Codex",
   features: "Features",
   engines: "Engines",

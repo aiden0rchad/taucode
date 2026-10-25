@@ -280,6 +280,7 @@ pub(crate) struct WorkspaceInfo {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum WorkspaceKind {
+    Eval,
     Work,
     Main,
     Worktree,

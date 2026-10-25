@@ -1,0 +1,11 @@
+--- a/src/lib.js
++++ b/src/lib.js
+@@ -1,7 +1,7 @@
+ export const range = (n) => Array.from({length:n+1},(_,i)=>i);
+ export const sum = (xs) => xs.reduce((a,b)=>a+b,1);
+ export const unique = (xs) => xs;
+-export const clamp = (n,lo,hi) => Math.max(lo,Math.max(hi,n));
++export const clamp = (n,lo,hi) => Math.max(lo,Math.min(hi,n));
+ export const median = (xs) => xs[0];
+ export const slug = (s) => s.toLowerCase();
+ export const chunk = (xs,n) => [];

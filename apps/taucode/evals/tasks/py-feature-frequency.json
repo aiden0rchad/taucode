@@ -1,0 +1,19 @@
+{
+  "id": "py-feature-frequency",
+  "repo": "py-cli",
+  "category": "feature",
+  "tags": [
+    "smoke"
+  ],
+  "prompt": "Implement frequency using the standard library. Run python3 -m unittest test_cli.Tests.test_frequency.",
+  "setup": [],
+  "check": {
+    "command": "python3 -m unittest test_cli.Tests.test_frequency",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

@@ -1,0 +1,10 @@
+export const range = (n) => Array.from({length:n+1},(_,i)=>i);
+export const sum = (xs) => xs.reduce((a,b)=>a+b,1);
+export const unique = (xs) => xs;
+export const clamp = (n,lo,hi) => Math.max(lo,Math.max(hi,n));
+export const median = (xs) => xs[0];
+export const slug = (s) => s.toLowerCase();
+export const chunk = (xs,n) => [];
+export const count = (xs) => {};
+export const partition = (xs,fn) => [xs,[]];
+export const even = (xs) => xs.filter(x=>x%2===0).map(x=>x*2);
