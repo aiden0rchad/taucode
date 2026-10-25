@@ -1,3 +1,4 @@
+import { SettingsRow, SettingsTextField, SettingsButton, SettingsSelect, SettingsSection, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useEffect, useMemo, useRef } from "react";
 import Stethoscope from "lucide-react/dist/esm/icons/stethoscope";
 import type { Dispatch, SetStateAction } from "react";
@@ -7,11 +8,6 @@ import type {
   CodexUpdateResult,
   ModelOption,
 } from "@/types";
-import {
-  SettingsSection,
-  SettingsToggleRow,
-  SettingsToggleSwitch,
-} from "@/features/design-system/components/settings/SettingsPrimitives";
 import { FileEditorCard } from "@/features/shared/components/FileEditorCard";
 
 type SettingsCodexSectionProps = {
@@ -238,19 +234,19 @@ export function SettingsCodexSection({
           onClick={() => { const enabled = !(appSettings.mcpServers?.find(s => s.id === "codegraph")?.enabled ?? appSettings.codegraphEnabled ?? true); void onUpdateAppSettings({ ...appSettings, codegraphEnabled: enabled, mcpServers: [...(appSettings.mcpServers ?? []).filter(s => s.id !== "codegraph"), { ...(appSettings.mcpServers?.find(s => s.id === "codegraph") ?? { id: "codegraph", name: "CodeGraph" }), enabled }] }); }} />
       </SettingsToggleRow>
 
-      <div className="settings-field">
+      <SettingsRow className="settings-field">
         <label className="settings-field-label" htmlFor="codex-path">
           Default Codex path
         </label>
         <div className="settings-field-row">
-          <input
+          <SettingsTextField
             id="codex-path"
             className="settings-input"
             value={codexPathDraft}
             placeholder="codex"
             onChange={(event) => onSetCodexPathDraft(event.target.value)}
           />
-          <button
+          <SettingsButton
             type="button"
             className="ghost"
             onClick={() => {
@@ -258,34 +254,34 @@ export function SettingsCodexSection({
             }}
           >
             Browse
-          </button>
-          <button
+          </SettingsButton>
+          <SettingsButton
             type="button"
             className="ghost"
             onClick={() => onSetCodexPathDraft("")}
           >
             Use PATH
-          </button>
+          </SettingsButton>
         </div>
         <div className="settings-help">Leave empty to use the system PATH resolution.</div>
         <label className="settings-field-label" htmlFor="codex-args">
           Default Codex args
         </label>
         <div className="settings-field-row">
-          <input
+          <SettingsTextField
             id="codex-args"
             className="settings-input"
             value={codexArgsDraft}
             placeholder="--profile personal"
             onChange={(event) => onSetCodexArgsDraft(event.target.value)}
           />
-          <button
+          <SettingsButton
             type="button"
             className="ghost"
             onClick={() => onSetCodexArgsDraft("")}
           >
             Clear
-          </button>
+          </SettingsButton>
         </div>
         <div className="settings-help">
           Extra flags passed before <code>app-server</code>. Use quotes for values with spaces.
@@ -302,7 +298,7 @@ export function SettingsCodexSection({
         </div>
         <div className="settings-field-actions">
           {codexDirty && (
-            <button
+            <SettingsButton
               type="button"
               className="primary"
               onClick={() => {
@@ -311,9 +307,9 @@ export function SettingsCodexSection({
               disabled={isSavingSettings}
             >
               {isSavingSettings ? "Saving..." : "Save"}
-            </button>
+            </SettingsButton>
           )}
-          <button
+          <SettingsButton
             type="button"
             className="ghost settings-button-compact"
             onClick={() => {
@@ -323,8 +319,8 @@ export function SettingsCodexSection({
           >
             <Stethoscope aria-hidden />
             {doctorState.status === "running" ? "Running..." : "Run doctor"}
-          </button>
-          <button
+          </SettingsButton>
+          <SettingsButton
             type="button"
             className="ghost settings-button-compact"
             onClick={() => {
@@ -335,7 +331,7 @@ export function SettingsCodexSection({
           >
             <Stethoscope aria-hidden />
             {codexUpdateState.status === "running" ? "Updating..." : "Update"}
-          </button>
+          </SettingsButton>
         </div>
 
         {doctorState.result && (
@@ -393,7 +389,7 @@ export function SettingsCodexSection({
             </div>
           </div>
         )}
-      </div>
+      </SettingsRow>
 
       <div className="settings-divider" />
       <div className="settings-field-label settings-field-label--section">
@@ -417,7 +413,7 @@ export function SettingsCodexSection({
         }
       >
         <div className="settings-field-row">
-          <select
+          <SettingsSelect
             id="default-model"
             className="settings-select"
             value={selectedModelSlug}
@@ -435,15 +431,15 @@ export function SettingsCodexSection({
                 {model.displayName?.trim() || model.model}
               </option>
             ))}
-          </select>
-          <button
+          </SettingsSelect>
+          <SettingsButton
             type="button"
             className="ghost"
             onClick={onRefreshDefaultModels}
             disabled={defaultModelsLoading || defaultModelsConnectedWorkspaceCount === 0}
           >
             Refresh
-          </button>
+          </SettingsButton>
         </div>
       </SettingsToggleRow>
 
@@ -459,7 +455,7 @@ export function SettingsCodexSection({
             : "The selected model does not expose reasoning effort options."
         }
       >
-        <select
+        <SettingsSelect
           id="default-effort"
           className="settings-select"
           value={selectedEffort}
@@ -478,7 +474,7 @@ export function SettingsCodexSection({
               {effort}
             </option>
           ))}
-        </select>
+        </SettingsSelect>
       </SettingsToggleRow>
 
       <SettingsToggleRow
@@ -489,7 +485,7 @@ export function SettingsCodexSection({
         }
         subtitle="Used when there is no thread-specific override."
       >
-        <select
+        <SettingsSelect
           id="default-access"
           className="settings-select"
           value={appSettings.defaultAccessMode}
@@ -503,13 +499,13 @@ export function SettingsCodexSection({
           <option value="read-only">Read only</option>
           <option value="current">On-request</option>
           <option value="full-access">Full access</option>
-        </select>
+        </SettingsSelect>
       </SettingsToggleRow>
-      <div className="settings-field">
+      <SettingsRow className="settings-field">
         <label className="settings-field-label" htmlFor="review-delivery">
           Review mode
         </label>
-        <select
+        <SettingsSelect
           id="review-delivery"
           className="settings-select"
           value={appSettings.reviewDeliveryMode}
@@ -522,12 +518,12 @@ export function SettingsCodexSection({
         >
           <option value="inline">Inline (same thread)</option>
           <option value="detached">Detached (new review thread)</option>
-        </select>
+        </SettingsSelect>
         <div className="settings-help">
           Choose whether <code>/review</code> runs in the current thread or a detached review
           thread.
         </div>
-      </div>
+      </SettingsRow>
 
       <FileEditorCard
         title="Global AGENTS.md"

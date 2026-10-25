@@ -1,5 +1,5 @@
+import { SettingsRow, SettingsTextField, SettingsButton, SettingsSelect, SettingsTextArea, SettingsSection } from "@/features/design-system/components/settings/SettingsPrimitives";
 import type { Dispatch, SetStateAction } from "react";
-import { SettingsSection } from "@/features/design-system/components/settings/SettingsPrimitives";
 import type { WorkspaceInfo } from "@/types";
 import { pushErrorToast } from "@services/toasts";
 
@@ -53,7 +53,7 @@ export function SettingsEnvironmentsSection({
       title="Environments"
       subtitle="Configure per-project setup scripts and worktree locations."
     >
-      <div className="settings-field">
+      <SettingsRow className="settings-field">
         <label className="settings-field-label" htmlFor="settings-global-worktrees-folder">
           Global worktrees root
         </label>
@@ -62,7 +62,7 @@ export function SettingsEnvironmentsSection({
           project gets its own subfolder under this root.
         </div>
         <div className="settings-field-row">
-          <input
+          <SettingsTextField
             id="settings-global-worktrees-folder"
             type="text"
             className="settings-input"
@@ -71,7 +71,7 @@ export function SettingsEnvironmentsSection({
             placeholder="/path/to/worktrees-root"
             disabled={environmentSaving}
           />
-          <button
+          <SettingsButton
             type="button"
             className="ghost settings-button-compact"
             onClick={async () => {
@@ -95,19 +95,19 @@ export function SettingsEnvironmentsSection({
             disabled={environmentSaving}
           >
             Browse
-          </button>
+          </SettingsButton>
         </div>
         {!hasProjects ? (
           <div className="settings-field-actions">
-            <button
+            <SettingsButton
               type="button"
               className="ghost settings-button-compact"
               onClick={() => onSetGlobalWorktreesFolderDraft(_globalWorktreesFolderSaved ?? "")}
               disabled={environmentSaving || !globalWorktreesFolderDirty}
             >
               Reset
-            </button>
-            <button
+            </SettingsButton>
+            <SettingsButton
               type="button"
               className="primary settings-button-compact"
               onClick={() => {
@@ -116,23 +116,23 @@ export function SettingsEnvironmentsSection({
               disabled={environmentSaving || !globalWorktreesFolderDirty}
             >
               {environmentSaving ? "Saving..." : "Save"}
-            </button>
+            </SettingsButton>
           </div>
         ) : null}
         {!hasProjects && environmentError ? (
           <div className="settings-agents-error">{environmentError}</div>
         ) : null}
-      </div>
+      </SettingsRow>
 
       {!hasProjects ? (
         <div className="settings-empty">No projects yet.</div>
       ) : (
         <>
-          <div className="settings-field">
+          <SettingsRow className="settings-field">
             <label className="settings-field-label" htmlFor="settings-environment-project">
               Project
             </label>
-            <select
+            <SettingsSelect
               id="settings-environment-project"
               className="settings-select"
               value={environmentWorkspace?.id ?? ""}
@@ -144,13 +144,13 @@ export function SettingsEnvironmentsSection({
                   {workspace.name}
                 </option>
               ))}
-            </select>
+            </SettingsSelect>
             {environmentWorkspace ? (
               <div className="settings-help">{environmentWorkspace.path}</div>
             ) : null}
-          </div>
+          </SettingsRow>
 
-          <div className="settings-field">
+          <SettingsRow className="settings-field">
             <div className="settings-field-label">Setup script</div>
             <div className="settings-help">
               Runs once in a dedicated terminal after each new worktree is created.
@@ -158,7 +158,7 @@ export function SettingsEnvironmentsSection({
             {environmentError ? (
               <div className="settings-agents-error">{environmentError}</div>
             ) : null}
-            <textarea
+            <SettingsTextArea
               className="settings-agents-textarea"
               value={environmentDraftScript}
               onChange={(event) => onSetEnvironmentDraftScript(event.target.value)}
@@ -167,7 +167,7 @@ export function SettingsEnvironmentsSection({
               disabled={environmentSaving}
             />
             <div className="settings-field-actions">
-              <button
+              <SettingsButton
                 type="button"
                 className="ghost settings-button-compact"
                 onClick={() => {
@@ -192,16 +192,16 @@ export function SettingsEnvironmentsSection({
                 disabled={environmentSaving || environmentDraftScript.length === 0}
               >
                 Copy
-              </button>
-              <button
+              </SettingsButton>
+              <SettingsButton
                 type="button"
                 className="ghost settings-button-compact"
                 onClick={() => onSetEnvironmentDraftScript(environmentSavedScript ?? "")}
                 disabled={environmentSaving || !environmentDirty}
               >
                 Reset
-              </button>
-              <button
+              </SettingsButton>
+              <SettingsButton
                 type="button"
                 className="primary settings-button-compact"
                 onClick={() => {
@@ -210,11 +210,11 @@ export function SettingsEnvironmentsSection({
                 disabled={environmentSaving || !hasAnyChanges}
               >
                 {environmentSaving ? "Saving..." : "Save"}
-              </button>
+              </SettingsButton>
             </div>
-          </div>
+          </SettingsRow>
 
-          <div className="settings-field">
+          <SettingsRow className="settings-field">
             <label className="settings-field-label" htmlFor="settings-worktrees-folder">
               Worktrees folder
             </label>
@@ -223,7 +223,7 @@ export function SettingsEnvironmentsSection({
               the built-in default.
             </div>
             <div className="settings-field-row">
-              <input
+              <SettingsTextField
                 id="settings-worktrees-folder"
                 type="text"
                 className="settings-input"
@@ -232,7 +232,7 @@ export function SettingsEnvironmentsSection({
                 placeholder="/path/to/worktrees"
                 disabled={environmentSaving}
               />
-              <button
+              <SettingsButton
                 type="button"
                 className="ghost settings-button-compact"
                 onClick={async () => {
@@ -256,9 +256,9 @@ export function SettingsEnvironmentsSection({
                 disabled={environmentSaving}
               >
                 Browse
-              </button>
+              </SettingsButton>
             </div>
-          </div>
+          </SettingsRow>
         </>
       )}
     </SettingsSection>

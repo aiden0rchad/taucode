@@ -1,6 +1,6 @@
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import type { WorkspaceInfo } from "@/types";
+import type { ThreadSummary, WorkspaceInfo } from "@/types";
 import { SETTINGS_ROUTE_SECTION_IDS } from "@settings/components/settingsTypes";
 import type { SettingsSection } from "@app/hooks/useSettingsModalState";
 import { createPreviewHandler } from "./handler";
@@ -72,4 +72,13 @@ export function selectCode(
   const section = query.get("settings");
   const sections = SETTINGS_ROUTE_SECTION_IDS.filter(s => s !== "profile");
   if (section) openSettings(sections.find(s => s === section) ?? "display");
+}
+
+export function selectSideChat(parentId: string | null, open: (thread: ThreadSummary) => void) {
+  if (!preview || selected.has("sidechat")) return;
+  const id = new URLSearchParams(window.location.search).get("sidechat");
+  const thread = preview.state.threads.find(t => t.id === id && t.sideOf?.threadId === parentId);
+  if (!thread) return;
+  selected.add("sidechat");
+  open({ id: thread.id, name: thread.name, updatedAt: thread.updatedAt, engine: thread.engine, modelId: thread.model, modelProvider: thread.modelProvider, sideOf: thread.sideOf });
 }

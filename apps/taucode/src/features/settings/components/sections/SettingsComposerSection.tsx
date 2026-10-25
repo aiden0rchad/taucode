@@ -1,9 +1,5 @@
+import { SettingsRow, SettingsSelect, SettingsSection, SettingsSegmented, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import type { AppSettings } from "@/types";
-import {
-  SettingsSection,
-  SettingsToggleRow,
-  SettingsToggleSwitch,
-} from "@/features/design-system/components/settings/SettingsPrimitives";
 
 type ComposerPreset = AppSettings["composerEditorPreset"];
 
@@ -30,55 +26,11 @@ export function SettingsComposerSection({
       title="Composer"
       subtitle="Control helpers and formatting behavior inside the message editor."
     >
-      <div className="settings-field">
+      <SettingsRow className="settings-field">
         <div className="settings-field-label">Follow-up behavior</div>
-        <div className={`settings-segmented${appSettings.followUpMessageBehavior === "steer" ? " is-second-active" : ""}`} aria-label="Follow-up behavior">
-          <label
-            className={`settings-segmented-option${
-              appSettings.followUpMessageBehavior === "queue" ? " is-active" : ""
-            }`}
-          >
-            <input
-              className="settings-segmented-input"
-              type="radio"
-              name="follow-up-behavior"
-              value="queue"
-              checked={appSettings.followUpMessageBehavior === "queue"}
-              onChange={() =>
-                void onUpdateAppSettings({
-                  ...appSettings,
-                  followUpMessageBehavior: "queue",
-                })
-              }
-            />
-            <span className="settings-segmented-option-label">Queue</span>
-          </label>
-          <label
-            className={`settings-segmented-option${
-              appSettings.followUpMessageBehavior === "steer" ? " is-active" : ""
-            }${steerUnavailable ? " is-disabled" : ""}`}
-            title={steerUnavailable ? "Steer is unavailable in the current Codex config." : ""}
-          >
-            <input
-              className="settings-segmented-input"
-              type="radio"
-              name="follow-up-behavior"
-              value="steer"
-              checked={appSettings.followUpMessageBehavior === "steer"}
-              disabled={steerUnavailable}
-              onChange={() => {
-                if (steerUnavailable) {
-                  return;
-                }
-                void onUpdateAppSettings({
-                  ...appSettings,
-                  followUpMessageBehavior: "steer",
-                });
-              }}
-            />
-            <span className="settings-segmented-option-label">Steer</span>
-          </label>
-        </div>
+        <SettingsSegmented label="Follow-up behavior" value={appSettings.followUpMessageBehavior}
+          options={[{ value: "queue", label: "Queue" }, { value: "steer", label: "Steer", disabled: steerUnavailable }]}
+          onChange={value => void onUpdateAppSettings({ ...appSettings, followUpMessageBehavior: value as "queue" | "steer" })} />
         <div className="settings-help">
           Choose the default while a run is active. Press {followUpShortcutLabel} to send the
           opposite behavior for one message.
@@ -102,17 +54,17 @@ export function SettingsComposerSection({
             Steer is unavailable in the current Codex config. Follow-ups will queue.
           </div>
         )}
-      </div>
+      </SettingsRow>
       <div className="settings-divider" />
       <div className="settings-subsection-title">Presets</div>
       <div className="settings-subsection-subtitle">
         Choose a starting point and fine-tune the toggles below.
       </div>
-      <div className="settings-field">
+      <SettingsRow className="settings-field">
         <label className="settings-field-label" htmlFor="composer-preset">
           Preset
         </label>
-        <select
+        <SettingsSelect
           id="composer-preset"
           className="settings-select"
           value={appSettings.composerEditorPreset}
@@ -125,11 +77,11 @@ export function SettingsComposerSection({
               {label}
             </option>
           ))}
-        </select>
+        </SettingsSelect>
         <div className="settings-help">
           Presets update the toggles below. Customize any setting after selecting.
         </div>
-      </div>
+      </SettingsRow>
       <div className="settings-divider" />
       <div className="settings-subsection-title">Code fences</div>
       <SettingsToggleRow

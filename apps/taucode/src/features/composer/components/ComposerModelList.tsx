@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
 
-export type ComposerModel = { id: string; name: string; provider?: string; disabled?: boolean; disabledReason?: string };
+export type ComposerModel = { id: string; name: string; provider?: string; note?: string; disabled?: boolean; disabledReason?: string };
 
 export function ComposerModelList({ models, selectedId, defaultId, disabled, onSelect }: {
   models: ComposerModel[]; selectedId?: string | null; defaultId?: string | null; disabled?: boolean;
@@ -25,7 +25,7 @@ export function ComposerModelList({ models, selectedId, defaultId, disabled, onS
         const entries = filtered.filter(model => (model.provider ?? "Models") === provider);
         return entries.length > 0 && <div key={provider} role="group" aria-label={provider}>
           {providers.length > 1 && <div className="composer-model-provider">{provider}</div>}
-          {entries.map(model => <button type="button" role="option" aria-selected={model.id === selectedId} key={model.id} title={model.disabledReason} disabled={disabled || model.disabled} onClick={() => { void onSelect(model.id); }}><span>{model.name}</span>{model.id === selectedId && <Check size={14} aria-hidden />}</button>)}
+          {entries.map(model => <button type="button" role="option" aria-selected={model.id === selectedId} key={model.id} title={model.disabledReason} disabled={disabled || model.disabled} onClick={() => { void onSelect(model.id); }}><span>{model.name}{model.note && <small>{model.note}</small>}</span>{model.id === selectedId && <Check size={14} aria-hidden />}</button>)}
         </div>;
       })}
       {!filtered.length && <p>No models found.</p>}

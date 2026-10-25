@@ -1,5 +1,5 @@
-import { SettingsFieldRow } from "@/features/design-system/components/settings/SettingsPrimitives";
-import { SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
+import { SettingsPage, SettingsGroup, SettingsSelect, SettingsTextArea, SettingsNumberStepper, SettingsTextField, SettingsButton, SettingsRow, SettingsFieldRow, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
+import { SettingsRuntimeSetup } from "./SettingsRuntimeSetup";
 import { useEffect, useState } from "react";
 import type { AppSettings } from "@/types";
 import { computerRequest, computerRequestPermissions } from "@services/tauri";
@@ -12,7 +12,7 @@ function allowedApps(entries: (string | ComputerSettings["allowedApps"][number])
     return { ...app, access: app.bundleId.trim().toLowerCase() === "com.apple.systempreferences" ? "read-only" : app.access };
   });
 }
-export function SettingsComputerSection({ appSettings, onUpdateAppSettings }: { appSettings: AppSettings; onUpdateAppSettings: (s: AppSettings) => Promise<void> }) {
+export function SettingsComputerSection({ appSettings, onUpdateAppSettings, onManageEngines }: { onManageEngines?: () => void; appSettings: AppSettings; onUpdateAppSettings: (s: AppSettings) => Promise<void> }) {
   const [draft, setDraft] = useState({ ...defaultComputerSettings, ...appSettings.computer, allowedApps: allowedApps(appSettings.computer?.allowedApps ?? []) });
   const [status, setStatus] = useState<ComputerRun>({ steps: [] });
   const [busy, setBusy] = useState(false);
@@ -47,37 +47,35 @@ export function SettingsComputerSection({ appSettings, onUpdateAppSettings }: { 
     } catch (e) { setError(String(e)); } finally { setBusy(false); }
   };
   const options = (appSettings.providers ?? []).filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => <option key={`${p.id}/${m.id}`} value={`${p.id}/${m.id}`}>{p.name} / {m.displayName || m.id}</option>));
-  return <section className="settings-section computer-settings">
-    <h2>Computer Use</h2><p className="settings-subtitle">A vision planner proposes actions; taucode checks app policy and approvals. API keys and local providers only.</p>
+  return <SettingsPage className="computer-settings" title="Computer Use" subtitle="Configure the vision planner, app policy and approvals."><SettingsRuntimeSetup engine="computer" onManage={onManageEngines} />
+
     {error && <p role="alert">{error}</p>}
-    <fieldset disabled={busy || requesting}><legend>Planner and safety</legend>
+    <SettingsGroup disabled={busy || requesting} title={<>Planner and safety</>}>
       <SettingsToggleRow  title={<><span> Enable Computer Use</span></>}><SettingsToggleSwitch pressed={draft.enabled} onClick={() => { update({ enabled: !(draft.enabled) }); if (!(draft.enabled)) void requestAccess(true); }} /></SettingsToggleRow>
-      <SettingsFieldRow  title={<>Input mode</>}><select value={draft.mode} onChange={e => update({ mode: e.target.value as ComputerSettings["mode"] })}><option value="background">Background (recommended): you can keep using your Mac</option><option value="foreground">Foreground: takes over the mouse</option></select></SettingsFieldRow>
+      <SettingsFieldRow  title={<>Input mode</>}><SettingsSelect value={draft.mode} onChange={e => update({ mode: e.target.value as ComputerSettings["mode"] })}><option value="background">Background (recommended): you can keep using your Mac</option><option value="foreground">Foreground: takes over the mouse</option></SettingsSelect></SettingsFieldRow>
       <SettingsToggleRow  title={<><span> Allow foreground fallback (approval required for each step)</span></>}><SettingsToggleSwitch pressed={draft.allowForegroundFallback} onClick={() => update({ allowForegroundFallback: !(draft.allowForegroundFallback) })} /></SettingsToggleRow>
       <SettingsToggleRow  title={<><span> Show virtual cursor</span></>}><SettingsToggleSwitch pressed={draft.virtualCursor} onClick={() => update({ virtualCursor: !(draft.virtualCursor) })} /></SettingsToggleRow>
-      {(["planner", "grounding"] as const).map(role => <SettingsFieldRow key={role} title={<>{role === "planner" ? "Vision planner model" : "Grounding model"}</>}><select value={modelKey(draft[role])} onChange={e => update({ [role]: modelRef(e.target.value) })}><option value="">Select a registry model</option>{options}</select></SettingsFieldRow>)}
-      <SettingsFieldRow  title={<>Grounding mode</>}><select value={draft.groundingMode} onChange={e => update({ groundingMode: e.target.value as ComputerSettings["groundingMode"] })}><option value="elements">Accessibility elements (recommended)</option><option value="pixels">Vision model — pixel coordinates</option><option value="ui-tars">UI-TARS — preset coordinates</option></select></SettingsFieldRow>
-      {draft.groundingMode === "ui-tars" && <SettingsFieldRow  title={<>Grounding coordinates</>}><select value={`${draft.groundingWidth}x${draft.groundingHeight}`} onChange={e => { const [groundingWidth, groundingHeight] = e.target.value.split("x").map(Number); update({ groundingWidth, groundingHeight }); }}><option value="1920x1080">UI-TARS-1.5-7B · 1920 × 1080</option><option value="1000x1000">UI-TARS-72B · 1000 × 1000</option></select></SettingsFieldRow>}
-      <SettingsFieldRow  title={<>Typing confirmation</>}><select value={draft.confirmTyping} onChange={e => update({ confirmTyping: e.target.value as ComputerSettings["confirmTyping"] })}><option value="sensitive">Sensitive fields and risky actions</option><option value="always">Always</option><option value="risky-only">Risky only (allow Return in ordinary text fields)</option></select></SettingsFieldRow>
-      {draft.confirmTyping === "risky-only" && <p role="alert">Return can submit or send in some apps. Risky-only mode allows it in ordinary text fields of full-access apps.</p>}
-      <p>Sensitive mode allows typing in ordinary text fields of full-access apps. Secure or sensitive fields and Enter require approval. Enabled menu shortcuts use the menu title's risk policy; unresolved shortcuts outside the safe list require approval. Safe shortcuts: ⌘N, ⌘F, ⌘A, ⌘C, ⌘V, ⌘Z, ⌘⇧Z, arrows, Tab, Escape. ⌘S also requires approval, including saving a new document.</p>
-      <label>Allowed app bundle IDs (one per line)<textarea value={draft.allowedApps.map(a => a.bundleId).join("\n")} onChange={e => update({ allowedApps: allowedApps(e.target.value.split("\n").map(bundleId => draft.allowedApps.find(a => a.bundleId === bundleId) ?? { bundleId, access: "full" })) })} /></label>
-      {draft.allowedApps.map((app, index) => app.bundleId.trim() && <SettingsFieldRow key={index} title={<>Access for {app.bundleId}</>}><select disabled={app.bundleId.trim().toLowerCase() === "com.apple.systempreferences"} value={app.access} onChange={e => update({ allowedApps: draft.allowedApps.map((a, i) => i === index ? { ...a, access: e.target.value as typeof a.access } : a) })}><option value="full">Full</option><option value="read-only">Read-only</option></select></SettingsFieldRow>)}
+      {(["planner", "grounding"] as const).map(role => <SettingsFieldRow key={role} title={<>{role === "planner" ? "Vision planner model" : "Grounding model"}</>}><SettingsSelect value={modelKey(draft[role])} onChange={e => update({ [role]: modelRef(e.target.value) })}><option value="">Select a registry model</option>{options}</SettingsSelect></SettingsFieldRow>)}
+      <SettingsFieldRow  title={<>Grounding mode</>}><SettingsSelect value={draft.groundingMode} onChange={e => update({ groundingMode: e.target.value as ComputerSettings["groundingMode"] })}><option value="elements">Accessibility elements (recommended)</option><option value="pixels">Vision model — pixel coordinates</option><option value="ui-tars">UI-TARS — preset coordinates</option></SettingsSelect></SettingsFieldRow>
+      {draft.groundingMode === "ui-tars" && <SettingsFieldRow  title={<>Grounding coordinates</>}><SettingsSelect value={`${draft.groundingWidth}x${draft.groundingHeight}`} onChange={e => { const [groundingWidth, groundingHeight] = e.target.value.split("x").map(Number); update({ groundingWidth, groundingHeight }); }}><option value="1920x1080">UI-TARS-1.5-7B · 1920 × 1080</option><option value="1000x1000">UI-TARS-72B · 1000 × 1000</option></SettingsSelect></SettingsFieldRow>}
+      <SettingsFieldRow title={<>Typing confirmation</>} help={<>{draft.confirmTyping === "risky-only" && <p role="alert">Return can submit or send in some apps. Risky-only mode allows it in ordinary text fields of full-access apps.</p>}
+      <p>Sensitive mode allows typing in ordinary text fields of full-access apps. Secure or sensitive fields and Enter require approval. Enabled menu shortcuts use the menu title's risk policy; unresolved shortcuts outside the safe list require approval. Safe shortcuts: ⌘N, ⌘F, ⌘A, ⌘C, ⌘V, ⌘Z, ⌘⇧Z, arrows, Tab, Escape. ⌘S also requires approval, including saving a new document.</p></>}><SettingsSelect value={draft.confirmTyping} onChange={e => update({ confirmTyping: e.target.value as ComputerSettings["confirmTyping"] })}><option value="sensitive">Sensitive fields and risky actions</option><option value="always">Always</option><option value="risky-only">Risky only (allow Return in ordinary text fields)</option></SettingsSelect></SettingsFieldRow>
+      <SettingsFieldRow title={<>Allowed app bundle IDs (one per line)</>} className="settings-field-row-long"><SettingsTextArea value={draft.allowedApps.map(a => a.bundleId).join("\n")} onChange={e => update({ allowedApps: allowedApps(e.target.value.split("\n").map(bundleId => draft.allowedApps.find(a => a.bundleId === bundleId) ?? { bundleId, access: "full" })) })} /></SettingsFieldRow>
+      {draft.allowedApps.map((app, index) => app.bundleId.trim() && <SettingsFieldRow key={index} title={<>Access for {app.bundleId}</>}><SettingsSelect disabled={app.bundleId.trim().toLowerCase() === "com.apple.systempreferences"} value={app.access} onChange={e => update({ allowedApps: draft.allowedApps.map((a, i) => i === index ? { ...a, access: e.target.value as typeof a.access } : a) })}><option value="full">Full</option><option value="read-only">Read-only</option></SettingsSelect></SettingsFieldRow>)}
       <p>Read-only apps allow navigation clicks, scrolling and opening the app. Typing, shortcuts, setting controls, risky clicks and dragging are blocked.</p>
-      <label>Additional denied app bundle IDs (one per line)<textarea value={draft.deniedApps.join("\n")} onChange={e => update({ deniedApps: e.target.value.split("\n") })} /></label>
-      <p>Password managers, Keychain, terminal apps and known banking apps are always blocked. The run allowlist can only narrow this list.</p>
-      <p>System Settings is locked to read-only. Blocked panes: Privacy &amp; Security, Users &amp; Groups, Passwords, Login Password, Lock Screen, Touch ID &amp; Password, Wallet &amp; Apple Pay, Login Items &amp; Extensions, Sharing, Network, and Battery → Options.</p>
-      <SettingsFieldRow  title={<>Maximum steps</>}><input type="number" min={1} max={500} value={draft.maxSteps} onChange={e => update({ maxSteps: Number(e.target.value) })} /></SettingsFieldRow>
-      <SettingsFieldRow  title={<>Maximum seconds</>}><input type="number" min={1} max={3600} value={draft.maxSeconds} onChange={e => update({ maxSeconds: Number(e.target.value) })} /></SettingsFieldRow>
-      <SettingsFieldRow  title={<>Stop shortcut</>}><input value={draft.shortcut} onChange={e => update({ shortcut: e.target.value })} /></SettingsFieldRow>
-      <button className="primary" onClick={() => void save()}>{busy ? "Preparing…" : "Save Computer Use"}</button>
-    </fieldset>
+      <SettingsFieldRow title={<>Additional denied app bundle IDs (one per line)</>} className="settings-field-row-long" help={<><p>Password managers, Keychain, terminal apps and known banking apps are always blocked. The run allowlist can only narrow this list.</p><p>System Settings is locked to read-only. Blocked panes: Privacy &amp; Security, Users &amp; Groups, Passwords, Login Password, Lock Screen, Touch ID &amp; Password, Wallet &amp; Apple Pay, Login Items &amp; Extensions, Sharing, Network, and Battery → Options.</p></>}><SettingsTextArea value={draft.deniedApps.join("\n")} onChange={e => update({ deniedApps: e.target.value.split("\n") })} /></SettingsFieldRow>
+      <SettingsFieldRow  title={<>Maximum steps</>}><SettingsNumberStepper type="number" min={1} max={500} value={draft.maxSteps} onChange={e => update({ maxSteps: Number(e.target.value) })} /></SettingsFieldRow>
+      <SettingsFieldRow  title={<>Maximum seconds</>}><SettingsNumberStepper type="number" min={1} max={3600} value={draft.maxSeconds} onChange={e => update({ maxSeconds: Number(e.target.value) })} /></SettingsFieldRow>
+      <SettingsFieldRow  title={<>Stop shortcut</>}><SettingsTextField value={draft.shortcut} onChange={e => update({ shortcut: e.target.value })} /></SettingsFieldRow>
+      <SettingsButton className="primary" onClick={() => void save()}>{busy ? "Preparing…" : "Save Computer Use"}</SettingsButton>
+    </SettingsGroup>
     <p role="status">{status.setup}</p>
-    <h3>macOS permissions</h3>
-    <button className="primary" disabled={requesting || busy} onClick={() => void requestAccess()}>{requesting ? "Requesting…" : "Request access"}</button>
-    {(["screen", "accessibility"] as const).map(pane => <div className="settings-row" key={pane}><span>{pane === "screen" ? "Screen Recording" : "Accessibility"}: {status.permissions?.[pane] ? "Granted" : "Not granted"}</span><button onClick={() => void computerRequest({ action: "permissions", pane }).catch(e => setError(String(e)))}>Open System Settings — {pane === "screen" ? "Screen Recording" : "Accessibility"}</button></div>)}
-    <button disabled={requesting} onClick={() => void refresh()}>Refresh permissions</button>
+    <SettingsGroup title="macOS permissions" subtitle="Grant access to capture the screen and operate approved apps.">
+    <SettingsButton className="primary" disabled={requesting || busy} onClick={() => void requestAccess()}>{requesting ? "Requesting…" : "Request access"}</SettingsButton>
+    {(["screen", "accessibility"] as const).map(pane => <SettingsRow className="settings-row" key={pane}><span>{pane === "screen" ? "Screen Recording" : "Accessibility"}: {status.permissions?.[pane] ? "Granted" : "Not granted"}</span><SettingsButton onClick={() => void computerRequest({ action: "permissions", pane }).catch(e => setError(String(e)))}>Open System Settings — {pane === "screen" ? "Screen Recording" : "Accessibility"}</SettingsButton></SettingsRow>)}
+    <SettingsButton disabled={requesting} onClick={() => void refresh()}>Refresh permissions</SettingsButton>
     <p>Screen Recording takes effect only after quitting and reopening taucode.</p>
-    <button disabled={requesting || busy} onClick={() => void computerRequest({ action: "restart" }).catch(e => setError(String(e)))}>Quit &amp; Reopen</button>
-  </section>;
+    <SettingsButton disabled={requesting || busy} onClick={() => void computerRequest({ action: "restart" }).catch(e => setError(String(e)))}>Quit &amp; Reopen</SettingsButton>
+    </SettingsGroup>
+  </SettingsPage>;
 }

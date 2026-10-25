@@ -3,6 +3,8 @@ import { ComposerShell, ComposerSendButton } from "@/features/composer/component
 import { useState, type ComponentProps, type ReactNode } from "react";
 import type { AccessMode, ConversationItem, ModelOption } from "@/types";
 import { Messages } from "@/features/messages/components/Messages";
+import { RowMenu } from "@/features/chat/RowMenu";
+import { useReasoningSelection } from "@/features/models/reasoning";
 import type { OpenSideChat } from "./useSideChats";
 import "./sidechats.css";
 
@@ -22,40 +24,45 @@ export function SideChatSplit({ main, children, compact = false }: { main: React
   </div>;
 }
 
-export function SideChatPane({ chat, items, running, models, messageProps, onSend, onInterrupt, onClose, onDelete, onSendToMain }: {
+export function SideChatPane({ chat, items, running, models, parentModel, messageProps, onSend, onInterrupt, onClose, onDelete, onRename, onOpenSplit, onSendToMain }: {
   chat: OpenSideChat; items: ConversationItem[]; running: boolean; models: ModelOption[];
+  parentModel?: ModelOption | null;
   messageProps: Pick<ComponentProps<typeof Messages>, "openTargets" | "selectedOpenAppId" | "workspacePath" | "userInputRequests" | "onUserInputSubmit">;
-  onSend: (text: string, model: string | null, access: AccessMode) => Promise<{ status: string }>;
+  onSend: (text: string, model: string | null, access: AccessMode, effort?: string | null) => Promise<{ status: string }>;
   onInterrupt: () => Promise<unknown>; onClose: () => void; onDelete: () => void; onSendToMain: (text: string) => void;
+  onRename?: () => void; onOpenSplit?: () => void;
 }) {
   const [draft, setDraft] = useState("");
-  const [model, setModel] = useState(chat.model);
-  const [access, setAccess] = useState<AccessMode>("read-only");
+  const [modelOverride, setModel] = useState<string | null>(null);
+  const inheritedId = chat.model ?? parentModel?.id ?? null;
+  const inheritedModel = models.find(entry => entry.id === inheritedId || entry.model === inheritedId) ?? (parentModel?.id === inheritedId ? parentModel : undefined);
+  const model = modelOverride ?? inheritedModel?.id ?? inheritedId;
+  const selectedModel = models.find(entry => entry.id === model) ?? (inheritedModel?.id === model ? inheritedModel : undefined);
+  const capability = chat.engine === "claude" ? selectedModel?.acpReasoning : selectedModel?.reasoning;
+  const reasoning = useReasoningSelection(model ?? "", chat.id, capability);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const send = async () => {
     if (!draft.trim() || sending || running) return;
     setSending(true); setError(null);
-    try { const result = await onSend(draft, model, access); if (result.status === "sent") setDraft(""); else setError("Message could not be sent. Your draft is preserved."); }
+    try { const result = await onSend(draft, model, "read-only", reasoning.level); if (result.status === "sent") setDraft(""); else setError("Message could not be sent. Your draft is preserved."); }
     catch (e) { setError(String(e)); }
     finally { setSending(false); }
   };
-  return <>
-    <header className="side-chat-header"><button className="ghost" onClick={onClose} aria-label="Close side chat"><ArrowLeft aria-hidden />Back</button><strong>{chat.title}</strong><span role="status">{running ? "Running" : "Idle"}</span><button className="ghost" onClick={onDelete}>Archive</button></header>
-    <Messages {...messageProps} items={items} threadId={chat.id} workspaceId={chat.workspaceId} isThinking={running} onSendToMain={onSendToMain} />
+  return <div className="side-chat-pane">
+    <header className="side-chat-header"><MessagesSquare size={16} aria-hidden /><strong title={chat.title}>{chat.title}</strong><span className="side-chat-status" role="status">{running ? "Running" : "Idle"}</span><RowMenu label="side chat" actions={[
+      { label: "Rename", onClick: () => onRename?.(), disabled: !onRename },
+      { label: "Archive", onClick: onDelete },
+      { label: "Open in split view", onClick: () => onOpenSplit?.(), disabled: !onOpenSplit },
+    ]}><span /></RowMenu></header>
+    <div className="side-chat-messages"><Messages {...messageProps} items={items} threadId={chat.id} workspaceId={chat.workspaceId} isThinking={running} onSendToMain={onSendToMain} /></div>
     <form className="side-chat-composer" onSubmit={e => { e.preventDefault(); void send(); }}>
-      <ComposerShell menu={<button type="button" onClick={onClose}><ArrowLeft aria-hidden />Back to main thread</button>} toolbar={<><span className="composer-chip"><MessagesSquare aria-hidden />Side chat</span><div className="side-chat-controls">
-        <label className="composer-model-chip">Model<select value={model ?? ""} onChange={e => setModel(e.target.value)} disabled={running}>
-          {!models.some(m => m.id === model) && <option value={model ?? ""}>{model ?? "Parent model"}</option>}
-          {models.filter(m => !m.engines || m.engines.includes(chat.engine)).map(m => <option key={m.id} value={m.id}>{m.displayName}</option>)}
-        </select></label>
-        <label className="composer-chip"><Shield aria-hidden /><select aria-label="Access" value={access} onChange={e => setAccess(e.target.value as AccessMode)} disabled={running}>
-          <option value="read-only">Read-only</option><option value="current">Workspace</option><option value="full-access">Full access</option>
-        </select></label>
-      </div></>} actions={<ComposerSendButton running={running} disabled={sending || !draft.trim()} disabledReason={sending ? "Sending message" : "Write a message"} onSend={() => { void send(); }} onStop={() => { void onInterrupt().catch(e => setError(String(e))); }} />}>
+      <ComposerShell menu={<button type="button" onClick={onClose}><ArrowLeft aria-hidden />Close side chat</button>}
+        reasoning={{ modelName: selectedModel?.displayName ?? model ?? "Loading model…", models: models.filter(m => !m.engines || m.engines.includes(chat.engine)).map(m => ({ id: m.id, name: m.displayName, provider: m.providerName, note: m.id === (parentModel?.id ?? inheritedModel?.id) ? "Same as parent" : undefined })), selectedModelId: model, onSelectModel: setModel, capability, value: reasoning.requested, onChange: reasoning.onChange, disabled: running || sending }}
+        toolbar={<span className="composer-chip" title="Side chats use read-only access"><Shield aria-hidden />Read-only</span>} actions={<ComposerSendButton running={running} disabled={sending || !draft.trim()} disabledReason={sending ? "Sending message" : "Write a message"} onSend={() => { void send(); }} onStop={() => { void onInterrupt().catch(e => setError(String(e))); }} />}>
       <label className="side-chat-prompt"><textarea placeholder="Ask anything" aria-label="Side chat message" value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} /></label>
       {error && <p role="alert">{error}</p>}
       </ComposerShell>
     </form>
-  </>;
+  </div>;
 }

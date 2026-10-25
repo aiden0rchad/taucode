@@ -23,6 +23,9 @@ Direct screenshot URLs:
 
 Missing or invalid IDs select the first fixture. Settings URLs open Code mode.
 Selections apply once per page load, so subsequent navigation remains interactive.
+Use `?mode=code&thread=thread-rich&sidechat=thread-side` for a populated side-chat panel tab.
+Every settings section is available through `?settings=<section>`; Models & Agents includes Defaults, Subagents, Roles and Engines.
+
 Use the Agents panel, Side chat list, and Rewind action in `thread-rich` to inspect
 the additional fixtures. Settings → Import → Detect local sources shows mock imports.
 

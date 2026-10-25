@@ -17,6 +17,28 @@ function Providers({ initial = [] }: { initial?: ProviderEntry[] }) {
 describe("provider registry settings", () => {
   afterEach(cleanup);
   beforeEach(() => { vi.resetAllMocks(); vi.mocked(providerHasApiKey).mockResolvedValue(false); });
+  it("saves only changed policy, acknowledges success, and preserves edits after failure", async () => {
+    const save = vi.fn().mockRejectedValueOnce(new Error("Save failed")).mockResolvedValue(undefined);
+    render(<SettingsAgentPolicySection appSettings={{ agentPolicy: defaultAgentPolicy } as AppSettings} onUpdateAppSettings={save} tab="defaults" />);
+    const button = screen.getByRole("button", { name: "Save policy" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.classList.contains("primary")).toBe(true);
+    expect(button.closest(".settings-section-actions")).toBeTruthy();
+    expect(screen.getByText(/^Engine enforcement:/).className).toBe("settings-group-description");
+    fireEvent.change(screen.getByLabelText("Default engine"), { target: { value: "codex" } });
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Error: Save failed");
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(await screen.findByRole("button", { name: "Saved" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("status").textContent).toBe("Policy saved");
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ agentPolicy: expect.objectContaining({ defaultEngine: "codex" }) }));
+    fireEvent.change(screen.getByLabelText("Default engine"), { target: { value: "pi" } });
+    expect(screen.getByRole("button", { name: "Save policy" })).toHaveProperty("disabled", false);
+    fireEvent.change(screen.getByLabelText("Default engine"), { target: { value: "codex" } });
+    expect(screen.getByRole("button", { name: "Saved" })).toHaveProperty("disabled", true);
+  });
   it("saves Anthropic compatibility and enables the Claude default engine", async () => {
     const save = vi.fn().mockResolvedValue(undefined);
     const { rerender } = render(<SettingsProvidersSection appSettings={{ providers: [provider] } as AppSettings} onUpdateAppSettings={save} />);
@@ -78,7 +100,7 @@ describe("provider registry settings", () => {
     fireEvent.change(screen.getByLabelText("Max concurrent"), { target: { value: "17" } });
     expect(screen.getByRole("alert").textContent).toContain("concurrent 1–16");
     expect((screen.getByText("Save policy") as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText("Max concurrent"), { target: { value: "4" } });
+    fireEvent.change(screen.getByLabelText("Max concurrent"), { target: { value: "3" } });
     expect((screen.getByText("Save policy") as HTMLButtonElement).disabled).toBe(false);
     fireEvent.change(screen.getAllByLabelText("Role model")[0], { target: { value: "local/large" } });
     expect(screen.getByRole("alert").textContent).toContain("must be in allowed models");
@@ -91,6 +113,12 @@ describe("provider registry settings", () => {
     expect(screen.getAllByText("Allowed models: pi").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Max concurrent: pi, codex").length).toBeGreaterThan(0);
     expect(screen.getByText("Effective policy for Project (app + workspace)")).toBeTruthy();
+    const disclosure = screen.getByRole("button", { name: "Effective policy for Project (app + workspace)" });
+    expect(disclosure.querySelector("svg")).toBeTruthy();
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(disclosure);
+    expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById(disclosure.getAttribute("aria-controls")!)?.hidden).toBe(false);
     expect((screen.getAllByLabelText("Max concurrent")[1] as HTMLInputElement).value).toBe("2");
     expect((screen.getAllByLabelText("Max per turn")[1] as HTMLInputElement).value).toBe("8");
   });

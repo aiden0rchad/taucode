@@ -1,4 +1,4 @@
-import { SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
+import { SettingsPage, SettingsGroup, SettingsRow, SettingsButton, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useEffect, useState } from "react";
 import type { ImportDetection, ImportEntry, ImportLog, ImportProgress, ImportedTranscript } from "@/types";
 import { importRequest, pickImportExport } from "@services/tauri";
@@ -61,13 +61,12 @@ export function SettingsImportSection({ historyOnly = false }: { historyOnly?: b
   };
   const sources = [...new Set(detection?.entries.map(e => e.source))];
   const disabled = busy || progress.running;
-  return <section className="settings-section registry-settings import-settings">
-    <h2>{historyOnly ? "Imported Work history" : "Import"}</h2>
-    <p className="settings-subtitle">Copy local history into taucode. Sources stay unchanged. Credentials are excluded; imported connectors start disabled.</p>
+  return <SettingsPage className="registry-settings import-settings" title={historyOnly ? "Imported Work history" : "Import"} subtitle="Bring conversations and projects into taucode."><SettingsGroup title="Preferences">
+
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {!historyOnly && <>
-      <div className="import-actions"><button disabled={disabled} onClick={() => void run(() => detect())}>Detect local sources</button><button disabled={disabled} onClick={() => void run(async () => { const path = await pickImportExport(); if (path) await detect(path); })}>Import chats from export file…</button></div>
+      <SettingsRow className="import-actions"><SettingsButton disabled={disabled} onClick={() => void run(() => detect())}>Detect local sources</SettingsButton><SettingsButton disabled={disabled} onClick={() => void run(async () => { const path = await pickImportExport(); if (path) await detect(path); })}>Import chats from export file…</SettingsButton></SettingsRow>
       {detection && <>
         <SettingsToggleRow  title={<>Include archived</>}><SettingsToggleSwitch pressed={archived} disabled={disabled} onClick={() => { setArchived(!(archived)); toggle(detection.entries.filter(v => v.archived && v.kind !== "skipped"), !(archived)); }} /></SettingsToggleRow>
         {detection.warnings.map((warning, i) => <p key={i} role="status">{warning}</p>)}
@@ -89,23 +88,23 @@ export function SettingsImportSection({ historyOnly = false }: { historyOnly?: b
             })}
           </details>;
         })}
-        <button disabled={disabled || !selected.size} onClick={() => void run(async () => { const log = await importRequest<ImportLog>("run", { keys: [...selected] }); setSummary(log); await refresh(); notifyImportsChanged(); })}>Import selected ({selected.size})</button>
+        <SettingsButton disabled={disabled || !selected.size} onClick={() => void run(async () => { const log = await importRequest<ImportLog>("run", { keys: [...selected] }); setSummary(log); await refresh(); notifyImportsChanged(); })}>Import selected ({selected.size})</SettingsButton>
       </>}
     </>}
-    {disabled && <div role="status"><p>{progress.phase === "detect" ? "Detecting sources…" : "Import operation in progress…"} {progress.completed}/{progress.total}</p><progress aria-label="Import progress" max={Math.max(1, progress.total)} value={progress.completed} /><button onClick={() => void importRequest("cancel").catch(e => setError(String(e)))}>Cancel import</button></div>}
+    {disabled && <div role="status"><p>{progress.phase === "detect" ? "Detecting sources…" : "Import operation in progress…"} {progress.completed}/{progress.total}</p><progress aria-label="Import progress" max={Math.max(1, progress.total)} value={progress.completed} /><SettingsButton onClick={() => void importRequest("cancel").catch(e => setError(String(e)))}>Cancel import</SettingsButton></div>}
     {summary && <div role="status"><h3>{summary.undone ? "Import undone" : summary.cancelled ? "Import cancelled" : "Import complete"}</h3><p>{summary.created.length} imported, {summary.skipped.length} skipped.</p>{[...summary.skipped, ...summary.warnings].map((message,i) => <p key={i}>{message}</p>)}</div>}
-    {confirmation && <div role="alert"><p>These imported items were continued or changed: {confirmation.titles.join(", ")}. Undo will remove their imported files. Continuations created with Continue are kept.</p><button disabled={disabled} onClick={() => void run(() => undo(confirmation.id, true))}>Remove changed imports</button><button onClick={() => setConfirmation(null)}>Keep imports</button></div>}
+    {confirmation && <div role="alert"><p>These imported items were continued or changed: {confirmation.titles.join(", ")}. Undo will remove their imported files. Continuations created with Continue are kept.</p><SettingsButton disabled={disabled} onClick={() => void run(() => undo(confirmation.id, true))}>Remove changed imports</SettingsButton><SettingsButton onClick={() => setConfirmation(null)}>Keep imports</SettingsButton></div>}
     <h3>Import history</h3>
     {!logs.length && <p>No imports yet.</p>}
     {logs.filter(log => !historyOnly || log.created.some(e => e.kind === "work")).map(log => <details key={log.id} className="import-source"><summary>{log.id} · {log.created.length} items{log.undone ? " · undone" : ""}</summary>
-      {!log.undone && <><button disabled={disabled} onClick={() => void run(() => undo(log.id))}>Undo import</button>{log.created.filter(e => !["connector", "project"].includes(e.kind) && (!historyOnly || e.kind === "work")).map(entry => <button className="import-history-link" disabled={disabled} key={entry.key} onClick={() => void run(async () => setHistory({ logId: log.id, key: entry.key, transcript: await importRequest<ImportedTranscript>("read", { logId: log.id, key: entry.key }) }))}>{entry.title}</button>)}</>}
+      {!log.undone && <><SettingsButton disabled={disabled} onClick={() => void run(() => undo(log.id))}>Undo import</SettingsButton>{log.created.filter(e => !["connector", "project"].includes(e.kind) && (!historyOnly || e.kind === "work")).map(entry => <SettingsButton className="import-history-link" disabled={disabled} key={entry.key} onClick={() => void run(async () => setHistory({ logId: log.id, key: entry.key, transcript: await importRequest<ImportedTranscript>("read", { logId: log.id, key: entry.key }) }))}>{entry.title}</SettingsButton>)}</>}
       {[...log.skipped,...log.warnings].map((message,i) => <p key={i}>{message}</p>)}
     </details>)}
     {history && <article className="import-transcript" aria-label="Imported transcript"><h3>{history.transcript.title}</h3><p>Read-only imported snapshot · {history.transcript.source}</p>
-      {history.transcript.kind === "work" ? <p>Available in Work mode with copied outputs and uploads. Open Work mode to continue as a new task.</p> : <button disabled={disabled} onClick={() => void run(async () => { await importRequest("continue", { logId: history.logId, key: history.key }); notifyImportsChanged(); setNotice("Continuation created. Open Chat mode to continue in pi."); })}>Continue in pi</button>}<button onClick={() => setHistory(null)}>Close transcript</button>
+      {history.transcript.kind === "work" ? <p>Available in Work mode with copied outputs and uploads. Open Work mode to continue as a new task.</p> : <SettingsButton disabled={disabled} onClick={() => void run(async () => { await importRequest("continue", { logId: history.logId, key: history.key }); notifyImportsChanged(); setNotice("Continuation created. Open Chat mode to continue in pi."); })}>Continue in pi</SettingsButton>}<SettingsButton onClick={() => setHistory(null)}>Close transcript</SettingsButton>
       {history.transcript.messages?.map((m,i) => <div key={i}><strong>{m.role}</strong><p>{m.text}</p></div>)}
       {history.transcript.raw?.map((entry,i) => <details key={i}><summary>Audit entry {i + 1}</summary><pre>{JSON.stringify(entry,null,2)}</pre></details>)}
       {!!history.transcript.attachments?.length && <><h4>Copied attachments</h4><ul>{history.transcript.attachments.map(name => <li key={name}>{name}</li>)}</ul></>}
     </article>}
-  </section>;
+  </SettingsGroup></SettingsPage>;
 }

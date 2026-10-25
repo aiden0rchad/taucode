@@ -1,10 +1,5 @@
+import { SettingsButton, SettingsSelect, SettingsPage, SettingsGroup, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import type { CodexFeature } from "@/types";
-import {
-  SettingsSection,
-  SettingsSubsection,
-  SettingsToggleRow,
-  SettingsToggleSwitch,
-} from "@/features/design-system/components/settings/SettingsPrimitives";
 import type { SettingsFeaturesSectionProps } from "@settings/hooks/useSettingsFeaturesSection";
 import { fileManagerName, openInFileManagerLabel } from "@utils/platformPaths";
 
@@ -94,23 +89,23 @@ export function SettingsFeaturesSection({
   onUpdateAppSettings,
 }: SettingsFeaturesSectionProps) {
   return (
-    <SettingsSection
+    <SettingsPage
       title="Features"
       subtitle="Manage stable and experimental Codex features."
-    >
+    ><SettingsGroup title="Preferences">
       <SettingsToggleRow
         title="Config file"
         subtitle={`Open the Codex config in ${fileManagerName()}.`}
       >
-        <button type="button" className="ghost" onClick={onOpenConfig}>
+        <SettingsButton type="button" className="ghost" onClick={onOpenConfig}>
           {openInFileManagerLabel()}
-        </button>
+        </SettingsButton>
       </SettingsToggleRow>
       {openConfigError && <div className="settings-help">{openConfigError}</div>}
-      <SettingsSubsection
+      </SettingsGroup><SettingsGroup
         title="Stable Features"
         subtitle="Production-ready features enabled by default."
-      />
+      >
       <SettingsToggleRow
         title="Personality"
         subtitle={
@@ -120,7 +115,7 @@ export function SettingsFeaturesSection({
           </>
         }
       >
-        <select
+        <SettingsSelect
           id="features-personality-select"
           className="settings-select"
           value={appSettings.personality}
@@ -134,7 +129,7 @@ export function SettingsFeaturesSection({
         >
           <option value="friendly">Friendly</option>
           <option value="pragmatic">Pragmatic</option>
-        </select>
+        </SettingsSelect>
       </SettingsToggleRow>
       <SettingsToggleRow
         title="Pause queued messages when a response is required"
@@ -170,10 +165,10 @@ export function SettingsFeaturesSection({
         stableFeatures.length === 0 && (
         <div className="settings-help">No stable feature flags returned by Codex.</div>
       )}
-      <SettingsSubsection
+      </SettingsGroup><SettingsGroup
         title="Experimental Features"
         subtitle="Preview and under-development features."
-      />
+      >
       {experimentalFeatures.map((feature) => (
         <SettingsToggleRow
           key={feature.name}
@@ -205,6 +200,6 @@ export function SettingsFeaturesSection({
         </div>
       )}
       {featureError && <div className="settings-help">{featureError}</div>}
-    </SettingsSection>
+    </SettingsGroup></SettingsPage>
   );
 }

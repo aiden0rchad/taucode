@@ -7,7 +7,7 @@ import { defaultComputerSettings, parseComputerRun } from "./computer";
 import { SettingsComputerSection } from "@settings/components/sections/SettingsComputerSection";
 import { computerRequest, computerRequestPermissions } from "@services/tauri";
 import type { AppSettings } from "@/types";
-vi.mock("@services/tauri", () => ({ computerRequest: vi.fn(), computerRequestPermissions: vi.fn() }));
+vi.mock("@services/tauri", () => ({ engineRuntime: async () => [{ engine: "computer", state: "ready", message: "Ready" }], computerRequest: vi.fn(), computerRequestPermissions: vi.fn() }));
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const step = { step: 1, thumbnail: "aGVsbG8=", action: { kind: "click" }, reflection: "Found button" };
 describe("computer use", () => {

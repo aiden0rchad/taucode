@@ -1,13 +1,10 @@
+import { SettingsTextField, SettingsButton, SettingsSelect, SettingsPage, SettingsGroup } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { CodegraphProjectSettings } from "./CodegraphProjectSettings";
 import type { WorkspaceSettings } from "@/types";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2";
 import type { Dispatch, SetStateAction } from "react";
-import {
-  SettingsSection,
-  SettingsSubsection,
-} from "@/features/design-system/components/settings/SettingsPrimitives";
 import type { WorkspaceGroup, WorkspaceInfo } from "@/types";
 
 type GroupedWorkspaces = Array<{
@@ -64,17 +61,17 @@ export function SettingsProjectsSection({
   onDeleteWorkspace,
 }: SettingsProjectsSectionProps) {
   return (
-    <SettingsSection
+    <SettingsPage
       title="Projects"
       subtitle="Group related workspaces and reorder projects within each group."
     >
-      <SettingsSubsection
+      <SettingsGroup
         title="Groups"
         subtitle="Create group labels for related repositories."
-      />
+      >
       <div className="settings-groups">
         <div className="settings-group-create">
-          <input
+          <SettingsTextField
             className="settings-input settings-input--compact"
             value={newGroupName}
             placeholder="New group name"
@@ -86,7 +83,7 @@ export function SettingsProjectsSection({
               }
             }}
           />
-          <button
+          <SettingsButton
             type="button"
             className="ghost settings-button-compact"
             onClick={() => {
@@ -95,7 +92,7 @@ export function SettingsProjectsSection({
             disabled={!canCreateGroup}
           >
             Add group
-          </button>
+          </SettingsButton>
         </div>
         {groupError && <div className="settings-group-error">{groupError}</div>}
         {workspaceGroups.length > 0 ? (
@@ -103,7 +100,7 @@ export function SettingsProjectsSection({
             {workspaceGroups.map((group, index) => (
               <div key={group.id} className="settings-group-row">
                 <div className="settings-group-fields">
-                  <input
+                  <SettingsTextField
                     className="settings-input settings-input--compact"
                     value={groupDrafts[group.id] ?? group.name}
                     onChange={(event) =>
@@ -131,7 +128,7 @@ export function SettingsProjectsSection({
                       >
                         {group.copiesFolder ?? "Not set"}
                       </div>
-                      <button
+                      <SettingsButton
                         type="button"
                         className="ghost settings-button-compact"
                         onClick={() => {
@@ -139,8 +136,8 @@ export function SettingsProjectsSection({
                         }}
                       >
                         Choose…
-                      </button>
-                      <button
+                      </SettingsButton>
+                      <SettingsButton
                         type="button"
                         className="ghost settings-button-compact"
                         onClick={() => {
@@ -149,12 +146,12 @@ export function SettingsProjectsSection({
                         disabled={!group.copiesFolder}
                       >
                         Clear
-                      </button>
+                      </SettingsButton>
                     </div>
                   </div>
                 </div>
                 <div className="settings-group-actions">
-                  <button
+                  <SettingsButton
                     type="button"
                     className="ghost icon-button"
                     onClick={() => {
@@ -164,8 +161,8 @@ export function SettingsProjectsSection({
                     aria-label="Move group up"
                   >
                     <ChevronUp aria-hidden />
-                  </button>
-                  <button
+                  </SettingsButton>
+                  <SettingsButton
                     type="button"
                     className="ghost icon-button"
                     onClick={() => {
@@ -175,8 +172,8 @@ export function SettingsProjectsSection({
                     aria-label="Move group down"
                   >
                     <ChevronDown aria-hidden />
-                  </button>
-                  <button
+                  </SettingsButton>
+                  <SettingsButton
                     type="button"
                     className="ghost icon-button"
                     onClick={() => {
@@ -185,7 +182,7 @@ export function SettingsProjectsSection({
                     aria-label="Delete group"
                   >
                     <Trash2 aria-hidden />
-                  </button>
+                  </SettingsButton>
                 </div>
               </div>
             ))}
@@ -194,10 +191,10 @@ export function SettingsProjectsSection({
           <div className="settings-empty">No groups yet.</div>
         )}
       </div>
-      <SettingsSubsection
+      </SettingsGroup><SettingsGroup
         title="Projects"
         subtitle="Assign projects to groups and adjust their order."
-      />
+      >
       <div className="settings-projects">
         {groupedWorkspaces.map((group) => (
           <div key={group.id ?? "ungrouped"} className="settings-project-group">
@@ -209,15 +206,17 @@ export function SettingsProjectsSection({
                 ? workspace.settings.groupId ?? ""
                 : "";
               return (
-                <div key={workspace.id} className="settings-project-row">
+                <details key={workspace.id} className="settings-project-row">
+                  <summary><strong>{workspace.name}</strong><span>{workspace.path}</span></summary>
                   <div className="settings-project-info">
                     <div className="settings-project-name">{workspace.name}</div>
                     <div className="settings-project-path">{workspace.path}</div>
                     <CodegraphProjectSettings workspace={workspace} globalEnabled={codegraphEnabled} onUpdate={onUpdateWorkspaceSettings} />
                   </div>
                   <div className="settings-project-actions">
-                    <select
+                    <SettingsSelect
                       className="settings-select settings-select--compact"
+                      aria-label={"Group for " + workspace.name}
                       value={groupValue}
                       onChange={(event) => {
                         const nextGroupId = event.target.value || null;
@@ -230,8 +229,8 @@ export function SettingsProjectsSection({
                           {entry.name}
                         </option>
                       ))}
-                    </select>
-                    <button
+                    </SettingsSelect>
+                    <SettingsButton
                       type="button"
                       className="ghost icon-button"
                       onClick={() => onMoveWorkspace(workspace.id, "up")}
@@ -239,8 +238,8 @@ export function SettingsProjectsSection({
                       aria-label="Move project up"
                     >
                       <ChevronUp aria-hidden />
-                    </button>
-                    <button
+                    </SettingsButton>
+                    <SettingsButton
                       type="button"
                       className="ghost icon-button"
                       onClick={() => onMoveWorkspace(workspace.id, "down")}
@@ -248,23 +247,23 @@ export function SettingsProjectsSection({
                       aria-label="Move project down"
                     >
                       <ChevronDown aria-hidden />
-                    </button>
-                    <button
+                    </SettingsButton>
+                    <SettingsButton
                       type="button"
                       className="ghost icon-button"
                       onClick={() => onDeleteWorkspace(workspace.id)}
                       aria-label="Delete project"
                     >
                       <Trash2 aria-hidden />
-                    </button>
+                    </SettingsButton>
                   </div>
-                </div>
+                </details>
               );
             })}
           </div>
         ))}
         {projects.length === 0 && <div className="settings-empty">No projects yet.</div>}
       </div>
-    </SettingsSection>
+    </SettingsGroup></SettingsPage>
   );
 }

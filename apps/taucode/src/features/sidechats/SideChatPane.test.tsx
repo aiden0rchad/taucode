@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
+import type { ModelOption } from "@/types";
 import { SideChatPane, SideChatSplit } from "./SideChatPane";
 import { sideChatQuote } from "./useSideChats";
 
@@ -10,12 +11,31 @@ afterEach(cleanup);
 const chat = { id: "child", parentId: "main", workspaceId: "ws", title: "Research", engine: "pi" as const, model: "test/model" };
 const props = () => ({ chat, items: [], models: [], running: false, messageProps: { openTargets: [], selectedOpenAppId: "" }, onSend: vi.fn().mockResolvedValue({ status: "sent" }), onInterrupt: vi.fn().mockResolvedValue(undefined), onClose: vi.fn(), onDelete: vi.fn(), onSendToMain: vi.fn() });
 describe("Side chats", () => {
+  it("resolves a late parent model with reasoning and puts the inheritance note only in the model list", async () => {
+    localStorage.clear();
+    const p = props();
+    const parent: ModelOption = { id: "test/parent", model: "parent", displayName: "Parent display name", description: "", supportedReasoningEfforts: [], defaultReasoningEffort: "high", isDefault: true, reasoning: { supported: true, levels: ["low", "high"], default: "high", control: "effort", source: "api", detectedAt: 1 } };
+    const other = { ...parent, id: "test/other", model: "other", displayName: "Other model" };
+    const { rerender } = render(<SideChatPane {...p} chat={{ ...chat, model: null }} />);
+    expect(screen.queryByText("Parent model")).toBeNull();
+    rerender(<SideChatPane {...p} chat={{ ...chat, model: null }} models={[parent, other]} parentModel={parent} />);
+    const chip = screen.getByRole("button", { name: "Parent display name · High" });
+    expect(chip.textContent).not.toContain("Same as parent");
+    fireEvent.click(chip);
+    fireEvent.click(screen.getByRole("button", { name: "Parent display name" }));
+    expect(screen.getByText("Same as parent").tagName).toBe("SMALL");
+    fireEvent.click(screen.getByRole("option", { name: "Other model" }));
+    await screen.findByRole("button", { name: "Other model · High" });
+    fireEvent.change(screen.getByLabelText("Side chat message"), { target: { value: "Explore" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(p.onSend).toHaveBeenCalledWith("Explore", "test/other", "read-only", "high"));
+  });
   it("sends with the parent model and read-only access; preserves blocked drafts", async () => {
     const p = props(); p.onSend.mockResolvedValue({ status: "blocked" });
     render(<SideChatPane {...p} />);
     fireEvent.change(screen.getByLabelText("Side chat message"), { target: { value: "Explore" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => expect(p.onSend).toHaveBeenCalledWith("Explore", "test/model", "read-only"));
+    await waitFor(() => expect(p.onSend).toHaveBeenCalledWith("Explore", "test/model", "read-only", null));
     expect((screen.getByLabelText("Side chat message") as HTMLTextAreaElement).value).toBe("Explore");
     expect(await screen.findByRole("alert")).toBeTruthy();
   });
@@ -34,9 +54,11 @@ describe("Side chats", () => {
     const p = props(); render(<SideChatPane {...p} running />);
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     expect(p.onInterrupt).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Add attachments and tools" }));
     fireEvent.click(screen.getByRole("button", { name: "Close side chat" }));
     expect(p.onClose).toHaveBeenCalledOnce(); expect(p.onDelete).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actions for side chat" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
     expect(p.onDelete).toHaveBeenCalledOnce();
   });
   it("supports keyboard resizing and a narrow sheet", () => {

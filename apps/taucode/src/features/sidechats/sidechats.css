@@ -6,9 +6,18 @@
 .side-chat-header { display: flex; align-items: center; gap: 8px; padding: 10px; border-bottom: 1px solid var(--border-subtle); font-size: 12px; }
 .side-chat-header strong { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-chat-composer { padding: 12px; border-top: 1px solid var(--border-subtle); }
-.side-chat-controls { display: flex; gap: 10px; }
-.side-chat-controls label { flex: 1; min-width: 0; font-size: 11px; }
-.side-chat-controls select { width: 100%; margin: 4px 0 8px; background: var(--surface-messages); color: var(--text-primary); }
+.side-chat-pane { display: flex; flex-direction: column; flex: 1; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+.side-chat-header > svg { flex-shrink: 0; }
+.side-chat-header > .mode-row { width: 28px; flex-shrink: 0; }
+.side-chat-header .mode-row-menu-trigger { position: static; opacity: 1; }
+.side-chat-status { font-size: 11px; border: 1px solid var(--border-subtle); border-radius: 99px; padding: 3px 7px; background: var(--surface-card); }
+.side-chat-messages { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.side-chat-pane .messages-full { margin: 0; padding: 16px; box-sizing: border-box; width: 100%; }
+.side-chat-pane .messages-inner { width: 100%; max-width: 780px; min-width: 0; }
+.side-chat-pane .message { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.side-chat-pane .composer-shell-toolbar { flex-wrap: wrap; gap: 8px; }
+.side-chat-pane .composer-shell-actions { min-width: 0; margin-left: auto; }
+.side-chat-pane .reasoning-chip { min-width: 0; }
 .side-chat-prompt { display: block; font-size: 11px; }
 .side-chat-prompt textarea { display: block; resize: vertical; min-height: 64px; width: 100%; box-sizing: border-box; margin: 4px 0 8px; background: var(--surface-messages); color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 8px; }
 .message-side-actions { display: flex; gap: 8px; margin-top: 8px; }
@@ -17,5 +26,5 @@
   .side-chat-sheet { flex: 1 1 100% !important; width: 100%; min-width: 0; }
 }
 
-.main .side-chat-sheet .messages-full { margin-top: 0; padding: 12px; }
+.main .side-chat-sheet .messages-full { margin-top: 0; padding: 16px; }
 .side-chat-main > .composer, .side-chat-header, .side-chat-composer { flex-shrink: 0; }

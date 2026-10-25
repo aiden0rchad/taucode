@@ -1751,7 +1751,7 @@ describe("SettingsView Composer", () => {
       },
     });
 
-    fireEvent.click(screen.getByRole("radio", { name: "Steer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Steer" }));
 
     await waitFor(() => {
       expect(onUpdateAppSettings).toHaveBeenCalledWith(
@@ -1770,7 +1770,7 @@ describe("SettingsView Composer", () => {
       },
     });
 
-    const steerOption = screen.getByRole("radio", { name: "Steer" });
+    const steerOption = screen.getByRole("button", { name: "Steer" });
     expect(steerOption.hasAttribute("disabled")).toBe(true);
     expect(
       screen.getByText(

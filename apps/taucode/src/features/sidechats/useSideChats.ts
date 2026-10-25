@@ -23,7 +23,7 @@ export function useSideChats({ workspace, threadId, threads, engine, model, refr
   const messageDisabledReason = sideChatDisabledReason(engine, advertised, true);
   const open = useCallback((thread: ThreadSummary) => {
     if (!thread.sideOf) return;
-    setOpened({ id: thread.id, parentId: thread.sideOf.threadId, workspaceId: thread.sideOf.workspaceId, title: thread.name, engine: thread.engine ?? engine, model: thread.modelId ? (thread.modelId.includes("/") ? thread.modelId : `${thread.modelProvider}/${thread.modelId}`) : model });
+    setOpened({ id: thread.id, parentId: thread.sideOf.threadId, workspaceId: thread.sideOf.workspaceId, title: thread.name, engine: thread.engine ?? engine, model: thread.modelId ? (thread.modelId.includes("/") || !thread.modelProvider ? thread.modelId : `${thread.modelProvider}/${thread.modelId}`) : model });
     void refresh(thread.sideOf.workspaceId, thread.id);
   }, [engine, model, refresh]);
   const create = useCallback(async (atItemId?: string) => {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, getRoles } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, getRoles, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { StrictMode, type ReactNode } from "react";
@@ -14,6 +14,28 @@ vi.mock("@pierre/diffs/react", async () => ({
 
 beforeEach(() => { localStorage.clear(); vi.stubGlobal("innerWidth", 1440); });
 afterEach(async () => { cleanup(); localStorage.removeItem("taucode.browser.open"); await new Promise(resolve => setTimeout(resolve, 50)); clearMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+
+it("hosts side chat only in the panel, with shared messages and composer, and opens an explicit split", async () => {
+  vi.stubEnv("MODE", "uipreview");
+  window.history.replaceState(null, "", "/?mode=code&thread=thread-rich&sidechat=thread-side");
+  installUiPreview();
+  render(<App />);
+  await screen.findByRole("textbox", { name: "Side chat message" });
+  const pane = document.querySelector(".side-chat-pane")!;
+  expect(pane.closest(".tabbed-side-panel")).toBeTruthy();
+  expect(document.querySelector(".side-chat-split")).toBeNull();
+  expect(document.querySelector(".main-header button[title='Side chat (⌘⇧K)']")).toBeNull();
+  expect(pane.querySelector(".side-chat-messages .messages-inner")).toBeTruthy();
+  expect(pane.querySelector(".composer-shell .reasoning-chip")).toBeTruthy();
+  expect(pane.querySelector("select")).toBeNull();
+  expect(within(pane as HTMLElement).queryByRole("button", { name: /Back/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Actions for side chat" }));
+  expect(screen.getByRole("menuitem", { name: "Rename" })).toBeTruthy();
+  expect(screen.getByRole("menuitem", { name: "Archive" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Open in split view" }));
+  await waitFor(() => expect(document.querySelector(".side-chat-split .side-chat-pane")).toBeTruthy());
+  expect(document.querySelector(".tabbed-side-panel .side-chat-pane")).toBeNull();
+}, 15000);
 
 it.each([
   ["?mode=code&thread=thread-rich", "Update the greeting, run the tests"],

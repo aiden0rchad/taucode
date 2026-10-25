@@ -1,5 +1,4 @@
-import { SettingsFieldRow } from "@/features/design-system/components/settings/SettingsPrimitives";
-import { SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
+import { SettingsPage, SettingsTextField, SettingsSelect, SettingsRow, SettingsButton, SettingsGroup, SettingsTextArea, SettingsFieldRow, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import "./registry.css";
 import { useEffect, useState } from "react";
 import type { AppSettings, McpCredential, McpServerEntry, McpConnectionResult, WorkspaceInfo, WorkspaceSettings } from "@/types";
@@ -59,60 +58,60 @@ export function SettingsConnectorsSection({ appSettings, onUpdateAppSettings, wo
     if (!draft?.transport) return;
     setDraft({ ...draft, transport: draft.transport.type === "stdio" ? { ...draft.transport, env: values } : { ...draft.transport, headers: values } });
   };
-  const secretInput = (name: string) => <SettingsFieldRow  title={<>{name === "bearer" ? "Bearer token" : `${name} secret`}{saved[name] && <span>Saved in Keychain</span>}</>}><input aria-label={name === "bearer" ? "Bearer token" : `${name} secret`} type="password" autoComplete="new-password" value={secrets[name] ?? ""} placeholder={saved[name] ? "Saved in Keychain" : "Enter secret"} onChange={e => setSecrets({ ...secrets, [name]: e.target.value })} /></SettingsFieldRow>;
-  return <section className="settings-section registry-settings">
-    <h2>Connectors</h2><p className="settings-subtitle">MCP tools for Pi and Codex. Use tokens, API keys, or local commands. Changes apply on the next engine start.</p>
-    <SettingsFieldRow  title={<>Scope</>}><select disabled={busy} value={local ? "workspace" : "app"} onChange={e => { setScope(e.target.value); setDraft(null); setEditing(null); setResult(null); }}><option value="app">All workspaces</option>{workspace && <option value="workspace">{workspace.name}</option>}</select></SettingsFieldRow>
+  const secretInput = (name: string) => <SettingsFieldRow  title={<>{name === "bearer" ? "Bearer token" : `${name} secret`}{saved[name] && <span>Saved in Keychain</span>}</>}><SettingsTextField aria-label={name === "bearer" ? "Bearer token" : `${name} secret`} type="password" autoComplete="new-password" value={secrets[name] ?? ""} placeholder={saved[name] ? "Saved in Keychain" : "Enter secret"} onChange={e => setSecrets({ ...secrets, [name]: e.target.value })} /></SettingsFieldRow>;
+  return <SettingsPage className="registry-settings" title="Connectors" subtitle="MCP tools for Pi and Codex. Changes apply on the next engine start."><SettingsGroup title="Preferences">
+
+    <SettingsFieldRow  title={<>Scope</>}><SettingsSelect disabled={busy} value={local ? "workspace" : "app"} onChange={e => { setScope(e.target.value); setDraft(null); setEditing(null); setResult(null); }}><option value="app">All workspaces</option>{workspace && <option value="workspace">{workspace.name}</option>}</SettingsSelect></SettingsFieldRow>
     {error && <p role="alert">{error}</p>}
     {entries.map(s => {
       const inherited = local && globals.some(g => g.id === s.id);
-      return <div className="settings-row" key={s.id}>
+      return <SettingsRow className="settings-row" key={s.id}>
         <SettingsToggleRow  title={<>{s.name || s.id}</>}><SettingsToggleSwitch pressed={s.enabled} disabled={busy} onClick={() => { const enabled = !(s.enabled); void run(async () => {
           if (inherited) await persist([...overrides.filter(o => o.id !== s.id), { id: s.id, enabled }]);
           else await persist((local ? overrides : globals).map(o => o.id === s.id ? { ...o, enabled } : o));
         }); }} /></SettingsToggleRow>
         {reserved.includes(s.id) && <span>Built in</span>}
-        {inherited ? <button disabled={busy || !overrides.some(o => o.id === s.id)} onClick={() => void run(() => persist(overrides.filter(o => o.id !== s.id)))}>Use global setting for {s.name}</button> : <>
-          {["taucode-browser", "taucode-computer"].includes(s.id) ? <span>Configure in Settings → {s.id === "taucode-browser" ? "Browser" : "Computer Use"}</span> : <button disabled={busy} onClick={() => { setDraft(structuredClone(s)); setEditing(s.id); setResult(null); }}>Edit {s.name}</button>}
-          {!reserved.includes(s.id) && <button disabled={busy} onClick={() => void run(async () => { await persist((local ? overrides : globals).filter(o => o.id !== s.id)); if (editing === s.id) { setDraft(null); setEditing(null); } })}>Delete {s.name}</button>}
+        {inherited ? <SettingsButton disabled={busy || !overrides.some(o => o.id === s.id)} onClick={() => void run(() => persist(overrides.filter(o => o.id !== s.id)))}>Use global setting for {s.name}</SettingsButton> : <>
+          {["taucode-browser", "taucode-computer"].includes(s.id) ? <span>Configure in Settings → {s.id === "taucode-browser" ? "Browser" : "Computer Use"}</span> : <SettingsButton disabled={busy} onClick={() => { setDraft(structuredClone(s)); setEditing(s.id); setResult(null); }}>Edit {s.name}</SettingsButton>}
+          {!reserved.includes(s.id) && <SettingsButton disabled={busy} onClick={() => void run(async () => { await persist((local ? overrides : globals).filter(o => o.id !== s.id)); if (editing === s.id) { setDraft(null); setEditing(null); } })}>Delete {s.name}</SettingsButton>}
         </>}
-        <button disabled={busy} onClick={() => void run(async () => setResult(await connectorRequest<McpConnectionResult>({ action: "test", id: s.id, workspaceId })))}>Test {s.name}</button>
-      </div>;
+        <SettingsButton disabled={busy} onClick={() => void run(async () => setResult(await connectorRequest<McpConnectionResult>({ action: "test", id: s.id, workspaceId })))}>Test {s.name}</SettingsButton>
+      </SettingsRow>;
     })}
-    <button disabled={busy} onClick={() => { setDraft(empty()); setEditing(null); setSecrets({}); setSaved({}); setResult(null); }}>Add connector</button>
+    <SettingsButton disabled={busy} onClick={() => { setDraft(empty()); setEditing(null); setSecrets({}); setSaved({}); setResult(null); }}>Add connector</SettingsButton>
     {draft && <form onSubmit={e => { e.preventDefault(); void run(save); }}>
-      <fieldset disabled={busy} className="connector-fields">
-        <legend>{editing ? "Edit connector" : "New connector"}</legend>
-        <SettingsFieldRow  title={<>Connector ID</>}><input required pattern="[a-z0-9_-]{1,32}" maxLength={32} disabled={!!editing} value={draft.id} onChange={e => setDraft({ ...draft, id: e.target.value })} /></SettingsFieldRow>
-        <SettingsFieldRow  title={<>Name</>}><input required value={draft.name ?? ""} onChange={e => setDraft({ ...draft, name: e.target.value })} /></SettingsFieldRow>
+      <SettingsGroup disabled={busy} title={<>{editing ? "Edit connector" : "New connector"}</>}>
+
+        <SettingsFieldRow  title={<>Connector ID</>}><SettingsTextField required pattern="[a-z0-9_-]{1,32}" maxLength={32} disabled={!!editing} value={draft.id} onChange={e => setDraft({ ...draft, id: e.target.value })} /></SettingsFieldRow>
+        <SettingsFieldRow  title={<>Name</>}><SettingsTextField required value={draft.name ?? ""} onChange={e => setDraft({ ...draft, name: e.target.value })} /></SettingsFieldRow>
         {draft.transport && <>
-          <SettingsFieldRow  title={<>Transport</>}><select value={draft.transport.type} onChange={e => { setSecrets({}); setDraft({ ...draft, transport: e.target.value === "stdio" ? { type: "stdio", command: "", args: [], env: {} } : { type: "http", url: "", headers: {} } }); }}><option value="stdio">Local command (stdio)</option><option value="http">HTTP</option></select></SettingsFieldRow>
+          <SettingsFieldRow  title={<>Transport</>}><SettingsSelect value={draft.transport.type} onChange={e => { setSecrets({}); setDraft({ ...draft, transport: e.target.value === "stdio" ? { type: "stdio", command: "", args: [], env: {} } : { type: "http", url: "", headers: {} } }); }}><option value="stdio">Local command (stdio)</option><option value="http">HTTP</option></SettingsSelect></SettingsFieldRow>
           {draft.transport.type === "stdio" ? <>
-            <SettingsFieldRow  title={<>Command</>}><input required value={draft.transport.command} onChange={e => setDraft({ ...draft, transport: { ...draft.transport as Extract<NonNullable<McpServerEntry["transport"]>, { type: "stdio" }>, command: e.target.value } })} /></SettingsFieldRow>
-            <label>Arguments (one per line)<textarea value={draft.transport.args.join("\n")} onChange={e => { if (draft.transport?.type === "stdio") setDraft({ ...draft, transport: { ...draft.transport, args: e.target.value ? e.target.value.split("\n") : [] } }); }} /></label>
-            <SettingsFieldRow  title={<>Working directory</>}><input value={draft.transport.cwd ?? ""} onChange={e => { if (draft.transport?.type === "stdio") setDraft({ ...draft, transport: { ...draft.transport, cwd: e.target.value || null } }); }} /></SettingsFieldRow>
+            <SettingsFieldRow  title={<>Command</>}><SettingsTextField required value={draft.transport.command} onChange={e => setDraft({ ...draft, transport: { ...draft.transport as Extract<NonNullable<McpServerEntry["transport"]>, { type: "stdio" }>, command: e.target.value } })} /></SettingsFieldRow>
+            <SettingsFieldRow title={<>Arguments (one per line)</>} className="settings-field-row-long"><SettingsTextArea value={draft.transport.args.join("\n")} onChange={e => { if (draft.transport?.type === "stdio") setDraft({ ...draft, transport: { ...draft.transport, args: e.target.value ? e.target.value.split("\n") : [] } }); }} /></SettingsFieldRow>
+            <SettingsFieldRow  title={<>Working directory</>}><SettingsTextField value={draft.transport.cwd ?? ""} onChange={e => { if (draft.transport?.type === "stdio") setDraft({ ...draft, transport: { ...draft.transport, cwd: e.target.value || null } }); }} /></SettingsFieldRow>
           </> : <>
-            <SettingsFieldRow  title={<>URL</>}><input required type="url" value={draft.transport.url} onChange={e => { if (draft.transport?.type === "http") setDraft({ ...draft, transport: { ...draft.transport, url: e.target.value } }); }} /></SettingsFieldRow>
+            <SettingsFieldRow  title={<>URL</>}><SettingsTextField required type="url" value={draft.transport.url} onChange={e => { if (draft.transport?.type === "http") setDraft({ ...draft, transport: { ...draft.transport, url: e.target.value } }); }} /></SettingsFieldRow>
             <SettingsToggleRow  title={<>Use bearer token</>}><SettingsToggleSwitch pressed={!!draft.transport.bearer} onClick={() => { setSecrets({ ...secrets, bearer: "" }); if (draft.transport?.type === "http") setDraft({ ...draft, transport: { ...draft.transport, bearer: !draft.transport.bearer ? { secret: true } : null } }); }} /></SettingsToggleRow>
             {draft.transport.bearer && secretInput("bearer")}
           </>}
           <h3>{draft.transport.type === "stdio" ? "Environment variables" : "Headers"}</h3>
           {Object.entries(credentials).map(([name, value]) => <div className="connector-credential" key={name}>
-            <SettingsFieldRow  title={<>Field name</>}><input required defaultValue={name} onBlur={e => { const next = e.target.value; if (next !== name && !Object.prototype.hasOwnProperty.call(credentials, next)) { const values = { ...credentials }; delete values[name]; values[next] = value; setCredentials(values); setSecrets({ ...secrets, [name]: "" }); } }} /></SettingsFieldRow>
+            <SettingsFieldRow  title={<>Field name</>}><SettingsTextField required defaultValue={name} onBlur={e => { const next = e.target.value; if (next !== name && !Object.prototype.hasOwnProperty.call(credentials, next)) { const values = { ...credentials }; delete values[name]; values[next] = value; setCredentials(values); setSecrets({ ...secrets, [name]: "" }); } }} /></SettingsFieldRow>
             <SettingsToggleRow  title={<>Store {name} in Keychain</>}><SettingsToggleSwitch pressed={"secret" in value} onClick={() => { setCredentials({ ...credentials, [name]: !("secret" in value) ? { secret: true } : { value: "" } }); setSecrets({ ...secrets, [name]: "" }); }} /></SettingsToggleRow>
-            {"secret" in value ? secretInput(name) : <SettingsFieldRow  title={<>{name} value</>}><input value={value.value} onChange={e => setCredentials({ ...credentials, [name]: { value: e.target.value } })} /></SettingsFieldRow>}
-            <button type="button" onClick={() => { const values = { ...credentials }; delete values[name]; setCredentials(values); setSecrets({ ...secrets, [name]: "" }); }}>Remove {name}</button>
+            {"secret" in value ? secretInput(name) : <SettingsFieldRow  title={<>{name} value</>}><SettingsTextField value={value.value} onChange={e => setCredentials({ ...credentials, [name]: { value: e.target.value } })} /></SettingsFieldRow>}
+            <SettingsButton type="button" onClick={() => { const values = { ...credentials }; delete values[name]; setCredentials(values); setSecrets({ ...secrets, [name]: "" }); }}>Remove {name}</SettingsButton>
           </div>)}
-          <button type="button" onClick={() => { let name = "NEW_FIELD"; while (Object.prototype.hasOwnProperty.call(credentials, name)) name += "_"; setCredentials({ ...credentials, [name]: { secret: true } }); }}>Add {draft.transport.type === "stdio" ? "environment variable" : "header"}</button>
+          <SettingsButton type="button" onClick={() => { let name = "NEW_FIELD"; while (Object.prototype.hasOwnProperty.call(credentials, name)) name += "_"; setCredentials({ ...credentials, [name]: { secret: true } }); }}>Add {draft.transport.type === "stdio" ? "environment variable" : "header"}</SettingsButton>
         </>}
-        <label>Allowed tools (one per line; blank allows all)<textarea value={draft.toolAllowlist?.join("\n") ?? ""} onChange={e => setDraft({ ...draft, toolAllowlist: e.target.value ? e.target.value.split("\n") : null })} /></label>
-        <label>Denied tools (one per line)<textarea value={draft.toolDenylist?.join("\n") ?? ""} onChange={e => setDraft({ ...draft, toolDenylist: e.target.value ? e.target.value.split("\n") : null })} /></label>
-        <SettingsFieldRow  title={<>Approval</>}><select value={draft.approval ?? "auto"} onChange={e => setDraft({ ...draft, approval: e.target.value as "auto" | "ask" })}><option value="ask">Ask for every tool call</option><option value="auto">Automatic</option></select></SettingsFieldRow>
-        <button type="submit">Save connector</button>
-        <button type="button" onClick={() => void run(async () => { await save(); setResult(await connectorRequest<McpConnectionResult>({ action: "test", id: draft.id, workspaceId })); })}>Test connection</button>
-        <button type="button" onClick={() => { setDraft(null); setEditing(null); setSecrets({}); }}>Cancel</button>
-      </fieldset>
+        <SettingsFieldRow title={<>Allowed tools (one per line; blank allows all)</>} className="settings-field-row-long"><SettingsTextArea value={draft.toolAllowlist?.join("\n") ?? ""} onChange={e => setDraft({ ...draft, toolAllowlist: e.target.value ? e.target.value.split("\n") : null })} /></SettingsFieldRow>
+        <SettingsFieldRow title={<>Denied tools (one per line)</>} className="settings-field-row-long"><SettingsTextArea value={draft.toolDenylist?.join("\n") ?? ""} onChange={e => setDraft({ ...draft, toolDenylist: e.target.value ? e.target.value.split("\n") : null })} /></SettingsFieldRow>
+        <SettingsFieldRow  title={<>Approval</>}><SettingsSelect value={draft.approval ?? "auto"} onChange={e => setDraft({ ...draft, approval: e.target.value as "auto" | "ask" })}><option value="ask">Ask for every tool call</option><option value="auto">Automatic</option></SettingsSelect></SettingsFieldRow>
+        <SettingsButton type="submit">Save connector</SettingsButton>
+        <SettingsButton type="button" onClick={() => void run(async () => { await save(); setResult(await connectorRequest<McpConnectionResult>({ action: "test", id: draft.id, workspaceId })); })}>Test connection</SettingsButton>
+        <SettingsButton type="button" onClick={() => { setDraft(null); setEditing(null); setSecrets({}); }}>Cancel</SettingsButton>
+      </SettingsGroup>
     </form>}
     {result && <div role={result.ok ? "status" : "alert"}>{result.ok ? <><p>Connected · {result.latencyMs} ms · {result.tools?.length ?? 0} tools</p><ul>{result.tools?.map(t => <li key={t.name}><strong>{t.name}</strong>{t.description && <p>{t.description}</p>}</li>)}</ul></> : result.error}</div>}
-  </section>;
+  </SettingsGroup></SettingsPage>;
 }

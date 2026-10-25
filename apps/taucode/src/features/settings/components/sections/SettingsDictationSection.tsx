@@ -1,9 +1,5 @@
+import { SettingsRow, SettingsSelect, SettingsButton, SettingsSection, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import type { AppSettings, DictationModelStatus } from "@/types";
-import {
-  SettingsSection,
-  SettingsToggleRow,
-  SettingsToggleSwitch,
-} from "@/features/design-system/components/settings/SettingsPrimitives";
 import { formatDownloadSize } from "@utils/formatting";
 
 type DictationModelOption = {
@@ -76,11 +72,11 @@ export function SettingsDictationSection({
           }}
         />
       </SettingsToggleRow>
-      <div className="settings-field">
+      <SettingsRow className="settings-field">
         <label className="settings-field-label" htmlFor="dictation-model">
           Dictation model
         </label>
-        <select
+        <SettingsSelect
           id="dictation-model"
           className="settings-select"
           value={appSettings.dictationModelId}
@@ -96,16 +92,16 @@ export function SettingsDictationSection({
               {model.label} ({model.size})
             </option>
           ))}
-        </select>
+        </SettingsSelect>
         <div className="settings-help">
           {selectedDictationModel.note} Download size: {selectedDictationModel.size}.
         </div>
-      </div>
-      <div className="settings-field">
+      </SettingsRow>
+      <SettingsRow className="settings-field">
         <label className="settings-field-label" htmlFor="dictation-language">
           Preferred dictation language
         </label>
-        <select
+        <SettingsSelect
           id="dictation-language"
           className="settings-select"
           value={appSettings.dictationPreferredLanguage ?? ""}
@@ -135,16 +131,16 @@ export function SettingsDictationSection({
           <option value="ja">Japanese</option>
           <option value="ko">Korean</option>
           <option value="zh">Chinese</option>
-        </select>
+        </SettingsSelect>
         <div className="settings-help">
           Auto-detect stays on; this nudges the decoder toward your preference.
         </div>
-      </div>
-      <div className="settings-field">
+      </SettingsRow>
+      <SettingsRow className="settings-field">
         <label className="settings-field-label" htmlFor="dictation-hold-key">
           Hold-to-dictate key
         </label>
-        <select
+        <SettingsSelect
           id="dictation-hold-key"
           className="settings-select"
           value={appSettings.dictationHoldKey ?? ""}
@@ -160,13 +156,13 @@ export function SettingsDictationSection({
           <option value="shift">Shift</option>
           <option value="control">Control</option>
           <option value="meta">{metaKeyLabel}</option>
-        </select>
+        </SettingsSelect>
         <div className="settings-help">
           Hold the key to start dictation, release to stop and process.
         </div>
-      </div>
+      </SettingsRow>
       {dictationModelStatus && (
-        <div className="settings-field">
+        <SettingsRow className="settings-field">
           <div className="settings-field-label">Model status ({selectedDictationModel.label})</div>
           <div className="settings-help">
             {dictationModelStatus.state === "ready" && "Ready for dictation."}
@@ -197,37 +193,37 @@ export function SettingsDictationSection({
           )}
           <div className="settings-field-actions">
             {dictationModelStatus.state === "missing" && (
-              <button
+              <SettingsButton
                 type="button"
                 className="primary"
                 onClick={onDownloadDictationModel}
                 disabled={!onDownloadDictationModel}
               >
                 Download model
-              </button>
+              </SettingsButton>
             )}
             {dictationModelStatus.state === "downloading" && (
-              <button
+              <SettingsButton
                 type="button"
                 className="ghost settings-button-compact"
                 onClick={onCancelDictationDownload}
                 disabled={!onCancelDictationDownload}
               >
                 Cancel download
-              </button>
+              </SettingsButton>
             )}
             {dictationReady && (
-              <button
+              <SettingsButton
                 type="button"
                 className="ghost settings-button-compact"
                 onClick={onRemoveDictationModel}
                 disabled={!onRemoveDictationModel}
               >
                 Remove model
-              </button>
+              </SettingsButton>
             )}
           </div>
-        </div>
+        </SettingsRow>
       )}
     </SettingsSection>
   );

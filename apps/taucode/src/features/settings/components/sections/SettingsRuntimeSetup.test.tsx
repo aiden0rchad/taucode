@@ -18,6 +18,6 @@ it("shows setup progress and actionable missing-tool errors", async () => {
 it("renders an active installation and prevents duplicate setup", async () => {
   vi.mocked(engineRuntime).mockResolvedValue([{ engine: "computer", state: "installing", message: "Installing Python dependencies…" }]);
   render(<SettingsRuntimeSetup />);
-  expect((await screen.findByRole("status")).textContent).toContain("Installing Python dependencies…");
+  expect((await screen.findByRole("status")).textContent).toBe("Installing");
   expect((screen.getByText("Set up computer") as HTMLButtonElement).disabled).toBe(true);
 });
