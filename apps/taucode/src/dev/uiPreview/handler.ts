@@ -1,3 +1,4 @@
+import { createDiagnosticsFixture } from "./diagnostics";
 import { builtinIds, parseTheme, type ThemeFile, type ThemeManifest } from "@/features/themes/validate";
 import customTheme from "@/features/themes/fixtures/valid-custom.json";
 import type { BrowserState } from "@/features/browser/browser";
@@ -11,6 +12,7 @@ const record = (value: unknown): Params => value && typeof value === "object" &&
 export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const state = createFixtures();
   const query = new URLSearchParams(search);
+  const diagnostics = createDiagnosticsFixture(query.get("diagnostics") === "empty");
   const mode = query.get("mode");
   if (query.get("dictation") === "ready") { state.settings.dictationEnabled = true; state.settings.features = { ...state.settings.features, dictation: true }; }
   state.settings.windowModes = { main: query.has("settings") ? "code" : mode === "chat" || mode === "work" ? mode : "code" };
@@ -212,13 +214,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       }
       case "terminal_open": return { id: args.terminalId };
       case "terminal_write": case "terminal_resize": case "terminal_close": return null;
-      case "diagnostics_request": {
-        const action = args.action;
-        if (action === "info") return { bin: "/Applications/taucode.app/Contents/MacOS/taucode-diag-mcp", dir: "~/Library/Application Support/dev.taucode.desktop/diagnostics", openIssues: 0, eventsToday: 0, dropped: 0, lastDigest: null };
-        if (action === "diag_issues" || action === "diag_events" || action === "diag_feedback") return [];
-        if (action === "diag_digest" || action === "regenerate") return "# Diagnostics journal";
-        return null;
-      }
+      case "diagnostics_request": return diagnostics(String(args.action), params);
       case "provider_has_api_key": return false;
       case "provider_test_and_fetch": return { ok: true, latencyMs: 12, models: state.settings.providers?.find(p => p.id === args.id)?.models ?? [] };
       case "local_usage_snapshot": return { updatedAt: Date.now(), days: [], topModels: [], totals: { last7DaysTokens: 0, last30DaysTokens: 0, averageDailyTokens: 0, cacheHitRatePercent: 0, peakDay: null, peakDayTokens: 0 } };

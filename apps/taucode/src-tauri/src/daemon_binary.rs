@@ -99,10 +99,56 @@ mod tests {
     }
 }
 
-pub(crate) fn resolve_diagnostics_binary_path() -> Result<PathBuf,String> {
-    let exe=std::env::current_exe().map_err(|e|e.to_string())?;
-    let parent=exe.parent().ok_or("Executable directory missing")?;
-    let name=if cfg!(windows) {"taucode-diag-mcp.exe"} else {"taucode-diag-mcp"};
-    for dir in daemon_search_dirs(parent) {let path=dir.join(name);if path.is_file(){return Ok(path);}}
-    Ok(parent.join(name))
+pub(crate) fn resolve_diagnostics_binary_path() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let parent = exe.parent().ok_or("Executable directory missing")?;
+    let mut dirs = daemon_search_dirs(parent);
+    #[cfg(debug_assertions)]
+    {
+        if parent.file_name().is_some_and(|n| n == "deps") {
+            if let Some(target) = parent.parent() {
+                dirs.insert(0, target.to_path_buf());
+            }
+        }
+        dirs.push(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../crates/taucode-diag-mcp/target/debug"),
+        );
+    }
+    resolve_diagnostics_in(&dirs)
+}
+fn resolve_diagnostics_in(dirs: &[PathBuf]) -> Result<PathBuf, String> {
+    let name = if cfg!(windows) {
+        "taucode-diag-mcp.exe"
+    } else {
+        "taucode-diag-mcp"
+    };
+    for dir in dirs {
+        let path = dir.join(name);
+        if path.is_file() {
+            return path.canonicalize().map_err(|e| e.to_string());
+        }
+    }
+    Err("Diagnostics MCP binary is unavailable. Build taucode-diag-mcp with cargo build --offline --bins.".into())
+}
+
+#[cfg(test)]
+mod diagnostics_tests {
+    use super::*;
+    #[test]
+    fn resolves_existing_absolute_binary_and_rejects_missing() {
+        let dir = std::env::temp_dir().join(format!("diagnostics-binary-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(resolve_diagnostics_in(&[dir.clone()]).is_err());
+        let file = dir.join(if cfg!(windows) {
+            "taucode-diag-mcp.exe"
+        } else {
+            "taucode-diag-mcp"
+        });
+        std::fs::write(&file, b"fixture").unwrap();
+        let resolved = resolve_diagnostics_in(&[dir.clone()]).unwrap();
+        assert!(resolved.is_absolute());
+        assert_eq!(resolved, file.canonicalize().unwrap());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

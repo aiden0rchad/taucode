@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { execSync } from "node:child_process";
 import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vitest/config";
@@ -90,6 +92,10 @@ export default defineConfig(async ({ mode }) => ({
     format: "es",
   },
   define: {
+    __DIAGNOSTICS_PREVIEW_PATHS__: JSON.stringify(mode === "uipreview" || mode === "test" ? {
+      bin: ["./src-tauri/target/debug/taucode-diag-mcp", "../../crates/taucode-diag-mcp/target/debug/taucode-diag-mcp"].map(path => new URL(path + (process.platform === "win32" ? ".exe" : ""), import.meta.url)).filter(existsSync).map(path => realpathSync(path))[0] ?? null,
+      dir: join(process.platform === "darwin" ? join(homedir(), "Library/Application Support") : process.platform === "win32" ? process.env.APPDATA ?? join(homedir(), "AppData/Roaming") : process.env.XDG_DATA_HOME ?? join(homedir(), ".local/share"), "dev.taucode.desktop", "diagnostics"),
+    } : null),
     __APP_VERSION__: JSON.stringify(packageJson.version),
     __APP_COMMIT_HASH__: JSON.stringify(appCommitHash),
     __APP_BUILD_DATE__: JSON.stringify(appBuildDate),

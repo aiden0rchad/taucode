@@ -1,7 +1,7 @@
 use crate::core::*;
 use rmcp::{model::*, service::RequestContext, ErrorData, RoleServer, ServerHandler, ServiceExt};
 use serde_json::{json, Value};
-use std::{collections::BTreeSet, path::PathBuf};
+use std::path::PathBuf;
 #[derive(Clone)]
 pub struct Journal {
     pub dir: PathBuf,
@@ -26,42 +26,14 @@ impl Journal {
         };
         match name {
             "diag_digest" => {
-                let p = self.dir.join("digest.md");
-                if p.metadata()
-                    .and_then(|m| m.modified())
-                    .ok()
-                    .and_then(|t| t.elapsed().ok())
-                    .is_some_and(|age| age.as_secs() < 300)
-                {
-                    return std::fs::read_to_string(p)
-                        .map(Value::String)
-                        .map_err(|e| e.to_string());
-                }
-                let mut inbox = issues(&self.dir);
-                merge_annotations(
-                    &mut inbox,
-                    &self.dir,
-                    &mut std::fs::read(self.dir.join("annotation-cursor.json"))
-                        .ok()
-                        .and_then(|v| serde_json::from_slice::<BTreeSet<String>>(&v).ok())
-                        .unwrap_or_default(),
-                );
-                // Reader regeneration is in memory: issues.json remains app-owned.
-                Ok(json!(digest(&events(&self.dir), &inbox, "")))
+                let view = journal_view(&self.dir);
+                Ok(json!(digest(&view.events, &view.issues, "")))
             }
             "diag_issues" => {
                 let n = limit(100)?;
-                let mut inbox = issues(&self.dir);
-                merge_annotations(
-                    &mut inbox,
-                    &self.dir,
-                    &mut std::fs::read(self.dir.join("annotation-cursor.json"))
-                        .ok()
-                        .and_then(|v| serde_json::from_slice::<BTreeSet<String>>(&v).ok())
-                        .unwrap_or_default(),
-                );
-                Ok(json!(inbox
-                    .values()
+                let view = journal_view(&self.dir);
+                Ok(json!(ranked_issues(&view.issues, &view.events)
+                    .into_iter()
                     .filter_map(|i| serde_json::to_value(i).ok())
                     .filter(|v| matches(v, &["status", "area", "severity"]))
                     .take(n)
@@ -69,18 +41,11 @@ impl Journal {
             }
             "diag_issue" => {
                 let fp = args["fingerprint"].as_str().ok_or("fingerprint required")?;
-                let mut inbox = issues(&self.dir);
-                merge_annotations(
-                    &mut inbox,
-                    &self.dir,
-                    &mut std::fs::read(self.dir.join("annotation-cursor.json"))
-                        .ok()
-                        .and_then(|v| serde_json::from_slice::<BTreeSet<String>>(&v).ok())
-                        .unwrap_or_default(),
-                );
+                let view = journal_view(&self.dir);
+                let inbox = view.issues;
                 let issue = inbox.get(fp).ok_or("Unknown issue")?;
                 Ok(
-                    json!({"issue":issue,"events":events(&self.dir).into_iter().rev().filter(|e|e.fingerprint==fp).take(20).collect::<Vec<_>>()}),
+                    json!({"issue":issue,"events":view.events.into_iter().rev().filter(|e|e.fingerprint==fp).take(20).collect::<Vec<_>>()}),
                 )
             }
             "diag_events" | "diag_feedback" => {
@@ -90,7 +55,8 @@ impl Journal {
                     .map(chrono::DateTime::parse_from_rfc3339)
                     .transpose()
                     .map_err(|_| "since must be RFC3339")?;
-                Ok(json!(events(&self.dir)
+                Ok(json!(journal_view(&self.dir)
+                    .events
                     .into_iter()
                     .rev()
                     .filter(|e| name != "diag_feedback" || e.kind == "feedback")
@@ -143,7 +109,14 @@ impl ServerHandler for Journal {
         _: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         match self.query(&request.name, &json!(request.arguments.unwrap_or_default())) {
-            Ok(v) => Ok(CallToolResult::success(vec![ContentBlock::text(v.to_string())]).into()),
+            Ok(value) => {
+                let text = match value {
+                    Value::String(text) => text,
+                    value => serde_json::to_string_pretty(&value)
+                        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?,
+                };
+                Ok(CallToolResult::success(vec![ContentBlock::text(text)]).into())
+            }
             Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(e)]).into()),
         }
     }
@@ -167,6 +140,132 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn events_only_and_stale_index_over_mcp() {
+        let dir = tempfile::tempdir().unwrap();
+        let fixture: Vec<Event> = serde_json::from_str(include_str!(
+            "../../../docs/fixtures/diagnostics-events.json"
+        ))
+        .unwrap();
+        let event_path = dir.path().join("events-2026-10-25.ndjson");
+        let lines = fixture
+            .iter()
+            .map(|e| serde_json::to_string(e).unwrap() + "\n")
+            .collect::<String>();
+        std::fs::write(&event_path, lines).unwrap();
+        let server = Journal {
+            dir: dir.path().into(),
+        };
+        let (client_io, server_io) = tokio::io::duplex(65536);
+        let task = tokio::spawn(async move {
+            server
+                .serve(server_io)
+                .await
+                .unwrap()
+                .waiting()
+                .await
+                .unwrap()
+        });
+        let client = ().serve(client_io).await.unwrap();
+        let result = client
+            .call_tool(CallToolRequestParams::new("diag_issues"))
+            .await
+            .unwrap();
+        let content = serde_json::to_value(result).unwrap();
+        let text = content["content"][0]["text"].as_str().unwrap();
+        assert!(text.starts_with("[\n"));
+        let issues: Vec<Issue> = serde_json::from_str(text).unwrap();
+        assert_eq!(issues[0].code, "engine.spawn_failed");
+        assert!(issues
+            .iter()
+            .all(|i| !matches!(i.last_event.kind.as_str(), "perf" | "usage" | "feedback")));
+        let spawn = issues
+            .iter()
+            .find(|i| i.code == "engine.spawn_failed")
+            .unwrap();
+        let result = client
+            .call_tool(CallToolRequestParams::new("diag_digest"))
+            .await
+            .unwrap();
+        let content = serde_json::to_value(result).unwrap();
+        let text = content["content"][0]["text"].as_str().unwrap();
+        assert!(text.starts_with("# Diagnostics journal\n"));
+        let open = text
+            .split("## Open issues\n")
+            .nth(1)
+            .unwrap()
+            .split("\n## ")
+            .next()
+            .unwrap();
+        assert!(open.contains(&spawn.fingerprint));
+        assert!(!dir.path().join("issues.json").exists());
+        // Annotation on an events-only journal must be accepted and visible to every reader.
+        let server = Journal {
+            dir: dir.path().into(),
+        };
+        server.query("diag_annotate", &json!({"fingerprint":spawn.fingerprint,"status":"acknowledged","note":"Investigating"})).unwrap();
+        let detail = server
+            .query("diag_issue", &json!({"fingerprint":spawn.fingerprint}))
+            .unwrap();
+        assert_eq!(detail["issue"]["status"], "acknowledged");
+        assert_eq!(detail["issue"]["notes"], json!(["Investigating"]));
+        assert!(!detail["events"].as_array().unwrap().is_empty());
+        let feedback = server.query("diag_feedback", &json!({})).unwrap();
+        assert_eq!(
+            feedback.as_array().unwrap().len(),
+            fixture.iter().filter(|e| e.kind == "feedback").count()
+        );
+        // A stale, valid index must also be rebuilt, without changing its bytes.
+        let index = dir.path().join("issues.json");
+        std::fs::write(&index, "{}").unwrap();
+        std::fs::File::open(&index)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(std::time::UNIX_EPOCH))
+            .unwrap();
+        let result = client
+            .call_tool(CallToolRequestParams::new("diag_issues"))
+            .await
+            .unwrap();
+        let content = serde_json::to_value(result).unwrap();
+        let issues: Vec<Issue> =
+            serde_json::from_str(content["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert!(issues
+            .iter()
+            .any(|i| i.code == "engine.spawn_failed" && i.status == "acknowledged"));
+        assert_eq!(std::fs::read_to_string(&index).unwrap(), "{}");
+        client.cancel().await.unwrap();
+        task.await.unwrap();
+    }
+
+    #[test]
+    fn replay_preserves_fixed_then_regressed_issues_and_deduplicates_notes() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut first = event("error", "engine", "engine.spawn_failed", "Spawn failed");
+        first.fingerprint = fingerprint(&first);
+        first.ts = "2026-10-25T01:00:00Z".into();
+        let mut again = first.clone();
+        again.ts = "2026-10-25T03:00:00Z".into();
+        again.seq += 1;
+        std::fs::write(
+            dir.path().join("events-2026-10-25.ndjson"),
+            format!("{}\n{}\n", json!(first), json!(again)),
+        )
+        .unwrap();
+        let note = json!({"id":"fix-1","ts":"2026-10-24T19:00:00-07:00","fingerprint":first.fingerprint,"status":"fixed","note":"Fixed in test"});
+        std::fs::write(
+            dir.path().join("annotations.ndjson"),
+            format!("{note}\n{note}\n"),
+        )
+        .unwrap();
+        let view = journal_view(dir.path());
+        let issue = &view.issues[&first.fingerprint];
+        assert_eq!(issue.status, "open");
+        assert!(issue.regressed);
+        assert_eq!(issue.count, 2);
+        assert_eq!(issue.notes, ["Fixed in test"]);
+        assert!(!dir.path().join("issues.json").exists());
+    }
+
     #[tokio::test]
     async fn tools_and_filters_without_app() {
         let dir = tempfile::tempdir().unwrap();

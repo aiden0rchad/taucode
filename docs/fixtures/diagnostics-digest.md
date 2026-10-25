@@ -11,13 +11,8 @@ Window: 2026-10-25T21:04:00.000Z → 2026-10-25T21:04:03.000Z; 4 events
 
 ## Open issues
 - 2f2ec4fbc5b76ac3 [high] ×1 · 2026-10-25T21:04:00.000Z · Engine spawn failed
-- 0d02730a193846ad [low] ×1 · 2026-10-25T21:04:03.000Z · User idea
-- 854767b88721fa5e [low] ×1 · 2026-10-25T21:04:02.000Z · Turn completed
-- 58a5131d2fa25a15 [low] ×1 · 2026-10-25T21:04:01.000Z · First token
 
 ## New since last digest
-- 0d02730a193846ad User idea
-- 854767b88721fa5e Turn completed
 
 ## Regressions
 

@@ -50,27 +50,8 @@ pub fn digest(events: &[Event], issues: &Issues, previous: &str) -> String {
         out += &format!("- {k}: {n}\n");
     }
     out += "\n## Open issues\n";
-    let now = events
-        .last()
-        .and_then(|e| chrono::DateTime::parse_from_rfc3339(&e.ts).ok())
-        .map(|d| d.timestamp())
-        .unwrap_or(0);
-    let score = |i: &&Issue| {
-        let age = chrono::DateTime::parse_from_rfc3339(&i.last_seen)
-            .map(|d| (now - d.timestamp()).max(0) as f64 / 86400.0)
-            .unwrap_or(0.0);
-        severity(&i.severity) as f64 * i.count as f64 / (1.0 + age)
-    };
-    let mut open = issues
-        .values()
-        .filter(|i| i.status == "open")
-        .collect::<Vec<_>>();
-    open.sort_by(|a, b| {
-        score(b)
-            .total_cmp(&score(a))
-            .then(a.fingerprint.cmp(&b.fingerprint))
-    });
-    for i in open.into_iter().take(15) {
+    let ranked = ranked_issues(issues, events);
+    for i in ranked.iter().filter(|i| i.status == "open").take(15) {
         out += &format!(
             "- {} [{}] ×{} · {} · {}\n",
             i.fingerprint,
@@ -81,11 +62,11 @@ pub fn digest(events: &[Event], issues: &Issues, previous: &str) -> String {
         );
     }
     out += "\n## New since last digest\n";
-    for i in issues.values().filter(|i| i.first_seen.as_str() > previous) {
+    for i in ranked.iter().filter(|i| i.first_seen.as_str() > previous) {
         out += &format!("- {} {}\n", i.fingerprint, line(&i.title));
     }
     out += "\n## Regressions\n";
-    for i in issues.values().filter(|i| i.regressed) {
+    for i in ranked.iter().filter(|i| i.regressed) {
         out += &format!("- {} {}\n", i.fingerprint, line(&i.title));
     }
     out += "\n## Performance\n";

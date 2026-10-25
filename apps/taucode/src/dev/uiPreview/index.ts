@@ -72,6 +72,9 @@ export function selectCode(
   const section = query.get("settings");
   const sections = SETTINGS_ROUTE_SECTION_IDS.filter(s => s !== "profile");
   if (section) openSettings(sections.find(s => s === section) ?? "display");
+  if (query.get("diagnostics") === "layout") {
+    void import("./diagnostics.layout").then(module => module.checkDiagnosticsLayout()).catch(console.error);
+  }
 }
 
 export function selectSideChat(parentId: string | null, open: (thread: ThreadSummary) => void) {

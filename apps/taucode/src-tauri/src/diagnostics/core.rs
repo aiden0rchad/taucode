@@ -302,8 +302,72 @@ pub fn severity(s: &str) -> u64 {
         _ => 1,
     }
 }
+pub fn is_issue(e: &Event) -> bool {
+    if matches!(e.kind.as_str(), "error" | "warning") {
+        return true;
+    }
+    if e.kind == "feedback" {
+        return false;
+    }
+    if matches!(
+        e.code.as_str(),
+        "agent.tool_loop"
+            | "agent.reread"
+            | "agent.high_tokens"
+            | "agent.aborted"
+            | "agent.denied"
+            | "agent.rewound"
+            | "agent.compaction"
+    ) {
+        return true;
+    }
+    if e.kind != "perf" {
+        return false;
+    }
+    let threshold = match e.code.as_str() {
+        "ipc.slow" => 300.0,
+        "ui.long_task" => 150.0,
+        "git.slow" => 500.0,
+        "startup.interactive" | "startup.first_paint" => 5000.0,
+        "engine.first_token" => 10000.0,
+        _ => return false,
+    };
+    e.metrics["durationMs"]
+        .as_f64()
+        .is_some_and(|ms| ms.is_finite() && ms > threshold)
+}
+
+/// Severity first, then count decayed by age in days, then the latest occurrence.
+pub fn ranked_issues<'a>(issues: &'a Issues, events: &[Event]) -> Vec<&'a Issue> {
+    let timestamp = |s: &str| {
+        chrono::DateTime::parse_from_rfc3339(s)
+            .map(|t| t.timestamp())
+            .unwrap_or(0)
+    };
+    let now = events
+        .iter()
+        .map(|e| timestamp(&e.ts))
+        .chain(issues.values().map(|i| timestamp(&i.last_seen)))
+        .max()
+        .unwrap_or(0);
+    let score = |i: &Issue| {
+        i.count as f64 / (1.0 + (now - timestamp(&i.last_seen)).max(0) as f64 / 86400.0)
+    };
+    let mut ranked = issues
+        .values()
+        .filter(|i| is_issue(&i.last_event))
+        .collect::<Vec<_>>();
+    ranked.sort_by(|a, b| {
+        severity(&b.severity)
+            .cmp(&severity(&a.severity))
+            .then_with(|| score(b).total_cmp(&score(a)))
+            .then_with(|| timestamp(&b.last_seen).cmp(&timestamp(&a.last_seen)))
+            .then(a.fingerprint.cmp(&b.fingerprint))
+    });
+    ranked
+}
 pub fn aggregate(issues: &mut Issues, events: &[Event]) {
-    for e in events {
+    for e in events.iter().filter(|e| is_issue(e)) {
         let i = issues
             .entry(e.fingerprint.clone())
             .or_insert_with(|| Issue {
@@ -375,10 +439,12 @@ pub fn events(dir: &Path) -> Vec<Event> {
     event_files(dir).iter().flat_map(|p| lines(p)).collect()
 }
 pub fn issues(dir: &Path) -> Issues {
-    fs::read(dir.join("issues.json"))
+    let mut inbox: Issues = fs::read(dir.join("issues.json"))
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    inbox.retain(|_, issue| is_issue(&issue.last_event));
+    inbox
 }
 pub fn atomic(dir: &Path, name: &str, data: &[u8]) -> io::Result<()> {
     let temp = dir.join(format!(".{name}.{}.tmp", uuid::Uuid::new_v4()));
@@ -426,7 +492,7 @@ pub fn annotate(
     if status.is_some_and(|s| !["open", "acknowledged", "fixed", "ignored"].contains(&s)) {
         return Err("Invalid status".into());
     }
-    if !issues(dir).contains_key(fingerprint) {
+    if !journal_view(dir).issues.contains_key(fingerprint) {
         return Err("Unknown issue".into());
     }
     let note = crate::writer::redact_known(note)
@@ -444,32 +510,92 @@ pub fn annotate(
         .map_err(|e| e.to_string())?;
     file.write_all(line.as_bytes()).map_err(|e| e.to_string())
 }
-pub fn merge_annotations(issues: &mut Issues, dir: &Path, seen: &mut BTreeSet<String>) {
-    for a in lines::<Value>(&dir.join("annotations.ndjson")) {
-        let Some(id) = a["id"].as_str() else { continue };
-        if !seen.insert(id.into()) {
-            continue;
+fn apply_annotation(issues: &mut Issues, a: &Value, seen: &mut BTreeSet<String>) {
+    let Some(id) = a["id"].as_str() else { return };
+    if seen.contains(id) {
+        return;
+    }
+    if let Some(i) = a["fingerprint"].as_str().and_then(|f| issues.get_mut(f)) {
+        seen.insert(id.into());
+        if let Some(status) = a["status"]
+            .as_str()
+            .filter(|s| ["open", "acknowledged", "fixed", "ignored"].contains(s))
+        {
+            i.status = status.into();
+            if status == "fixed" {
+                i.regressed = false;
+            }
         }
-        if let Some(i) = a["fingerprint"].as_str().and_then(|f| issues.get_mut(f)) {
-            if let Some(s) = a["status"]
-                .as_str()
-                .filter(|s| ["open", "acknowledged", "fixed", "ignored"].contains(s))
-            {
-                i.status = s.into();
-                if s == "fixed" {
-                    i.regressed = false;
-                }
-            }
-            if let Some(n) = a["note"].as_str().filter(|s| !s.is_empty()) {
-                i.notes.push(
-                    redact(n, &std::env::var("HOME").unwrap_or_default(), &[])
-                        .chars()
-                        .take(300)
-                        .collect(),
-                );
-            }
+        if let Some(note) = a["note"].as_str().filter(|s| !s.is_empty()) {
+            i.notes.push(
+                crate::writer::redact_known(note)
+                    .chars()
+                    .take(300)
+                    .collect(),
+            );
         }
     }
+}
+pub fn merge_annotations(issues: &mut Issues, dir: &Path, seen: &mut BTreeSet<String>) {
+    for a in lines::<Value>(&dir.join("annotations.ndjson")) {
+        apply_annotation(issues, &a, seen);
+    }
+}
+
+/// A read-only snapshot; the app remains the sole writer of issues.json.
+pub struct JournalView {
+    pub events: Vec<Event>,
+    pub issues: Issues,
+}
+pub fn journal_view(dir: &Path) -> JournalView {
+    let time = |ts: &str| chrono::DateTime::parse_from_rfc3339(ts).ok();
+    let mut events = events(dir);
+    events.sort_by_key(|event| (time(&event.ts), event.seq));
+    let index = dir.join("issues.json");
+    let indexed_at = index.metadata().and_then(|m| m.modified()).ok();
+    let saved = fs::read(&index)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Issues>(&bytes).ok());
+    let fresh = saved.is_some()
+        && indexed_at.is_some_and(|indexed| {
+            event_files(dir).iter().all(|p| {
+                p.metadata()
+                    .and_then(|m| m.modified())
+                    .is_ok_and(|t| t <= indexed)
+            })
+        });
+    let mut issues = if fresh { saved.unwrap() } else { Issues::new() };
+    let mut seen = if fresh {
+        fs::read(dir.join("annotation-cursor.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default()
+    } else {
+        BTreeSet::new()
+    };
+    if fresh {
+        merge_annotations(&mut issues, dir, &mut seen);
+    } else {
+        let mut annotations = lines::<Value>(&dir.join("annotations.ndjson"));
+        annotations.sort_by_key(|a| time(a["ts"].as_str().unwrap_or("")));
+        let mut pending = annotations.iter().peekable();
+        for event in &events {
+            while pending
+                .peek()
+                .is_some_and(|a| time(a["ts"].as_str().unwrap_or("")) < time(&event.ts))
+            {
+                apply_annotation(&mut issues, pending.next().unwrap(), &mut seen);
+            }
+            aggregate(&mut issues, std::slice::from_ref(event));
+        }
+        for annotation in pending {
+            apply_annotation(&mut issues, annotation, &mut seen);
+        }
+        // Clock skew or retention can put an annotation before its first retained event.
+        merge_annotations(&mut issues, dir, &mut seen);
+    }
+    issues.retain(|_, issue| is_issue(&issue.last_event));
+    JournalView { events, issues }
 }
 pub fn retain(dir: &Path, days: u32, cap: u64) -> io::Result<()> {
     let cutoff = (Utc::now() - chrono::Duration::days(days as i64))

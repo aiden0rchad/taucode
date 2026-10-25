@@ -46,6 +46,13 @@ aggregation or **Regenerate digest**. A fixed issue reopens if it recurs. The di
 saved at most every five minutes while events arrive, on demand and on app quit.
 **Clear all data** requires explicit confirmation.
 
+Issues include errors, warnings, problem signals from agents, and performance
+events above these thresholds: IPC 300ms, UI long tasks 150ms, git 500ms,
+startup 5s, and first token 10s. Routine performance and usage samples remain in
+Performance and Efficiency; feedback stays in User feedback and diag_feedback.
+Both diag_issues and the digest rank issues by severity, then count divided by
+(1 + age in days), then last seen. Age is relative to the latest journal timestamp.
+
 ## Connect Claude Code or Codex
 
 Settings displays the resolved absolute binary and folder paths and copies complete
@@ -87,3 +94,26 @@ crates/taucode-diag-mcp and npm run build -- --mode uipreview in apps/taucode.
 The Swift package build may require workspace-local CLANG_MODULE_CACHE_PATH and
 SWIFTPM_MODULECACHE_OVERRIDE, and --disable-sandbox when already inside a sandbox.
 No tauri build or browser/computer-control session is needed.
+
+## Preview states
+
+Run `npm run preview:ui` in `apps/taucode`, then use `?settings=diagnostics`
+for a six-issue inbox with stats, a regression and an agent note.
+Add `&diagnostics=empty` for the empty state. `?crash=sidebar` displays a
+recoverable panel fallback in preview mode only.
+
+`?settings=diagnostics&diagnostics=layout` runs the real-DOM layout check after
+opening an issue detail. It checks horizontal containment, inbox rows spanning
+at least 95% of their group, and copy buttons inside code blocks. The result is
+written to `document.documentElement.dataset.diagnosticsLayout` (`passed` or a
+failure message). Run at narrow and wide preview widths. This requires a browser;
+the ordinary test suite separately checks DOM structure and CSS cascade order.
+
+Setup snippets use absolute paths. The preview resolves an existing development
+binary when Vite starts; build it with `cargo build --offline --bins` in
+`apps/taucode/src-tauri` first. If the binary is missing, the setup cards show
+build instructions instead of a guessed executable path.
+
+The MCP reader rebuilds missing or stale issue indexes in memory using events
+and annotations. It never writes `issues.json`; the app owns that file.
+`diag_digest` returns plain Markdown, and the other tools return pretty JSON.

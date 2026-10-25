@@ -161,3 +161,143 @@ fn digest_fixture_golden() {
         include_str!("../../../../../docs/fixtures/diagnostics-digest.md")
     );
 }
+
+#[test]
+fn issue_kinds_and_perf_thresholds() {
+    let mut inbox = Issues::new();
+    let mut accepted = Vec::new();
+    for (code, threshold) in [
+        ("ipc.slow", 300.0),
+        ("ui.long_task", 150.0),
+        ("git.slow", 500.0),
+        ("startup.interactive", 5000.0),
+        ("startup.first_paint", 5000.0),
+        ("engine.first_token", 10000.0),
+    ] {
+        let mut e = event("perf", "ui", code, code);
+        e.fingerprint = fingerprint(&e);
+        for duration in [0.0, threshold - 1.0, threshold] {
+            e.metrics = json!({"durationMs": duration});
+            assert!(!is_issue(&e), "{code} at {duration}");
+        }
+        e.metrics = json!({"durationMs": threshold + 1.0});
+        assert!(is_issue(&e), "{code} above threshold");
+        accepted.push(e);
+    }
+    for code in [
+        "agent.tool_loop",
+        "agent.reread",
+        "agent.high_tokens",
+        "agent.aborted",
+        "agent.denied",
+        "agent.rewound",
+        "agent.compaction",
+    ] {
+        let mut e = event("usage", "agent", code, code);
+        e.fingerprint = fingerprint(&e);
+        assert!(is_issue(&e));
+        accepted.push(e);
+    }
+    for kind in ["error", "warning"] {
+        let mut e = event(kind, "ui", "ui.problem", kind);
+        e.fingerprint = kind.into();
+        assert!(is_issue(&e));
+        accepted.push(e);
+    }
+    aggregate(&mut inbox, &accepted);
+    assert_eq!(inbox.len(), accepted.len());
+    for (kind, code) in [
+        ("usage", "agent.turn"),
+        ("feedback", "feedback.idea"),
+        ("feedback", "agent.reread"),
+        ("perf", "engine.spawn"),
+        ("ux", "ui.panel_open"),
+    ] {
+        let mut e = event(kind, "ui", code, code);
+        e.metrics = json!({"durationMs": 50000});
+        assert!(!is_issue(&e));
+        aggregate(&mut inbox, &[e]);
+    }
+    assert_eq!(inbox.len(), accepted.len());
+}
+
+#[test]
+fn severity_then_decayed_count_then_recency_rank_both_views() {
+    let mut inbox = Issues::new();
+    for (code, severity, count, ts) in [
+        ("critical", "critical", 1, "2026-10-20T00:00:00Z"),
+        ("high", "high", 1, "2026-10-20T00:00:00Z"),
+        ("medium", "medium", 1, "2026-10-20T00:00:00Z"),
+        ("recent-many", "low", 4, "2026-10-25T00:00:00Z"),
+        ("old-many", "low", 6, "2026-10-23T00:00:00Z"),
+        ("recent-tie", "low", 2, "2026-10-25T00:00:00Z"),
+    ] {
+        let mut e = event("error", "engine", code, code);
+        e.fingerprint = code.into();
+        e.severity = severity.into();
+        e.ts = ts.into();
+        aggregate(&mut inbox, &vec![e; count]);
+    }
+    let expected = [
+        "critical",
+        "high",
+        "medium",
+        "recent-many",
+        "recent-tie",
+        "old-many",
+    ];
+    assert_eq!(
+        ranked_issues(&inbox, &[])
+            .iter()
+            .map(|i| i.code.as_str())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    let markdown = digest(&[], &inbox, "");
+    let open = markdown
+        .split("## Open issues\n")
+        .nth(1)
+        .unwrap()
+        .split("\n## ")
+        .next()
+        .unwrap();
+    let positions = expected.map(|code| open.find(&format!("- {code} [")).unwrap());
+    assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+}
+
+#[test]
+fn legacy_indexes_drop_samples_without_losing_real_issue_annotations() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = sample();
+    let mut inbox = Issues::new();
+    aggregate(&mut inbox, &[e.clone()]);
+    inbox.get_mut(&e.fingerprint).unwrap().status = "acknowledged".into();
+    inbox
+        .get_mut(&e.fingerprint)
+        .unwrap()
+        .notes
+        .push("Keep this note".into());
+    // Model an index produced by the former unfiltered aggregator.
+    for (kind, code) in [
+        ("perf", "engine.first_token"),
+        ("usage", "agent.turn"),
+        ("feedback", "feedback.idea"),
+    ] {
+        let mut old = inbox[&e.fingerprint].clone();
+        old.fingerprint = code.into();
+        old.last_event = event(kind, "agent", code, "Routine sample");
+        old.last_event.metrics = json!({"durationMs": 1250});
+        inbox.insert(code.into(), old);
+    }
+    atomic(
+        dir.path(),
+        "issues.json",
+        &serde_json::to_vec(&inbox).unwrap(),
+    )
+    .unwrap();
+    for actual in [issues(dir.path()), journal_view(dir.path()).issues] {
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[&e.fingerprint].status, "acknowledged");
+        assert_eq!(actual[&e.fingerprint].notes, ["Keep this note"]);
+    }
+}
