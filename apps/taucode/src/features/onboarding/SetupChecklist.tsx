@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import KeyRound from "lucide-react/dist/esm/icons/key-round";
+import Cpu from "lucide-react/dist/esm/icons/cpu";
+import Monitor from "lucide-react/dist/esm/icons/monitor";
+import Accessibility from "lucide-react/dist/esm/icons/accessibility";
+import Network from "lucide-react/dist/esm/icons/network";
+import Activity from "lucide-react/dist/esm/icons/activity";
+import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right";
+import Download from "lucide-react/dist/esm/icons/download";
+import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ModalShell } from "@/features/design-system/components/modal/ModalShell";
 import { SettingsButton, SettingsGroup, SettingsRow } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { engineRuntime, getAppSettings, getSetupStatus, openSetupPrivacy, providerHasApiKey, type EngineRuntimeStatus, type SetupStatus } from "@services/tauri";
@@ -7,14 +16,38 @@ import "./onboarding.css";
 export const SETUP_SEEN = "taucode.setup-checklist.v1";
 export type SetupSection = "providers" | "engines" | "features";
 
+type ChipLabel = "Ready" | "Granted" | "On" | "Needs setup" | "Not granted" | "Optional" | "Off" | "Checking";
+const chipTone: Record<ChipLabel, string> = {
+  Ready: "success", Granted: "success", On: "success",
+  "Needs setup": "warning", "Not granted": "warning",
+  Optional: "muted", Off: "muted", Checking: "muted",
+};
+function SetupRow({ icon, title, description, label, error, children }: {
+  icon: ReactNode; title: string; description: string; label: ChipLabel; error?: string; children?: ReactNode;
+}) {
+  return <SettingsRow className="setup-row" role="group" aria-label={title}>
+    <div className="setup-row-info">
+      <span className="setup-icon" aria-hidden="true">{icon}</span>
+      <div className="setup-row-copy"><strong>{title}</strong><p title={description}>{description}</p></div>
+    </div>
+    <div className="settings-row-controls">
+      <span role="status" className="setup-status" data-tone={error ? "error" : chipTone[label]} title={error} aria-label={error ? `Error: ${error}` : undefined}>
+        {!error && label === "Checking" && <LoaderCircle size={12} className="setup-spinner" aria-hidden="true" />}
+        {error ? "Error" : label}
+      </span>
+      {children}
+    </div>
+  </SettingsRow>;
+}
+
 export function SetupChecklist({ onNavigate }: { onNavigate: (section: SetupSection) => void }) {
-  const [open, setOpen] = useState(() => import.meta.env.MODE !== "uipreview" && localStorage.getItem(SETUP_SEEN) !== "done");
+  const [open, setOpen] = useState(() => import.meta.env.MODE === "uipreview" ? new URLSearchParams(window.location.search).get("setup") === "1" : localStorage.getItem(SETUP_SEEN) !== "done");
   const [status, setStatus] = useState<SetupStatus>();
-  const [runtimes, setRuntimes] = useState<EngineRuntimeStatus[]>([]);
+  const [runtimes, setRuntimes] = useState<EngineRuntimeStatus[]>();
   const [provider, setProvider] = useState<boolean>();
   const [diagnostics, setDiagnostics] = useState<boolean>();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [errors, setErrors] = useState<Partial<Record<"setup" | "engines" | "settings" | "screen" | "accessibility", string>>>({});
   const body = useRef<HTMLDivElement>(null);
   const refresh = useCallback(async () => {
     const results = await Promise.allSettled([
@@ -30,8 +63,7 @@ export function SetupChecklist({ onNavigate }: { onNavigate: (section: SetupSect
         else setProvider(false);
       }),
     ]);
-    const failed = results.find(r => r.status === "rejected");
-    setError(failed?.status === "rejected" ? String(failed.reason) : "");
+    setErrors(Object.fromEntries(results.map((result, index) => [["setup", "engines", "settings"][index], result.status === "rejected" ? String(result.reason) : undefined])));
   }, []);
   const dismiss = useCallback(() => {
     localStorage.setItem(SETUP_SEEN, "done");
@@ -62,31 +94,48 @@ export function SetupChecklist({ onNavigate }: { onNavigate: (section: SetupSect
   }, [open, refresh, dismiss]);
   if (!open) return null;
   const navigate = (section: SetupSection) => { dismiss(); onNavigate(section); };
-  const pi = runtimes.find(r => r.engine === "pi");
+  const pi = runtimes?.find(r => r.engine === "pi");
   const install = async () => {
-    setBusy(true); setError("");
+    setBusy(true); setErrors(current => ({ ...current, engines: undefined }));
     try { setRuntimes(await engineRuntime("prepare", "pi")); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setErrors(current => ({ ...current, engines: String(e) })); }
     finally { setBusy(false); }
   };
-  const stateLabel = (value: boolean | undefined) => value === undefined ? "Checking…" : value ? "Ready" : "Not set up";
-  return <ModalShell ariaLabelledBy="setup-title" ariaDescribedBy="setup-description" cardClassName="setup-checklist-card" onBackdropClick={dismiss}>
-    <div ref={body}>
+  const engineError = errors.engines || (pi?.state === "error" ? pi.message : undefined);
+  const essentialsReady = Number(provider === true && !errors.settings) + Number(pi?.state === "ready" && !busy && !engineError);
+  return <ModalShell squircle ariaLabelledBy="setup-title" ariaDescribedBy="setup-description" cardClassName="setup-checklist-card squircle-clip" onBackdropClick={dismiss}>
+    <div ref={body} className="settings-page setup-checklist">
       <h2 id="setup-title" className="ds-modal-title">Welcome to taucode</h2>
-      <p id="setup-description" className="ds-modal-subtitle">Set up what you need. Everything here can wait, and you can return from Settings → About.</p>
-      <SettingsGroup title="Start a conversation">
-        <SettingsRow><div><strong>Providers</strong><p role="status">{stateLabel(provider)}</p></div><SettingsButton onClick={() => navigate("providers")}>Open Providers</SettingsButton></SettingsRow>
-        <SettingsRow><div><strong>Engines</strong><p role="status">pi: {busy ? "Installing…" : pi?.message ?? "Checking…"}</p><p className="ds-modal-subtitle">Other engines are optional.</p></div>{pi?.state !== "ready" ? <SettingsButton disabled={busy} onClick={() => void install()}>Install pi</SettingsButton> : <SettingsButton onClick={() => navigate("engines")}>Manage engines</SettingsButton>}</SettingsRow>
+      <p id="setup-description" className="ds-modal-subtitle">Set up what you need now — everything else can wait. You can reopen this from Settings → About.</p>
+      <div className="setup-progress">
+        <span id="setup-progress-label">{essentialsReady} of 2 essentials ready</span>
+        <progress aria-labelledby="setup-progress-label" max={2} value={essentialsReady} />
+      </div>
+      <SettingsGroup title="Essentials">
+        <SetupRow icon={<KeyRound size={16} />} title="Providers" description="Connect a model provider." label={provider === undefined ? "Checking" : provider ? "Ready" : "Needs setup"} error={errors.settings}>
+          <SettingsButton onClick={() => navigate("providers")}><ArrowUpRight size={14} aria-hidden="true" />Open Providers</SettingsButton>
+        </SetupRow>
+        <SetupRow icon={<Cpu size={16} />} title="Engines" description="Install pi to run conversations." label={busy || !runtimes ? "Checking" : pi?.state === "ready" ? "Ready" : "Needs setup"} error={engineError}>
+          {pi?.state !== "ready" ? <SettingsButton disabled={busy} onClick={() => void install()}><Download size={14} aria-hidden="true" />Install pi</SettingsButton> : <SettingsButton onClick={() => navigate("engines")}><ArrowUpRight size={14} aria-hidden="true" />Manage engines</SettingsButton>}
+        </SetupRow>
       </SettingsGroup>
-      <SettingsGroup title="Computer use · optional" subtitle="Only needed when you want taucode to see and operate apps.">
-        {(["screen", "accessibility"] as const).map(pane => <SettingsRow key={pane}><div><strong>{pane === "screen" ? "Screen Recording" : "Accessibility"}</strong><p role="status">{status?.permissions.unsupported ? "macOS only" : status?.permissions[pane] === undefined ? "Checking…" : status.permissions[pane] ? "Granted" : "Not granted"}</p></div><SettingsButton disabled={status?.permissions.unsupported} aria-label={`Open System Settings — ${pane === "screen" ? "Screen Recording" : "Accessibility"}`} onClick={() => void openSetupPrivacy(pane).catch(e => setError(String(e)))}>Open System Settings</SettingsButton></SettingsRow>)}
+      <SettingsGroup title="Computer use (optional)">
+        {(["screen", "accessibility"] as const).map(pane => <SetupRow key={pane}
+          icon={pane === "screen" ? <Monitor size={16} /> : <Accessibility size={16} />}
+          title={pane === "screen" ? "Screen Recording" : "Accessibility"}
+          description={status?.permissions.unsupported ? "Available on macOS." : pane === "screen" ? "Let taucode see your screen." : "Let taucode operate apps."}
+          label={status?.permissions.unsupported ? "Optional" : !status ? "Checking" : status.permissions[pane] ? "Granted" : "Not granted"}
+          error={errors[pane] || errors.setup}>
+          <SettingsButton disabled={status?.permissions.unsupported} aria-label={`Open System Settings — ${pane === "screen" ? "Screen Recording" : "Accessibility"}`} onClick={() => void openSetupPrivacy(pane).catch(e => setErrors(current => ({ ...current, [pane]: String(e) })))}><ArrowUpRight size={14} aria-hidden="true" />System Settings</SettingsButton>
+        </SetupRow>)}
       </SettingsGroup>
       <SettingsGroup title="Optional tools">
-        <SettingsRow><div><strong>Codegraph</strong><p role="status">{status ? status.codegraph ? "Installed" : "Not installed" : "Checking…"}</p></div></SettingsRow>
-        <SettingsRow><div><strong>Diagnostics</strong><p role="status">{diagnostics === undefined ? "Checking…" : diagnostics ? "On" : "Off"}</p></div><SettingsButton onClick={() => navigate("features")}>Open Features</SettingsButton></SettingsRow>
+        <SetupRow icon={<Network size={16} />} title="Codegraph" description="Explore code relationships." label={!status ? "Checking" : status.codegraph ? "Ready" : "Optional"} error={errors.setup} />
+        <SetupRow icon={<Activity size={16} />} title="Diagnostics" description="Inspect local app diagnostics." label={diagnostics === undefined ? "Checking" : diagnostics ? "On" : "Off"} error={errors.settings}>
+          <SettingsButton onClick={() => navigate("features")}><ArrowUpRight size={14} aria-hidden="true" />Open Features</SettingsButton>
+        </SetupRow>
       </SettingsGroup>
-      {error && <p role="alert">{error}</p>}
-      <div className="ds-modal-actions"><SettingsButton onClick={dismiss}>Skip for now</SettingsButton><SettingsButton className="primary" onClick={dismiss}>Done</SettingsButton></div>
+      <div className="ds-modal-actions"><SettingsButton className="ghost" onClick={dismiss}>Skip for now</SettingsButton><SettingsButton className="primary" onClick={dismiss}>Done</SettingsButton></div>
     </div>
   </ModalShell>;
 }

@@ -137,6 +137,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   function handle(command: string, args: Params): unknown {
     const params = record(args.params);
     switch (command) {
+      case "setup_status": return { permissions: { screen: true, accessibility: false }, codegraph: true };
       case "get_app_settings": return state.settings;
       case "update_app_settings": state.settings = { ...state.settings, ...record(args.settings) } as AppSettings; return state.settings;
       case "set_window_mode": if (["code", "chat", "work"].includes(String(args.mode))) state.settings.windowModes = { main: args.mode as "code" | "chat" | "work" }; return null;

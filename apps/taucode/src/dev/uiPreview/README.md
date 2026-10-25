@@ -7,6 +7,8 @@ needed. The port is strict: an occupied port fails instead of selecting another.
 
 Direct screenshot URLs:
 
+- `/?setup=1` — Setup checklist with Screen Recording granted, Accessibility not granted, and Codegraph detected.
+
 - `/?mode=code&thread=home` — Code home dashboard.
 - `/?mode=code&thread=thread-empty` — new Code thread and starter pills.
 - `/?mode=chat&chat=new` or `/?mode=work&task=new` — empty states.
