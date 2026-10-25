@@ -91,6 +91,7 @@ export const SETTINGS_SECTION_LABELS: Record<CodexSection, string> = {
   import: "Import",
   browser: "Browser",
   computer: "Computer Use",
+  diagnostics: "Diagnostics",
   codex: "Codex",
   features: "Features",
   engines: "Engines",

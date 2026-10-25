@@ -22,6 +22,11 @@ Direct screenshot URLs:
 - `/?settings=appearance&theme=light` — appearance settings; `theme=dark` also works. All built-in IDs and custom-forest are supported; the Appearance gallery includes an invalid-file fixture.
 
 Missing or invalid IDs select the first fixture. Settings URLs open Code mode.
+All feature flags default to on, as in the app. Use
+`?features=-reasoningEffects,-dictation,-git` to preview disabled features.
+Prefix a feature with `+` (or `%2B`) to enable it; entries apply left to right,
+unknown names are ignored, and disabling Git also disables worktrees.
+Feature overrides take precedence over `dictation=ready`.
 Selections apply once per page load, so subsequent navigation remains interactive.
 Use `?mode=code&thread=thread-rich&sidechat=thread-side` for a populated side-chat panel tab.
 Every settings section is available through `?settings=<section>`; Models & Agents includes Defaults, Subagents, Roles and Engines.

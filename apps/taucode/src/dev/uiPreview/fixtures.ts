@@ -51,7 +51,6 @@ export function createFixtures(now = Date.now()) {
     mcpServers: [{ id: "docs", name: "Documentation", enabled: true, approval: "ask", transport: { type: "stdio", command: "node", args: ["/preview/tools/docs.mjs"], env: {} } }],
     browser: { ...defaultBrowserSettings, allowedOrigins: ["https://docs.example.com", "https://github.com"], blockedOrigins: ["https://accounts.example.com"] },
     computer: { ...defaultComputerSettings, planner: { providerId: "openai", modelId: "gpt-5" }, grounding: { providerId: "openai", modelId: "gpt-5-mini" }, allowedApps: [{ bundleId: "com.apple.Safari", access: "full" }, { bundleId: "com.apple.systempreferences", access: "read-only" }] },
-    features: { dictation: false, reasoningEffects: false, computerUse: false },
     engines: [{ id: "omp", name: "oh-my-pi", protocol: "pi-rpc", builtIn: true, enabled: true }, { id: "custom-preview", name: "Gemini CLI", protocol: "acp", builtIn: false, command: "gemini", args: ["--experimental-acp"], enabled: true }],
     agentPolicy: { defaultEngine: "pi", defaultModel: { providerId: "openai", modelId: "gpt-5" }, subagents: {
       enabled: true, maxConcurrent: 2, maxPerTurn: 4, maxDepth: 2, allowedModels: [], defaultModel: null, roles: [{ name: "reviewer", description: "Review changes for correctness and test coverage", model: { providerId: "openai", modelId: "gpt-5-mini" }, toolAccess: "read-only", instructions: "Review the diff and report actionable findings." }],

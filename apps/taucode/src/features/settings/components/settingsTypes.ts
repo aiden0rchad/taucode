@@ -18,6 +18,7 @@ export const SETTINGS_SECTION_IDS = [
   "import",
   "browser",
   "computer",
+  "diagnostics",
 ] as const;
 
 export const SETTINGS_EXTRA_SECTION_IDS = ["codex", "features", "engines", "codex-flags"] as const;

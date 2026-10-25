@@ -55,13 +55,22 @@
         "glass-light",
         "matrix",
         "claude-light",
-        "claude-dark"
+        "claude-dark",
+        "cyberpunk-neon"
       ]
     },
     "tokens": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "--scrollbar-thumb": {
+          "$ref": "#/$defs/color",
+          "description": "scrollbar thumb"
+        },
+        "--scrollbar-thumb-hover": {
+          "$ref": "#/$defs/color",
+          "description": "scrollbar thumb hover"
+        },
         "--surface-app": {
           "$ref": "#/$defs/color",
           "description": "surface app"
@@ -385,12 +394,56 @@
     "effects": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "digitalRain"
-      ],
       "properties": {
         "digitalRain": {
           "type": "boolean"
+        },
+        "neonGlow": {
+          "type": "boolean"
+        }
+      }
+    },
+    "shape": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "corners": {
+          "enum": [
+            "squircle",
+            "chamfer",
+            "round"
+          ],
+          "default": "squircle"
+        },
+        "chamfer": {
+          "type": "number",
+          "minimum": 4,
+          "maximum": 20,
+          "default": 10
+        }
+      }
+    },
+    "border": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gradient": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/color"
+          }
+        },
+        "angle": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 360,
+          "default": 135
+        },
+        "highlight": {
+          "type": "boolean",
+          "default": false
         }
       }
     }

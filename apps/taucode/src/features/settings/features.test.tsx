@@ -19,14 +19,15 @@ vi.mock("@services/tauri", () => ({ getGitStatus: vi.fn().mockResolvedValue({ br
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); });
 const settings = (value: Partial<AppSettings> = {}) => value as AppSettings;
 it("migrates all feature defaults and keeps checkpoints independent of Git", () => {
-  expect(Object.values(features({})).every(Boolean)).toBe(true);
+  expect(features({}).diagnostics).toBe(false);
+  expect(Object.entries(features({})).filter(([key]) => key !== "diagnostics").every(([, value]) => value)).toBe(true);
   expect(features({ features: { git: false } })).toMatchObject({ git: false, worktrees: false, checkpoints: true });
 });
 it.each(featureGroups.flatMap(([, rows]) => rows))("persists the %s toggle", async (key, title) => {
   const save = vi.fn().mockResolvedValue(undefined);
   render(<SettingsTaucodeFeaturesSection appSettings={settings()} onUpdateAppSettings={save} />);
   fireEvent.click(screen.getByRole("button", { name: title }));
-  expect(save).toHaveBeenCalledWith(expect.objectContaining({ features: expect.objectContaining({ [key]: false }) }));
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ features: expect.objectContaining({ [key]: !defaultFeatures[key] }) }));
 });
 it("hides disabled settings entry points and rewind", () => {
   const allOff = Object.fromEntries(Object.keys(defaultFeatures).map(k => [k, false]));

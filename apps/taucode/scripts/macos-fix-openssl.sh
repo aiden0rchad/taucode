@@ -66,6 +66,7 @@ sync_embedded_binary() {
 
 sync_embedded_binary "${daemon_source}" "${daemon_path}" "daemon"
 sync_embedded_binary "${daemonctl_source}" "${daemonctl_path}" "daemonctl"
+sync_embedded_binary "src-tauri/target/release/taucode-diag-mcp" "${app_path}/Contents/MacOS/taucode-diag-mcp" "diagnostics MCP"
 
 if [[ ! -f "${libssl}" || ! -f "${libcrypto}" ]]; then
   echo "OpenSSL dylibs not found at ${openssl_prefix}/lib"
@@ -113,6 +114,9 @@ codesign --force --options runtime --timestamp --sign "${identity}" "${framework
 codesign --force --options runtime --timestamp --sign "${identity}" "${codesign_entitlements[@]}" "${bin_path}"
 if [[ -f "${daemon_path}" ]]; then
   codesign --force --options runtime --timestamp --sign "${identity}" "${codesign_entitlements[@]}" "${daemon_path}"
+fi
+if [[ -f "${app_path}/Contents/MacOS/taucode-diag-mcp" ]]; then
+  codesign --force --options runtime --timestamp --sign "${identity}" "${codesign_entitlements[@]}" "${app_path}/Contents/MacOS/taucode-diag-mcp"
 fi
 if [[ -f "${daemonctl_path}" ]]; then
   codesign --force --options runtime --timestamp --sign "${identity}" "${codesign_entitlements[@]}" "${daemonctl_path}"

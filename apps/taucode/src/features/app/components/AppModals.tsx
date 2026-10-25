@@ -1,3 +1,4 @@
+import { DiagnosticBoundary } from "@/features/diagnostics/DiagnosticBoundary";
 import { lazy, memo, Suspense } from "react";
 import type { ComponentType } from "react";
 import type { BranchInfo, WorkspaceInfo } from "../../../types";
@@ -295,11 +296,11 @@ export const AppModals = memo(function AppModals({
       )}
       {settingsOpen && (
         <Suspense fallback={null}>
-          <SettingsViewComponent
+          <DiagnosticBoundary panel="settings"><SettingsViewComponent
             {...settingsProps}
             onClose={onCloseSettings}
             initialSection={settingsSection ?? undefined}
-          />
+          /></DiagnosticBoundary>
         </Suspense>
       )}
     </>

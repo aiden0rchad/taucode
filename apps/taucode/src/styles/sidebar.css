@@ -461,52 +461,16 @@
   mask-size: 100% 100%;
 }
 
-.sidebar-body.fade-top.fade-bottom {
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 16px,
-    #000 calc(100% - 16px),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 16px,
-    #000 calc(100% - 16px),
-    transparent 100%
-  );
+.sidebar-body {
+  --sidebar-fade-top: #000;
+  --sidebar-fade-bottom: #000;
+  --sidebar-fade-top-mid: #000;
+  --sidebar-fade-bottom-mid: #000;
+  -webkit-mask-image: linear-gradient(to bottom, var(--sidebar-fade-top), var(--sidebar-fade-top-mid) 10px, #000 28px, #000 calc(100% - 28px), var(--sidebar-fade-bottom-mid) calc(100% - 10px), var(--sidebar-fade-bottom));
+  mask-image: linear-gradient(to bottom, var(--sidebar-fade-top), var(--sidebar-fade-top-mid) 10px, #000 28px, #000 calc(100% - 28px), var(--sidebar-fade-bottom-mid) calc(100% - 10px), var(--sidebar-fade-bottom));
 }
-
-.sidebar-body.fade-top:not(.fade-bottom) {
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 16px,
-    #000 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 16px,
-    #000 100%
-  );
-}
-
-.sidebar-body.fade-bottom:not(.fade-top) {
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    #000 0,
-    #000 calc(100% - 16px),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    #000 0,
-    #000 calc(100% - 16px),
-    transparent 100%
-  );
-}
+.sidebar-body.fade-top { --sidebar-fade-top: transparent; --sidebar-fade-top-mid: rgba(0,0,0,.65); }
+.sidebar-body.fade-bottom { --sidebar-fade-bottom: transparent; --sidebar-fade-bottom-mid: rgba(0,0,0,.65); }
 
 .workspace-list {
   display: flex;

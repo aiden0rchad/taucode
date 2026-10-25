@@ -33,13 +33,14 @@ export function contrast(text: number[], surface: number[]) {
   const a = luminance(composite(text,surface)), b = luminance(surface);
   return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);
 }
-export function contrastPairs(tokens: Record<string,string>) {
+export function contrastPairs(tokens: Record<string,string>, materialAppearance?: 'light' | 'dark') {
+  const backdrops = (materialAppearance === 'dark' ? ['#000000','#4a4a4e'] : materialAppearance === 'light' ? ['#ffffff','#bdbdc2'] : ['#000000','#ffffff']).map(value => rgba(value)!);
   const pairs: { text: string; surface: string; label: string; ratio: number | null }[] = [];
   const resolve = (key: string, seen: string[] = []): string => seen.includes(key) ? '' : (tokens[key] ?? '').replace(/var\((--[a-z0-9-]+)\)/g, (_, ref: string) => resolve(ref,[...seen,key]));
   for (const surface of ['app','sidebar','card','composer']) {
     for (const text of ['primary','muted']) {
       const a = rgba(resolve('--text-'+text)), b = rgba(resolve('--surface-'+surface));
-      const ratio = a && b ? Math.min(...[0,255].map(v => contrast(a,composite(b,[v,v,v,1])))) : NaN;
+      const ratio = a && b ? Math.min(...backdrops.map(backdrop => contrast(a,composite(b,backdrop)))) : NaN;
       pairs.push({ text:'--text-'+text, surface:'--surface-'+surface, label:(text === 'primary' ? 'Body' : 'Muted')+' / '+surface, ratio:Number.isFinite(ratio) ? ratio : null });
     }
   }

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "shape-test",
+  "name": "Shape test",
+  "appearance": "dark",
+  "tokens": {},
+  "border": {
+    "highlight": 1
+  }
+}

@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "taucode local diagnostics event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "ts",
+    "run",
+    "seq",
+    "kind",
+    "severity",
+    "area",
+    "code",
+    "message",
+    "fingerprint",
+    "context",
+    "metrics",
+    "detail"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "run": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "kind": {
+      "enum": [
+        "error",
+        "warning",
+        "perf",
+        "usage",
+        "ux",
+        "feedback",
+        "suggestion"
+      ]
+    },
+    "severity": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "area": {
+      "enum": [
+        "engine",
+        "provider",
+        "ui",
+        "ipc",
+        "git",
+        "browser",
+        "computer",
+        "terminal",
+        "checkpoints",
+        "connectors",
+        "themes",
+        "work",
+        "chat",
+        "startup",
+        "agent"
+      ]
+    },
+    "code": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.]+$",
+      "maxLength": 100
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "appVersion": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "os": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "mode": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "panel": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "engine": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "providerKind": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "threadId": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "turnId": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "workspace": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "responseId": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "codegraph": {
+          "type": "boolean"
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "tokensIn": {
+          "type": "number",
+          "minimum": 0
+        },
+        "tokensOut": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cachedTokens": {
+          "type": "number",
+          "minimum": 0
+        },
+        "costUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "count": {
+          "type": "number",
+          "minimum": 0
+        },
+        "toolCalls": {
+          "type": "number",
+          "minimum": 0
+        },
+        "errors": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rssKb": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cpuPercent": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "detail": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "errorClass": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "command": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "type": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "relatedFingerprint": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "stderrTail": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "stack": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "status": {
+          "type": "integer"
+        },
+        "attachedEvents": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": [
+              "run",
+              "seq"
+            ],
+            "properties": {
+              "run": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

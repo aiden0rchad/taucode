@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "shape-test",
+  "name": "Shape test",
+  "appearance": "dark",
+  "tokens": {},
+  "border": {
+    "gradient": [
+      "#ff2bd6",
+      "var(--text-accent)",
+      "rgba(255,255,255,.3)"
+    ],
+    "angle": 135,
+    "highlight": true
+  }
+}

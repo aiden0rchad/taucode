@@ -1,3 +1,4 @@
+import { diagnosticsEnabled, openFeedback } from "@/features/diagnostics/client";
 import type { ErrorToast } from "../../../services/toasts";
 import {
   ToastBody,
@@ -34,6 +35,7 @@ export function ErrorToasts({ toasts, onDismiss }: ErrorToastsProps) {
             </button>
           </ToastHeader>
           <ToastBody className="error-toast-body">{toast.message}</ToastBody>
+          {diagnosticsEnabled() && <button type="button" onClick={() => openFeedback({ relatedFingerprint: "697cfae5c4ba4fe3" })}>Report this</button>}
         </ToastCard>
       ))}
     </ToastViewport>

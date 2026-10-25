@@ -20,7 +20,7 @@ export function useThemePreference(settings: Pick<AppSettings, "theme" | "themeL
         fallbackRef.current();
       }
       const theme = selectTheme(settings.theme, themes, media?.matches ?? false, settings.themeLight, settings.themeDark);
-      applyTheme(theme, settings.themeAnimations?.[theme.id] !== false);
+      applyTheme(theme, settings.themeAnimations?.[theme.id] !== false,settings.themeAnimations?.[`${theme.id}:neonGlow`] !== false);
     };
     update();
     media?.addEventListener('change', update);

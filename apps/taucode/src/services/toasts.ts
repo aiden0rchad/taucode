@@ -1,3 +1,4 @@
+import { diagnosticsEnabled, record } from "@/features/diagnostics/client";
 export type ErrorToast = {
   id: string;
   title: string;
@@ -18,6 +19,7 @@ function makeToastId() {
 }
 
 export function pushErrorToast(input: ErrorToastInput) {
+  if (diagnosticsEnabled()) record({ kind: "error", area: "ui", code: "ui.error_toast", message: "Error notification displayed" });
   const toast: ErrorToast = {
     id: input.id ?? makeToastId(),
     title: input.title,

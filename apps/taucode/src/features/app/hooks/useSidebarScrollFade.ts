@@ -30,7 +30,9 @@ export function useSidebarScrollFade(deps: ReadonlyArray<unknown>) {
 
   useEffect(() => {
     const frame = requestAnimationFrame(updateScrollFade);
-    return () => cancelAnimationFrame(frame);
+    const observer = new ResizeObserver(updateScrollFade);
+    if (sidebarBodyRef.current) observer.observe(sidebarBodyRef.current);
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
   }, [updateScrollFade, deps]);
 
   return { sidebarBodyRef, scrollFade, updateScrollFade };

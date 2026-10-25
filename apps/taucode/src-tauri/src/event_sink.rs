@@ -16,6 +16,7 @@ impl TauriEventSink {
 
 impl EventSink for TauriEventSink {
     fn emit_app_server_event(&self, event: AppServerEvent) {
+        taucode_diag_mcp::observe::observe(&event.message);
         work_status(&self.app, &event.message);
         let _ = self.app.emit("app-server-event", event);
     }

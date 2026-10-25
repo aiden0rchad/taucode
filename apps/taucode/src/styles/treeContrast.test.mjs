@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
+import { builtins } from '@/features/themes/builtins';
 
 const read = name => readFileSync(`src/styles/${name}.css`, "utf8");
 const tokens = css => Object.fromEntries([...css.matchAll(/(--[\w-]+):\s*(#[\da-f]{6});/gi)].map(([, key, value]) => [key, value]));
@@ -26,18 +28,32 @@ it.each(["dark", "light", "system", "dim"])("keeps tree lines visible against th
   }
 });
 
-it("uses dedicated colors for 1px trunks and rounded elbows, including the project connection", () => {
+it("uses rounded SVG guides and keeps selected highlights off the branches", () => {
   const css = read("visual-refresh");
-  const rules = Object.fromEntries([...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, declarations]) => [selector.replace(/\/\*[\s\S]*?\*\//g, "").trim(), declarations]));
-  expect(rules[".tree-branch::before, .tree-branch::after"]).toContain("border-color: var(--tree-line)");
-  expect(rules[".tree-path::after, .tree-branch:has(~ .tree-path)::before"]).toContain("border-color: var(--tree-line-active)");
-  expect(rules[".tree-branch:has(~ .tree-path)::after"]).toContain("border-left-color: var(--tree-line-active)");
-  expect(rules[".tree-branch::before"]).toContain("border-left-width: 1px");
-  expect(rules[".tree-branch::after"]).toContain("border-left-width: 1px");
-  expect(rules[".tree-branch::after"]).toContain("border-bottom-width: 1px");
-  expect(rules[".tree-branch::after"]).toContain("border-bottom-left-radius: 6px");
-  expect(rules[".workspace-card-content .sidebar-tree > .tree-branch:first-child::after"]).toContain("top: -18px");
-  expect(rules[".tree-last-child::before"]).toContain("display: none");
+  expect(css).toContain('.tree-guide-normal { stroke: var(--tree-line); }');
+  expect(css).toContain('.tree-guide-active { stroke: var(--tree-line-active); }');
+  expect(css).toContain('filter: drop-shadow(0 0 4px var(--tree-line-active))');
+  expect(css).toContain('--tree-row-highlight: 9px');
+  expect(css).toContain('--tree-row-highlight: 6px');
+  expect(css).not.toContain('.tree-branch::before');
+  const themes = readFileSync('src/features/themes/themes.css','utf8');
+  expect(themes).not.toMatch(/inset 2px 0/);
+  for (const [,selector,body] of (css+themes+read('sidebar')).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (selector.includes('thread-row') && selector.includes('active')) expect(body).not.toMatch(/border-left/);
+  }
+});
+
+it.each(builtins)('keeps the $name selected row background out of the guide area', theme => {
+  const style = document.createElement('style');
+  style.textContent = read('visual-refresh') + readFileSync('src/features/themes/themes.css','utf8');
+  const root = document.documentElement;
+  const previous = {...root.dataset};
+  Object.assign(root.dataset,{theme:theme.appearance,themeId:theme.id,translucent:String(!!theme.window?.translucent),neonPalette:String(!!theme.effects?.neonGlow)});
+  const container = document.createElement('div');
+  container.innerHTML = '<aside class="sidebar"><div class="sidebar-tree-node"><button class="thread-row active">Selected</button></div></aside>';
+  document.head.append(style); document.body.append(container);
+  try { expect(getComputedStyle(container.querySelector('button')).backgroundColor).toBe('rgba(0, 0, 0, 0)'); }
+  finally { style.remove(); container.remove(); for (const key of Object.keys(root.dataset)) delete root.dataset[key]; Object.assign(root.dataset,previous); }
 });
 
 it("lets collapsible sidebar grids shrink with the sidebar", () => {

@@ -66,6 +66,22 @@ export function ThemeEditor({ initial, restore, save, close }: { initial: ThemeM
           <SettingsRow><span>Appearance</span><SettingsSegmented label="Appearance" value={draft.appearance} options={[{value:'light',label:'Light'},{value:'dark',label:'Dark'}]} onChange={value => patch({appearance:value as 'light'|'dark'})} /></SettingsRow>
           <SettingsRow><label htmlFor="theme-extends">Based on</label><SettingsSelect id="theme-extends" value={draft.extends ?? draft.appearance} onChange={e => patch({ extends:e.target.value })}>{builtins.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</SettingsSelect></SettingsRow>
         </SettingsGroup>
+        <SettingsGroup title="Shape & border">
+          <SettingsRow><span>Corners</span><SettingsSegmented label="Corners" value={resolved.shape?.corners ?? 'squircle'} options={[{value:'squircle',label:'Squircle'},{value:'round',label:'Round'},{value:'chamfer',label:'Chamfer'}]} onChange={value => patch({shape:{...resolved.shape,corners:value as NonNullable<ThemeManifest['shape']>['corners']}})} /></SettingsRow>
+          {resolved.shape?.corners === 'chamfer' && <SettingsRow><label htmlFor="theme-cut">Cut size · {resolved.shape.chamfer ?? 10}px</label><input id="theme-cut" type="range" min="4" max="20" value={resolved.shape.chamfer ?? 10} onChange={e => patch({shape:{...resolved.shape,chamfer:Number(e.target.value)}})} /></SettingsRow>}
+          <SettingsToggleRow title="Border gradient"><SettingsToggleSwitch pressed={!!resolved.border?.gradient} onClick={() => patch({border:{...resolved.border,gradient:resolved.border?.gradient ? undefined : ['#ff2bd6','#00e5ff']}})} /></SettingsToggleRow>
+          {resolved.border?.gradient && <>
+            {resolved.border.gradient.map((stop,index,stops) => <SettingsRow key={index} className="theme-gradient-stop">
+              <label htmlFor={`border-stop-${index}`}>Stop {index+1}</label>
+              <span className="theme-border-swatch" style={{background:validateTheme(draft).length ? 'transparent' : stop}} aria-hidden="true" />
+              <SettingsTextField id={`border-stop-${index}`} value={stop} spellCheck={false} onChange={e => patch({border:{...resolved.border,gradient:stops.map((color,i) => i === index ? e.target.value : color)}})} />
+              <SettingsButton aria-label={`Remove stop ${index+1}`} disabled={stops.length <= 2} onClick={() => patch({border:{...resolved.border,gradient:stops.filter((_,i) => i !== index)}})}>Remove</SettingsButton>
+            </SettingsRow>)}
+            <SettingsRow><SettingsButton disabled={resolved.border.gradient.length >= 4} onClick={() => patch({border:{...resolved.border,gradient:[...resolved.border!.gradient!,'#a855f7']}})}>Add stop</SettingsButton></SettingsRow>
+            <SettingsRow><label htmlFor="theme-border-angle">Angle · {resolved.border.angle ?? 135}°</label><input id="theme-border-angle" type="range" min="0" max="360" value={resolved.border.angle ?? 135} onChange={e => patch({border:{...resolved.border,angle:Number(e.target.value)}})} /></SettingsRow>
+          </>}
+          <SettingsToggleRow title="Top highlight"><SettingsToggleSwitch pressed={!!resolved.border?.highlight} onClick={() => patch({border:{...resolved.border,highlight:!resolved.border?.highlight}})} /></SettingsToggleRow>
+        </SettingsGroup>
         <h3 className="theme-colors-title">Colors</h3>
         {[...new Set(Object.values(themeTokens).map(t => t.group))].map(group => {
           const entries = Object.entries(themeTokens).filter(([key,t]) => t.group === group && (key+' '+t.label).includes(search.toLowerCase()));
@@ -99,7 +115,8 @@ export function ThemeEditor({ initial, restore, save, close }: { initial: ThemeM
         </SettingsGroup>
         <SettingsGroup title="Window & effects">
           <SettingsRow><div><label htmlFor="theme-material">Material</label><small className="theme-field-note">Window translucency is available on macOS only.</small></div><SettingsSelect id="theme-material" value={resolved.window?.translucent ? resolved.window.material : 'none'} onChange={e => patch({window:{translucent:e.target.value !== 'none',material:e.target.value as NonNullable<ThemeManifest['window']>['material']}})}>{Object.entries({none:'Opaque',sidebar:'Sidebar',underWindow:'Under window',hudWindow:'HUD window'}).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</SettingsSelect></SettingsRow>
-          <SettingsToggleRow title="Animated background" subtitle="Digital rain in empty conversations. Respects reduced motion."><SettingsToggleSwitch pressed={!!resolved.effects?.digitalRain} onClick={() => patch({effects:{digitalRain:!resolved.effects?.digitalRain}})} /></SettingsToggleRow>
+          <SettingsToggleRow title="Animated background" subtitle="Digital rain in empty conversations. Respects reduced motion."><SettingsToggleSwitch pressed={!!resolved.effects?.digitalRain} onClick={() => patch({effects:{...resolved.effects,digitalRain:!resolved.effects?.digitalRain}})} /></SettingsToggleRow>
+          <SettingsToggleRow title="Glow effects" subtitle="Static accent and focus glows."><SettingsToggleSwitch pressed={!!resolved.effects?.neonGlow} onClick={() => patch({effects:{...resolved.effects,neonGlow:!resolved.effects?.neonGlow}})} /></SettingsToggleRow>
         </SettingsGroup>
         {!!errors.length && <div role="alert" className="theme-editor-errors">{errors.map(e => <p key={e}>{e}</p>)}</div>}
         {error && <p role="alert">{error}</p>}

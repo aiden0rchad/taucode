@@ -6,7 +6,7 @@ export function squirclePath(width: number, height: number, radius = 20, smoothi
   const w = Math.max(0, width - 2 * inset), h = Math.max(0, height - 2 * inset);
   const r = Math.max(0, Math.min(radius - inset, w / 2, h / 2));
   const s = r ? Math.max(0, Math.min(smoothing, 1, Math.min(w, h) / (2 * r) - 1)) : 0;
-  const key = [w, h, r, s, inset].join(",");
+  const key = ['squircle', w, h, r, s, inset].join(",");
   const cached = paths.get(key);
   if (cached) return cached;
   const p = (1 + s) * r, angle = s * Math.PI / 4;
@@ -26,6 +26,26 @@ export function squirclePath(width: number, height: number, radius = 20, smoothi
     path += ` C ${point(corner, p, p - a - b)} ${point(corner, p, p - a)} ${point(corner, p, p)}`;
   }
   path += " Z";
+  if (paths.size >= 256) paths.delete(paths.keys().next().value!);
+  paths.set(key, path);
+  return path;
+}
+
+export function roundedRectPath(width: number, height: number, radius = 20, inset = 0) {
+  return squirclePath(width, height, radius, 0, inset);
+}
+
+export function chamferPath(width: number, height: number, cut = 10, radius = 2, inset = 0) {
+  if (![width, height, cut, radius, inset].every(Number.isFinite)) return '';
+  const w = Math.max(0, width - 2 * inset), h = Math.max(0, height - 2 * inset);
+  // Offset diagonal edges by the same perpendicular distance as straight edges.
+  const c = Math.max(0, Math.min(Math.min(cut, Math.min(width, height) / 3) - (2 - Math.SQRT2) * inset, Math.min(w, h) / 3));
+  const r = Math.max(0, Math.min(radius - inset, w / 2, h / 2));
+  const key = ['chamfer', w, h, c, r, inset].join(',');
+  const cached = paths.get(key);
+  if (cached) return cached;
+  const p = (x: number, y: number) => `${Math.round((x + inset) * 1000) / 1000} ${Math.round((y + inset) * 1000) / 1000}`;
+  const path = `M ${p(c, 0)} L ${p(w-r, 0)} Q ${p(w, 0)} ${p(w, r)} L ${p(w, h-c)} L ${p(w-c, h)} L ${p(r, h)} Q ${p(0, h)} ${p(0, h-r)} L ${p(0, c)} Z`;
   if (paths.size >= 256) paths.delete(paths.keys().next().value!);
   paths.set(key, path);
   return path;

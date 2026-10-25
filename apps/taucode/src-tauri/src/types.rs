@@ -385,6 +385,7 @@ pub(crate) struct RemoteBackendTarget {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct AppSettings {
     #[serde(default)] pub features: Features,
+    #[serde(default)] pub diagnostics: taucode_diag_mcp::core::Options,
     #[serde(default)] pub engines: Vec<EngineDefinition>,
     #[serde(default, rename = "windowModes")]
     pub(crate) window_modes: std::collections::HashMap<String, String>,
@@ -1153,6 +1154,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             features: Features::default(),
+            diagnostics: Default::default(),
             engines: Vec::new(),
             browser: Default::default(),
             computer: Default::default(),
@@ -1493,6 +1495,7 @@ pub(crate) struct Features {
     pub import_tools: bool,
     pub dictation: bool,
     pub reasoning_effects: bool,
+    pub diagnostics: bool,
 }
 impl Default for Features {
     fn default() -> Self { Self {
@@ -1510,6 +1513,7 @@ impl Default for Features {
         import_tools: true,
         dictation: true,
         reasoning_effects: true,
+        diagnostics: false,
     } }
 }
 impl AppSettings {

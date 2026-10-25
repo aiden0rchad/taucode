@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fs, path::{Path, PathBuf}, sync::{Mutex, OnceLo
 use tauri::{Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 
-const BUILTINS: &[&str] = &["system", "light", "dark", "dim", "glass-dark", "glass-light", "matrix", "claude-light", "claude-dark"];
+const BUILTINS: &[&str] = &["system", "light", "dark", "dim", "glass-dark", "glass-light", "matrix", "claude-light", "claude-dark", "cyberpunk-neon"];
 fn tokens() -> &'static Value {
     static TOKENS: OnceLock<Value> = OnceLock::new();
     TOKENS.get_or_init(|| serde_json::from_str(include_str!("../../src/features/themes/tokens.json")).unwrap())
@@ -73,7 +73,7 @@ fn custom_id(id: &str) -> Result<(), String> {
 pub(crate) fn validate(t: &Value) -> Result<(), String> {
     let obj = t.as_object().ok_or("Theme must be an object")?;
     for k in obj.keys() {
-        if !["$schema","schemaVersion","id","name","author","version","description","appearance","extends","tokens","fonts","window","effects"].contains(&k.as_str()) { return Err(format!("Unknown field: {k}")); }
+        if !["$schema","schemaVersion","id","name","author","version","description","appearance","extends","tokens","fonts","window","effects","shape","border"].contains(&k.as_str()) { return Err(format!("Unknown field: {k}")); }
     }
     if t["schemaVersion"].as_f64() != Some(1.) { return Err(if t["schemaVersion"].as_f64().unwrap_or(0.) > 1. { "Theme made for a newer taucode" } else { "schemaVersion must be 1" }.into()); }
     if !valid_id(t["id"].as_str().unwrap_or("")) { return Err("Invalid theme id".into()); }
@@ -115,7 +115,24 @@ pub(crate) fn validate(t: &Value) -> Result<(), String> {
     }
     if let Some(v) = t.get("effects") {
         let obj = v.as_object().ok_or("Invalid effects")?;
-        if obj.keys().any(|k| k != "digitalRain") || !v["digitalRain"].is_boolean() { return Err("Invalid effects".into()); }
+        if obj.iter().any(|(k,v)| !["digitalRain","neonGlow"].contains(&k.as_str()) || !v.is_boolean()) { return Err("Invalid effects".into()); }
+    }
+    if let Some(v) = t.get("shape") {
+        let obj = v.as_object().ok_or("Invalid shape")?;
+        if obj.iter().any(|(k,v)| match k.as_str() {
+            "corners" => v.as_str().is_none_or(|s| !["squircle","chamfer","round"].contains(&s)),
+            "chamfer" => v.as_f64().is_none_or(|n| !(4.0..=20.0).contains(&n)),
+            _ => true,
+        }) { return Err("Invalid shape".into()); }
+    }
+    if let Some(v) = t.get("border") {
+        let obj = v.as_object().ok_or("Invalid border")?;
+        if obj.iter().any(|(k,v)| match k.as_str() {
+            "gradient" => v.as_array().is_none_or(|a| !(2..=4).contains(&a.len()) || a.iter().any(|c| c.as_str().is_none_or(|s| !color(s)))),
+            "angle" => v.as_f64().is_none_or(|n| !(0.0..=360.0).contains(&n)),
+            "highlight" => !v.is_boolean(),
+            _ => true,
+        }) { return Err("Invalid border".into()); }
     }
     Ok(())
 }
@@ -220,7 +237,7 @@ pub(crate) fn themes_reveal_file(app: tauri::AppHandle, file: String) -> Result<
     app.opener().reveal_item_in_dir(reveal_path(&folder(&app)?, &file)?).map_err(|e| e.to_string())
 }
 #[tauri::command]
-pub(crate) fn window_set_material(window: tauri::WebviewWindow, material: Option<String>) -> Result<(),String> {
+pub(crate) fn window_set_material(window: tauri::WebviewWindow, material: Option<String>, appearance: Option<String>) -> Result<(),String> {
     use tauri::window::{Effect, EffectsBuilder};
     let effect = match material.as_deref() {
         None | Some("none") => None,
@@ -229,7 +246,18 @@ pub(crate) fn window_set_material(window: tauri::WebviewWindow, material: Option
         Some("hudWindow") => Some(Effect::HudWindow),
         _ => return Err("Invalid window material".into()),
     };
-    window.set_effects(effect.map(|e| EffectsBuilder::new().effect(e).build())).map_err(|e| e.to_string())
+    let theme = if effect.is_some() {
+        Some(match appearance.as_deref() {
+            Some("dark") => tauri::Theme::Dark,
+            Some("light") => tauri::Theme::Light,
+            _ => return Err("Window material requires a light or dark appearance".into()),
+        })
+    } else { None };
+    window.set_theme(theme).map_err(|e| format!("Window appearance: {e}"))?;
+    window.set_effects(effect.map(|e| EffectsBuilder::new().effect(e).build()))
+        .map_err(|e| format!("Window material: {e}"))?;
+    eprintln!("{}", json!({"level":"info", "event":"window_material_applied", "window":window.label(), "material":material, "appearance":theme.map(|t| t.to_string())}));
+    Ok(())
 }
 type Metadata = BTreeMap<PathBuf, (u64, SystemTime)>;
 fn snapshot(dir: &Path) -> Result<Metadata, String> {

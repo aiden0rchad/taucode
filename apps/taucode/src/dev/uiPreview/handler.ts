@@ -1,5 +1,7 @@
+import { createDiagnosticsFixture } from "./diagnostics";
 import { builtinIds, parseTheme, type ThemeFile, type ThemeManifest } from "@/features/themes/validate";
 import customTheme from "@/features/themes/fixtures/valid-custom.json";
+import { defaultFeatures, type Features } from '@settings/features';
 import type { BrowserState } from "@/features/browser/browser";
 import type { AppSettings, ImportLog, WorkTask, WorkspaceInfo } from "@/types";
 import { assistantMessage, createFixtures, diff, makeThread, userMessage, type PreviewThread } from "./fixtures";
@@ -11,8 +13,14 @@ const record = (value: unknown): Params => value && typeof value === "object" &&
 export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const state = createFixtures();
   const query = new URLSearchParams(search);
+  const diagnostics = createDiagnosticsFixture(query.get("diagnostics") === "empty");
   const mode = query.get("mode");
   if (query.get("dictation") === "ready") { state.settings.dictationEnabled = true; state.settings.features = { ...state.settings.features, dictation: true }; }
+  for (const entry of (query.get('features') ?? '').split(',')) {
+    // URLSearchParams decodes a literal '+' as a space; accept it and %2B.
+    const match = /^([-+ ])([a-zA-Z]+)$/.exec(entry);
+    if (match && Object.prototype.hasOwnProperty.call(defaultFeatures, match[2])) state.settings.features = { ...state.settings.features, [match[2] as keyof Features]: match[1] !== '-' };
+  }
   state.settings.windowModes = { main: query.has("settings") ? "code" : mode === "chat" || mode === "work" ? mode : "code" };
   const theme = query.get("theme");
   if (theme && (builtinIds.includes(theme) || theme === "system" || theme === customTheme.id)) state.settings.theme = theme;
@@ -212,6 +220,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       }
       case "terminal_open": return { id: args.terminalId };
       case "terminal_write": case "terminal_resize": case "terminal_close": return null;
+      case "diagnostics_request": return diagnostics(String(args.action), params);
       case "provider_has_api_key": return false;
       case "provider_test_and_fetch": return { ok: true, latencyMs: 12, models: state.settings.providers?.find(p => p.id === args.id)?.models ?? [] };
       case "local_usage_snapshot": return { updatedAt: Date.now(), days: [], topModels: [], totals: { last7DaysTokens: 0, last30DaysTokens: 0, averageDailyTokens: 0, cacheHitRatePercent: 0, peakDay: null, peakDayTokens: 0 } };

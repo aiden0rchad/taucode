@@ -7,10 +7,18 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { buildItemsFromThread } from "@utils/threadItems";
 import { chatGroups } from "@/features/chat/chat";
 import { createFixtures } from "./fixtures";
+import { defaultFeatures, features } from '@settings/features';
 import { createPreviewHandler } from "./handler";
 import { installUiPreview, selectCode, selectConversation } from "./index";
 
 afterEach(() => { clearMocks(); vi.restoreAllMocks(); vi.useRealTimers(); });
+
+it('defaults every feature on and accepts ordered URL feature switches', () => {
+  expect(features(createFixtures().settings)).toEqual(defaultFeatures);
+  const { state } = createPreviewHandler(undefined,'?dictation=ready&features=-reasoningEffects,-dictation,-git,-browser,+browser,+unknown');
+  expect(features(state.settings)).toEqual({...defaultFeatures,reasoningEffects:false,dictation:false,git:false,worktrees:false});
+  expect(createPreviewHandler(undefined,'?features=-git,%2Bgit').state.settings.features?.git).toBe(true);
+});
 
 describe("UI preview IPC", () => {
   it("returns non-throwing empty defaults and logs unknown commands once", () => {

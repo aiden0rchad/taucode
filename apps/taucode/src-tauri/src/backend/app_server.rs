@@ -1135,7 +1135,11 @@ async fn spawn_codex_engine<E: EventSink>(
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
 
-    let mut child = command.spawn().map_err(|e| e.to_string())?;
+    let diagnostic_start=taucode_diag_mcp::writer::enabled().then(std::time::Instant::now);
+    let mut child = command.spawn().map_err(|e| {taucode_diag_mcp::writer::record(||taucode_diag_mcp::core::event("error","engine","engine.spawn_failed","Codex spawn failed"));e.to_string()})?;
+    taucode_diag_mcp::observe::spawned("codex",diagnostic_start);
+    let diagnostic_pid=child.id();
+    taucode_diag_mcp::observe::child(diagnostic_pid,"codex");
     let stdin = child.stdin.take().ok_or("missing stdin")?;
     let stdout = child.stdout.take().ok_or("missing stdout")?;
     let stderr = child.stderr.take().ok_or("missing stderr")?;
@@ -1176,6 +1180,7 @@ async fn spawn_codex_engine<E: EventSink>(
             let value: Value = match serde_json::from_str(&line) {
                 Ok(value) => value,
                 Err(err) => {
+                    taucode_diag_mcp::writer::record(||taucode_diag_mcp::core::event("error","engine","engine.protocol_decode","Codex protocol decode failed"));
                     let payload = AppServerEvent {
                         workspace_id: fallback_workspace_id.clone(),
                         message: json!({
@@ -1202,6 +1207,7 @@ async fn spawn_codex_engine<E: EventSink>(
             event_sink_clone.emit_app_server_event(AppServerEvent { workspace_id: workspace, message: json!({"method":"turn/completed","params":{"threadId":thread,"turn":{"status":"failed","error":{"message":"Engine process exited"}}}}) });
         }
         // Ensure pending foreground requests cannot accumulate after process output ends.
+        if taucode_diag_mcp::writer::enabled(){if let Ok(Some(status))=session_clone.child.lock().await.try_wait(){taucode_diag_mcp::observe::exited(diagnostic_pid,status);}}
         session_clone.pending.lock().await.clear();
         session_clone.request_context.lock().await.clear();
     });
@@ -1211,6 +1217,7 @@ async fn spawn_codex_engine<E: EventSink>(
     tokio::spawn(async move {
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            taucode_diag_mcp::observe::stderr(diagnostic_pid,&line);
             let line = redact_credentials(line, &secrets);
             if line.trim().is_empty() {
                 continue;

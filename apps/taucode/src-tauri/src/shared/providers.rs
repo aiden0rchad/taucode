@@ -248,12 +248,13 @@ fn key_entry(id: &str) -> Result<keyring::Entry, String> {
 impl KeyStore for Keychain {
     fn get(&self, id: &str) -> Result<Option<String>, String> {
         match key_entry(id)?.get_password() {
-            Ok(v) => Ok(Some(v)),
+            Ok(v) => { taucode_diag_mcp::writer::remember_secret(&v); Ok(Some(v)) },
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(_) => Err("Cannot read provider Keychain".into()),
         }
     }
     fn set(&self, id: &str, key: &str) -> Result<(), String> {
+        taucode_diag_mcp::writer::remember_secret(key);
         key_entry(id)?
             .set_password(key)
             .map_err(|_| "Cannot save provider key".into())
@@ -307,6 +308,7 @@ pub(crate) async fn token(
             if text.trim().is_empty() {
                 return Err("Token command returned no token".into());
             }
+            taucode_diag_mcp::writer::remember_secret(text.trim());
             Ok(Some(text.trim().into()))
         }
     }
@@ -410,6 +412,7 @@ pub(crate) async fn fetch(
                 headers: headers.clone(),
             })
             .await?;
+        if status>=400 {taucode_diag_mcp::writer::record(||{let mut e=taucode_diag_mcp::core::event("error","provider",&format!("provider.http_{status}"),"Provider HTTP error");e.context=json!({"providerKind":p.kind});e.detail=json!({"status":status});e});}
         match status {
             200..=299 => (),
             401 | 403 => return Err("API key rejected".into()),
@@ -596,6 +599,7 @@ pub(crate) async fn probe(p: &ProviderEntry, model: &ProviderModel, keys: &dyn K
         }
     };
     let (status, body) = http.post(ModelRequest { url, headers }, body).await?;
+    if status>=400 {taucode_diag_mcp::writer::record(||{let mut e=taucode_diag_mcp::core::event("error","provider",&format!("provider.http_{status}"),"Provider HTTP error");e.context=json!({"providerKind":p.kind,"model":model.id});e.detail=json!({"status":status});e});}
     let supported = super::reasoning::classify_probe(status, &body, param).ok_or_else(|| format!("Reasoning detection inconclusive (HTTP {status}); existing capabilities kept"))?;
     // A successful probe proves only the requested level, never the entire range.
     Ok(super::reasoning::capability(supported, if control == "thinking-toggle" { &["high"] } else { &["low"] }, control, "probe"))

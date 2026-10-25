@@ -502,6 +502,7 @@ impl PiEngine {
             .envs(env);
         let (_, history) = read_session(&s.file, registry)?;
         let mut translator = history;
+        translator.diagnostic_codegraph = connectors.iter().any(|s|s.id=="codegraph" && s.enabled);
         translator.connectors = connectors
             .iter()
             .map(|s| (s.id.replace('-', "_"), s.name.clone()))
@@ -515,6 +516,7 @@ impl PiEngine {
             .unwrap_or("ask")
             .into();
         translator.provider = provider.id.clone();
+        translator.diagnostic_provider_kind = serde_json::to_value(provider.kind).unwrap_or_default().as_str().unwrap_or("unknown").into();
         translator.model = json!({"id":model,"provider":config::provider_id(provider,registry),"contextWindow":provider.models.iter().find(|m|m.id==model).and_then(|m|m.context_window)});
         let events = self.events.clone();
         let sink = self.sink.clone();
@@ -912,6 +914,7 @@ impl PiEngine {
                 }
                 let mut t = p.translator.lock().await;
                 t.provider = provider.id.clone();
+                t.diagnostic_provider_kind = serde_json::to_value(provider.kind).unwrap_or_default().as_str().unwrap_or("unknown").into();
                 let events = t.apply(
                     &json!({"type":"response","command":"set_model","success":true,"data":actual}),
                 );

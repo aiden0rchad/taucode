@@ -147,6 +147,7 @@ enum DaemonEvent {
 
 impl EventSink for DaemonEventSink {
     fn emit_app_server_event(&self, event: AppServerEvent) {
+        taucode_diag_mcp::observe::observe(&event.message);
         let _ = self.tx.send(DaemonEvent::AppServer(event));
     }
 

@@ -1,4 +1,6 @@
+import { DiagnosticBoundary } from "@/features/diagnostics/DiagnosticBoundary";
 import { lazy, Suspense } from "react";
+import { useThemedScrollbars } from '@/features/layout/hooks/useThemedScrollbars';
 import "./styles/base.css";
 import "./styles/ds-tokens.css";
 import "./styles/ds-modal.css";
@@ -40,6 +42,7 @@ import "./styles/compact-base.css";
 import "./styles/compact-phone.css";
 import "./styles/compact-tablet.css";
 import "./styles/visual-refresh.css";
+import "./styles/scrollbars.css";
 import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import MainApp from "@app/components/MainApp";
 import { ModeShell } from "@/features/chat/ModeShell";
@@ -52,6 +55,7 @@ const AboutView = lazy(() =>
 );
 
 export default function App() {
+  useThemedScrollbars();
   const windowLabel = useWindowLabel();
 
   if (windowLabel === "about") {
@@ -62,5 +66,5 @@ export default function App() {
     );
   }
 
-  return <><ModeShell renderSettings={onClose => <MainApp settingsOnly onCloseModeSettings={onClose} />}><MainApp /></ModeShell><ComputerApprovals /></>;
+  return <DiagnosticBoundary panel="app"><ModeShell renderSettings={onClose => <MainApp settingsOnly onCloseModeSettings={onClose} />}><MainApp /></ModeShell><ComputerApprovals /></DiagnosticBoundary>;
 }

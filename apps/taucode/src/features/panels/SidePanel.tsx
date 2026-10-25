@@ -1,3 +1,5 @@
+import { diagnosticContext, record } from "@/features/diagnostics/client";
+import { DiagnosticBoundary } from "@/features/diagnostics/DiagnosticBoundary";
 import { useFeatures } from "@settings/features";
 import { Squircle } from "@/features/design-system/components/squircle/Squircle";
 import { useSidePanelState } from "@app/hooks/useSidePanelState";
@@ -30,6 +32,7 @@ export function WorkspaceShell({ children, scope, title, code, tools = [], searc
   const features = useFeatures();
   tools = tools.filter(t => ({ git: features.git, agents: features.subagents, terminal: features.terminal, sidechat: features.sideChats } as Record<string, boolean>)[t.id] ?? true);
   const { state, update, browser, resize, layout, overlay, panelRef, mainRef, expanded, setExpanded, address, setAddress, error, busy, recent, pending, history, historyIndex, openTool, closeTool, active, openPage, close, navigate } = useSidePanelState({ scope, tools, searchUrl, onNavigate, reservedShortcuts });
+  useEffect(() => {if (features.diagnostics) {const panel=state.open ? active?.kind ?? "conversation" : "conversation";diagnosticContext({panel});record({kind:"ux",area:"ui",code:"ui.panel_open",message:"Panel selection changed",context:{panel}});}},[features.diagnostics,state.open,active?.kind]);
   return <PanelContext.Provider value={{ scope, openTool, closeTool }}><div className={`workspace-shell${layout.sidebarOverlay ? " sidebar-overlay" : ""}`} ref={resize.appRef} style={{ "--right-panel-width": `${resize.rightPanelWidth}px`, "--sidebar-width": `${layout.sidebarWidth}px`, "--layout-sidebar-column": `${layout.sidebarColumn}px` } as CSSProperties}>
     <header id="titlebar" className="workspace-titlebar" data-tauri-drag-region>
       <div className="titlebar-navigation" data-tauri-drag-region="false"><button className="ghost icon-button" aria-label="Back" disabled={!onNavigate || historyIndex === 0} onClick={() => navigate(historyIndex - 1)}><ArrowLeft aria-hidden /></button><button className="ghost icon-button" aria-label="Forward" disabled={!onNavigate || historyIndex >= history.current.length - 1} onClick={() => navigate(historyIndex + 1)}><ArrowRight aria-hidden /></button><SidebarCollapseButton /></div>
@@ -56,7 +59,7 @@ export function WorkspaceShell({ children, scope, title, code, tools = [], searc
       {error && <p role="alert">{error}</p>}
       <div className="side-panel-content" role="tabpanel" aria-label={active?.title || "New tab"}>
         {!active ? <div className="side-panel-new">{features.browser && <form onSubmit={e => { e.preventDefault(); void openPage(address); }}><input aria-label="URL or search" placeholder="Search or enter a URL" value={address} onChange={e => setAddress(e.target.value)} disabled={busy} /></form>}<h2>Tools</h2><div className="side-panel-tools">{tools.map(tool => { const Icon = icons[tool.id as keyof typeof icons] ?? Folder; return <Squircle as="button" type="button" key={tool.id} onClick={() => openTool(tool.id)}><Icon aria-hidden /><span>{tool.label}</span><kbd>{tool.shortcut}</kbd></Squircle>; })}{features.browser && <Squircle as="button" type="button" disabled={busy} onClick={() => { void openPage(); }}><Globe aria-hidden /><span>New page</span><kbd>⌘⇧B</kbd></Squircle>}</div>{features.browser && <><h2>Suggested</h2><div className="side-panel-suggested">{recent.map(page => <button key={page.url} onClick={() => { void openPage(page.url); }}>{typeof page.favicon === "string" && page.favicon.startsWith("data:image/") ? <img src={page.favicon} alt="" /> : <Globe aria-hidden />}<span>{page.title}</span></button>)}{!recent.length && <p>Recently visited sites will appear here.</p>}</div></>}</div> : features.browser && active.kind === "browser" && state.open ? <BrowserPane embedded searchUrl={searchUrl} agentActive={browser.agentActive} onTakeOver={browser.agentActive ? browser.takeOver : onInterrupt} onClose={() => { void close(active); }} /> : null}
-        {tools.filter(tool => tool.id === "terminal" || state.tabs.some(tab => tab.kind === tool.id)).map(tool => <div className="side-panel-tool-content" key={tool.id} hidden={active?.kind !== tool.id}>{tool.content}</div>)}
+        {tools.filter(tool => tool.id === "terminal" || state.tabs.some(tab => tab.kind === tool.id)).map(tool => <div className="side-panel-tool-content" key={tool.id} hidden={active?.kind !== tool.id}><DiagnosticBoundary panel={tool.id}>{tool.content}</DiagnosticBoundary></div>)}
       </div>
     </aside>}
     </div>

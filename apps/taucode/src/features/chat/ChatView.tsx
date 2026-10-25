@@ -1,3 +1,4 @@
+import { useSidebarScrollFade } from '@app/hooks/useSidebarScrollFade';
 import { DigitalRain } from "@/features/themes/DigitalRain";
 import { useFeatures } from "@settings/features";
 import { threadEffortKey, useReasoningSelection } from "@/features/models/reasoning";
@@ -39,6 +40,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [trash, setTrash] = useState(false);
+  const { sidebarBodyRef, scrollFade, updateScrollFade } = useSidebarScrollFade([chat.chats, search, trash]);
   const [busy, setBusy] = useState(false);
   const [dictating, setDictating] = useState(false);
   const [rename, setRename] = useState<string | null>(null);
@@ -112,7 +114,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
       <ModeSwitcher />
       {!searchOpen && <NewConversationRow label="New chat" disabled={busy} shortcut={settings.newAgentShortcut} handleShortcut onSearch={() => setSearchOpen(true)} onNew={() => { chat.setActive(null); clearDraft(); setNewWeb(false); setModel(defaultModel || modelKey(settings.agentPolicy?.defaultModel) || models[0]?.key || ""); setTrash(false); if (window.innerWidth < 760) setSidebarCollapsed(true); }} />}
       {searchOpen && <label className="sidebar-search is-open"><Search aria-hidden /><input autoFocus onKeyDown={e => { if (e.key === "Escape") { setSearch(""); setSearchOpen(false); } }} ref={searchInput} type="search" aria-label="Search chats" placeholder="Search chats" value={search} onChange={e => setSearch(e.target.value)} /><button type="button" className="ghost icon-button" aria-label="Close search" onClick={() => { setSearch(""); setSearchOpen(false); }}><X aria-hidden /></button></label>}
-      <div className="chat-list">
+      <div ref={sidebarBodyRef} onScroll={updateScrollFade} className={`chat-list sidebar-body${scrollFade.top ? " fade-top" : ""}${scrollFade.bottom ? " fade-bottom" : ""}`}>
         {Object.entries(chatGroups(chat.chats, search, trash)).map(([group, entries]) => entries.length > 0 && <section key={group} aria-label={group}>
           <h2 className="sidebar-section-header"><span className="sidebar-section-title">{group}</span></h2>
           {entries.map(entry => <RowMenu key={entry.id} label={chatTitle(entry)} actions={trash ? [{ label: "Restore", disabled: busy || Date.now() / 1000 - (entry.chat.deletedAt ?? 0) > 30 * 86400, onClick: () => { void mutate("restore", entry.id); } }] : [

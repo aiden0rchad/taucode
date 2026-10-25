@@ -19,6 +19,8 @@ fn format_git_error(stdout: &[u8], stderr: &[u8]) -> String {
 }
 
 pub(crate) async fn run_git_command(repo_path: &PathBuf, args: &[&str]) -> Result<String, String> {
+    let start=taucode_diag_mcp::writer::enabled().then(std::time::Instant::now);
+    let result=(async {
     let git_bin = resolve_git_binary().map_err(|err| format!("Failed to run git: {err}"))?;
     let output = tokio_command(git_bin)
         .args(args)
@@ -31,6 +33,10 @@ pub(crate) async fn run_git_command(repo_path: &PathBuf, args: &[&str]) -> Resul
         return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
     }
     Err(format_git_error(&output.stdout, &output.stderr))
+
+    }).await;
+    if let Some(start)=start {record_git_result(start.elapsed(),result.is_err());}
+    result
 }
 
 pub(crate) async fn run_git_command_owned(
@@ -48,6 +54,8 @@ pub(crate) async fn run_git_command_bytes(
     repo_path: &PathBuf,
     args: &[&str],
 ) -> Result<Vec<u8>, String> {
+    let start=taucode_diag_mcp::writer::enabled().then(std::time::Instant::now);
+    let result=(async {
     let git_bin = resolve_git_binary().map_err(|err| format!("Failed to run git: {err}"))?;
     let output = tokio_command(git_bin)
         .args(args)
@@ -60,9 +68,15 @@ pub(crate) async fn run_git_command_bytes(
         return Ok(output.stdout);
     }
     Err(format_git_error(&output.stdout, &output.stderr))
+
+    }).await;
+    if let Some(start)=start {record_git_result(start.elapsed(),result.is_err());}
+    result
 }
 
 pub(crate) async fn run_git_diff(repo_path: &PathBuf, args: &[&str]) -> Result<Vec<u8>, String> {
+    let start=taucode_diag_mcp::writer::enabled().then(std::time::Instant::now);
+    let result=(async {
     let git_bin = resolve_git_binary().map_err(|err| format!("Failed to run git: {err}"))?;
     let output = tokio_command(git_bin)
         .args(args)
@@ -75,6 +89,10 @@ pub(crate) async fn run_git_diff(repo_path: &PathBuf, args: &[&str]) -> Result<V
         return Ok(output.stdout);
     }
     Err(format_git_error(&output.stdout, &output.stderr))
+
+    }).await;
+    if let Some(start)=start {record_git_result(start.elapsed(),result.is_err());}
+    result
 }
 
 pub(crate) fn is_missing_worktree_error(error: &str) -> bool {
@@ -240,4 +258,9 @@ pub(crate) async fn git_get_origin_url(repo_path: &PathBuf) -> Option<String> {
     run_git_command(repo_path, &["remote", "get-url", "origin"])
         .await
         .ok()
+}
+
+fn record_git_result(duration:std::time::Duration,failed:bool){
+    if failed {taucode_diag_mcp::writer::record(||taucode_diag_mcp::core::event("error","git","git.operation_failed","Git operation failed"));}
+    if duration.as_millis()>500 {taucode_diag_mcp::writer::record(||{let mut e=taucode_diag_mcp::core::event("perf","git","git.slow","Slow git operation");e.metrics=serde_json::json!({"durationMs":duration.as_millis() as u64});e});}
 }

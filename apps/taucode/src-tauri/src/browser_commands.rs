@@ -17,7 +17,9 @@ pub(crate) async fn browser_request(
         )
         .await;
     }
-    state.browser.request(params).await
+    let result=state.browser.request(params).await;
+    if result.is_err(){taucode_diag_mcp::writer::record(||taucode_diag_mcp::core::event("error","browser","browser.request_failed","Browser request failed"));}
+    result
 }
 
 #[tauri::command]
