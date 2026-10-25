@@ -1,3 +1,4 @@
+import { DigitalRain } from "@/features/themes/DigitalRain";
 import { useCheckpointWarnings } from "@/features/checkpoints/useCheckpointWarnings";
 import { RewindAction } from "@/features/checkpoints/Checkpoints";
 import { memo, useCallback } from "react";
@@ -323,6 +324,7 @@ export const Messages = memo(function Messages({
         />
         {!items.length && !userInputNode && !isThinking && !isLoadingMessages && (
           <div className="empty messages-empty">
+            <DigitalRain />
             <h1>What should we build?</h1>
           </div>
         )}

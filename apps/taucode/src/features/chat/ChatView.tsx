@@ -1,3 +1,4 @@
+import { DigitalRain } from "@/features/themes/DigitalRain";
 import { threadEffortKey, useReasoningSelection } from "@/features/models/reasoning";
 import { SidebarResizeHandle } from "@/features/layout/components/SidebarResizeHandle";
 import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
@@ -133,7 +134,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
 
       <div className="chat-scroll" role="log" aria-label="Conversation" aria-live="polite">
         <div className="chat-column">
-          {!chat.messages.length && <div className="chat-empty"><span className="chat-eyebrow">A little room to think</span><h1>What’s on your mind?</h1><p>Ask a question, explore an idea, or bring something to read.</p></div>}
+          {!chat.messages.length && <div className="chat-empty"><DigitalRain /><span className="chat-eyebrow">A little room to think</span><h1>What’s on your mind?</h1><p>Ask a question, explore an idea, or bring something to read.</p></div>}
           {chat.messages.map(message => <article className={`message chat-message ${message.role}`} key={message.id}>
             <div className="chat-message-body">
             <h2>{message.role === "user" ? "You" : "Assistant"}</h2>

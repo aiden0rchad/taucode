@@ -19,7 +19,7 @@ Direct screenshot URLs:
 - `/?mode=work&task=task-running` — plan and outputs.
 - `/?mode=work&task=task-needs-input` — pending approval.
 - `/?mode=work&task=task-queued` or `task-done` — other task states.
-- `/?settings=display&theme=light` — display settings; `theme=dark` also works.
+- `/?settings=appearance&theme=light` — appearance settings; `theme=dark` also works. All built-in IDs and custom-forest are supported; the Appearance gallery includes an invalid-file fixture.
 
 Missing or invalid IDs select the first fixture. Settings URLs open Code mode.
 Selections apply once per page load, so subsequent navigation remains interactive.

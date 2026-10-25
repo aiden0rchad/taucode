@@ -1,0 +1,15 @@
+{
+  "$schema": "https://taucode.dev/theme.schema.json",
+  "schemaVersion": 1,
+  "id": "custom-forest",
+  "name": "Forest",
+  "author": "Preview",
+  "appearance": "dark",
+  "extends": "dark",
+  "tokens": {
+    "--text-accent": "#83dda8"
+  },
+  "effects": {
+    "script": "alert(1)"
+  }
+}

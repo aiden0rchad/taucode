@@ -1,6 +1,20 @@
 import { downloadDir } from "@tauri-apps/api/path";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { invoke, Channel } from "@tauri-apps/api/core";
+import type { ThemeFile, ThemeManifest } from '@/features/themes/validate';
+export const themesList = () => invoke<ThemeFile[]>('themes_list');
+export const themesSave = (manifest: ThemeManifest, replace = false) => invoke<void>('themes_save', { manifest, replace });
+export const themesDelete = (id: string) => invoke<void>('themes_delete', { id });
+export const themesImport = (path: string, resolution?: 'replace' | 'keepBoth') => invoke<{ conflict?: boolean; manifest: ThemeManifest }>('themes_import', { path, resolution });
+export const themesExport = (manifest: ThemeManifest, path: string) => invoke<void>('themes_export', { id: manifest.id, path, manifest });
+export const themesRevealFile = (file: string) => invoke<void>('themes_reveal_file', { file });
+export const themesOpenFolder = () => invoke<void>('themes_open_folder');
+export const windowSetMaterial = (material: string | null) => invoke<void>('window_set_material', { material });
+export async function pickThemeFile() {
+  const path = await open({ multiple: false, filters: [{ name: 'taucode theme', extensions: ['json'] }] });
+  return typeof path === 'string' ? path : null;
+}
+export const pickThemeExport = (id: string) => save({ defaultPath: `${id}.taucode-theme.json`, filters: [{ name: 'taucode theme', extensions: ['json'] }] });
 export function importRequest<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
   return invoke<T>("import_request", { action, params });
 }

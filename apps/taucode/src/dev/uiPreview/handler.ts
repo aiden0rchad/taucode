@@ -1,3 +1,5 @@
+import { builtinIds, parseTheme, type ThemeFile, type ThemeManifest } from "@/features/themes/validate";
+import customTheme from "@/features/themes/fixtures/valid-custom.json";
 import type { BrowserState } from "@/features/browser/browser";
 import type { AppSettings, ImportLog, WorkTask, WorkspaceInfo } from "@/types";
 import { assistantMessage, createFixtures, diff, makeThread, userMessage, type PreviewThread } from "./fixtures";
@@ -13,7 +15,8 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   if (query.get("dictation") === "ready") state.settings.dictationEnabled = true;
   state.settings.windowModes = { main: query.has("settings") ? "code" : mode === "chat" || mode === "work" ? mode : "code" };
   const theme = query.get("theme");
-  if (theme === "light" || theme === "dark") state.settings.theme = theme;
+  if (theme && (builtinIds.includes(theme) || theme === "system" || theme === customTheme.id)) state.settings.theme = theme;
+  let themeFiles: ThemeFile[] = [{ file: customTheme.id+".taucode-theme.json", manifest: customTheme as ThemeManifest }, { file: "invalid-token.taucode-theme.json", error: "Unknown token: --arbitrary" }];
   const warned = new Set<string>();
   const logs: ImportLog[] = [];
   let sequence = 0;
@@ -140,6 +143,16 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
         if (workspace) workspace.settings = { ...workspace.settings, ...record(args.settings) };
         return workspace ?? state.workspaces[0];
       }
+      case "themes_list": return themeFiles;
+      case "window_set_material": case "themes_open_folder": case "themes_reveal_file": case "themes_export": return null;
+      case "themes_save": {
+        const manifest = parseTheme(JSON.stringify(args.manifest));
+        if (builtinIds.includes(manifest.id) || manifest.id === "system") throw new Error("Built-in theme ids are reserved");
+        if (!args.replace && themeFiles.some(f => f.manifest?.id === manifest.id)) throw new Error("Theme id already exists");
+        themeFiles = [...themeFiles.filter(f => f.manifest?.id !== manifest.id), { file:manifest.id+".taucode-theme.json", manifest }];
+        return null;
+      }
+      case "themes_delete": themeFiles = themeFiles.filter(f => f.manifest?.id !== args.id); return null;
       case "remove_workspace": state.workspaces = state.workspaces.filter(w => w.id !== args.id); return null;
       case "list_threads": return page(state.threads.filter(t => t.workspaceId === args.workspaceId));
       case "read_thread":

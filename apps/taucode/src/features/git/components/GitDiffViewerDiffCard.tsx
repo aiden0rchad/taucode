@@ -1,3 +1,4 @@
+import { useDiffTheme } from "@/features/design-system/diff/diffViewerTheme";
 import { memo, useMemo } from "react";
 import {
   parsePatchFiles,
@@ -175,12 +176,14 @@ export const DiffCard = memo(function DiffCard({
   const lineActionEnabled =
     diffStyle === "unified" && Boolean(onLineAction) && hasSelectableLines;
 
+  const themeType = useDiffTheme();
   const diffOptions = useMemo(
     () => ({
       diffStyle,
       hunkSeparators: "line-info" as const,
       overflow: "scroll" as const,
       unsafeCSS: DIFF_VIEWER_SCROLL_CSS,
+      themeType,
       disableFileHeader: true,
       enableLineSelection: useInteractiveDiff,
       onLineSelected: useInteractiveDiff ? onSelectedLinesChange : undefined,
@@ -189,6 +192,7 @@ export const DiffCard = memo(function DiffCard({
     [
       diffStyle,
       lineActionEnabled,
+      themeType,
       onSelectedLinesChange,
       useInteractiveDiff,
     ],

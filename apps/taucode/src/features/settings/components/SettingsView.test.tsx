@@ -496,12 +496,12 @@ const renderEnvironmentsSection = (
 };
 
 describe("SettingsView Display", () => {
-  it("updates the theme selection", async () => {
+  it("updates the Appearance gallery selection", async () => {
     const onUpdateAppSettings = vi.fn().mockResolvedValue(undefined);
     renderDisplaySection({ onUpdateAppSettings });
 
-    const select = screen.getByLabelText("Theme");
-    fireEvent.change(select, { target: { value: "dark" } });
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply Dark" }));
 
     await waitFor(() => {
       expect(onUpdateAppSettings).toHaveBeenCalledWith(

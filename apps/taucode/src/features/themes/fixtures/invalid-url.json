@@ -1,0 +1,12 @@
+{
+  "$schema": "https://taucode.dev/theme.schema.json",
+  "schemaVersion": 1,
+  "id": "custom-forest",
+  "name": "Forest",
+  "author": "Preview",
+  "appearance": "dark",
+  "extends": "dark",
+  "tokens": {
+    "--surface-app": "url(https://example.com/beacon)"
+  }
+}
