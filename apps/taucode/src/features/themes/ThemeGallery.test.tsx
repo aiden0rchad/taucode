@@ -7,6 +7,7 @@ import { builtins, resolveTheme } from './builtins';
 import { themesList, themesSave, themesDelete, themesExport, themesRevealFile, pickThemeExport, windowSetMaterial } from '@services/tauri';
 import { reloadThemes } from './store';
 import { applyTheme } from './applyTheme';
+import { pushErrorToast } from '@services/toasts';
 import { useThemePreference } from '@/features/layout/hooks/useThemePreference';
 import { renderHook } from '@testing-library/react';
 import type { ThemeFile } from './validate';
@@ -14,6 +15,7 @@ vi.mock('@services/tauri', () => ({
   themesList:vi.fn(async () => []), themesSave:vi.fn(async () => {}), themesDelete:vi.fn(async () => {}), themesImport:vi.fn(),
   themesExport:vi.fn(), themesRevealFile:vi.fn(), themesOpenFolder:vi.fn(), pickThemeFile:vi.fn(), pickThemeExport:vi.fn(), windowSetMaterial:vi.fn(async () => {}),
 }));
+vi.mock('@services/toasts', () => ({ pushErrorToast: vi.fn() }));
 vi.mock('@services/events', () => ({ subscribeThemesChanged:vi.fn(() => () => {}) }));
 beforeEach(async () => {
   vi.clearAllMocks();
@@ -127,8 +129,8 @@ it('saves a duplicate without restoring the old theme or enabling a disabled ani
 it('switches materials through one style element and clears Glass', async () => {
   applyTheme(builtins.find(t => t.id === 'glass-dark')!);
   applyTheme(builtins.find(t => t.id === 'claude-light')!);
-  await waitFor(() => expect(windowSetMaterial).toHaveBeenLastCalledWith(null));
-  expect(windowSetMaterial).toHaveBeenCalledWith('sidebar');
+  await waitFor(() => expect(windowSetMaterial).toHaveBeenLastCalledWith(null, null));
+  expect(windowSetMaterial).toHaveBeenCalledWith('underWindow', 'dark');
   expect(document.querySelectorAll('#taucode-theme')).toHaveLength(1);
   expect(document.documentElement.dataset.theme).toBe('light');
   expect(document.documentElement.dataset.translucent).toBe('false');
@@ -240,4 +242,48 @@ it('scopes preview tokens, reports contrast, resets overrides and restores on Es
   expect(screen.queryByRole('dialog',{name:/Edit theme —/})).toBeNull();
   expect(document.documentElement.dataset.themeId).toBe('dark');
   expect(themesSave).not.toHaveBeenCalled();
+});
+
+
+it('pins both glass appearances, deduplicates identical materials and retries failures', async () => {
+  applyTheme(builtins.find(t => t.id === 'glass-light')!);
+  applyTheme(builtins.find(t => t.id === 'dark')!);
+  await waitFor(() => expect(windowSetMaterial).toHaveBeenLastCalledWith(null, null));
+  vi.mocked(windowSetMaterial).mockClear();
+  const dark = builtins.find(t => t.id === 'glass-dark')!;
+  const light = builtins.find(t => t.id === 'glass-light')!;
+  applyTheme(dark);
+  applyTheme(dark);
+  applyTheme(light);
+  applyTheme(light);
+  await waitFor(() => expect(windowSetMaterial).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(windowSetMaterial).mock.calls).toEqual([['underWindow','dark'],['underWindow','light']]);
+  vi.mocked(windowSetMaterial).mockRejectedValueOnce(new Error('material failed'));
+  applyTheme(dark);
+  await waitFor(() => expect(pushErrorToast).toHaveBeenCalledWith(expect.objectContaining({ title:'Window material unavailable', message:'Error: material failed' })));
+  applyTheme(dark);
+  await waitFor(() => expect(windowSetMaterial).toHaveBeenCalledTimes(4));
+  applyTheme(builtins.find(t => t.id === 'dark')!);
+  await waitFor(() => expect(windowSetMaterial).toHaveBeenLastCalledWith(null, null));
+});
+
+it('persists glow independently of animation and restores it on theme changes', async () => {
+  const neon = builtins.find(t => t.id === 'cyberpunk-neon')!;
+  const custom = { ...neon,id:'both',effects:{digitalRain:true,neonGlow:true} };
+  vi.mocked(themesList).mockResolvedValue([{file:'both.taucode-theme.json',manifest:custom}]);
+  await reloadThemes();
+  const settings = {...buildDefaultSettings(),theme:'both',themeAnimations:{both:false}};
+  const update = vi.fn(async () => {});
+  render(<ThemeGallery settings={settings} update={update} />);
+  fireEvent.click(screen.getByRole('button', {name:'Glow effects'}));
+  await waitFor(() => expect(update).toHaveBeenCalledWith({...settings,themeAnimations:{both:false,'both:neonGlow':false}}));
+  const hook = renderHook(({theme}) => useThemePreference({...settings,theme,themeAnimations:{both:false,'both:neonGlow':false}},vi.fn()), {initialProps:{theme:'both'}});
+  await waitFor(() => expect(document.documentElement.dataset.themeId).toBe('both'));
+  expect(document.documentElement.dataset.neonGlow).toBe('false');
+  expect(document.documentElement.dataset.digitalRain).toBe('false');
+  hook.rerender({theme:'cyberpunk-neon'});
+  await waitFor(() => expect(document.documentElement.dataset.neonGlow).toBe('true'));
+  hook.rerender({theme:'both'});
+  await waitFor(() => expect(document.documentElement.dataset.neonGlow).toBe('false'));
+  expect(document.documentElement.dataset.neonPalette).toBe('true');
 });

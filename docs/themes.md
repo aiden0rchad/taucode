@@ -1,6 +1,6 @@
 # taucode themes
 
-Choose a theme in Settings → Appearance. System follows the OS using your Light theme and Dark theme selections. Glass uses Tauri's built-in window material API; only its sidebar and title bar reveal the desktop. Claude palettes are community approximations, not official brand assets.
+Choose a theme in Settings → Appearance. System follows the OS using your Light theme and Dark theme selections. Glass uses Tauri's built-in window material API; its sidebar and title bar are about 50% opaque, with app and message surfaces at 72%. The material is pinned to the theme’s light or dark appearance. Composer, menus, modals, side panels and code remain opaque. Claude palettes are community approximations, not official brand assets.
 
 ## Format (v1)
 
@@ -20,11 +20,22 @@ Save a UTF-8 `*.taucode-theme.json` file:
   "tokens": { "--text-accent": "#80efac" },
   "fonts": { "ui": "system-ui", "mono": "monospace", "prose": "serif" },
   "window": { "translucent": false, "material": "none" },
-  "effects": { "digitalRain": false }
+  "effects": { "digitalRain": false, "neonGlow": false }
 }
 ```
 
 `schemaVersion`, `id`, `name`, `appearance` and `tokens` are required. IDs contain 1–40 lowercase ASCII letters, digits or hyphens. Built-in IDs are reserved. `author`, `version` and `description` are optional metadata. `$schema` enables editor completion. `extends` selects a built-in except System; without it, the appearance selects Light or Dark. Tokens, fonts, window and effects inherit from that base. Appearance is `light` or `dark` and controls native color scheme, syntax highlighting and terminal colors. Font keys are `ui`, `mono`, `prose`. Window material is `none`, `sidebar`, `underWindow` or `hudWindow`; translucency must be enabled to apply a material. `effects.digitalRain` enables an empty-state animation, capped at 20 fps and disabled by reduced motion or the per-theme Animated background preference.
+
+Cyberpunk Neon pairs magenta primary actions with cyan links and focus rings on deep violet surfaces. Its static glows can be disabled with **Glow effects** in Appearance, independently of animation and reduced-motion preferences. Both effect fields are optional booleans. Custom themes can inherit Cyberpunk Neon or enable either effect in the editor.
+
+## Effects reference
+
+<!-- effects:start -->
+| Effect | Type | Behavior |
+| --- | --- | --- |
+| `effects.digitalRain` | boolean | Empty-state animation; respects reduced motion and Animated background. |
+| `effects.neonGlow` | boolean | Static accent, focus, selected-row and heading glows; controlled by Glow effects. |
+<!-- effects:end -->
 
 ## Validation and safety
 

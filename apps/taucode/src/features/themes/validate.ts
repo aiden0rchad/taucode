@@ -1,11 +1,11 @@
 import { themeTokens } from './tokens';
-export const builtinIds = ['light', 'dark', 'dim', 'glass-dark', 'glass-light', 'matrix', 'claude-light', 'claude-dark'];
+export const builtinIds = ['light', 'dark', 'dim', 'glass-dark', 'glass-light', 'matrix', 'claude-light', 'claude-dark', 'cyberpunk-neon'];
 export type ThemeManifest = {
   $schema?: string; schemaVersion: 1; id: string; name: string; author?: string; version?: string; description?: string;
   appearance: 'light' | 'dark'; extends?: string; tokens: Record<string, string>;
   fonts?: { ui?: string; mono?: string; prose?: string };
   window?: { translucent: boolean; material: 'none' | 'sidebar' | 'underWindow' | 'hudWindow' };
-  effects?: { digitalRain: boolean };
+  effects?: { digitalRain?: boolean; neonGlow?: boolean };
 };
 export type ThemeFile = { file: string; manifest?: ThemeManifest; error?: string };
 const safe = (s: string) => s.length <= 120 && !/url\(|image-set\(|expression|[@;{}\\<]/i.test(s);
@@ -70,7 +70,7 @@ export function validateTheme(input: unknown): string[] {
   }
   if (t.fonts !== undefined && (!object(t.fonts) || Object.entries(t.fonts).some(([k,v]) => !['ui','mono','prose'].includes(k) || typeof v !== 'string' || !validFont(v)))) errors.push('Invalid local font stack');
   if (t.window !== undefined && (!object(t.window) || Object.keys(t.window).some(k => !['translucent','material'].includes(k)) || typeof t.window.translucent !== 'boolean' || !['none','sidebar','underWindow','hudWindow'].includes(t.window.material as string))) errors.push('Invalid window material');
-  if (t.effects !== undefined && (!object(t.effects) || Object.keys(t.effects).some(k => k !== 'digitalRain') || typeof t.effects.digitalRain !== 'boolean')) errors.push('Invalid effects');
+  if (t.effects !== undefined && (!object(t.effects) || Object.entries(t.effects).some(([k,v]) => !['digitalRain','neonGlow'].includes(k) || typeof v !== 'boolean'))) errors.push('Invalid effects');
   return errors;
 }
 export function parseTheme(json: string): ThemeManifest {

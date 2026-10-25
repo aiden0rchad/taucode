@@ -25,19 +25,38 @@ describe('built-in themes', () => {
       expect(validateTheme(manifest)).toEqual([]);
       const theme = resolveTheme(manifest);
       expect(Object.keys(theme.tokens).sort()).toEqual(Object.keys(themeTokens).sort());
-      const surfaces = ['app','sidebar','topbar','messages','composer','card','popover','right-panel'];
+      const surfaces = ['app','sidebar','topbar','messages','composer','card','popover','right-panel','command'];
       for (const surface of surfaces) {
         const bg = rgba(theme.tokens['--surface-'+surface]);
         expect(bg, surface).not.toBeNull();
-        if (!theme.window?.translucent || !['sidebar','topbar'].includes(surface)) expect(bg[3],surface).toBeGreaterThanOrEqual(theme.window?.translucent ? .92 : 1);
-        for (const desktop of [0,255]) {
-          const composed = composite(bg,[desktop,desktop,desktop,1]);
+        if (!theme.window?.translucent || !['app','messages','sidebar','topbar'].includes(surface)) expect(bg[3],surface).toBeGreaterThanOrEqual(theme.window?.translucent ? .94 : 1);
+        const backdrops = theme.window?.translucent ? (theme.appearance === 'dark' ? ['#000000','#4a4a4e'] : ['#ffffff','#bdbdc2']) : ['#000000','#ffffff'];
+        for (const desktop of backdrops) {
+          const composed = composite(bg,rgba(desktop));
           expect(contrast(rgba(theme.tokens['--text-primary']),composed),surface).toBeGreaterThanOrEqual(theme.id === 'matrix' ? 7 : 4.5);
-          if (theme.window?.translucent) expect(contrast(rgba(theme.tokens['--text-muted']),composed),surface).toBeGreaterThanOrEqual(3);
+          expect(contrast(rgba(theme.tokens['--text-muted']),composed),surface).toBeGreaterThanOrEqual(3);
         }
       }
     });
   }
+  it('keeps glass visibly translucent and sidebar cards readable over the material', () => {
+    for (const theme of builtins.filter(t => t.window?.translucent).map(resolveTheme)) {
+      for (const surface of ['sidebar','topbar']) expect(rgba(theme.tokens['--surface-'+surface])[3]).toBeLessThanOrEqual(.5);
+      for (const surface of ['app','messages']) expect(rgba(theme.tokens['--surface-'+surface])[3]).toBe(.72);
+      const backdrops = theme.appearance === 'dark' ? ['#000000','#4a4a4e'] : ['#ffffff','#bdbdc2'];
+      for (const desktop of backdrops) {
+        const sidebar = composite(rgba(theme.tokens['--surface-sidebar']),rgba(desktop));
+        const card = composite([...rgba(theme.tokens['--surface-card']).slice(0,3),.35],sidebar);
+        expect(contrast(rgba(theme.tokens['--text-primary']),card)).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(rgba(theme.tokens['--text-muted']),card)).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+  it('uses readable neon actions and muted card text', () => {
+    const { tokens } = resolveTheme(builtins.find(t => t.id === 'cyberpunk-neon'));
+    expect(contrast(rgba(tokens['--surface-app']),rgba(tokens['--border-accent']))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(rgba(tokens['--text-muted']),rgba(tokens['--surface-card']))).toBeGreaterThanOrEqual(4.5);
+  });
   it('inherits only overrides and follows System pairings', () => {
     const custom = { ...builtins[0],id:'custom',extends:'light',appearance:'light',tokens:{ '--text-accent':'#005522' } };
     expect(resolveTheme(custom).tokens['--surface-app']).toBe(resolveTheme(builtins.find(t => t.id === 'light')).tokens['--surface-app']);

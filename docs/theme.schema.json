@@ -55,7 +55,8 @@
         "glass-light",
         "matrix",
         "claude-light",
-        "claude-dark"
+        "claude-dark",
+        "cyberpunk-neon"
       ]
     },
     "tokens": {
@@ -385,11 +386,11 @@
     "effects": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "digitalRain"
-      ],
       "properties": {
         "digitalRain": {
+          "type": "boolean"
+        },
+        "neonGlow": {
           "type": "boolean"
         }
       }

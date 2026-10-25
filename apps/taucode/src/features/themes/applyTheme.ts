@@ -5,7 +5,7 @@ import { resolveTheme } from './builtins';
 import { validateTheme, type ThemeManifest } from './validate';
 let materials = Promise.resolve();
 let lastMaterial: string | null | undefined;
-export function applyTheme(manifest: ThemeManifest, animate = true) {
+export function applyTheme(manifest: ThemeManifest, animate = true, glow = true) {
   const errors = validateTheme(manifest);
   if (errors.length) throw new Error(errors.join('\n'));
   const theme = resolveTheme(manifest), root = document.documentElement;
@@ -18,12 +18,16 @@ export function applyTheme(manifest: ThemeManifest, animate = true) {
   root.dataset.theme = theme.appearance;
   root.dataset.themeId = theme.id;
   root.dataset.translucent = String(!!theme.window?.translucent);
+  root.dataset.neonGlow = String(!!theme.effects?.neonGlow && glow);
+  root.dataset.neonPalette = String(!!theme.effects?.neonGlow);
   root.dataset.digitalRain = String(!!theme.effects?.digitalRain && animate);
   root.style.colorScheme = theme.appearance;
   const material = theme.window?.translucent && theme.window.material !== 'none' ? theme.window.material : null;
-  if (lastMaterial !== material) {
-    lastMaterial = material;
-    materials = materials.then(() => windowSetMaterial(material)).catch(error => {
+  const appearance = material ? theme.appearance : null;
+  const key = JSON.stringify([material, appearance]);
+  if (lastMaterial !== key) {
+    lastMaterial = key;
+    materials = materials.then(() => windowSetMaterial(material, appearance)).catch(error => {
       lastMaterial = undefined;
       pushErrorToast({ title: 'Window material unavailable', message: String(error) });
     });

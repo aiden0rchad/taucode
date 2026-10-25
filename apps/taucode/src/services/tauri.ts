@@ -9,7 +9,7 @@ export const themesImport = (path: string, resolution?: 'replace' | 'keepBoth') 
 export const themesExport = (manifest: ThemeManifest, path: string) => invoke<void>('themes_export', { id: manifest.id, path, manifest });
 export const themesRevealFile = (file: string) => invoke<void>('themes_reveal_file', { file });
 export const themesOpenFolder = () => invoke<void>('themes_open_folder');
-export const windowSetMaterial = (material: string | null) => invoke<void>('window_set_material', { material });
+export const windowSetMaterial = (material: string | null, appearance: 'dark' | 'light' | null) => invoke<void>('window_set_material', { material, appearance });
 export async function pickThemeFile() {
   const path = await open({ multiple: false, filters: [{ name: 'taucode theme', extensions: ['json'] }] });
   return typeof path === 'string' ? path : null;

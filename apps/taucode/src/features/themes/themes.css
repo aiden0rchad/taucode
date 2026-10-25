@@ -127,3 +127,43 @@
 .chat-empty, .messages-empty { position: relative; isolation: isolate; }
 .digital-rain { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .12; pointer-events: none; z-index: var(--z-behind); }
 @media (prefers-reduced-motion: reduce) { .digital-rain { display: none; } }
+
+/* Keep reading and editing surfaces solid while the shell reveals the material. */
+:root[data-translucent="true"] .ds-modal-card {
+  --surface-app: var(--surface-popover);
+  --surface-messages: var(--surface-popover);
+}
+:root[data-translucent="true"] .main-topbar { background: var(--surface-topbar); }
+:root[data-translucent="true"] .sidebar .project-group-card {
+  --squircle-background: color-mix(in srgb, var(--surface-card) 35%, transparent);
+}
+:root[data-translucent="true"] .sidebar .thread-row.active { background: color-mix(in srgb, var(--surface-card-strong) 35%, transparent); }
+:is(.theme-mini, .theme-app-preview)[data-glass="true"] :is(.theme-mini-sidebar, .theme-preview-sidebar) {
+  background: linear-gradient(var(--surface-sidebar), var(--surface-sidebar)), repeating-linear-gradient(135deg, var(--surface-sidebar-opaque) 0 8px, var(--surface-card-strong) 8px 16px);
+}
+:root[data-neon-palette="true"] :is(.primary, .composer-action.is-send) { background: var(--border-accent); color: var(--surface-app); }
+:root[data-neon-palette="true"] :focus-visible { outline-color: var(--text-accent); }
+:root[data-neon-palette="true"] .composer-shell:focus-within { --squircle-border: var(--text-accent); }
+:root[data-neon-palette="true"] .sidebar .thread-row.active { box-shadow: inset 2px 0 var(--border-accent); }
+:root[data-neon-palette="true"] :is(.markdown, .chat-message-body) :not(pre) > code { color: var(--text-accent); }
+:root[data-neon-palette="true"] :is(.markdown-codeblock, .theme-preview-conversation pre) { background: var(--surface-command); }
+:root[data-neon-palette="true"] .token.keyword { color: var(--border-accent); }
+:root[data-neon-palette="true"] :is(.token.function, .token.string) { color: var(--text-accent); }
+:root[data-neon-palette="true"] .token.number { color: var(--status-warning); }
+:root[data-neon-glow="true"] :is(.primary, .composer-action.is-send),
+.theme-mini[data-neon-glow="true"] .theme-mini-button,
+.theme-app-preview[data-neon-glow="true"] .theme-preview-send {
+  background: var(--border-accent);
+  color: var(--surface-app);
+  box-shadow: 0 0 0 1px var(--border-accent), 0 0 14px color-mix(in srgb, var(--border-accent) 45%, transparent);
+}
+:root[data-neon-glow="true"] :focus-visible,
+:root[data-neon-glow="true"] .composer-shell:focus-within {
+  box-shadow: 0 0 0 1px var(--text-accent), 0 0 14px color-mix(in srgb, var(--text-accent) 45%, transparent);
+}
+:root[data-neon-glow="true"] .sidebar .thread-row.active {
+  box-shadow: inset 2px 0 var(--border-accent), 0 0 8px color-mix(in srgb, var(--border-accent) 20%, transparent);
+}
+:root[data-neon-glow="true"] :is(.message.assistant .markdown, .chat-message.assistant .chat-message-body) :is(h1, h2, h3, h4, h5, h6) {
+  text-shadow: 0 0 10px color-mix(in srgb, var(--border-accent) 35%, transparent);
+}

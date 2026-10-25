@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "custom",
+  "name": "Custom",
+  "appearance": "dark",
+  "extends": "cyberpunk-neon",
+  "tokens": {},
+  "effects": {
+    "neonGlow": true
+  }
+}

@@ -31,7 +31,7 @@ export function ThemeGallery({ settings, update }: { settings: AppSettings; upda
   const [editor,setEditor] = useState<ThemeManifest|null>(null), [paste,setPaste] = useState<string|null>(null), [error,setError] = useState('');
   const [remove,setRemove] = useState<ThemeManifest|null>(null), [conflict,setConflict] = useState<{ manifest: ThemeManifest; path?: string }|null>(null);
   const active = selectTheme(settings.theme,themes,systemDark,settings.themeLight,settings.themeDark);
-  const restore = () => applyTheme(active,settings.themeAnimations?.[active.id] !== false);
+  const restore = () => applyTheme(active,settings.themeAnimations?.[active.id] !== false,settings.themeAnimations?.[`${active.id}:neonGlow`] !== false);
   const run = async (fn: () => Promise<unknown>) => { setError(''); try { await fn(); } catch (e) { setError(String(e)); } };
   const unique = (id: string) => {
     for (let n=2;;n++) { const suffix = '-'+n, next = id.slice(0,40-suffix.length)+suffix; if (!themes.some(t => t.id === next)) return next; }
@@ -41,7 +41,7 @@ export function ThemeGallery({ settings, update }: { settings: AppSettings; upda
     const copy = { ...t, id:unique(t.id), name:t.name+' copy', extends:builtinIds.includes(t.id) ? t.id : t.extends };
     setEditor({ ...copy,tokens:themeTokenOverrides(copy) });
   };
-  const save = async (t: ThemeManifest, replace = false) => { await themesSave(t,replace); await reloadThemes(); await update({ ...settings,theme:t.id }); applyTheme(t,settings.themeAnimations?.[t.id] !== false); };
+  const save = async (t: ThemeManifest, replace = false) => { await themesSave(t,replace); await reloadThemes(); await update({ ...settings,theme:t.id }); applyTheme(t,settings.themeAnimations?.[t.id] !== false,settings.themeAnimations?.[`${t.id}:neonGlow`] !== false); };
   let parsed: ThemeManifest|null = null, pasteError = '';
   if (paste !== null) { try { parsed = parseTheme(paste); } catch (e) { pasteError = String(e); } }
   const acceptPaste = async () => {
@@ -91,6 +91,7 @@ export function ThemeGallery({ settings, update }: { settings: AppSettings; upda
       {files.filter(f => f.error).map(f => <article className="theme-card theme-error-card" key={f.file}><AlertCircle size={22} aria-hidden /><strong>{f.file}</strong><p role="alert">{f.error}</p><SettingsButton onClick={() => void run(() => themesRevealFile(f.file))}><FolderOpen size={16} aria-hidden />Reveal file</SettingsButton></article>)}
     </div>
     {resolveTheme(active).effects?.digitalRain && <SettingsToggleRow title="Animated background" subtitle="A subtle animation in empty conversations. Respects reduced motion."><SettingsToggleSwitch pressed={settings.themeAnimations?.[active.id] !== false} onClick={() => void run(() => update({ ...settings,themeAnimations:{ ...settings.themeAnimations,[active.id]:settings.themeAnimations?.[active.id] === false } }))} /></SettingsToggleRow>}
+    {resolveTheme(active).effects?.neonGlow && <SettingsToggleRow title="Glow effects" subtitle="Soft, static glows on accents and focus rings."><SettingsToggleSwitch pressed={settings.themeAnimations?.[`${active.id}:neonGlow`] !== false} onClick={() => void run(() => update({ ...settings,themeAnimations:{ ...settings.themeAnimations,[`${active.id}:neonGlow`]:settings.themeAnimations?.[`${active.id}:neonGlow`] === false } }))} /></SettingsToggleRow>}
     {menu && <ThemeMenu anchor={anchor} close={closeMenu}>
       <PopoverMenuItem role="menuitem" icon={<Check size={16} />} onClick={() => menuAction(() => void run(() => update({ ...settings,theme:menu.id })))}>Apply</PopoverMenuItem>
       <PopoverMenuItem role="menuitem" icon={<Copy size={16} />} onClick={() => menuAction(() => duplicate(menu))}>Duplicate &amp; edit</PopoverMenuItem>

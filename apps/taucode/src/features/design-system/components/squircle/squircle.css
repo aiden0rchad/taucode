@@ -1,18 +1,20 @@
-.squircle.squircle {
+:where(.squircle) {
   position: relative;
   isolation: isolate;
+}
+.squircle.squircle {
   background: transparent;
   border: 0;
   border-radius: var(--radius-window);
 }
-.squircle > .squircle-background {
+:where(.squircle > .squircle-background) {
   position: absolute;
   inset: 0;
   z-index: var(--z-behind);
   pointer-events: none;
   background: var(--squircle-background, var(--surface-card));
 }
-.squircle > .squircle-border {
+:where(.squircle > .squircle-border) {
   position: absolute;
   inset: 0;
   pointer-events: none;

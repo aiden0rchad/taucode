@@ -99,7 +99,8 @@ export function ThemeEditor({ initial, restore, save, close }: { initial: ThemeM
         </SettingsGroup>
         <SettingsGroup title="Window & effects">
           <SettingsRow><div><label htmlFor="theme-material">Material</label><small className="theme-field-note">Window translucency is available on macOS only.</small></div><SettingsSelect id="theme-material" value={resolved.window?.translucent ? resolved.window.material : 'none'} onChange={e => patch({window:{translucent:e.target.value !== 'none',material:e.target.value as NonNullable<ThemeManifest['window']>['material']}})}>{Object.entries({none:'Opaque',sidebar:'Sidebar',underWindow:'Under window',hudWindow:'HUD window'}).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</SettingsSelect></SettingsRow>
-          <SettingsToggleRow title="Animated background" subtitle="Digital rain in empty conversations. Respects reduced motion."><SettingsToggleSwitch pressed={!!resolved.effects?.digitalRain} onClick={() => patch({effects:{digitalRain:!resolved.effects?.digitalRain}})} /></SettingsToggleRow>
+          <SettingsToggleRow title="Animated background" subtitle="Digital rain in empty conversations. Respects reduced motion."><SettingsToggleSwitch pressed={!!resolved.effects?.digitalRain} onClick={() => patch({effects:{...resolved.effects,digitalRain:!resolved.effects?.digitalRain}})} /></SettingsToggleRow>
+          <SettingsToggleRow title="Glow effects" subtitle="Static accent and focus glows."><SettingsToggleSwitch pressed={!!resolved.effects?.neonGlow} onClick={() => patch({effects:{...resolved.effects,neonGlow:!resolved.effects?.neonGlow}})} /></SettingsToggleRow>
         </SettingsGroup>
         {!!errors.length && <div role="alert" className="theme-editor-errors">{errors.map(e => <p key={e}>{e}</p>)}</div>}
         {error && <p role="alert">{error}</p>}
