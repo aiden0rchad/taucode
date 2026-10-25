@@ -1,8 +1,11 @@
-export type EngineKind = "pi" | "codex" | "claude";
+export type EngineKind = string;
+export type EngineProtocol = "pi-rpc" | "codex-app-server" | "acp";
+export type EngineDefinition = { id: string; name: string; protocol: EngineProtocol; builtIn: boolean; command?: string; args?: string[]; env?: Record<string, string>; configDirEnv?: string; enabled: boolean; description?: string };
 export type ModelRef = { providerId: string; modelId: string };
 export type ProviderKind = "openai" | "anthropic" | "google" | "openrouter" | "groq" | "mistral" | "xai" | "deepseek" | "zai" | "ollama" | "lmstudio" | "openai-compatible";
 export type ProviderAuth = { type: "none" } | { type: "apiKey" } | { type: "env"; var: string } | { type: "command"; command: string; args: string[]; timeoutMs?: number };
-export type ProviderModel = { id: string; displayName?: string | null; enabled: boolean; contextWindow?: number | null; supportsTools?: boolean | null; supportsImages?: boolean | null };
+export type ReasoningCapability = { supported: boolean; levels: string[]; default: string | null; control: "effort" | "thinking-toggle" | "budget" | "adaptive" | "unknown"; source: "api" | "probe" | "heuristic" | "user"; detectedAt: number };
+export type ProviderModel = { id: string; displayName?: string | null; enabled: boolean; contextWindow?: number | null; supportsTools?: boolean | null; supportsImages?: boolean | null; reasoning?: ReasoningCapability | null; detectedReasoning?: ReasoningCapability | null };
 export type ProviderEntry = {
   id: string; name: string; kind: ProviderKind; baseUrl?: string | null;
   anthropicCompatible?: boolean;
@@ -255,7 +258,7 @@ export type RemoteBackendTarget = {
   token: string | null;
   lastConnectedAtMs?: number | null;
 };
-export type ThemePreference = "system" | "light" | "dark" | "dim";
+export type ThemePreference = string;
 export type PersonalityPreference = "friendly" | "pragmatic";
 export type FollowUpMessageBehavior = "queue" | "steer";
 export type ComposerSendIntent = "default" | "queue" | "steer";
@@ -297,6 +300,8 @@ export type McpConnectionResult = { ok: boolean; latencyMs: number; tools?: { na
 
 export type AppMode = "code" | "chat" | "work";
 export type AppSettings = {
+  features?: Partial<import("@settings/features").Features>;
+  engines?: EngineDefinition[];
   windowModes?: Record<string, AppMode>;
   chatDefaultModel?: ModelRef | null;
   computer?: import("@/features/computer/computer").ComputerSettings;
@@ -338,6 +343,9 @@ export type AppSettings = {
   lastComposerReasoningEffort: string | null;
   uiScale: number;
   theme: ThemePreference;
+  themeLight?: string;
+  themeDark?: string;
+  themeAnimations?: Record<string, boolean>;
   showMessageFilePath: boolean;
   chatHistoryScrollbackItems: number | null;
   threadTitleAutogenerationEnabled: boolean;
@@ -670,6 +678,8 @@ export type QueuedMessage = {
 
 
 export type ModelOption = {
+  reasoning?: ReasoningCapability | null;
+  acpReasoning?: ReasoningCapability | null;
   providerId?: string;
   providerName?: string;
   modelId?: string;

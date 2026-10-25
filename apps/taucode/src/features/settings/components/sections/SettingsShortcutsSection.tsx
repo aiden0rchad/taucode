@@ -1,8 +1,5 @@
+import { SettingsRow, SettingsTextField, SettingsButton, SettingsPage, SettingsGroup } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useMemo, useState, type KeyboardEvent } from "react";
-import {
-  SettingsSection,
-  SettingsSubsection,
-} from "@/features/design-system/components/settings/SettingsPrimitives";
 import { formatShortcut, getDefaultInterruptShortcut } from "@utils/shortcuts";
 import { isMacPlatform } from "@utils/platformPaths";
 import type {
@@ -48,26 +45,27 @@ function ShortcutField({
   onClearShortcut: (key: ShortcutSettingKey) => void;
 }) {
   return (
-    <div className="settings-field">
+    <SettingsRow className="settings-field">
       <div className="settings-field-label">{item.label}</div>
       <div className="settings-field-row">
-        <input
+        <span className="settings-shortcut-editor"><SettingsTextField
           className="settings-input settings-input--shortcut"
           value={formatShortcut(shortcutDrafts[item.draftKey])}
           onKeyDown={(event) => onShortcutKeyDown(event, item.settingKey)}
           placeholder="Type shortcut"
+          aria-label={item.label}
           readOnly
-        />
-        <button
+        /><span className="settings-shortcut-keys" aria-hidden="true">{formatShortcut(shortcutDrafts[item.draftKey]).split("+").filter(Boolean).map((key, index) => <kbd key={index}>{key}</kbd>)}{!shortcutDrafts[item.draftKey] && "Type shortcut"}</span></span>
+        <SettingsButton
           type="button"
           className="ghost settings-button-compact"
           onClick={() => onClearShortcut(item.settingKey)}
         >
           Clear
-        </button>
+        </SettingsButton>
       </div>
       <div className="settings-help">{item.help}</div>
-    </div>
+    </SettingsRow>
   );
 }
 
@@ -234,7 +232,7 @@ export function SettingsShortcutsSection({
   }, [groups, normalizedSearchQuery]);
 
   return (
-    <SettingsSection
+    <SettingsPage
       title="Shortcuts"
       subtitle="Customize keyboard shortcuts for file actions, composer, panels, and navigation."
     >
@@ -243,7 +241,7 @@ export function SettingsShortcutsSection({
           Search shortcuts
         </label>
         <div className="settings-field-row">
-          <input
+          <SettingsTextField
             id="settings-shortcuts-search"
             className="settings-input"
             placeholder="Search shortcuts"
@@ -251,22 +249,20 @@ export function SettingsShortcutsSection({
             onChange={(event) => setSearchQuery(event.target.value)}
           />
           {searchQuery && (
-            <button
+            <SettingsButton
               type="button"
               className="ghost settings-button-compact"
               onClick={() => setSearchQuery("")}
             >
               Clear
-            </button>
+            </SettingsButton>
           )}
         </div>
         <div className="settings-help">Filter by section name, action, or default shortcut.</div>
       </div>
-      {filteredGroups.map((group, index) => (
-        <div key={group.title}>
-          {index > 0 && <div className="settings-divider" />}
-          <SettingsSubsection title={group.title} subtitle={group.subtitle} />
-          {group.items.map((item) => (
+      {filteredGroups.map((group) => (
+        <SettingsGroup key={group.title} title={group.title} subtitle={group.subtitle}>
+          <div className="settings-shortcut-list">{group.items.map((item) => (
             <ShortcutField
               key={item.settingKey}
               item={item}
@@ -274,14 +270,14 @@ export function SettingsShortcutsSection({
               onShortcutKeyDown={onShortcutKeyDown}
               onClearShortcut={onClearShortcut}
             />
-          ))}
-        </div>
+          ))}</div>
+        </SettingsGroup>
       ))}
       {filteredGroups.length === 0 && (
         <div className="settings-empty">
           No shortcuts match {normalizedSearchQuery ? `"${searchQuery.trim()}"` : "your search"}.
         </div>
       )}
-    </SettingsSection>
+    </SettingsPage>
   );
 }

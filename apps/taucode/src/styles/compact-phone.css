@@ -5,12 +5,6 @@
   grid-template-rows: none;
 }
 
-.app.layout-phone.reduced-transparency,
-.app.layout-phone.reduced-transparency .compact-shell,
-.app.layout-phone.reduced-transparency .compact-panel {
-  background: var(--surface-messages);
-}
-
 .app.layout-phone .drag-strip {
   height: 22px;
 }

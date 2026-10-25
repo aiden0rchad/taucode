@@ -5,7 +5,6 @@ import type { AppModalsProps } from "@app/components/AppModals";
 import {
   TitlebarExpandControls,
 } from "@/features/layout/components/SidebarToggleControls";
-import { WindowCaptionControls } from "@/features/layout/components/WindowCaptionControls";
 import { MobileServerSetupWizard } from "@/features/mobile/components/MobileServerSetupWizard";
 
 const GitHubPanelData = lazy(() =>
@@ -43,7 +42,6 @@ export function MainAppShell({
   isResizing,
   appStyle,
   appRef,
-  sidebarToggleProps,
   shouldLoadGitHubPanelData,
   gitHubPanelDataProps,
   appLayoutProps,
@@ -53,9 +51,6 @@ export function MainAppShell({
 }: MainAppShellProps) {
   return (
     <div className={`${appClassName}${isResizing ? " is-resizing" : ""}`} style={appStyle} ref={appRef}>
-      <div className="drag-strip" id="titlebar" />
-      <TitlebarExpandControls {...sidebarToggleProps} />
-      <WindowCaptionControls />
       {shouldLoadGitHubPanelData ? (
         <Suspense fallback={null}>
           <GitHubPanelData {...gitHubPanelDataProps} />

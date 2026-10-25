@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { Terminal } from "@xterm/xterm";
@@ -119,6 +120,18 @@ export function useTerminalSession({
   onDebug,
   onSessionExit,
 }: UseTerminalSessionOptions): TerminalSessionState {
+  if (!useFeatures().terminal) { activeWorkspace = null; isVisible = false; }
+  useEffect(() => {
+    const update = () => {
+      if (!terminalRef.current) return;
+      const appearance = getTerminalAppearance(containerRef.current);
+      terminalRef.current.options.theme = appearance.theme;
+      terminalRef.current.options.fontFamily = appearance.fontFamily;
+      fitAddonRef.current?.fit();
+    };
+    window.addEventListener('taucode-theme-applied', update);
+    return () => window.removeEventListener('taucode-theme-applied', update);
+  }, []);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);

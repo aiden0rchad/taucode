@@ -1,3 +1,12 @@
+import { useSyncExternalStore } from "react";
+const subscribe = (fn: () => void) => {
+  window.addEventListener("taucode-theme-applied", fn);
+  return () => window.removeEventListener("taucode-theme-applied", fn);
+};
+export function useDiffTheme() {
+  return useSyncExternalStore(subscribe, () => document.documentElement.dataset.theme === "light" ? "light" as const : "dark" as const);
+}
+
 export const DIFF_VIEWER_SCROLL_CSS = `
 [data-column-number],
 [data-buffer],

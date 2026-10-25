@@ -1,6 +1,7 @@
 pub(super) mod config;
 pub(crate) mod agents;
 mod process;
+mod profile;
 #[cfg(test)]
 mod tests;
 mod translate;
@@ -37,6 +38,7 @@ struct Session {
 }
 pub(crate) struct PiEngine {
     pub(super) data: Option<PathBuf>,
+    profile: profile::EngineProfile,
     chat: bool,
     work: bool,
     pub read_only_folders: Mutex<HashMap<String, Vec<String>>>,
@@ -50,11 +52,14 @@ pub(crate) struct PiEngine {
     keys: Arc<dyn KeyStore>,
     #[cfg(test)]
     pub(super) fake: bool,
+    #[cfg(test)]
+    fixture_transport: bool,
 }
 impl Default for PiEngine {
     fn default() -> Self {
         Self {
             data: None,
+            profile: Default::default(),
             chat: false,
             work: false,
             read_only_folders: Mutex::new(HashMap::new()),
@@ -68,10 +73,15 @@ impl Default for PiEngine {
             keys: Arc::new(Keychain),
             #[cfg(test)]
             fake: false,
+            #[cfg(test)]
+            fixture_transport: false,
         }
     }
 }
 impl PiEngine {
+    pub fn with_definition(&self, definition: crate::types::EngineDefinition) -> Self {
+        Self { data: self.data.clone(), profile: profile::EngineProfile { definition }, sink: self.sink.clone(), graph: self.graph.clone(), keys: self.keys.clone(), ..Self::default() }
+    }
     pub fn new(
         data: PathBuf,
         workspace: String,
@@ -131,6 +141,7 @@ impl PiEngine {
         registry: Vec<ProviderEntry>,
         policy: AgentPolicy,
     ) {
+        let policy = super::engines::feature_policy(policy, &super::engine_registry::features(self.data.as_deref()));
         self.registry
             .lock()
             .await
@@ -157,7 +168,7 @@ impl PiEngine {
             .data
             .as_ref()
             .ok_or("Pi runtime is not configured")?
-            .join(if self.chat { "chats/sessions" } else { "pi/sessions" })
+            .join(if self.chat { "chats/sessions".into() } else { format!("{}/sessions", self.profile.id()) })
             .join(workspace))
     }
     pub async fn owns(&self, workspace: &str, id: &str) -> bool {
@@ -207,6 +218,7 @@ impl PiEngine {
             }
             match read_session(&path, &registry) {
                 Ok((mut thread, _)) => {
+                    thread["engine"] = json!(self.profile.id());
                     let id = thread["id"]
                         .as_str()
                         .ok_or("Pi session missing ID")?
@@ -322,7 +334,7 @@ impl PiEngine {
             }
         }
         let fingerprint =
-            serde_json::to_string(&(registry, &connectors)).map_err(|e| e.to_string())?;
+            serde_json::to_string(&(registry, policy, &connectors, super::engine_registry::features(self.data.as_deref()))).map_err(|e| e.to_string())?;
         if let Some(p) = &s.process {
             if p.alive.load(Ordering::SeqCst) && s.configuration == fingerprint {
                 return Ok(p.clone());
@@ -340,10 +352,15 @@ impl PiEngine {
             .data
             .as_ref()
             .ok_or("Pi runtime is not configured")?
-            .join(if self.chat { "chats/agent" } else { "pi/agent" })
+            .join(if self.chat { "chats/agent".into() } else { format!("{}/agent", self.profile.id()) })
             .join(if self.chat { &id } else { &s.workspace });
         let mut env = config::prepare(&home, registry, self.graph.as_ref(), self.keys.as_ref())?;
+        let features = super::engine_registry::features(self.data.as_deref());
+        self.profile.prepare(&home, registry, &features, &mut env)?;
         for p in registry.iter().filter(|p| p.enabled) {
+            if let crate::types::ProviderAuth::Env { var } = &p.auth {
+                env.insert(var.clone(), std::env::var(var).map_err(|_| format!("Missing provider environment variable {var}"))?);
+            }
             if matches!(p.auth, crate::types::ProviderAuth::Command { .. }) {
                 if let Some(key) = providers::token(p, self.keys.as_ref()).await? {
                     env.insert(super::engines::key_env(&p.id), key);
@@ -352,6 +369,13 @@ impl PiEngine {
         }
         let delivery = super::connectors::delivery(&connectors, self.keys.as_ref())?;
         config::write_json(&home.join("mcp.json"), &delivery.pi)?;
+        if self.profile.omp() {
+            let network = home.join("taucode/network.json");
+            let mut origins: Vec<String> = serde_json::from_slice(&std::fs::read(&network).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+            origins.extend(delivery.pi["mcpServers"].as_object().into_iter().flat_map(|servers| servers.values()).filter_map(|server| server["url"].as_str()).filter_map(|url| reqwest::Url::parse(url).ok()).map(|url| url.origin().ascii_serialization()));
+            origins.sort(); origins.dedup();
+            config::write_json(&network, &json!(origins))?;
+        }
         config::write_json(&home.join("taucode/connectors.json"), &json!(connectors))?;
         env.extend(delivery.env);
         let mut secrets = delivery.secrets;
@@ -385,38 +409,47 @@ impl PiEngine {
         }
         let runtime = {
             #[cfg(test)]
-            if self.fake { None } else { Some(super::engine_runtime::source("pi", None)?) }
+            if self.fake { None } else { Some(super::engine_runtime::source(if self.profile.omp() { "omp" } else { "pi" }, None)?) }
             #[cfg(not(test))]
-            Some(super::engine_runtime::prepare(self.data.as_ref().unwrap(), "pi", None).await?)
+            if self.profile.custom() { None } else { Some(super::engine_runtime::prepare(self.data.as_ref().unwrap(), self.profile.id(), None).await?) }
         };
         let cli = std::env::var_os("TAUCODE_PI_CLI").map(PathBuf::from)
-            .unwrap_or_else(|| runtime.as_ref().map(|dir| dir.join("node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js")).unwrap_or_default());
+            .unwrap_or_else(|| runtime.as_ref().map(|dir| dir.join(if self.profile.omp() { "node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js" } else { "node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" })).unwrap_or_default());
         #[cfg(test)]
         let cli = if self.fake {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake_pi.py")
         } else {
             cli
         };
-        if !cli.is_file() {
+        if !self.profile.custom() && !cli.is_file() {
             return Err(
                 "Pi runtime missing. Install engines/pi or set TAUCODE_PI_CLI to pi 1.4.0 cli.js"
                     .into(),
             );
         }
         if self.chat { s.thread["cwd"] = json!(self.chat_scratch(&id)?); }
-        let mut command = Command::new(node);
+        let mut command = if self.profile.custom() {
+            super::engine_registry::validate(&self.profile.definition)?;
+            let mut command = Command::new(super::engine_registry::executable(self.profile.definition.command.as_deref().ok_or("Missing engine command")?)?);
+            command.args(&self.profile.definition.args);
+            command
+        } else if self.profile.omp() { Command::new(runtime.as_ref().ok_or("Missing omp runtime")?.join("node_modules/.bin/bun")) }
+        else { Command::new(node) };
+        command.env_clear().envs(super::engine_registry::environment(std::env::vars(), &home));
         let guard = runtime.as_ref().map(|dir| dir.join("no-accounts.mjs")).unwrap_or_default();
         #[cfg(test)]
-        if !self.fake {
-            command.arg("--import").arg(&guard).env("PI_OFFLINE", "1");
+        if !self.fake && !self.profile.custom() {
+            command.arg(if self.profile.omp() { "--preload" } else { "--import" }).arg(&guard).env("PI_OFFLINE", "1");
         }
         #[cfg(not(test))]
-        command.arg("--import").arg(&guard);
+        if !self.profile.custom() { command.arg(if self.profile.omp() { "--preload" } else { "--import" }).arg(&guard); }
+        #[cfg(test)]
+        if self.fixture_transport { command.arg("--preload").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/omp_fetch.mjs")); }
+        if !self.profile.custom() { command.arg(&cli); }
         command
             .env("TAUCODE_PI_CLI", &cli)
             .env_remove("TAUCODE_SUBAGENT_DEPTH")
             .env_remove("TAUCODE_TOOL_ACCESS")
-            .arg(cli)
             .arg("-e")
             .arg(home.join("extensions/taucode-gate.ts"));
         if self.chat {
@@ -427,9 +460,18 @@ impl PiEngine {
             if web && !connectors.is_empty() {
                 command.env("TAUCODE_CHAT_WEB", "1").args(["-e", "builtin:mcp", "--tools", "mcp__taucode_browser__browser_navigate,mcp__taucode_browser__browser_snapshot,mcp__taucode_browser__browser_take_screenshot"]);
             } else { command.env_remove("TAUCODE_CHAT_WEB"); }
+        } else if self.profile.omp() {
+            command.args(["--no-pty", "--no-title", "--no-skills", "--no-rules"]);
+            if features.subagents {
+                let typebox = runtime.as_ref().ok_or("Missing omp runtime")?.join("node_modules/@oh-my-pi/omptype/dist/js/typebox.js");
+                let source = include_str!("../../../../engines/pi/extensions/taucode-subagents.ts").replace("\"typebox\"", &serde_json::to_string(&typebox.to_string_lossy()).map_err(|e| e.to_string())?);
+                std::fs::write(home.join("extensions/taucode-subagents.ts"), source).map_err(|e|e.to_string())?;
+                command.arg("-e").arg(home.join("extensions/taucode-subagents.ts"));
+            }
         } else {
-            command.env_remove("TAUCODE_CHAT").env_remove("TAUCODE_CHAT_WEB").arg("-e").arg(home.join("extensions/taucode-subagents.ts"))
-                .args(["-e", "builtin:mcp"]);
+            command.env_remove("TAUCODE_CHAT").env_remove("TAUCODE_CHAT_WEB");
+            if features.subagents { command.arg("-e").arg(home.join("extensions/taucode-subagents.ts")); }
+            if features.connectors { command.args(["-e", "builtin:mcp"]); }
         }
         command.env_remove("TAUCODE_WORK").env_remove("TAUCODE_WORK_PYTHON");
         if self.work {
@@ -442,8 +484,8 @@ impl PiEngine {
             command.arg("-e").arg(home.join("extensions/taucode-work.ts"));
             work_profile(&mut command, &source, python.as_deref());
         }
+        if !self.profile.omp() { command.arg("--no-approve"); }
         command.args([
-                "--no-approve",
                 "--no-extensions",
                 "--mode",
                 "rpc",
@@ -511,7 +553,7 @@ impl PiEngine {
                 true
             }
         };
-        if require_extensions && p.extensions.lock().await.len() != if self.chat { 1 } else if self.work { 3 } else { 2 } {
+        if require_extensions && p.extensions.lock().await.len() != if self.chat { 1 } else { 1 + usize::from(features.subagents) + usize::from(self.work) } {
             let _ = p.shutdown().await;
             return Err("Pi policy extensions did not load; refusing to run without the approval gate and subagent policy".into());
         }
@@ -570,9 +612,10 @@ impl PiEngine {
             let file = dir.join(format!("{id}.jsonl"));
             // A valid pi session header fixes the ID before MCP children start, so
             // TAUCODE_SESSION_KEY always matches pi's sessionId, including on resume.
-            let header = json!({"type":"session","version":3,"id":id,"timestamp":chrono::Utc::now().to_rfc3339(),"cwd":cwd,"modelProvider":provider.id,"model":model});
+            let header = json!({"type":"session","version":3,"engine":self.profile.id(),"id":id,"timestamp":chrono::Utc::now().to_rfc3339(),"cwd":cwd,"modelProvider":provider.id,"model":model});
             std::fs::write(&file, format!("{header}\n")).map_err(|e| e.to_string())?;
             let mut thread = thread_value(&id, &cwd, &file);
+            thread["engine"] = json!(self.profile.id());
             thread["modelProvider"] = json!(provider.id);
             thread["model"] = json!(model);
             if self.chat { thread["chatWeb"] = json!(params["web"] == true); }
@@ -657,7 +700,7 @@ impl PiEngine {
             cloned["cwd"] = json!(self.chat_scratch(&new_id)?);
             let bytes = std::fs::read_to_string(&file).map_err(|e| e.to_string())?;
             let (_, rest) = bytes.split_once('\n').ok_or("Invalid session")?;
-            let header = json!({"type":"session","version":3,"id":new_id,"cwd":cloned["cwd"],"timestamp":chrono::Utc::now().to_rfc3339(),"modelProvider":provider.id,"model":model,"forkedFromId":id});
+            let header = json!({"type":"session","version":3,"engine":self.profile.id(),"id":new_id,"cwd":cloned["cwd"],"timestamp":chrono::Utc::now().to_rfc3339(),"modelProvider":provider.id,"model":model,"forkedFromId":id});
             let leaf = rest.lines().last().map(serde_json::from_str::<Value>).transpose().map_err(|e| e.to_string())?
                 .map(|entry| entry["id"].clone()).unwrap_or(Value::Null);
             let change = json!({"type":"model_change","id":uuid::Uuid::new_v4().to_string(),"parentId":leaf,"timestamp":chrono::Utc::now().to_rfc3339(),"provider":config::provider_id(provider,&registry),"modelId":model});
@@ -693,7 +736,7 @@ impl PiEngine {
                 .data
                 .as_ref()
                 .ok_or("Pi runtime is not configured")?
-                .join(if self.chat { "chats/agent" } else { "pi/agent" })
+                .join(if self.chat { "chats/agent".into() } else { format!("{}/agent", self.profile.id()) })
                 .join(if self.chat { id } else { workspace });
             config::write_access(&home, id, mode)?;
             if let Some(p) = &s.process {
@@ -879,6 +922,11 @@ impl PiEngine {
                 }
                 for event in events {
                     self.emit(workspace, event);
+                }
+            }
+            if let Some(cap) = provider.models.iter().find(|m| m.id == model).and_then(|m| m.reasoning.as_ref()) {
+                if let Some(level) = super::reasoning::clamp(cap, params["effort"].as_str()) {
+                    p.request(json!({"type":"set_thinking_level","level":level})).await?;
                 }
             }
             let (message, images) = prompt_input(&params["input"])?;
@@ -1088,7 +1136,7 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
     let id = header["id"].as_str().ok_or("Missing pi session ID")?;
     let cwd = header["cwd"].as_str().ok_or("Missing pi cwd")?;
     let mut thread = thread_value(id, cwd, file);
-    for key in ["modelProvider", "model", "forkedFromId"] {
+    for key in ["engine", "modelProvider", "model", "forkedFromId"] {
         if !header[key].is_null() { thread[key] = header[key].clone(); }
     }
     if header.get("sideOf").is_some() {

@@ -70,6 +70,25 @@ const baseProps = {
 };
 
 describe("Sidebar", () => {
+  it("cards projects including Ungrouped, keeps labels outside, and selects the active card", () => {
+    const workspaces = [
+      { id: "atlas", name: "Atlas", path: "/atlas", connected: true, settings: { sidebarCollapsed: false } },
+      { id: "orbit", name: "Orbit", path: "/orbit", connected: true, settings: { sidebarCollapsed: true } },
+      { id: "notes", name: "Notes", path: "/notes", connected: true, settings: { sidebarCollapsed: false } },
+    ];
+    const { container } = render(<Sidebar {...baseProps} workspaces={workspaces}
+      hasWorkspaceGroups activeWorkspaceId="atlas" groupedWorkspaces={[
+        { id: "studio", name: "Studio", workspaces: workspaces.slice(0, 2) },
+        { id: null, name: "Ungrouped", workspaces: workspaces.slice(2) },
+      ]} threadsByWorkspace={{ notes: [{ id: "note", name: "A note", updatedAt: 1 }] }} />);
+    expect(container.querySelectorAll(".workspace-card.squircle")).toHaveLength(3);
+    expect(container.querySelector(".sidebar .squircle .squircle")).toBeNull();
+    expect(screen.getByRole("button", { name: "Notes" }).closest(".workspace-card.squircle")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Atlas" }).closest(".project-group-card")?.classList.contains("is-selected")).toBe(true);
+    expect(screen.getByRole("button", { name: "Orbit" }).closest(".project-group-card")?.querySelector(".workspace-card-content")?.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByText("A note").closest(".project-group-card")).toBe(screen.getByRole("button", { name: "Notes" }).closest(".project-group-card"));
+    for (const label of ["Studio", "Ungrouped"]) expect(screen.getByText(label).closest(".squircle")).toBeNull();
+  });
   it("toggles the search bar from the header icon", () => {
     render(<Sidebar {...baseProps} />);
 

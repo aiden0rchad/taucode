@@ -115,6 +115,7 @@ impl Browser {
         if self.shutting_down.load(std::sync::atomic::Ordering::SeqCst) {
             return Err("Browser host is shutting down".into());
         }
+        if !crate::shared::engine_registry::features(Some(&self.data)).browser { return Err("Enable Browser in Settings → Features".into()); }
         ensure_running(running, || async {
             let settings = self.settings()?;
             validate(&settings)?;

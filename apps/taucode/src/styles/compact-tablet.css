@@ -87,10 +87,6 @@
   height: 100%;
 }
 
-.app.layout-tablet.reduced-transparency .tablet-main {
-  background: var(--surface-messages);
-}
-
 .tablet-topbar {
   padding: 10px 20px 8px;
 }
@@ -133,7 +129,7 @@
   left: calc(var(--tablet-nav-width, 72px) + var(--sidebar-width, 280px) - 4px);
   width: 8px;
   cursor: col-resize;
-  z-index: 3;
+  z-index: var(--z-sticky);
 }
 
 .projects-resizer::after {
@@ -143,7 +139,7 @@
   bottom: 0;
   left: 3px;
   width: 1px;
-  background: var(--border-strong);
+  background: var(--surface-border-strong);
   opacity: 0;
   transition: opacity 0.15s ease;
 }

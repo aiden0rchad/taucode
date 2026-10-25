@@ -1,3 +1,8 @@
+import { FeatureSettings } from "@settings/features";
+import { SettingsTaucodeFeaturesSection } from "./sections/SettingsTaucodeFeaturesSection";
+import { SettingsEnginesSection } from "./sections/SettingsEnginesSection";
+import { useState } from "react";
+import { SettingsPage, SettingsSegmented } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { SettingsProvidersSection, SettingsAgentPolicySection, ProjectAgentPolicy } from "./sections/SettingsRegistrySections";
 import { SettingsConnectorsSection } from "./sections/SettingsConnectorsSection";
 import { SettingsImportSection } from "./sections/SettingsImportSection";
@@ -44,8 +49,6 @@ export type SettingsViewProps = {
     workspaceId: string,
     groupId: string | null,
   ) => Promise<boolean | null>;
-  reduceTransparency: boolean;
-  onToggleTransparency: (value: boolean) => void;
   appSettings: AppSettings;
   openAppIconById: Record<string, string>;
   onUpdateAppSettings: (next: AppSettings) => Promise<void>;
@@ -87,8 +90,6 @@ export function SettingsView({
   onMoveWorkspaceGroup,
   onDeleteWorkspaceGroup,
   onAssignWorkspaceGroup,
-  reduceTransparency,
-  onToggleTransparency,
   appSettings,
   openAppIconById,
   onUpdateAppSettings,
@@ -119,8 +120,6 @@ export function SettingsView({
     workspaceGroups,
     groupedWorkspaces,
     ungroupedLabel,
-    reduceTransparency,
-    onToggleTransparency,
     appSettings,
     openAppIconById,
     onUpdateAppSettings,
@@ -148,15 +147,18 @@ export function SettingsView({
 
   useSettingsViewCloseShortcuts(onClose);
 
+  const [agentTab, setAgentTab] = useState("defaults");
+  const manageEngines = () => { handleSelectSection("engines"); };
   const activeSectionLabel = SETTINGS_SECTION_LABELS[activeSection];
   const settingsBodyClassName = `settings-body${
     useMobileMasterDetail ? " settings-body-mobile-master-detail" : ""
   }${useMobileMasterDetail && showMobileDetail ? " is-detail-visible" : ""}`;
 
   return (
-    <ModalShell
+    <FeatureSettings.Provider value={appSettings}><ModalShell
       className="settings-overlay"
-      cardClassName="settings-window"
+      cardClassName="settings-window squircle-clip"
+      squircle
       onBackdropClick={onClose}
       ariaLabelledBy="settings-modal-title"
     >
@@ -200,12 +202,17 @@ export function SettingsView({
               </div>
             )}
             <div className="settings-content">
-              {["agents", "browser", "computer"].includes(activeSection) && <SettingsRuntimeSetup />}
-              {activeSection === "computer" ? <SettingsComputerSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> : activeSection === "browser" ? <SettingsBrowserSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
+              {activeSection === "features" ? <SettingsTaucodeFeaturesSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
+               activeSection === "engines" ? <SettingsEnginesSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} onOpenCodexFlags={() => handleSelectSection("codex-flags")} onOpenCodexSetup={() => handleSelectSection("codex")} /> :
+               activeSection === "computer" ? <SettingsComputerSection onManageEngines={manageEngines} appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> : activeSection === "browser" ? <SettingsBrowserSection onManageEngines={manageEngines} appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
                activeSection === "import" ? <SettingsImportSection /> :
                activeSection === "providers" ? <SettingsProvidersSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} /> :
                activeSection === "connectors" ? <SettingsConnectorsSection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} workspace={activeWorkspace} onUpdateWorkspaceSettings={onUpdateWorkspaceSettings} /> :
-               activeSection === "agents" ? <SettingsAgentPolicySection appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} workspace={activeWorkspace} /> :
+               activeSection === "agents" ? <SettingsPage title="Models & Agents" subtitle="Choose defaults, delegate work and manage engine runtimes.">
+                 <SettingsSegmented tabs label="Models & Agents tabs" value={agentTab} options={["defaults", "subagents", "roles", "engines"].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1) }))} onChange={setAgentTab} />
+                 {agentTab === "engines" ? <><SettingsRuntimeSetup /><details><summary>Codex engine</summary><SettingsSectionContainers activeSection="codex" orchestration={orchestration} /></details><details><summary>Engine features</summary><SettingsSectionContainers activeSection="codex-flags" orchestration={orchestration} /></details></> :
+                 <SettingsAgentPolicySection tab={agentTab as "defaults" | "subagents" | "roles"} appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} workspace={activeWorkspace} />}
+               </SettingsPage> :
                <SettingsSectionContainers
                 activeSection={activeSection}
                 orchestration={orchestration}
@@ -215,6 +222,6 @@ export function SettingsView({
           </div>
         )}
       </div>
-    </ModalShell>
+    </ModalShell></FeatureSettings.Provider>
   );
 }

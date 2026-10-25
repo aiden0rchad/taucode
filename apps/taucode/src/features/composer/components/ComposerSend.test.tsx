@@ -16,6 +16,7 @@ vi.mock("../../../services/dragDrop", () => ({
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
+  invoke: async () => [],
   convertFileSrc: (path: string) => `tauri://${path}`,
 }));
 
@@ -30,6 +31,7 @@ vi.mock("../../../utils/platformPaths", async () => {
 });
 
 type HarnessProps = {
+  engine?: import("@/types").EngineKind;
   onSend: (
     text: string,
     images: string[],
@@ -43,6 +45,7 @@ type HarnessProps = {
 };
 
 function ComposerHarness({
+  engine,
   onSend,
 
   isProcessing = false,
@@ -55,6 +58,7 @@ function ComposerHarness({
 
   return (
     <Composer
+      engine={engine}
       onSend={onSend}
       onStop={() => {}}
       canStop={false}
@@ -89,6 +93,27 @@ function ComposerHarness({
 }
 
 describe("Composer send triggers", () => {
+  it("keeps access on the left and one model control before mic and send", () => {
+    const { container } = render(<ComposerHarness onSend={vi.fn()} />);
+    expect(screen.getByRole("combobox", { name: "Access mode" }).closest(".composer-shell-left")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Select model · ?" }).closest(".composer-shell-actions")).toBeTruthy();
+    expect(container.querySelectorAll(".reasoning-control")).toHaveLength(1);
+    expect(screen.queryByRole("combobox", { name: "Model" })).toBeNull();
+    expect(container.querySelector(".composer-select-wrap--effort")).toBeNull();
+    expect(container.querySelectorAll(".composer-shell-actions button")).toHaveLength(3);
+  });
+  it("opens Code tools and inserts a file mention", () => {
+    render(<ComposerHarness onSend={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add attachments and tools" }));
+    expect(screen.getByRole("button", { name: "Attach images" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Mention a file" }));
+    expect(screen.getByRole("textbox")).toHaveProperty("value", "@");
+    expect(screen.queryByRole("dialog", { name: "Attachments and tools" })).toBeNull();
+  });
+  it.each([['pi', 'taucode'], ['codex', 'Codex'], ['claude', 'Claude Code']] as const)("names the %s engine in the placeholder", (engine, label) => {
+    render(<ComposerHarness onSend={vi.fn()} engine={engine} />);
+    expect(screen.getByPlaceholderText(`Ask ${label} to do something…`)).toBeTruthy();
+  });
   afterEach(() => {
     cleanup();
     vi.mocked(isMobilePlatform).mockReturnValue(false);

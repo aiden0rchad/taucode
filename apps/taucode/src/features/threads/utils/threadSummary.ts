@@ -72,7 +72,7 @@ export function buildThreadSummaryFromThread({
     name,
     ...(thread.sideOf ? { sideOf: thread.sideOf as ThreadSummary["sideOf"] } : {}),
     ...extractEngineCapabilities(thread),
-    ...(thread.engine === "pi" || thread.engine === "codex" || thread.engine === "claude" ? { engine: thread.engine } : {}),
+    ...(typeof thread.engine === "string" ? { engine: thread.engine } : {}),
     ...(typeof thread.modelProvider === "string" ? { modelProvider: thread.modelProvider } : {}),
     updatedAt: getThreadTimestamp(thread),
     createdAt: getThreadCreatedTimestamp(thread),

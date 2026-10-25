@@ -1,9 +1,5 @@
+import { SettingsRow, SettingsTextArea, SettingsButton, SettingsSelect, SettingsSection, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import type { AppSettings, ModelOption } from "@/types";
-import {
-  SettingsSection,
-  SettingsToggleRow,
-  SettingsToggleSwitch,
-} from "@/features/design-system/components/settings/SettingsPrimitives";
 
 type SettingsGitSectionProps = {
   appSettings: AppSettings;
@@ -61,13 +57,13 @@ export function SettingsGitSection({
           }
         />
       </SettingsToggleRow>
-      <div className="settings-field">
+      <SettingsRow className="settings-field">
         <div className="settings-field-label">Commit message prompt</div>
         <div className="settings-help">
           Used when generating commit messages. Include <code>{"{diff}"}</code> to insert the
           git diff.
         </div>
-        <textarea
+        <SettingsTextArea
           className="settings-agents-textarea"
           value={commitMessagePromptDraft}
           onChange={(event) => onSetCommitMessagePromptDraft(event.target.value)}
@@ -75,7 +71,7 @@ export function SettingsGitSection({
           disabled={commitMessagePromptSaving}
         />
         <div className="settings-field-actions">
-          <button
+          <SettingsButton
             type="button"
             className="ghost settings-button-compact"
             onClick={() => {
@@ -84,8 +80,8 @@ export function SettingsGitSection({
             disabled={commitMessagePromptSaving || !commitMessagePromptDirty}
           >
             Reset
-          </button>
-          <button
+          </SettingsButton>
+          <SettingsButton
             type="button"
             className="primary settings-button-compact"
             onClick={() => {
@@ -94,11 +90,11 @@ export function SettingsGitSection({
             disabled={commitMessagePromptSaving || !commitMessagePromptDirty}
           >
             {commitMessagePromptSaving ? "Saving..." : "Save"}
-          </button>
+          </SettingsButton>
         </div>
-      </div>
+      </SettingsRow>
       {models.length > 0 && (
-        <div className="settings-field">
+        <SettingsRow className="settings-field">
           <label className="settings-field-label" htmlFor="commit-message-model-select">
             Commit message model
           </label>
@@ -106,7 +102,7 @@ export function SettingsGitSection({
             The model used when generating commit messages. Leave on default to use the
             workspace model.
           </div>
-          <select
+          <SettingsSelect
             id="commit-message-model-select"
             className="settings-select"
             value={appSettings.commitMessageModelId ?? ""}
@@ -124,8 +120,8 @@ export function SettingsGitSection({
                 {model.displayName?.trim() || model.model}
               </option>
             ))}
-          </select>
-        </div>
+          </SettingsSelect>
+        </SettingsRow>
       )}
     </SettingsSection>
   );

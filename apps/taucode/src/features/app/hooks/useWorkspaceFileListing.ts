@@ -42,7 +42,7 @@ export function useWorkspaceFileListing({
   const compactTab = isTablet ? tabletTab : activeTab;
   const filePanelVisible =
     filePanelMode === "files" &&
-    (isCompact ? compactTab === "git" : !rightPanelCollapsed);
+    (!rightPanelCollapsed || (isCompact && compactTab === "git"));
   const shouldFetchFiles =
     Boolean(activeWorkspace) && (filePanelMode === "files" || fileAutocompleteActive);
 

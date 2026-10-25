@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { SettingsBrowserSection } from "./SettingsBrowserSection";
 import { browserRequest } from "@services/tauri";
 import type { AppSettings } from "@/types";
-vi.mock("@services/tauri", () => ({browserRequest:vi.fn().mockResolvedValue(undefined)}));
+vi.mock("@services/tauri", () => ({engineRuntime: vi.fn().mockResolvedValue([{ engine: "browser", state: "ready", message: "Ready" }]), browserRequest:vi.fn().mockResolvedValue(undefined)}));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 it("saves browser settings and requires confirmation before deleting the profile", async () => {
   const save = vi.fn().mockResolvedValue(undefined);

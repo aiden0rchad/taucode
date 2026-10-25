@@ -1,3 +1,4 @@
+import { SidebarTree } from "./SidebarTree";
 import { useMemo, useState, type MouseEvent } from "react";
 
 import type { ThreadSummary } from "../../../types";
@@ -62,7 +63,7 @@ export function ThreadList({
   onSelectThread,
   onShowThreadMenu,
 }: ThreadListProps) {
-  const indentUnit = nested ? 10 : 14;
+  const indentUnit = 14;
   const [collapsedThreadKeys, setCollapsedThreadKeys] = useState<Set<string>>(new Set());
 
   const toggleThreadSubagents = (threadId: string) => {
@@ -97,11 +98,12 @@ export function ThreadList({
 
   return (
     <div className={`thread-list${nested ? " thread-list-nested" : ""}`}>
-      {pinnedVisibility.visibleRows.map((row) => (
+      <SidebarTree rows={[...pinnedVisibility.visibleRows, ...unpinnedVisibility.visibleRows]} rowKey={row => row.thread.id} selected={row => workspaceId === activeWorkspaceId && row.thread.id === activeThreadId}>{row => (
         <ThreadRow
           key={row.thread.id}
           thread={row.thread}
           depth={row.depth}
+          treeDepth={row.depth + 1}
           workspaceId={workspaceId}
           indentUnit={indentUnit}
           activeWorkspaceId={activeWorkspaceId}
@@ -113,35 +115,11 @@ export function ThreadList({
           isThreadPinned={isThreadPinned}
           onSelectThread={onSelectThread}
           onShowThreadMenu={onShowThreadMenu}
-          hasSubagentChildren={pinnedVisibility.rowsWithChildren.has(row)}
+          hasSubagentChildren={pinnedVisibility.rowsWithChildren.has(row) || unpinnedVisibility.rowsWithChildren.has(row)}
           subagentsExpanded={!collapsedThreadKeys.has(`${workspaceId}:${row.thread.id}`)}
           onToggleSubagents={(_, threadId) => toggleThreadSubagents(threadId)}
         />
-      ))}
-      {pinnedVisibility.visibleRows.length > 0 && unpinnedVisibility.visibleRows.length > 0 && (
-        <div className="thread-list-separator" aria-hidden="true" />
-      )}
-      {unpinnedVisibility.visibleRows.map((row) => (
-        <ThreadRow
-          key={row.thread.id}
-          thread={row.thread}
-          depth={row.depth}
-          workspaceId={workspaceId}
-          indentUnit={indentUnit}
-          activeWorkspaceId={activeWorkspaceId}
-          activeThreadId={activeThreadId}
-          threadStatusById={threadStatusById}
-          pendingUserInputKeys={pendingUserInputKeys}
-          getThreadTime={getThreadTime}
-          getThreadArgsBadge={getThreadArgsBadge}
-          isThreadPinned={isThreadPinned}
-          onSelectThread={onSelectThread}
-          onShowThreadMenu={onShowThreadMenu}
-          hasSubagentChildren={unpinnedVisibility.rowsWithChildren.has(row)}
-          subagentsExpanded={!collapsedThreadKeys.has(`${workspaceId}:${row.thread.id}`)}
-          onToggleSubagents={(_, threadId) => toggleThreadSubagents(threadId)}
-        />
-      ))}
+      )}</SidebarTree>
       {showExpandToggle && totalThreadRoots > 3 && (
         <button
           className="thread-more"
@@ -150,7 +128,7 @@ export function ThreadList({
             onToggleExpanded(workspaceId);
           }}
         >
-          {isExpanded ? "Show less" : "More..."}
+          {isExpanded ? "Show less" : `Show ${totalThreadRoots - 3} more`}
         </button>
       )}
       {showLoadOlder && nextCursor && (isExpanded || totalThreadRoots <= 3) && (

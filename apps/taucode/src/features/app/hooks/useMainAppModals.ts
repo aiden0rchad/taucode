@@ -102,8 +102,6 @@ type UseMainAppModalsArgs = {
       workspaceId: string,
       groupId: string | null,
     ) => Promise<boolean | null>;
-    reduceTransparency: boolean;
-    setReduceTransparency: (value: boolean) => void;
     appSettings: AppSettings;
     openAppIconById: Record<string, string>;
     queueSaveSettings: (next: AppSettings) => Promise<unknown>;
@@ -178,8 +176,6 @@ function buildSettingsViewProps({
     onMoveWorkspaceGroup: settings.moveWorkspaceGroup,
     onDeleteWorkspaceGroup: settings.deleteWorkspaceGroup,
     onAssignWorkspaceGroup: settings.assignWorkspaceGroup,
-    reduceTransparency: settings.reduceTransparency,
-    onToggleTransparency: settings.setReduceTransparency,
     appSettings: settings.appSettings,
     openAppIconById: settings.openAppIconById,
     onUpdateAppSettings: async (next) => {

@@ -955,6 +955,7 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
         &settings.agent_policy,
         entry.settings.agent_policy.as_ref(),
     );
+    let policy = crate::shared::engines::feature_policy(policy, &settings.features());
     crate::shared::providers::validate(&settings.providers, &policy)?;
     let workspace_id = entry.id.clone();
     let providers = settings.providers.clone();
@@ -1058,6 +1059,7 @@ async fn spawn_codex_engine<E: EventSink>(
         &settings.agent_policy,
         entry.settings.agent_policy.as_ref(),
     );
+    let policy = crate::shared::engines::feature_policy(policy, &settings.features());
     let home = codex_home.ok_or("Managed CODEX_HOME unavailable")?;
     for arg in parse_codex_args(codex_args.as_deref())? {
         if [
@@ -1122,6 +1124,8 @@ async fn spawn_codex_engine<E: EventSink>(
     secrets.extend(delivery.secrets);
     provider_env.extend(delivery.env);
     command
+        .env_clear()
+        .envs(crate::shared::engine_registry::environment(std::env::vars(), &home))
         .env("CODEX_HOME", &home)
         .env_remove("OPENAI_API_KEY")
         .env_remove("CODEX_API_KEY")

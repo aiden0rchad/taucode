@@ -4,7 +4,7 @@ use super::*;
 fn unknown_engine_migrates_to_default() {
     assert_eq!(
         serde_json::from_value::<crate::types::EngineKind>(json!("future")).unwrap(),
-        crate::types::EngineKind::Pi
+        "future".to_owned()
     );
 }
 
@@ -78,7 +78,7 @@ fn registry_auth_environment_is_allowlisted_and_isolated() {
     .unwrap();
     assert_eq!(env["ANTHROPIC_API_KEY"], "registry-key");
     assert_eq!(env["CLAUDE_CONFIG_DIR"], "/app/claude/workspace");
-    assert_eq!(env["HOME"], "/home/user");
+    assert_eq!(env["HOME"], "/app/claude/workspace");
     assert_eq!(env["ANTHROPIC_BASE_URL"], "https://api.example.test");
     assert!(!env.contains_key("CLAUDE_CODE_OAUTH_TOKEN"));
     assert!(!env.contains_key("CLAUDE_CODE_USE_BEDROCK"));
@@ -687,6 +687,21 @@ async fn prompt_errors_preserve_adapter_details_kind_and_redaction() {
     assert!(error.contains("Internal error: API Error: 400"));
     assert!(error.contains("provider_error"));
     assert!(!error.contains("fixture-api-secret"));
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(data).unwrap();
+}
+
+#[tokio::test]
+async fn advertised_effort_is_clamped_and_applied_before_prompt() {
+    let data = temp();
+    let engine = engine(&data);
+    engine.configure("workspace", vec![provider("anthropic")], AgentPolicy::default()).await;
+    let mut events = engine.events();
+    let started = engine.request("workspace", "thread/start", json!({})).await.unwrap();
+    let id = started["result"]["thread"]["id"].as_str().unwrap();
+    assert_eq!(engine.reasoning_options(id).await.unwrap().2.levels, ["low", "high"]);
+    engine.request("workspace", "turn/start", json!({"threadId":id,"effort":"max","input":[{"type":"text","text":"reasoning-high"}]})).await.unwrap();
+    assert_eq!(event(&mut events, "turn/completed").await["params"]["turn"]["status"], "completed");
     engine.shutdown().await.unwrap();
     std::fs::remove_dir_all(data).unwrap();
 }

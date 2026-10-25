@@ -31,7 +31,7 @@ if (!("ResizeObserver" in globalThis)) {
     unobserve() {}
     disconnect() {}
   }
-  Object.defineProperty(globalThis, "ResizeObserver", { value: ResizeObserverMock });
+  Object.defineProperty(globalThis, "ResizeObserver", { value: ResizeObserverMock, configurable: true });
 }
 
 if (!("IntersectionObserver" in globalThis)) {
@@ -45,6 +45,7 @@ if (!("IntersectionObserver" in globalThis)) {
   }
   Object.defineProperty(globalThis, "IntersectionObserver", {
     value: IntersectionObserverMock,
+    configurable: true,
   });
 }
 

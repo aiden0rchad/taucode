@@ -3,7 +3,7 @@
   bottom: 36px;
   right: 20px;
   width: min(360px, calc(100vw - 40px));
-  z-index: 5;
+  z-index: var(--z-toast);
   pointer-events: none;
   -webkit-app-region: no-drag;
 }

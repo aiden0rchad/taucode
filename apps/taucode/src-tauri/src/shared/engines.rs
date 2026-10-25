@@ -156,6 +156,8 @@ pub(crate) struct WorkspaceSession {
     pub codex_args: Option<String>,
     pub owner_workspace_id: String,
     pub pi: PiEngine,
+    pub(super) extra_pi: Mutex<HashMap<String, Arc<PiEngine>>>,
+    extra_acp: Mutex<HashMap<String, Arc<super::acp::ClaudeAcpEngine>>>,
     pub claude: super::acp::ClaudeAcpEngine,
     pub owners: Mutex<HashMap<String, EngineKind>>,
     pub thread_providers: Mutex<HashMap<String, String>>,
@@ -187,6 +189,8 @@ impl WorkspaceSession {
             factory: None,
             checkpoints: None,
             pi: PiEngine::default(),
+            extra_pi: Mutex::new(HashMap::new()),
+            extra_acp: Mutex::new(HashMap::new()),
             claude: super::acp::ClaudeAcpEngine::default(),
             owners: Mutex::new(HashMap::new()),
             thread_providers: Mutex::new(HashMap::new()),
@@ -216,6 +220,8 @@ impl WorkspaceSession {
             codex_args,
             owner_workspace_id,
             pi: PiEngine::default(),
+            extra_pi: Mutex::new(HashMap::new()),
+            extra_acp: Mutex::new(HashMap::new()),
             claude: super::acp::ClaudeAcpEngine::default(),
             owners: Mutex::new(HashMap::new()),
             thread_providers: Mutex::new(HashMap::new()),
@@ -236,13 +242,32 @@ impl WorkspaceSession {
                         .get(workspace)
                         .and_then(|w| w.settings.agent_policy.as_ref());
                     return (
-                        settings.providers,
-                        providers::effective_policy(&settings.agent_policy, over),
+                        settings.providers.clone(),
+                        feature_policy(providers::effective_policy(&settings.agent_policy, over), &settings.features()),
                     );
                 }
             }
         }
         (self.providers.clone(), self.policy.clone())
+    }
+    async fn prepare_engines(&self, workspace: &str, settings: &AppSettings) -> Result<(), String> {
+        let path = self.pi.paths.lock().await.get(workspace).cloned();
+        for definition in super::engine_registry::registry(settings).into_iter().filter(|e| !matches!(e.id.as_str(), "pi" | "claude" | "codex")) {
+            match definition.protocol {
+                EngineProtocol::PiRpc => {
+                    let mut engines = self.extra_pi.lock().await;
+                    let backend = engines.entry(definition.id.clone()).or_insert_with(|| Arc::new(self.pi.with_definition(definition)));
+                    if let Some(path) = &path { backend.paths.lock().await.insert(workspace.into(), path.clone()); }
+                },
+                EngineProtocol::Acp => {
+                    let mut engines = self.extra_acp.lock().await;
+                    let backend = engines.entry(definition.id.clone()).or_insert_with(|| Arc::new(self.claude.with_definition(definition)));
+                    if let Some(path) = &path { backend.paths.lock().await.insert(workspace.into(), path.clone()); }
+                },
+                _ => (),
+            }
+        }
+        Ok(())
     }
     pub async fn codex_backend(&self) -> Result<Arc<CodexEngine>, String> {
         self.backend(false).await
@@ -278,7 +303,7 @@ impl WorkspaceSession {
                 .lock()
                 .await
                 .iter()
-                .filter(|(_, engine)| **engine == EngineKind::Codex)
+                .filter(|(_, engine)| **engine == "codex".to_owned())
                 .map(|(id, _)| id.clone())
                 .collect();
         }
@@ -298,6 +323,8 @@ impl WorkspaceSession {
         if let Some(c) = self.codex.lock().await.take() {
             let _ = c.shutdown().await;
         }
+        for backend in self.extra_pi.lock().await.values() { let _ = backend.shutdown().await; }
+        for backend in self.extra_acp.lock().await.values() { let _ = backend.shutdown().await; }
         let _ = self.pi.shutdown().await;
         let _ = self.claude.shutdown().await;
     }
@@ -318,13 +345,28 @@ impl WorkspaceSession {
     }
     pub async fn send_request_for_workspace(&self, workspace: &str, method: &str, params: Value) -> Result<Value, String> {
         let thread = params["threadId"].as_str().unwrap_or("").to_owned();
-        if method == "turn/start" {
+        if method == "turn/start" && super::engine_registry::features(self.pi.data.as_deref()).checkpoints {
             if let Some(checkpoints) = &self.checkpoints {
                 let engine = if self.claude.owns(workspace, &thread).await { "claude" } else if self.pi.owns(workspace, &thread).await { "pi" } else { "codex" };
                 checkpoints.before(workspace, &thread, engine, &params).await?;
             }
         }
-        let result = self.request_inner(workspace, method, params).await;
+        let mut result = self.request_inner(workspace, method, params).await;
+        if method == "thread/list" {
+            if let Ok(response) = &mut result {
+                if let Some(rows) = response.pointer_mut("/result/data").and_then(Value::as_array_mut) {
+                    for (id, backend) in self.extra_pi.lock().await.iter() {
+                        let page = backend.request(workspace, method, json!({})).await?;
+                        for mut row in page["result"]["data"].as_array().into_iter().flatten().cloned() { row["engine"] = json!(id); rows.push(row); }
+                    }
+                    for (id, backend) in self.extra_acp.lock().await.iter() {
+                        let page = backend.request(workspace, method, json!({})).await?;
+                        for mut row in page["result"]["data"].as_array().into_iter().flatten().cloned() { row["engine"] = json!(id); rows.push(row); }
+                    }
+                    rows.sort_by_key(|t| std::cmp::Reverse(t["updatedAt"].as_i64().unwrap_or(0)));
+                }
+            }
+        }
         if method == "turn/start" && (result.is_err() || result.as_ref().is_ok_and(|r| r.get("error").is_some())) {
             if let Some(checkpoints) = &self.checkpoints { checkpoints.complete(workspace, &thread); }
         }
@@ -336,7 +378,12 @@ impl WorkspaceSession {
         method: &str,
         mut params: Value,
     ) -> Result<Value, String> {
+        let settings = super::engine_registry::settings(self.pi.data.as_deref());
+        let features = settings.features();
+        if (method == "thread/sidechat" && !features.side_chats) || (method.starts_with("subagent/") && !features.subagents) { return Err("This feature is disabled in Settings".into()); }
         let (providers, policy) = self.configuration_for(workspace);
+        let policy = feature_policy(policy, &features);
+        self.prepare_engines(workspace, &settings).await?;
         self.pi
             .configure(workspace, providers.clone(), policy.clone())
             .await;
@@ -362,6 +409,14 @@ impl WorkspaceSession {
         } else {
             false
         };
+        if let Some(id) = thread_id.as_ref() {
+            for (name, backend) in self.extra_pi.lock().await.iter() {
+                if backend.owns(workspace, id).await { self.owners.lock().await.insert(id.clone(), name.clone()); break; }
+            }
+            for (name, backend) in self.extra_acp.lock().await.iter() {
+                if backend.owns(workspace, id).await { self.owners.lock().await.insert(id.clone(), name.clone()); break; }
+            }
+        }
         let owners = self.owners.lock().await;
         let engine = if method == "thread/start" {
             params
@@ -370,40 +425,52 @@ impl WorkspaceSession {
                 .map(serde_json::from_value)
                 .transpose()
                 .map_err(|_| "Unknown engine")?
-                .unwrap_or(policy.default_engine)
+                .unwrap_or_else(|| policy.default_engine.clone())
         } else {
             thread_id
                 .as_ref()
-                .and_then(|id| owners.get(id).copied())
+                .and_then(|id| owners.get(id).cloned())
                 .unwrap_or(if claude_thread {
-                    EngineKind::Claude
+                    "claude".to_owned()
                 } else if pi_thread {
-                    EngineKind::Pi
+                    "pi".to_owned()
                 } else {
-                    EngineKind::Codex
+                    "codex".to_owned()
                 })
         };
         drop(owners);
         if let Some(obj) = params.as_object_mut() {
             obj.remove("engine");
         }
-        if engine == EngineKind::Claude && method != "thread/list" {
-            let mut response = self.claude.request(workspace, method, params).await?;
+        let (definition, notice) = super::engine_registry::resolve(&settings, &engine)?;
+        let engine = definition.id.clone();
+        let mutating = matches!(method, "turn/start" | "turn/steer" | "thread/start" | "thread/fork" | "thread/compact/start" | "thread/accessMode/set");
+        if !definition.enabled && mutating { return Err(format!("Enable {} to continue", definition.name)); }
+        let method = if !definition.enabled && method == "thread/resume" { "thread/read" } else { method };
+        if definition.protocol != EngineProtocol::CodexAppServer && method != "thread/list" {
+            let mut response = match definition.protocol {
+                EngineProtocol::PiRpc if engine == "pi" => self.pi.request(workspace, method, params).await?,
+                EngineProtocol::PiRpc => {
+                    let backend = self.extra_pi.lock().await.get(&engine).cloned().ok_or("Missing pi-RPC engine")?;
+                    backend.configure(workspace, providers.clone(), policy.clone()).await;
+                    backend.request(workspace, method, params).await?
+                },
+                EngineProtocol::Acp if engine == "claude" => self.claude.request(workspace, method, params).await?,
+                EngineProtocol::Acp => {
+                    let backend = self.extra_acp.lock().await.get(&engine).cloned().ok_or("Missing ACP engine")?;
+                    backend.configure(workspace, providers.clone(), policy.clone()).await;
+                    backend.request(workspace, method, params).await?
+                },
+                _ => unreachable!(),
+            };
+            if let Some(thread) = response.pointer_mut("/result/thread") {
+                thread["engine"] = json!(engine);
+                thread["canAcceptDirectInput"] = json!(definition.enabled);
+                if !definition.enabled { thread["engineNotice"] = json!(format!("Enable {} to continue", definition.name)); }
+                if let Some(notice) = notice { thread["engineNotice"] = json!(notice); }
+                if let Some(id) = thread["id"].as_str() { self.owners.lock().await.insert(id.into(), engine); }
+            }
             if matches!(method, "thread/read" | "thread/resume" | "thread/fork" | "thread/start") { super::sidechats::enrich(self, workspace, &mut response)?; }
-            if let Some(id) = response.pointer("/result/thread/id").and_then(Value::as_str) {
-                self.owners.lock().await.insert(id.into(), EngineKind::Claude);
-            }
-            return Ok(response);
-        }
-        if engine == EngineKind::Pi {
-            let mut response = self.pi.request(workspace, method, params).await?;
-            if matches!(method, "thread/list" | "thread/read" | "thread/resume" | "thread/fork" | "thread/start") { super::sidechats::enrich(self, workspace, &mut response)?; }
-            if let Some(id) = response
-                .pointer("/result/thread/id")
-                .and_then(Value::as_str)
-            {
-                self.owners.lock().await.insert(id.into(), EngineKind::Pi);
-            }
             return Ok(response);
         }
         if matches!(method, "turn/start" | "thread/accessMode/set") {
@@ -510,6 +577,13 @@ impl WorkspaceSession {
                         return Err("Fork this codex thread to switch providers".into());
                     }
                 }
+                if method == "turn/start" {
+                    if let Some(cap) = p.models.iter().find(|m| m.id == model).and_then(|m| m.reasoning.as_ref()) {
+                        let effort = super::reasoning::clamp(cap, params["effort"].as_str());
+                        params["effort"] = json!(effort.as_deref().map(|v| if v == "off" { "none" } else { v }));
+                        if params["collaborationMode"]["settings"].is_object() { params["collaborationMode"]["settings"]["reasoning_effort"] = params["effort"].clone(); }
+                    }
+                }
                 params["model"] = json!(model);
                 if method != "turn/start" {
                     params["modelProvider"] = json!(provider);
@@ -562,7 +636,7 @@ impl WorkspaceSession {
             return Ok(super::pi::agents::capped(messages));
         }
         // The engine protocol must not receive taucode-only fork metadata.
-        if engine == EngineKind::Codex {
+        if engine == "codex".to_owned() {
             if let Some(params) = params.as_object_mut() { params.remove("sideOf"); params.remove("atItemId"); }
         }
         if matches!(
@@ -587,6 +661,11 @@ impl WorkspaceSession {
         }
         if let Some(thread) = response.pointer_mut("/result/thread") {
             thread["engine"] = json!("codex");
+            if !definition.enabled {
+                thread["canAcceptDirectInput"] = json!(false);
+                thread["engineNotice"] = json!(format!("Enable {} to continue", definition.name));
+            }
+            if let Some(notice) = notice { thread["engineNotice"] = json!(notice); }
             if let (Some(id), Some(provider)) = (
                 thread.get("id").and_then(Value::as_str),
                 thread.get("modelProvider").and_then(Value::as_str),
@@ -600,7 +679,7 @@ impl WorkspaceSession {
                 self.owners
                     .lock()
                     .await
-                    .insert(id.into(), EngineKind::Codex);
+                    .insert(id.into(), "codex".to_owned());
             }
         }
         if method == "thread/list" {
@@ -616,7 +695,7 @@ impl WorkspaceSession {
                         self.owners
                             .lock()
                             .await
-                            .insert(id.into(), EngineKind::Codex);
+                            .insert(id.into(), "codex".to_owned());
                     }
                 }
                 data.extend(
@@ -635,6 +714,12 @@ impl WorkspaceSession {
         Ok(response)
     }
     pub async fn send_response(&self, id: Value, result: Value) -> Result<(), String> {
+        for backend in self.extra_pi.lock().await.values() {
+            if backend.respond_to_server_request(id.clone(), result.clone()).await.is_ok() { return Ok(()); }
+        }
+        for backend in self.extra_acp.lock().await.values() {
+            if backend.respond_to_server_request(id.clone(), result.clone()).await.is_ok() { return Ok(()); }
+        }
         if id.as_str().is_some_and(|id| id.starts_with("claude:")) {
             return self.claude.respond_to_server_request(id, result).await;
         }
@@ -925,7 +1010,7 @@ mod tests {
             .owners
             .lock()
             .await
-            .insert("running".into(), EngineKind::Codex);
+            .insert("running".into(), "codex".to_owned());
         first.active_threads.lock().await.insert("running".into());
         session.credentials_changed().await;
         assert!(session.backend(true).await.is_err());
@@ -963,6 +1048,36 @@ mod tests {
         session.shutdown().await;
     }
     #[tokio::test]
+    async fn custom_protocol_routing_and_disabled_history() {
+        let dir = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut settings = AppSettings::default();
+        let mut custom = super::super::engine_registry::resolve(&settings, "pi").unwrap().0;
+        custom.id = "fork".into(); custom.name = "Fork".into(); custom.built_in = false;
+        custom.command = Some("python3".into());
+        settings.engines.push(custom.clone());
+        std::fs::write(dir.join("settings.json"), serde_json::to_vec(&settings).unwrap()).unwrap();
+        let mut session = WorkspaceSession::lazy(Box::new(|| Box::pin(async { panic!("Must not start Codex") })), vec![], AgentPolicy::default(), None, None, "workspace".into());
+        session.pi = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_,_| {}));
+        let error = session.send_request_for_workspace("workspace", "thread/start", json!({"engine":"fork"})).await.unwrap_err();
+        assert_eq!(error, "Add and enable a provider and model in Settings");
+        assert!(session.extra_pi.lock().await.contains_key("fork"));
+        let history = dir.join("fork/sessions/workspace");
+        std::fs::create_dir_all(&history).unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let header = json!({"type":"session","version":3,"engine":"fork","id":id,"timestamp":"2026-01-01T00:00:00Z","cwd":dir,"modelProvider":"test","model":"stub"});
+        std::fs::write(history.join(format!("{id}.jsonl")), format!("{header}\n")).unwrap();
+        settings.engines[0].enabled = false;
+        std::fs::write(dir.join("settings.json"), serde_json::to_vec(&settings).unwrap()).unwrap();
+        let read = session.send_request_for_workspace("workspace", "thread/resume", json!({"threadId":id})).await.unwrap();
+        assert_eq!(read["result"]["thread"]["engine"], "fork");
+        assert_eq!(read["result"]["thread"]["canAcceptDirectInput"], false);
+        assert_eq!(read["result"]["thread"]["engineNotice"], "Enable Fork to continue");
+        assert_eq!(session.send_request_for_workspace("workspace", "turn/start", json!({"threadId":id})).await.unwrap_err(), "Enable Fork to continue");
+        session.shutdown().await;
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[tokio::test]
     async fn pi_routes_by_thread_owner_without_starting_codex() {
         let calls = Arc::new(AtomicUsize::new(0));
         let counter = calls.clone();
@@ -988,7 +1103,7 @@ mod tests {
             .owners
             .lock()
             .await
-            .insert("pi-thread".into(), EngineKind::Pi);
+            .insert("pi-thread".into(), "pi".to_owned());
         assert_eq!(
             session
                 .send_request_for_workspace(
@@ -1037,7 +1152,7 @@ mod tests {
         assert_eq!(response["result"]["data"][0]["engine"], "codex");
         assert_eq!(
             session.owners.lock().await.get("new"),
-            Some(&EngineKind::Codex)
+            Some(&"codex".to_owned())
         );
         session.shutdown().await;
     }
@@ -1076,4 +1191,9 @@ fn write_config_file(path: &Path, content: &str) -> Result<(), String> {
         let _ = std::fs::remove_file(temp);
     }
     result.map_err(|e| e.to_string())
+}
+
+pub(crate) fn feature_policy(mut policy: AgentPolicy, features: &Features) -> AgentPolicy {
+    if !features.subagents { policy.subagents.enabled = false; policy.subagents.max_concurrent = 0; }
+    policy
 }

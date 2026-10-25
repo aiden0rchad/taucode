@@ -1,5 +1,5 @@
+import { SettingsButton, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import type { WorkspaceInfo, WorkspaceSettings } from "@/types";
-import { SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useCodegraphStatus } from "@settings/hooks/useCodegraphStatus";
 
 type Props = {
@@ -24,9 +24,9 @@ export function CodegraphProjectSettings({ workspace, globalEnabled, onUpdate }:
       {!enabled ? "disabled" : status ? `${status.state}: ${status.detail}` : "Loading CodeGraph status…"}
     </div>
     {error && <div role="alert" className="settings-error">{error}</div>}
-    <button type="button" className="ghost settings-button-compact" disabled={busy || !enabled || status?.state === "indexing"}
-      onClick={() => void rebuild()}>Rebuild index</button>
-    {override != null && <button type="button" className="ghost settings-button-compact" disabled={busy}
-      onClick={() => void run(() => update(null))}>Use app setting</button>}
+    <SettingsButton type="button" className="ghost settings-button-compact" disabled={busy || !enabled || status?.state === "indexing"}
+      onClick={() => void rebuild()}>Rebuild index</SettingsButton>
+    {override != null && <SettingsButton type="button" className="ghost settings-button-compact" disabled={busy}
+      onClick={() => void run(() => update(null))}>Use app setting</SettingsButton>}
   </div>;
 }

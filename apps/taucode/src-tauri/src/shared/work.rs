@@ -30,6 +30,8 @@ struct Task {
     brief: String,
     attachments: Vec<String>,
     model: String,
+    #[serde(default)]
+    effort: Option<String>,
     access_mode: String,
     status: String,
     plan: Vec<Value>,
@@ -171,7 +173,7 @@ impl Work {
                 id: task_id.clone(), import_id: Some(id), space_id: space.id, thread_id: Some(task_id),
                 title: history["title"].as_str().unwrap_or("Imported Cowork task").into(),
                 brief: history["messages"].as_array().and_then(|m| m.iter().find(|m| m["role"] == "user")).and_then(|m| m["text"].as_str()).unwrap_or_default().into(),
-                attachments: vec![], model: String::new(), access_mode: "read-only".into(),
+                attachments: vec![], model: String::new(), effort: None, access_mode: "read-only".into(),
                 status: if completed { "done" } else { "stopped" }.into(), plan: vec![],
                 outputs: history["attachments"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_owned)).collect(),
                 pending: vec![], error: history["warning"].as_str().map(str::to_owned),
@@ -210,6 +212,7 @@ impl Work {
         session
     }
     async fn pump(&self, state: &mut State) {
+        if !super::engine_registry::features(Some(&self.data)).work_mode { return; }
         while let Some(index) = next_task(&state.store) {
             state.store.tasks[index].status = "running".into();
             if let Err(error) = self.save(&state.store) {
@@ -238,9 +241,9 @@ impl Work {
         state.store.tasks[index].thread_id = Some(thread.clone());
         self.save(&state.store)?;
         let text = format!("{}\n\nAttached files (inside this space):\n{}\n\nRead-only folders:\n{}", task.brief, task.attachments.join("\n"), space.read_only_folders.join("\n"));
-        let params = json!({"threadId":thread,"accessMode":task.access_mode,"input":[{"type":"text","text":text}]});
+        let params = json!({"threadId":thread,"accessMode":task.access_mode,"effort":task.effort,"input":[{"type":"text","text":text}]});
         let checkpoints = session.checkpoints.as_ref().unwrap();
-        checkpoints.before(&space.id, &thread, "pi", &params).await?;
+        if super::engine_registry::features(Some(&self.data)).checkpoints { checkpoints.before(&space.id, &thread, "pi", &params).await?; }
         if let Err(error) = session.pi.request(&space.id, "turn/start", params).await {
             if let Some(finish) = checkpoints.complete(&space.id, &thread) { let _ = finish.await; }
             return Err(error);
@@ -291,6 +294,7 @@ impl Work {
         Ok(())
     }
     pub async fn request(self: &Arc<Self>, settings: &AppSettings, action: &str, params: Value) -> Result<Value, String> {
+        if !settings.features().work_mode && !matches!(action, "stop" | "interrupt" | "list" | "read") { return Err("Enable Work in Settings → Features".into()); }
         let mut state = self.state.lock().await;
         self.initialize(&mut state).await?;
         state.settings = settings.clone();
@@ -345,7 +349,7 @@ impl Work {
                 let model = params["model"].as_str().ok_or("Select a model")?;
                 let (provider, model_id) = model.split_once('/').ok_or("Select a registry model")?;
                 if !state.settings.providers.iter().any(|p| p.enabled && p.id == provider && p.models.iter().any(|m| m.enabled && m.id == model_id)) { return Err("Enable this registry model in Settings".into()); }
-                let task = Task { id: uuid::Uuid::new_v4().to_string(), import_id: None, space_id: space_id.into(), thread_id: None, title: brief.lines().next().unwrap().chars().take(100).collect(), brief: brief.into(), attachments, model: model.into(), access_mode: mode.into(), status: "queued".into(), plan: vec![], outputs: vec![], pending: vec![], error: None };
+                let task = Task { id: uuid::Uuid::new_v4().to_string(), import_id: None, space_id: space_id.into(), thread_id: None, title: brief.lines().next().unwrap().chars().take(100).collect(), brief: brief.into(), attachments, model: model.into(), effort: params["effort"].as_str().map(str::to_owned), access_mode: mode.into(), status: "queued".into(), plan: vec![], outputs: vec![], pending: vec![], error: None };
                 let result = json!(task);
                 if params["runNow"] == true { state.store.tasks.insert(0, task); } else { state.store.tasks.push(task); }
                 return Ok(result);
@@ -476,7 +480,7 @@ mod tests {
         fn emit_terminal_exit(&self, _: TerminalExit) {}
     }
     fn task(id: &str, space: &str, status: &str) -> Task {
-        Task { import_id: None, id: id.into(), space_id: space.into(), thread_id: Some(id.into()), title: id.into(), brief: "brief".into(), attachments: vec![], model: "local/test".into(), access_mode: "ask".into(), status: status.into(), plan: vec![], outputs: vec![], pending: vec![], error: None }
+        Task { import_id: None, id: id.into(), space_id: space.into(), thread_id: Some(id.into()), title: id.into(), brief: "brief".into(), attachments: vec![], model: "local/test".into(), effort: None, access_mode: "ask".into(), status: status.into(), plan: vec![], outputs: vec![], pending: vec![], error: None }
     }
     fn temp() -> PathBuf {
         let root = std::env::temp_dir().join(format!("work-test-{}", uuid::Uuid::new_v4()));

@@ -175,10 +175,11 @@ function DiffFileRow({
     <div
       className={`diff-row ${isActive ? "active" : ""} ${isSelected ? "selected" : ""}`}
       role="button"
+      aria-label={`View changes in ${file.path}`}
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
+        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
           event.preventDefault();
           onKeySelect();
         }

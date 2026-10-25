@@ -68,5 +68,5 @@ button:active:not(:disabled) {
 }
 
 .ghost:active:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, rgb(255, 255, 255) 6%, var(--surface-app));
 }

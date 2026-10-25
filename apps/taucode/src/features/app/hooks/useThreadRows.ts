@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useRef } from "react";
 
 import type { ThreadSummary } from "../../../types";
@@ -20,6 +21,7 @@ type ThreadRowCacheEntry = {
 };
 
 export function useThreadRows(threadParentById: Record<string, string>) {
+  const { subagents, sideChats } = useFeatures();
   const cacheRef = useRef(
     new WeakMap<
       ThreadSummary[],
@@ -43,15 +45,18 @@ export function useThreadRows(threadParentById: Record<string, string>) {
       getPinTimestamp: (workspaceId: string, threadId: string) => number | null,
       pinVersion = 0,
     ): ThreadRowResult => {
-      const cacheKey = `${workspaceId}:${isExpanded ? "1" : "0"}`;
+      const cacheKey = `${workspaceId}:${isExpanded ? "1" : "0"}:${subagents}:${sideChats}`;
       const threadCache = cacheRef.current.get(threads);
       const cachedEntry = threadCache?.get(cacheKey);
       if (cachedEntry && cachedEntry.pinVersion === pinVersion) {
         return cachedEntry.result;
       }
 
+      const threadsById = new Map(threads.map(thread => [thread.id, thread]));
       const visibleThreads = threads.filter((thread) => {
-        if (thread.sideOf) return threads.some(parent => parent.id === thread.sideOf?.threadId);
+        if (thread.isSubagent && !subagents) return false;
+        if (thread.sideOf && !sideChats) return false;
+        if (thread.sideOf) return threadsById.has(thread.sideOf.threadId);
         if (!thread.isSubagent) {
           return true;
         }
@@ -61,7 +66,7 @@ export function useThreadRows(threadParentById: Record<string, string>) {
       const childrenByParent = new Map<string, ThreadSummary[]>();
       const roots: ThreadSummary[] = [];
       const resolveVisibleParentId = (threadId: string) => {
-        let current = threads.find(t => t.id === threadId)?.sideOf?.threadId ?? threadParentById[threadId];
+        let current = threadsById.get(threadId)?.sideOf?.threadId ?? threadParentById[threadId];
         const visited = new Set<string>([threadId]);
         while (current && !visited.has(current)) {
           if (threadIds.has(current)) {
@@ -107,11 +112,14 @@ export function useThreadRows(threadParentById: Record<string, string>) {
       const visibleRootCount = isExpanded ? unpinnedRoots.length : 3;
       const visibleRoots = unpinnedRoots.slice(0, visibleRootCount);
 
+      const appended = new Set<string>();
       const appendThread = (
         thread: ThreadSummary,
         depth: number,
         rows: ThreadRow[],
       ) => {
+        if (appended.has(thread.id)) return;
+        appended.add(thread.id);
         rows.push({ thread, depth });
         const children = childrenByParent.get(thread.id) ?? [];
         children.forEach((child) => appendThread(child, depth + 1, rows));
@@ -139,7 +147,7 @@ export function useThreadRows(threadParentById: Record<string, string>) {
       }
       return result;
     },
-    [threadParentById],
+    [threadParentById, subagents, sideChats],
   );
 
   return { getThreadRows };

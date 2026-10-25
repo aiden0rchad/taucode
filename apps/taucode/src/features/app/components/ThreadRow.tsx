@@ -1,3 +1,6 @@
+import { Bot, GitFork, Ellipsis } from "lucide-react";
+import { useContext } from "react";
+import { SidebarEngine, SidebarProjects } from "./SidebarTree";
 import { useRunningAgents } from "@/features/agents/agents";
 import type { CSSProperties, MouseEvent } from "react";
 
@@ -44,6 +47,7 @@ function formatSubagentRoleLabel(role: string | null | undefined) {
 type ThreadRowProps = {
   thread: ThreadSummary;
   depth: number;
+  treeDepth?: number;
   workspaceId: string;
   indentUnit: number;
   activeWorkspaceId: string | null;
@@ -70,6 +74,7 @@ type ThreadRowProps = {
 export function ThreadRow({
   thread,
   depth,
+  treeDepth = depth,
   workspaceId,
   indentUnit,
   activeWorkspaceId,
@@ -87,6 +92,8 @@ export function ThreadRow({
   onToggleSubagents,
   showPinnedLabel = true,
 }: ThreadRowProps) {
+  const inheritedEngine = useContext(SidebarEngine);
+  const defaultEngine = useContext(SidebarProjects).find(workspace => workspace.id === workspaceId)?.settings.agentPolicy?.defaultEngine ?? inheritedEngine;
   const runningAgents = useRunningAgents(thread.id);
   const relativeTime = getThreadTime(thread);
   const badge = getThreadArgsBadge?.(workspaceId, thread.id) ?? null;
@@ -103,6 +110,7 @@ export function ThreadRow({
   const hasPendingUserInput = Boolean(
     pendingUserInputKeys?.has(`${workspaceId}:${thread.id}`),
   );
+  const needsInput = hasPendingUserInput || Boolean(threadStatusById[thread.id]?.activeFlags?.some(flag => flag === "waitingOnApproval" || flag === "waitingOnUserInput"));
   const statusClass = getThreadStatusClass(
     threadStatusById[thread.id],
     hasPendingUserInput,
@@ -138,7 +146,7 @@ export function ThreadRow({
       )
     : undefined;
   const effectiveWorkspaceLabel = depth > 0 ? null : workspaceLabel;
-  const contextLabel = badge ?? modelBadge;
+  const contextLabel = modelBadge ?? badge;
   const canPin = depth === 0;
   const isPinned = canPin && isThreadPinned(workspaceId, thread.id);
   const canToggleSubagents = hasSubagentChildren && Boolean(onToggleSubagents);
@@ -158,21 +166,25 @@ export function ThreadRow({
         depth > 0 ? " is-nested" : ""
       }${isPinned ? " is-pinned" : ""}`}
       style={indentStyle}
+      data-depth={treeDepth}
+      data-needs-input={needsInput || undefined}
+      title={[thread.name, thread.engine ?? "codex", modelBadge, badge, statusLabel, effectiveWorkspaceLabel].filter(Boolean).join(" · ")}
       onClick={() => onSelectThread(workspaceId, thread.id)}
       onContextMenu={(event) => onShowThreadMenu(event, workspaceId, thread.id, canPin)}
       role="button"
+      aria-label={thread.name}
       tabIndex={0}
       onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
+        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
           event.preventDefault();
           onSelectThread(workspaceId, thread.id);
         }
       }}
     >
-      <span className={`thread-status ${statusClass}`} aria-hidden />
+      <span className="thread-kind">{canToggleSubagents && <button type="button" className="thread-tree-toggle" aria-label={subagentsExpanded ? "Hide sub-agents" : "Show sub-agents"} aria-expanded={subagentsExpanded} onClick={event => { event.stopPropagation(); onToggleSubagents?.(workspaceId, thread.id); }}>›</button>}{!needsInput && statusClass !== "processing" && thread.isSubagent ? <Bot size={14} aria-hidden /> : !needsInput && statusClass !== "processing" && thread.sideOf ? <GitFork size={14} aria-label="Side chat" /> : <span className={`thread-status ${statusClass}`} aria-hidden />}</span>
       <div className="thread-content">
         <div className="thread-headline">
-          <span className="thread-name">{thread.sideOf && <span aria-label="Side chat">⑂ </span>}{thread.name}</span>{runningAgents > 0 && <span className="agents-count" aria-label={`${runningAgents} running subagents`}>{runningAgents}</span>}<span className="engine-badge">{thread.engine ?? "codex"}</span>
+          <span className="thread-name">{thread.name}</span>{runningAgents > 0 && <span className="agents-count" aria-label={`${runningAgents} running subagents`}>{runningAgents}</span>}
         </div>
         {hasDetails && (
           <div className="thread-details">
@@ -208,26 +220,9 @@ export function ThreadRow({
         )}
       </div>
       <div className="thread-meta">
-        {canToggleSubagents ? (
-          <button
-            type="button"
-            className={`thread-subagent-time-toggle ${subagentsExpanded ? "expanded" : ""}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleSubagents?.(workspaceId, thread.id);
-            }}
-            data-tauri-drag-region="false"
-            aria-label={subagentsExpanded ? "Hide sub-agents" : "Show sub-agents"}
-            aria-expanded={subagentsExpanded}
-          >
-            <span className="thread-subagent-time-label">{relativeTime ?? "Now"}</span>
-            <span className="thread-subagent-toggle-icon" aria-hidden>
-              ›
-            </span>
-          </button>
-        ) : (
-          relativeTime && <span className="thread-time">{relativeTime}</span>
-        )}
+        {(thread.engine ?? "codex") !== defaultEngine && <span className={`thread-engine-dot engine-${thread.engine ?? "codex"}`} title={thread.engine ?? "codex"} />}
+        <span className="thread-time">{relativeTime ?? "Now"}</span>
+        <button type="button" className="ghost thread-menu-trigger" aria-label={`Actions for ${thread.name}`} onClick={event => { event.stopPropagation(); onShowThreadMenu(event, workspaceId, thread.id, canPin); }}><Ellipsis size={14} aria-hidden /></button>
       </div>
     </div>
   );

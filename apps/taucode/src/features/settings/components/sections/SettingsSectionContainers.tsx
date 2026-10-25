@@ -1,3 +1,4 @@
+import { ThemeGallery } from "@/features/themes/ThemeGallery";
 import { SettingsCodexSection } from "./SettingsCodexSection";
 import { SettingsComposerSection } from "./SettingsComposerSection";
 import { SettingsDictationSection } from "./SettingsDictationSection";
@@ -23,6 +24,9 @@ export function SettingsSectionContainers({
   activeSection,
   orchestration,
 }: SettingsSectionContainersProps) {
+  if (activeSection === "appearance") {
+    return <ThemeGallery settings={orchestration.displaySectionProps.appSettings} update={orchestration.displaySectionProps.onUpdateAppSettings} />;
+  }
   if (activeSection === "projects") {
     return <SettingsProjectsSection {...orchestration.projectsSectionProps} />;
   }
@@ -59,7 +63,7 @@ export function SettingsSectionContainers({
   if (activeSection === "codex") {
     return <SettingsCodexSection {...orchestration.codexSectionProps} />;
   }
-  if (activeSection === "features") {
+  if (activeSection === "codex-flags") {
     return <SettingsFeaturesSection {...orchestration.featuresSectionProps} />;
   }
   return null;

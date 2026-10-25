@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useEffect } from "react";
 import { matchesShortcut } from "../../../utils/shortcuts";
 
@@ -14,6 +15,7 @@ export function usePanelShortcuts({
   onToggleDebug,
   onToggleTerminal,
 }: UsePanelShortcutsOptions) {
+  if (!useFeatures().terminal) toggleTerminalShortcut = null;
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.repeat || event.defaultPrevented) {

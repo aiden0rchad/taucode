@@ -1,15 +1,9 @@
 .mobile-setup-wizard-overlay {
-  z-index: calc(var(--ds-layer-modal, 40) + 80);
+  z-index: var(--z-sticky);
 }
 
 .mobile-setup-wizard-overlay .ds-modal-backdrop {
-  background: rgba(6, 10, 16, 0.78);
-  backdrop-filter: blur(14px) saturate(1.15);
-  -webkit-backdrop-filter: blur(14px) saturate(1.15);
-}
-
-.app.reduced-transparency .mobile-setup-wizard-overlay .ds-modal-backdrop {
-  background: rgba(8, 12, 18, 0.92);
+  background: color-mix(in srgb, rgb(6, 10, 16) 78%, var(--surface-app));
 }
 
 .mobile-setup-wizard-card {
@@ -19,8 +13,8 @@
   border: 1px solid var(--border-strong);
   box-shadow: 0 28px 64px rgba(0, 0, 0, 0.55);
   background:
-    radial-gradient(120% 120% at 100% 0%, rgba(46, 170, 220, 0.24), transparent 46%),
-    linear-gradient(170deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+    radial-gradient(120% 120% at 100% 0%, color-mix(in srgb, rgb(46, 170, 220) 24%, var(--surface-app)), var(--surface-app) 46%),
+    linear-gradient(170deg, color-mix(in srgb, rgb(255, 255, 255) 6%, var(--surface-app)), color-mix(in srgb, rgb(255, 255, 255) 2%, var(--surface-app))),
     var(--surface-context-core);
 }
 
@@ -51,7 +45,7 @@
   align-items: center;
   border-radius: 999px;
   border: 1px solid rgba(46, 170, 220, 0.35);
-  background: rgba(46, 170, 220, 0.14);
+  background: color-mix(in srgb, rgb(46, 170, 220) 14%, var(--surface-app));
   color: var(--text-strong);
   padding: 4px 10px;
   font-size: 11px;
@@ -111,7 +105,7 @@
 .mobile-setup-wizard-status {
   border-radius: 10px;
   border: 1px solid rgba(116, 198, 157, 0.4);
-  background: rgba(116, 198, 157, 0.12);
+  background: color-mix(in srgb, rgb(116, 198, 157) 12%, var(--surface-app));
   color: var(--text-strong);
   padding: 9px 10px;
   font-size: 12px;
@@ -120,7 +114,7 @@
 
 .mobile-setup-wizard-status-error {
   border-color: rgba(255, 105, 105, 0.45);
-  background: rgba(255, 105, 105, 0.12);
+  background: color-mix(in srgb, rgb(255, 105, 105) 12%, var(--surface-app));
   color: #ffc1c1;
 }
 

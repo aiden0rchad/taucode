@@ -24,11 +24,11 @@ const baseProps = {
 describe("WorktreePrompt", () => {
   it("guards backdrop cancel while busy", () => {
     const onCancel = vi.fn();
-    const { container, rerender } = render(
+    const { baseElement, rerender } = render(
       <WorktreePrompt {...baseProps} onCancel={onCancel} isBusy />,
     );
 
-    let backdrop = container.querySelector(".ds-modal-backdrop");
+    let backdrop = baseElement.querySelector(".ds-modal-backdrop");
     expect(backdrop).toBeTruthy();
     if (!backdrop) {
       throw new Error("Expected worktree prompt backdrop");
@@ -37,7 +37,7 @@ describe("WorktreePrompt", () => {
     expect(onCancel).not.toHaveBeenCalled();
 
     rerender(<WorktreePrompt {...baseProps} onCancel={onCancel} isBusy={false} />);
-    backdrop = container.querySelector(".ds-modal-backdrop");
+    backdrop = baseElement.querySelector(".ds-modal-backdrop");
     if (!backdrop) {
       throw new Error("Expected worktree prompt backdrop");
     }

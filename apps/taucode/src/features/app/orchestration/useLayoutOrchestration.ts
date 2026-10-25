@@ -8,7 +8,6 @@ type UseAppShellOrchestrationOptions = {
   isTablet: boolean;
   sidebarCollapsed: boolean;
   rightPanelCollapsed: boolean;
-  shouldReduceTransparency: boolean;
   isWorkspaceDropActive: boolean;
   centerMode: "chat" | "diff";
   selectedDiffPath: string | null;
@@ -29,13 +28,11 @@ export function useAppShellOrchestration({
   isTablet,
   sidebarCollapsed,
   rightPanelCollapsed,
-  shouldReduceTransparency,
   isWorkspaceDropActive,
   centerMode,
   selectedDiffPath,
   showComposer,
   activeThreadId,
-  sidebarWidth,
   rightPanelWidth,
   chatDiffSplitPositionPercent,
   planPanelHeight,
@@ -49,15 +46,12 @@ export function useAppShellOrchestration({
 
   const appClassName = `app ${isCompact ? "layout-compact" : "layout-desktop"}${
     isPhone ? " layout-phone" : ""
-  }${isTablet ? " layout-tablet" : ""}${
-    shouldReduceTransparency ? " reduced-transparency" : ""
-  }${!isCompact && sidebarCollapsed ? " sidebar-collapsed" : ""}${
+  }${isTablet ? " layout-tablet" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     !isCompact && rightPanelCollapsed ? " right-panel-collapsed" : ""
   }${isWindows ? " is-windows" : ""}`;
 
   const appStyle = useMemo<CSSProperties>(
     () => ({
-      "--sidebar-width": `${isCompact ? sidebarWidth : sidebarCollapsed ? 0 : sidebarWidth}px`,
       "--right-panel-width": `${
         isCompact ? rightPanelWidth : rightPanelCollapsed ? 0 : rightPanelWidth
       }px`,
@@ -78,7 +72,6 @@ export function useAppShellOrchestration({
       ...(isWindows
         ? {
             "--titlebar-height": "8px",
-            "--titlebar-drag-strip-z-index": "5",
             "--side-panel-drag-strip-height": "56px",
             "--window-drag-hit-height": "44px",
             "--window-drag-strip-pointer-events": "none",
@@ -102,8 +95,6 @@ export function useAppShellOrchestration({
       planPanelHeight,
       rightPanelCollapsed,
       rightPanelWidth,
-      sidebarCollapsed,
-      sidebarWidth,
       terminalPanelHeight,
     ],
   );

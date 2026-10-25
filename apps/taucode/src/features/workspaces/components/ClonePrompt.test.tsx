@@ -23,11 +23,11 @@ const baseProps = {
 describe("ClonePrompt", () => {
   it("guards backdrop cancel while busy", () => {
     const onCancel = vi.fn();
-    const { container, rerender } = render(
+    const { baseElement, rerender } = render(
       <ClonePrompt {...baseProps} onCancel={onCancel} isBusy />,
     );
 
-    const backdrop = container.querySelector(".ds-modal-backdrop");
+    const backdrop = baseElement.querySelector(".ds-modal-backdrop");
     expect(backdrop).toBeTruthy();
     if (!backdrop) {
       throw new Error("Expected clone prompt backdrop");

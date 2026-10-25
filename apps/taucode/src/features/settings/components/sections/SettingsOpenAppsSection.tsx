@@ -1,7 +1,7 @@
+import { SettingsRow, SettingsTextField, SettingsSelect, SettingsButton, SettingsSection } from "@/features/design-system/components/settings/SettingsPrimitives";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2";
-import { SettingsSection } from "@/features/design-system/components/settings/SettingsPrimitives";
 import type { OpenAppTarget } from "@/types";
 import {
   fileManagerName,
@@ -63,7 +63,7 @@ export function SettingsOpenAppsSection({
                 : "Complete required fields";
 
           return (
-            <div
+            <SettingsRow
               key={target.id}
               className={`settings-open-app-row${isComplete ? "" : " is-incomplete"}`}
             >
@@ -79,7 +79,7 @@ export function SettingsOpenAppsSection({
               <div className="settings-open-app-fields">
                 <label className="settings-open-app-field settings-open-app-field--label">
                   <span className="settings-visually-hidden">Label</span>
-                  <input
+                  <SettingsTextField
                     className="settings-input settings-input--compact settings-open-app-input settings-open-app-input--label"
                     value={target.label}
                     placeholder="Label"
@@ -95,7 +95,7 @@ export function SettingsOpenAppsSection({
                 </label>
                 <label className="settings-open-app-field settings-open-app-field--type">
                   <span className="settings-visually-hidden">Type</span>
-                  <select
+                  <SettingsSelect
                     className="settings-select settings-select--compact settings-open-app-kind"
                     value={target.kind}
                     onChange={(event) =>
@@ -106,12 +106,12 @@ export function SettingsOpenAppsSection({
                     <option value="app">App</option>
                     <option value="command">Command</option>
                     <option value="finder">{fileManagerName()}</option>
-                  </select>
+                  </SettingsSelect>
                 </label>
                 {target.kind === "app" && (
                   <label className="settings-open-app-field settings-open-app-field--appname">
                     <span className="settings-visually-hidden">App name</span>
-                    <input
+                    <SettingsTextField
                       className="settings-input settings-input--compact settings-open-app-input settings-open-app-input--appname"
                       value={target.appName ?? ""}
                       placeholder="App name"
@@ -129,7 +129,7 @@ export function SettingsOpenAppsSection({
                 {target.kind === "command" && (
                   <label className="settings-open-app-field settings-open-app-field--command">
                     <span className="settings-visually-hidden">Command</span>
-                    <input
+                    <SettingsTextField
                       className="settings-input settings-input--compact settings-open-app-input settings-open-app-input--command"
                       value={target.command ?? ""}
                       placeholder="Command"
@@ -147,7 +147,7 @@ export function SettingsOpenAppsSection({
                 {target.kind !== "finder" && (
                   <label className="settings-open-app-field settings-open-app-field--args">
                     <span className="settings-visually-hidden">Args</span>
-                    <input
+                    <SettingsTextField
                       className="settings-input settings-input--compact settings-open-app-input settings-open-app-input--args"
                       value={target.argsText}
                       placeholder="Args"
@@ -172,18 +172,10 @@ export function SettingsOpenAppsSection({
                     Incomplete
                   </span>
                 )}
-                <label className="settings-open-app-default">
-                  <input
-                    type="radio"
-                    name="open-app-default"
-                    checked={target.id === openAppSelectedId}
-                    onChange={() => onSelectOpenAppDefault(target.id)}
-                    disabled={!isComplete}
-                  />
-                  Default
-                </label>
+                <SettingsButton className="settings-open-app-default" aria-pressed={target.id === openAppSelectedId}
+                  onClick={() => onSelectOpenAppDefault(target.id)} disabled={!isComplete}>Default</SettingsButton>
                 <div className="settings-open-app-order">
-                  <button
+                  <SettingsButton
                     type="button"
                     className="ghost icon-button"
                     onClick={() => onMoveOpenApp(index, "up")}
@@ -191,8 +183,8 @@ export function SettingsOpenAppsSection({
                     aria-label="Move up"
                   >
                     <ChevronUp aria-hidden />
-                  </button>
-                  <button
+                  </SettingsButton>
+                  <SettingsButton
                     type="button"
                     className="ghost icon-button"
                     onClick={() => onMoveOpenApp(index, "down")}
@@ -200,9 +192,9 @@ export function SettingsOpenAppsSection({
                     aria-label="Move down"
                   >
                     <ChevronDown aria-hidden />
-                  </button>
+                  </SettingsButton>
                 </div>
-                <button
+                <SettingsButton
                   type="button"
                   className="ghost icon-button"
                   onClick={() => onDeleteOpenApp(index)}
@@ -211,16 +203,16 @@ export function SettingsOpenAppsSection({
                   title="Remove app"
                 >
                   <Trash2 aria-hidden />
-                </button>
+                </SettingsButton>
               </div>
-            </div>
+            </SettingsRow>
           );
         })}
       </div>
       <div className="settings-open-app-footer">
-        <button type="button" className="ghost" onClick={onAddOpenApp}>
+        <SettingsButton type="button" className="ghost" onClick={onAddOpenApp}>
           Add app
-        </button>
+        </SettingsButton>
         <div className="settings-help">
           Commands receive the selected path as the final argument.{" "}
           {isMacPlatform()

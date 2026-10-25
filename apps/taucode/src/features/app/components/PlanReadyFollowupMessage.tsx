@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 
 type PlanReadyFollowupMessageProps = {
   onAccept: () => void;
@@ -9,11 +9,13 @@ export function PlanReadyFollowupMessage({
   onAccept,
   onSubmitChanges,
 }: PlanReadyFollowupMessageProps) {
+  const card = useRef<HTMLDivElement>(null);
+  useEffect(() => { card.current?.scrollIntoView?.({ block: "nearest" }); }, []);
   const [changes, setChanges] = useState("");
   const trimmed = useMemo(() => changes.trim(), [changes]);
 
   return (
-    <div className="message request-user-input-message">
+    <div ref={card} className="message request-user-input-message">
       <div
         className="bubble request-user-input-card"
         role="group"
@@ -27,7 +29,7 @@ export function PlanReadyFollowupMessage({
             <div className="request-user-input-question-text">
               Start building from this plan, or describe changes to the plan.
             </div>
-            <textarea
+            <textarea aria-label="Plan changes"
               className="request-user-input-notes"
               placeholder="Describe what you want to change in the plan..."
               value={changes}

@@ -45,6 +45,7 @@ export function Home({
 }: HomeProps) {
   return (
     <div className="home">
+      <header className="main-header-actions home-header-actions"></header>
       <div className="home-hero">
         <div className="home-title">taucode</div>
         <div className="home-subtitle">

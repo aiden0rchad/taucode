@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
@@ -29,6 +30,7 @@ export function useGitActions({
   onClearGitRootCandidates,
   onError,
 }: UseGitActionsOptions) {
+  if (!useFeatures().git) activeWorkspace = null;
   const [worktreeApplyError, setWorktreeApplyError] = useState<string | null>(null);
   const [worktreeApplyLoading, setWorktreeApplyLoading] = useState(false);
   const [worktreeApplySuccess, setWorktreeApplySuccess] = useState(false);

@@ -204,6 +204,7 @@ pub(crate) async fn terminal_open(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<TerminalSessionInfo, String> {
+    if !state.app_settings.lock().await.features().terminal { return Err("Enable Terminal in Settings → Features".into()); }
     if terminal_id.is_empty() {
         return Err("Terminal id is required".to_string());
     }

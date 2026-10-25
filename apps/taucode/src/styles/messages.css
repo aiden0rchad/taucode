@@ -93,9 +93,9 @@
   color: transparent;
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.3),
-    rgba(255, 255, 255, 0.95),
-    rgba(255, 255, 255, 0.3)
+    color-mix(in srgb, rgb(255, 255, 255) 30%, var(--surface-app)),
+    color-mix(in srgb, rgb(255, 255, 255) 95%, var(--surface-app)),
+    color-mix(in srgb, rgb(255, 255, 255) 30%, var(--surface-app))
   );
   background-size: 200% 100%;
   -webkit-background-clip: text;
@@ -129,7 +129,7 @@
 .turn-complete-line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--cm-border-heavy));
+  background: linear-gradient(90deg, var(--surface-app), var(--cm-border-heavy));
 }
 
 .turn-complete-label {
@@ -176,10 +176,9 @@
   word-break: break-word;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    backdrop-filter 0.18s ease;
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .message-bubble {
@@ -211,7 +210,7 @@
   border: 1px solid var(--border-strong);
   opacity: 0;
   transform: translateY(4px);
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition: opacity 150ms ease, transform 150ms ease;
 }
 
 .message-quote-button {
@@ -227,7 +226,7 @@
   border: 1px solid var(--border-strong);
   opacity: 0;
   transform: translateY(4px);
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition: opacity 150ms ease, transform 150ms ease;
 }
 
 .message:hover .message-copy-button,
@@ -248,7 +247,7 @@
 .message-copy-icon svg {
   position: absolute;
   inset: 0;
-  transition: opacity 160ms ease, transform 160ms ease, filter 160ms ease;
+  transition: opacity 150ms ease, transform 150ms ease, filter 150ms ease;
 }
 
 .message-copy-icon-copy {
@@ -342,8 +341,8 @@
 .message-image-lightbox {
   position: fixed;
   inset: 0;
-  z-index: 9999;
-  background: rgba(10, 12, 16, 0.7);
+  z-index: var(--z-modal);
+  background: color-mix(in srgb, rgb(10, 12, 16) 70%, var(--surface-app));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -397,10 +396,9 @@
   color: var(--text-stronger);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    backdrop-filter 0.18s ease;
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .item-card.review {
@@ -422,7 +420,7 @@
 }
 
 .review-badge {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: 2px 6px;
@@ -462,7 +460,7 @@
 .item-chevron {
   font-size: 12px;
   color: var(--text-faint);
-  transition: transform 0.2s ease;
+  transition: transform 150ms ease;
 }
 
 .item-card[open] .item-chevron {
@@ -512,7 +510,7 @@
   border-radius: 16px;
   padding: 12px 14px;
   margin: 0;
-  background: color-mix(in srgb, var(--cm-surface-panel-soft) 88%, transparent);
+  background: color-mix(in srgb, var(--cm-surface-panel-soft) 88%, var(--surface-app));
   display: flex;
   position: relative;
   min-width: 0;
@@ -580,7 +578,7 @@
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: var(--status-unknown);
+  background: var(--surface-status-unknown);
   box-shadow: 0 0 0 1px var(--border-subtle);
   flex: 0 0 auto;
   margin-top: 2px;
@@ -606,15 +604,15 @@
 }
 
 .tool-inline-dot.completed {
-  background: var(--status-success);
+  background: var(--surface-status-success);
 }
 
 .tool-inline-dot.processing {
-  background: var(--status-warning);
+  background: var(--surface-status-warning);
 }
 
 .tool-inline-dot.failed {
-  background: var(--status-error);
+  background: var(--surface-status-error);
 }
 
 .tool-inline-label {
@@ -682,7 +680,7 @@
 
 .tool-inline-status {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-subtle);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -825,7 +823,7 @@
 }
 
 .tool-inline-change-kind {
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   color: var(--text-subtle);
 }
@@ -949,7 +947,6 @@
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 10px 28px rgba(7, 12, 34, 0.12);
-  backdrop-filter: saturate(1.08) brightness(1.05);
 }
 
 .message.assistant .bubble:hover,
@@ -988,7 +985,7 @@
 
 .tool-group-body .tool-inline-command {
   padding: 1px 6px;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.2;
   border-radius: 6px;
 }
@@ -996,7 +993,7 @@
 .tool-group-body .tool-inline-detail,
 .tool-group-body .explore-inline-item,
 .tool-group-body .user-input-inline-entry {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.35;
 }
 
@@ -1047,7 +1044,7 @@
 }
 
 .tool-label {
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-fainter);
@@ -1086,7 +1083,7 @@
 }
 
 .file-change-kind {
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   color: var(--text-subtle);
 }
@@ -1110,7 +1107,7 @@
 .markdown {
   white-space: normal;
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   line-height: 1.5;
   color: var(--text-stronger);
 }
@@ -1136,11 +1133,11 @@
 
 .message .markdown :not(pre) > code {
   color: var(--text-stronger);
-  background: color-mix(in srgb, var(--surface-command) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-command) 82%, var(--surface-app));
   border: 1px solid var(--border-subtle);
   padding: 1px 5px;
   border-radius: 6px;
-  font-size: 0.97em;
+  font-size: max(11px, 0.97em);
 }
 
 .message .markdown .message-file-link {
@@ -1151,7 +1148,7 @@
   padding: 2px 7px;
   border-radius: 8px;
   border: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-command) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-command) 82%, var(--surface-app));
   color: var(--message-link-color);
   text-decoration: none;
   vertical-align: baseline;
@@ -1166,7 +1163,7 @@
 .message .markdown .message-file-link-name {
   font-family: var(--code-font-family);
   font-weight: 520;
-  font-size: 0.88em;
+  font-size: max(11px, 0.88em);
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -1177,15 +1174,15 @@
   padding: 0 5px;
   border-radius: 999px;
   border: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-control) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-control) 78%, var(--surface-app));
   color: var(--text-muted);
-  font-size: 0.64em;
+  font-size: max(11px, 0.64em);
   line-height: 1.35;
   letter-spacing: 0.02em;
 }
 
 .message .markdown .message-file-link-path {
-  font-size: 0.62em;
+  font-size: max(11px, 0.62em);
   line-height: 1.2;
   color: var(--text-faint);
   white-space: nowrap;
@@ -1214,7 +1211,7 @@
   padding: 4px 8px;
   background: var(--surface-control);
   border-bottom: 1px solid var(--border-strong);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-faint);
@@ -1228,7 +1225,7 @@
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: 2px 8px;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-stronger);
@@ -1304,7 +1301,7 @@
   overflow-x: auto;
   border: 1px solid var(--border-strong);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--surface-card-strong) 92%, transparent);
+  background: color-mix(in srgb, var(--surface-card-strong) 92%, var(--surface-app));
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
 }
 
@@ -1328,10 +1325,10 @@
 .markdown .markdown-table thead th {
   position: sticky;
   top: 0;
-  z-index: 1;
-  background: color-mix(in srgb, var(--surface-control) 90%, transparent);
+  z-index: var(--z-sticky);
+  background: color-mix(in srgb, var(--surface-control) 90%, var(--surface-app));
   border-bottom: 1px solid var(--border-strong);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1347,7 +1344,7 @@
 }
 
 .markdown .markdown-table tbody tr:hover td {
-  background: color-mix(in srgb, var(--surface-control-hover) 36%, transparent);
+  background: color-mix(in srgb, var(--surface-control-hover) 36%, var(--surface-app));
 }
 
 .message .markdown .markdown-table td:first-child {
@@ -1437,7 +1434,7 @@
   margin: 0;
   padding: 6px 10px;
   border-left: 2px solid var(--border-accent-soft);
-  background: color-mix(in srgb, var(--surface-card-strong) 65%, transparent);
+  background: color-mix(in srgb, var(--surface-card-strong) 65%, var(--surface-app));
   border-radius: 6px;
   color: var(--text-muted);
 }
@@ -1454,10 +1451,10 @@
 .message .markdown a,
 .message .markdown a:visited {
   color: var(--message-link-color);
-  font-size: 0.98em;
+  font-size: max(11px, 0.98em);
 }
 
 .message .markdown a code {
   color: var(--message-link-color);
-  font-size: 0.97em;
+  font-size: max(11px, 0.97em);
 }

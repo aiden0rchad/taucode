@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type {
   GitHubPullRequest,
@@ -58,6 +59,7 @@ export function usePullRequestReviewActions({
   startThreadForWorkspace,
   sendUserMessageToThread,
 }: UsePullRequestReviewActionsOptions) {
+  if (!useFeatures().git) activeWorkspace = null;
   const [isLaunchingReview, setIsLaunchingReview] = useState(false);
   const [lastReviewThreadId, setLastReviewThreadId] = useState<string | null>(null);
   const launchInFlightRef = useRef(false);

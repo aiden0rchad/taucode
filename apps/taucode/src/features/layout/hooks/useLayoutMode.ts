@@ -7,14 +7,14 @@ export type LayoutMode = "desktop" | "tablet" | "phone";
 const TABLET_MAX_WIDTH = 1100;
 const PHONE_MAX_WIDTH = 520;
 
-function getLayoutMode(width: number, forcePhoneLayout: boolean): LayoutMode {
+export function getLayoutMode(width: number, forcePhoneLayout: boolean, touch = window.matchMedia?.("(pointer: coarse)").matches ?? false): LayoutMode {
   if (forcePhoneLayout) {
     return "phone";
   }
-  if (width <= PHONE_MAX_WIDTH) {
+  if (touch && width <= PHONE_MAX_WIDTH) {
     return "phone";
   }
-  if (width <= TABLET_MAX_WIDTH) {
+  if (touch && width <= TABLET_MAX_WIDTH) {
     return "tablet";
   }
   return "desktop";

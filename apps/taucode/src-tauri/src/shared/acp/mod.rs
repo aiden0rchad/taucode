@@ -67,6 +67,7 @@ struct Dialog {
 }
 pub(crate) struct ClaudeAcpEngine {
     data: Option<PathBuf>,
+    definition: Option<crate::types::EngineDefinition>,
     pub paths: Mutex<HashMap<String, String>>,
     threads: Arc<Mutex<HashMap<String, Thread>>>,
     runtimes: Mutex<HashMap<String, Runtime>>,
@@ -84,6 +85,7 @@ impl Default for ClaudeAcpEngine {
     fn default() -> Self {
         Self {
             data: None,
+            definition: None,
             paths: Mutex::new(HashMap::new()),
             threads: Arc::new(Mutex::new(HashMap::new())),
             runtimes: Mutex::new(HashMap::new()),
@@ -100,6 +102,9 @@ impl Default for ClaudeAcpEngine {
     }
 }
 impl ClaudeAcpEngine {
+    pub fn with_definition(&self, definition: crate::types::EngineDefinition) -> Self {
+        Self { data: self.data.clone(), definition: Some(definition), sink: self.sink.clone(), graph: self.graph.clone(), keys: self.keys.clone(), ..Self::default() }
+    }
     pub fn new(
         data: PathBuf,
         workspace: String,
@@ -114,6 +119,12 @@ impl ClaudeAcpEngine {
             sink,
             ..Self::default()
         }
+    }
+    pub(crate) async fn reasoning_options(&self, id: &str) -> Option<(String, String, crate::types::ReasoningCapability)> {
+        let threads = self.threads.lock().await;
+        let thread = threads.get(id)?;
+        let (_, cap) = super::reasoning::acp(&thread.capabilities)?;
+        Some((thread.metadata["modelProvider"].as_str()?.into(), thread.metadata["model"].as_str()?.into(), cap))
     }
     pub async fn configure(
         &self,
@@ -147,7 +158,7 @@ impl ClaudeAcpEngine {
             .data
             .as_ref()
             .ok_or("Claude Code runtime is not configured")?
-            .join("claude")
+            .join(self.definition.as_ref().map_or("claude", |d| d.id.as_str()))
             .join(workspace))
     }
     async fn scan(&self, workspace: &str) -> Result<(), String> {
@@ -181,7 +192,7 @@ impl ClaudeAcpEngine {
                 .as_str()
                 .ok_or("Invalid Claude thread metadata")?
                 .to_string();
-            if metadata["engine"] != "claude" || !metadata["sessionId"].is_string() {
+            if metadata["engine"] != self.definition.as_ref().map_or("claude", |d| d.id.as_str()) || !metadata["sessionId"].is_string() {
                 return Err("Invalid Claude session mapping".into());
             }
             let cwd = metadata["cwd"]
@@ -213,6 +224,7 @@ impl ClaudeAcpEngine {
             .is_some_and(|t| t.workspace == workspace)
     }
     fn model<'a>(
+        &self,
         registry: &'a [ProviderEntry],
         policy: &AgentPolicy,
         params: &Value,
@@ -238,7 +250,7 @@ impl ClaudeAcpEngine {
             .or_else(|| {
                 registry
                     .iter()
-                    .filter(|p| p.enabled && providers::claude_usable(p))
+                    .filter(|p| p.enabled && (self.definition.is_some() || providers::claude_usable(p)))
                     .find_map(|p| {
                         p.models
                             .iter()
@@ -254,7 +266,7 @@ impl ClaudeAcpEngine {
             .iter()
             .find(|p| p.enabled && p.id == provider)
             .ok_or("Enable this thread's provider in Settings")?;
-        if !providers::claude_usable(provider) {
+        if self.definition.is_none() && !providers::claude_usable(provider) {
             return Err(config::PROVIDER_ERROR.into());
         }
         if !provider.models.iter().any(|m| m.enabled && m.id == model) {
@@ -278,7 +290,7 @@ impl ClaudeAcpEngine {
             .ok_or("Claude Code runtime is not configured")?;
         let connectors = super::connectors::load(data, workspace, self.graph.as_ref())?;
         let fingerprint =
-            serde_json::to_string(&(provider, &connectors)).map_err(|e| e.to_string())?;
+            serde_json::to_string(&(provider, &connectors, super::engine_registry::features(self.data.as_deref()))).map_err(|e| e.to_string())?;
         let mut runtimes = self.runtimes.lock().await;
         if let Some(runtime) = runtimes.get(workspace) {
             if runtime.client.alive.load(Ordering::SeqCst) && runtime.fingerprint == fingerprint {
@@ -294,12 +306,19 @@ impl ClaudeAcpEngine {
         let home = self.directory(workspace)?;
         config::private_directory(&home)?;
         config::private_directory(&home.join("threads"))?;
-        let token = providers::token(provider, self.keys.as_ref())
-            .await?
-            .ok_or("Save an API key for this provider in Settings")?;
-        let env = config::environment(std::env::vars(), &home, provider, &token, model)?;
+        let token = providers::token(provider, self.keys.as_ref()).await?;
+        let env = if self.definition.is_some() {
+            let mut env: std::collections::BTreeMap<_,_> = super::engine_registry::environment(std::env::vars(), &home).into_iter().collect();
+            if let Some(token) = &token {
+                env.insert(super::engines::key_env(&provider.id), token.clone());
+                let key = match provider.kind { crate::types::ProviderKind::Anthropic => "ANTHROPIC_API_KEY", crate::types::ProviderKind::Google => "GEMINI_API_KEY", _ => "OPENAI_API_KEY" };
+                env.insert(key.into(), token.clone());
+            }
+            env.insert("OPENAI_BASE_URL".into(), providers::base_url(provider).to_owned());
+            env
+        } else { config::environment(std::env::vars(), &home, provider, token.as_deref().ok_or("Save an API key for this provider in Settings")?, model)? };
         let (_, mut secrets) = config::mcp_servers(&connectors, self.keys.as_ref(), workspace)?;
-        secrets.push(token);
+        secrets.extend(token);
         let node = std::env::var("TAUCODE_NODE").unwrap_or_else(|_| "node".into());
         #[cfg(test)]
         let (node, cli) = if self.fake {
@@ -315,24 +334,32 @@ impl ClaudeAcpEngine {
             )
         };
         #[cfg(not(test))]
-        let cli = super::engine_runtime::prepare(data, "claude-acp", None)
-            .await?
-            .join("node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js");
-        let mut command = Command::new(node);
+        let cli = if self.definition.is_some() { PathBuf::new() } else { super::engine_runtime::prepare(data, "claude-acp", None)
+            .await?.join("node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js") };
+        let mut command = if let Some(definition) = &self.definition {
+            super::engine_registry::validate(definition)?;
+            let mut command = Command::new(super::engine_registry::executable(definition.command.as_deref().ok_or("Missing engine command")?)?);
+            command.args(&definition.args);
+            command
+        } else { let mut command = Command::new(node); command.arg(cli).arg("--hide-claude-auth"); command };
         command
-            .arg(cli)
-            .arg("--hide-claude-auth")
             .env_clear()
             .envs(env)
             .current_dir(cwd);
+        if let Some(definition) = &self.definition {
+            command.envs(&definition.env).env("HOME", &home).env("XDG_CONFIG_HOME", &home).env("OTEL_SDK_DISABLED", "true");
+            if let Some(key) = &definition.config_dir_env { command.env(key, &home); }
+        }
         let threads = self.threads.clone();
         let dialogs = self.dialogs.clone();
         let sink = self.sink.clone();
         let events = self.events.clone();
         let ws = workspace.to_string();
         let gates = connectors.clone();
+        let features = super::engine_registry::features(self.data.as_deref());
         let client = Client::spawn(command, Arc::new(move |message| {
             let (threads,dialogs,sink,events,workspace,gates) = (threads.clone(),dialogs.clone(),sink.clone(),events.clone(),ws.clone(),gates.clone());
+            let features = features.clone();
             Box::pin(async move {
                 let emit = |event: Value| { let _ = events.send(event.clone()); sink(&workspace,event); };
                 let method = message["method"].as_str().unwrap_or("");
@@ -355,6 +382,10 @@ impl ClaudeAcpEngine {
                 } else if method == "session/request_permission" {
                     use permissions::Decision;
                     let mut decision = permissions::decide(&thread.mode,&thread.history.cwd,&gates,&params["toolCall"]);
+                    let tool = params["toolCall"]["title"].as_str().unwrap_or("").to_ascii_lowercase();
+                    if (!features.subagents && ["task", "agent", "subagent"].iter().any(|name| tool.starts_with(name)))
+                        || (!features.browser && ["browser", "webfetch", "websearch"].iter().any(|name| tool.starts_with(name)))
+                        || (!features.computer_use && tool.starts_with("computer")) { return Some(json!({"outcome":{"outcome":"cancelled"}})); }
                     if decision == Decision::Ask && thread.grants.contains(&permissions::grant_key(&params["toolCall"])) { decision = Decision::Allow; }
                     if decision != Decision::Ask {
                         if decision == Decision::Reject { emit(thread.history.event("codex/stderr",json!({"message":"Claude Code tool denied by access mode or connector policy"}))); }
@@ -414,7 +445,15 @@ impl ClaudeAcpEngine {
         {
             return Err("This ACP agent does not support HTTP connectors".into());
         }
-        Ok(config::session_params(cwd, servers, model))
+        let mut params = config::session_params(cwd, servers, model);
+        let features = super::engine_registry::features(self.data.as_deref());
+        let mut disabled = Vec::new();
+        if !features.subagents { disabled.extend(["Task", "Agent"]); }
+        if !features.browser { disabled.extend(["WebFetch", "WebSearch", "Browser"]); }
+        if !features.computer_use { disabled.push("Computer"); }
+        params["_meta"]["claudeCode"]["options"]["disallowedTools"] = json!(disabled);
+        params["_meta"]["taucode"] = json!({"features": features});
+        Ok(params)
     }
     async fn load(
         &self,
@@ -643,7 +682,7 @@ impl ClaudeAcpEngine {
             None
         };
         if method == "model/list" {
-            let (provider, _) = Self::model(&registry, &policy, &params, current.as_ref())?;
+            let (provider, _) = self.model(&registry, &policy, &params, current.as_ref())?;
             return Ok(providers::catalog(std::slice::from_ref(provider)));
         }
         if method == "thread/read" {
@@ -690,7 +729,7 @@ impl ClaudeAcpEngine {
             t.save()?;
             return Ok(json!({"result":{}}));
         }
-        let (provider, model) = Self::model(&registry, &policy, &params, current.as_ref())?;
+        let (provider, model) = self.model(&registry, &policy, &params, current.as_ref())?;
         let cwd = current
             .as_ref()
             .and_then(|t| t["cwd"].as_str())
@@ -712,7 +751,7 @@ impl ClaudeAcpEngine {
                 return Err("ACP did not return a session ID".into());
             }
             let now = chrono::Utc::now().timestamp();
-            let metadata = json!({"id":id,"sessionId":result["sessionId"],"engine":"claude","cwd":cwd,"modelProvider":provider.id,"model":model,"preview":"","name":null,"createdAt":now,"updatedAt":now,"status":{"type":"idle"},"turns":[],"source":{"custom":"taucode-claude"},"capabilities":engine_capabilities(&*client.capabilities.lock().await)});
+            let metadata = json!({"id":id,"sessionId":result["sessionId"],"engine":self.definition.as_ref().map_or("claude", |d| d.id.as_str()),"cwd":cwd,"modelProvider":provider.id,"model":model,"preview":"","name":null,"createdAt":now,"updatedAt":now,"status":{"type":"idle"},"turns":[],"source":{"custom":"taucode-claude"},"capabilities":engine_capabilities(&*client.capabilities.lock().await)});
             let mut thread = Thread {
                 workspace: workspace.into(),
                 metadata,
@@ -808,17 +847,26 @@ impl ClaudeAcpEngine {
             .and_then(|o| o["id"].as_str())
             .map(str::to_string);
         if let Some(config_id) = config_id {
-            client
+            let result = client
                 .request(
                     "session/set_config_option",
                     json!({"sessionId":session,"configId":config_id,"value":model}),
                 )
                 .await?;
+            if result["configOptions"].is_array() {
+                self.threads.lock().await.get_mut(id).unwrap().capabilities["configOptions"] = result["configOptions"].clone();
+            }
         } else if self.threads.lock().await[id].metadata["model"] != model {
             return Err(
                 "This ACP agent cannot change models; start a new thread with the selected model"
                     .into(),
             );
+        }
+        let effort_option = super::reasoning::acp(&self.threads.lock().await[id].capabilities);
+        if let Some((config_id, cap)) = effort_option {
+            if let Some(effort) = super::reasoning::clamp(&cap, params["effort"].as_str()) {
+                client.request("session/set_config_option", json!({"sessionId":session,"configId":config_id,"value":effort})).await?;
+            }
         }
         let prompt = prompt_input(
             &params["input"],

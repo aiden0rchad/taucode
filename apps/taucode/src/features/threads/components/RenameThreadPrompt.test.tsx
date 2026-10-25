@@ -7,7 +7,7 @@ describe("RenameThreadPrompt", () => {
   it("handles backdrop and keyboard actions", () => {
     const onCancel = vi.fn();
     const onConfirm = vi.fn();
-    const { container } = render(
+    const { baseElement } = render(
       <RenameThreadPrompt
         currentName="Old name"
         name="New name"
@@ -23,7 +23,7 @@ describe("RenameThreadPrompt", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onConfirm).toHaveBeenCalledTimes(1);
 
-    const backdrop = container.querySelector(".ds-modal-backdrop");
+    const backdrop = baseElement.querySelector(".ds-modal-backdrop");
     expect(backdrop).toBeTruthy();
     if (!backdrop) {
       throw new Error("Expected rename thread backdrop");

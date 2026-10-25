@@ -54,7 +54,7 @@
 .about-divider {
   width: 160px;
   height: 1px;
-  background: var(--border-subtle);
+  background: var(--surface-border-subtle);
   margin: 6px 0;
 }
 

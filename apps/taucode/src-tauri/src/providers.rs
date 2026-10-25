@@ -13,6 +13,7 @@ pub(crate) async fn engine_runtime(action: String, engine: Option<String>, state
     let data = state.settings_path.parent().ok_or("Missing app data directory")?;
     match action.as_str() {
         "prepare" => { crate::shared::engine_runtime::prepare(data, engine.as_deref().ok_or("Missing engine")?, None).await?; }
+        "cancel" => crate::shared::engine_runtime::cancel(engine.as_deref().ok_or("Missing engine")?),
         "status" => (),
         _ => return Err("Unknown runtime action".into()),
     }
@@ -21,6 +22,7 @@ pub(crate) async fn engine_runtime(action: String, engine: Option<String>, state
 #[tauri::command]
 pub(crate) async fn provider_test_and_fetch(
     id: String,
+    model_id: Option<String>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Value, String> {
@@ -29,11 +31,11 @@ pub(crate) async fn provider_test_and_fetch(
             &*state,
             app,
             "provider_test_and_fetch",
-            json!({"id":id}),
+            json!({"id":id,"modelId":model_id}),
         )
         .await;
     }
-    providers::test_and_fetch(id, &state.app_settings, &state.settings_path).await
+    providers::test_and_fetch(id, model_id, &state.app_settings, &state.settings_path).await
 }
 #[tauri::command]
 pub(crate) async fn provider_set_api_key(
@@ -119,4 +121,10 @@ pub(crate) async fn provider_delete_api_key(
         session.credentials_changed().await;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub(crate) async fn engine_test(definition: crate::types::EngineDefinition, state: State<'_, AppState>, app: AppHandle) -> Result<Value, String> {
+    if remote_backend::is_remote_mode(&*state).await { return remote_backend::call_remote(&*state, app, "engine_test", json!({"definition":definition})).await; }
+    crate::shared::engine_registry::test(state.settings_path.parent().ok_or("Missing app data directory")?, &definition).await
 }

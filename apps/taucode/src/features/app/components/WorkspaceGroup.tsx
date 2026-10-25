@@ -1,8 +1,11 @@
+
 type WorkspaceGroupProps = {
   toggleId: string | null;
   name: string;
   showHeader: boolean;
   isCollapsed: boolean;
+  ungrouped?: boolean;
+  isSelected?: boolean;
   onToggleCollapse: (groupId: string) => void;
   children: React.ReactNode;
 };

@@ -1,3 +1,5 @@
+import { useSidebarDensity } from "../../hooks/useSidebarDensity";
+import { SettingsRow, SettingsSelect, SettingsTextField, SettingsButton, SettingsSection, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import type { AppSettings } from "@/types";
 import {
@@ -16,15 +18,9 @@ import {
   clampChatScrollbackItems,
   isChatScrollbackPreset,
 } from "@utils/chatScrollback";
-import {
-  SettingsSection,
-  SettingsToggleRow,
-  SettingsToggleSwitch,
-} from "@/features/design-system/components/settings/SettingsPrimitives";
 
 type SettingsDisplaySectionProps = {
   appSettings: AppSettings;
-  reduceTransparency: boolean;
   scaleShortcutTitle: string;
   scaleShortcutText: string;
   scaleDraft: string;
@@ -32,7 +28,6 @@ type SettingsDisplaySectionProps = {
   codeFontDraft: string;
   codeFontSizeDraft: number;
   onUpdateAppSettings: (next: AppSettings) => Promise<void>;
-  onToggleTransparency: (value: boolean) => void;
   onSetScaleDraft: Dispatch<SetStateAction<string>>;
   onCommitScale: () => Promise<void>;
   onResetScale: () => Promise<void>;
@@ -48,7 +43,6 @@ type SettingsDisplaySectionProps = {
 
 export function SettingsDisplaySection({
   appSettings,
-  reduceTransparency,
   scaleShortcutTitle,
   scaleShortcutText,
   scaleDraft,
@@ -56,7 +50,6 @@ export function SettingsDisplaySection({
   codeFontDraft,
   codeFontSizeDraft,
   onUpdateAppSettings,
-  onToggleTransparency,
   onSetScaleDraft,
   onCommitScale,
   onResetScale,
@@ -69,6 +62,7 @@ export function SettingsDisplaySection({
   onTestNotificationSound,
   onTestSystemNotification,
 }: SettingsDisplaySectionProps) {
+  const [density, setDensity] = useSidebarDensity();
   const scrollbackUnlimited = appSettings.chatHistoryScrollbackItems === null;
   const [scrollbackDraft, setScrollbackDraft] = useState(() => {
     const value = appSettings.chatHistoryScrollbackItems;
@@ -167,27 +161,13 @@ export function SettingsDisplaySection({
       <div className="settings-subsection-subtitle">
         Adjust how the window renders backgrounds and effects.
       </div>
-      <div className="settings-field">
-        <label className="settings-field-label" htmlFor="theme-select">
-          Theme
-        </label>
-        <select
-          id="theme-select"
-          className="settings-select"
-          value={appSettings.theme}
-          onChange={(event) =>
-            void onUpdateAppSettings({
-              ...appSettings,
-              theme: event.target.value as AppSettings["theme"],
-            })
-          }
-        >
-          <option value="system">System</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-          <option value="dim">Dim</option>
-        </select>
-      </div>
+      <SettingsRow className="settings-field">
+        <label className="settings-field-label" htmlFor="sidebar-density">Sidebar density</label>
+        <SettingsSelect id="sidebar-density" value={density} onChange={event => setDensity(event.target.value)}>
+          <option value="compact">Compact (default)</option>
+          <option value="comfortable">Comfortable</option>
+        </SettingsSelect>
+      </SettingsRow>
       <SettingsToggleRow
         title="Show file path in messages"
         subtitle="Display the parent path next to file links in messages."
@@ -245,11 +225,11 @@ export function SettingsDisplaySection({
           data-scrollback-control="true"
         />
       </SettingsToggleRow>
-      <div className="settings-field">
+      <SettingsRow className="settings-field">
         <label className="settings-field-label" htmlFor="chat-scrollback-preset">
           Scrollback preset
         </label>
-        <select
+        <SettingsSelect
           id="chat-scrollback-preset"
           className="settings-select"
           value={scrollbackPresetValue}
@@ -263,18 +243,18 @@ export function SettingsDisplaySection({
               {value === CHAT_SCROLLBACK_DEFAULT ? `${value} (Default)` : value}
             </option>
           ))}
-        </select>
+        </SettingsSelect>
         <div className="settings-help">
           Higher values keep more history but may increase memory usage. Use “Sync from
           server” on a thread to re-fetch older messages.
         </div>
-      </div>
-      <div className="settings-field">
+      </SettingsRow>
+      <SettingsRow className="settings-field">
         <label className="settings-field-label" htmlFor="chat-scrollback-items">
           Max items per thread
         </label>
         <div className="settings-field-row">
-          <input
+          <SettingsTextField
             id="chat-scrollback-items"
             type="text"
             inputMode="numeric"
@@ -299,7 +279,7 @@ export function SettingsDisplaySection({
               }
             }}
           />
-          <button
+          <SettingsButton
             type="button"
             className="ghost settings-button-compact"
             data-scrollback-control="true"
@@ -313,22 +293,13 @@ export function SettingsDisplaySection({
             }}
           >
             Reset
-          </button>
+          </SettingsButton>
         </div>
         <div className="settings-help">
           Range: {CHAT_SCROLLBACK_MIN}–{CHAT_SCROLLBACK_MAX}. Counts messages, tool calls,
           and other conversation items.
         </div>
-      </div>
-      <SettingsToggleRow
-        title="Reduce transparency"
-        subtitle="Use solid surfaces instead of glass."
-      >
-        <SettingsToggleSwitch
-          pressed={reduceTransparency}
-          onClick={() => onToggleTransparency(!reduceTransparency)}
-        />
-      </SettingsToggleRow>
+      </SettingsRow>
       <div className="settings-toggle-row settings-scale-row">
         <div>
           <div className="settings-toggle-title">Interface scale</div>
@@ -337,7 +308,7 @@ export function SettingsDisplaySection({
           </div>
         </div>
         <div className="settings-scale-controls">
-          <input
+          <SettingsTextField
             id="ui-scale"
             type="text"
             inputMode="decimal"
@@ -355,7 +326,7 @@ export function SettingsDisplaySection({
               }
             }}
           />
-          <button
+          <SettingsButton
             type="button"
             className="ghost settings-scale-reset"
             onClick={() => {
@@ -363,15 +334,15 @@ export function SettingsDisplaySection({
             }}
           >
             Reset
-          </button>
+          </SettingsButton>
         </div>
       </div>
-      <div className="settings-field">
+      <SettingsRow className="settings-field">
         <label className="settings-field-label" htmlFor="ui-font-family">
           UI font family
         </label>
         <div className="settings-field-row">
-          <input
+          <SettingsTextField
             id="ui-font-family"
             type="text"
             className="settings-input"
@@ -387,7 +358,7 @@ export function SettingsDisplaySection({
               }
             }}
           />
-          <button
+          <SettingsButton
             type="button"
             className="ghost settings-button-compact"
             onClick={() => {
@@ -399,18 +370,18 @@ export function SettingsDisplaySection({
             }}
           >
             Reset
-          </button>
+          </SettingsButton>
         </div>
         <div className="settings-help">
           Applies to all UI text. Leave empty to use the default system font stack.
         </div>
-      </div>
-      <div className="settings-field">
+      </SettingsRow>
+      <SettingsRow className="settings-field">
         <label className="settings-field-label" htmlFor="code-font-family">
           Code font family
         </label>
         <div className="settings-field-row">
-          <input
+          <SettingsTextField
             id="code-font-family"
             type="text"
             className="settings-input"
@@ -426,7 +397,7 @@ export function SettingsDisplaySection({
               }
             }}
           />
-          <button
+          <SettingsButton
             type="button"
             className="ghost settings-button-compact"
             onClick={() => {
@@ -438,16 +409,16 @@ export function SettingsDisplaySection({
             }}
           >
             Reset
-          </button>
+          </SettingsButton>
         </div>
         <div className="settings-help">Applies to git diffs and other mono-spaced readouts.</div>
-      </div>
-      <div className="settings-field">
+      </SettingsRow>
+      <SettingsRow className="settings-field">
         <label className="settings-field-label" htmlFor="code-font-size">
           Code font size
         </label>
         <div className="settings-field-row">
-          <input
+          <SettingsTextField
             id="code-font-size"
             type="range"
             min={CODE_FONT_SIZE_MIN}
@@ -462,7 +433,7 @@ export function SettingsDisplaySection({
             }}
           />
           <div className="settings-scale-value">{codeFontSizeDraft}px</div>
-          <button
+          <SettingsButton
             type="button"
             className="ghost settings-button-compact"
             onClick={() => {
@@ -471,10 +442,10 @@ export function SettingsDisplaySection({
             }}
           >
             Reset
-          </button>
+          </SettingsButton>
         </div>
         <div className="settings-help">Adjusts code and diff text size.</div>
-      </div>
+      </SettingsRow>
       <div className="settings-subsection-title">Sounds</div>
       <div className="settings-subsection-subtitle">Control notification audio alerts.</div>
       <SettingsToggleRow
@@ -521,20 +492,20 @@ export function SettingsDisplaySection({
         />
       </SettingsToggleRow>
       <div className="settings-sound-actions">
-        <button
+        <SettingsButton
           type="button"
           className="ghost settings-button-compact"
           onClick={onTestNotificationSound}
         >
           Test sound
-        </button>
-        <button
+        </SettingsButton>
+        <SettingsButton
           type="button"
           className="ghost settings-button-compact"
           onClick={onTestSystemNotification}
         >
           Test notification
-        </button>
+        </SettingsButton>
       </div>
     </SettingsSection>
   );

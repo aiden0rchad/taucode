@@ -63,6 +63,14 @@ for line in sys.stdin:
     if kind == "set_model":
         model.update(id=request["modelId"], provider=request["provider"])
         response["data"] = model
+    if kind in ("get_available_thinking_levels", "set_thinking_level"):
+        registry = json.loads((pathlib.Path(os.environ["PI_CODING_AGENT_DIR"]) / "models.json").read_text())
+        config = next(m for m in registry["providers"][model["provider"]]["models"] if m["id"] == model["id"])
+        levels = [level for level in ("off", "minimal", "low", "medium", "high", "xhigh", "max") if config.get("reasoning") and config.get("thinkingLevelMap", {}).get(level) is not None]
+        if kind == "get_available_thinking_levels":
+            response["data"] = {"levels": levels}
+        else:
+            assert request["level"] in levels
     if kind == "get_messages":
         response["data"] = {"messages": []}
     if kind == "clone":

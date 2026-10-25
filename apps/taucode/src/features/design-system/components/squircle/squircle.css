@@ -1,0 +1,31 @@
+.squircle.squircle {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-window);
+}
+.squircle > .squircle-background {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-behind);
+  pointer-events: none;
+  background: var(--squircle-background, var(--surface-card));
+}
+.squircle > .squircle-border {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  stroke: var(--squircle-border, var(--border-subtle));
+}
+.squircle-svg.squircle-clip { clip-path: var(--squircle-clip); }
+@supports (corner-shape: squircle) {
+  .squircle-native.squircle-clip { corner-shape: squircle; overflow: hidden; }
+  .squircle > .squircle-background {
+    border-radius: var(--radius-window);
+    corner-shape: squircle;
+    border: 1px solid var(--squircle-border, var(--border-subtle));
+  }
+  .squircle > .squircle-border { display: none; }
+}

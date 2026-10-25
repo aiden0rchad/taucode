@@ -152,8 +152,13 @@ pub(super) async fn handle_rpc_request(
     if method == "checkpoint_request" {
         return shared::checkpoints::request(&state.sessions, parse_string(&params, "workspaceId")?, params["params"].clone()).await;
     }
+    if method == "engine_test" {
+        let definition = serde_json::from_value(params["definition"].clone()).map_err(|e| format!("Invalid engine: {e}"))?;
+        return shared::engine_registry::test(&state.data_dir, &definition).await;
+    }
     if method == "engine_runtime" {
         match params["action"].as_str() {
+            Some("cancel") => shared::engine_runtime::cancel(params["engine"].as_str().ok_or("Missing engine")?),
             Some("prepare") => { shared::engine_runtime::prepare(&state.data_dir, params["engine"].as_str().ok_or("Missing engine")?, None).await?; }
             Some("status") => (),
             _ => return Err("Unknown runtime action".into()),

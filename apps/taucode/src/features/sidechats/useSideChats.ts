@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useEffect, useState } from "react";
 import type { EngineKind, ThreadSummary, WorkspaceInfo } from "@/types";
 import { createSideChat } from "@services/tauri";
@@ -15,6 +16,8 @@ export function useSideChats({ workspace, threadId, threads, engine, model, refr
   refresh: (workspaceId: string, threadId: string) => Promise<unknown>;
   list: (workspace: WorkspaceInfo) => Promise<unknown>;
 }) {
+  const enabled = useFeatures().sideChats;
+  if (!enabled) { workspace = null; threadId = null; }
   const [opened, setOpened] = useState<OpenSideChat | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -22,10 +25,10 @@ export function useSideChats({ workspace, threadId, threads, engine, model, refr
   const disabledReason = sideChatDisabledReason(engine, advertised);
   const messageDisabledReason = sideChatDisabledReason(engine, advertised, true);
   const open = useCallback((thread: ThreadSummary) => {
-    if (!thread.sideOf) return;
-    setOpened({ id: thread.id, parentId: thread.sideOf.threadId, workspaceId: thread.sideOf.workspaceId, title: thread.name, engine: thread.engine ?? engine, model: thread.modelId ? (thread.modelId.includes("/") ? thread.modelId : `${thread.modelProvider}/${thread.modelId}`) : model });
+    if (!enabled || !thread.sideOf) return;
+    setOpened({ id: thread.id, parentId: thread.sideOf.threadId, workspaceId: thread.sideOf.workspaceId, title: thread.name, engine: thread.engine ?? engine, model: thread.modelId ? (thread.modelId.includes("/") || !thread.modelProvider ? thread.modelId : `${thread.modelProvider}/${thread.modelId}`) : model });
     void refresh(thread.sideOf.workspaceId, thread.id);
-  }, [engine, model, refresh]);
+  }, [engine, model, refresh, enabled]);
   const create = useCallback(async (atItemId?: string) => {
     if (!workspace || !threadId || creating) return;
     const reason = atItemId ? messageDisabledReason : disabledReason;

@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { createPortal } from "react-dom";
 import type { MouseEvent, MutableRefObject, ReactNode } from "react";
 import Copy from "lucide-react/dist/esm/icons/copy";
@@ -141,6 +142,7 @@ function SidebarWorkspaceEntry({
   onLoadOlderThreads,
   onToggleAddMenu,
 }: SidebarWorkspaceEntryProps) {
+  const features = useFeatures();
   if (cloneChildIds.has(workspace.id)) {
     return null;
   }
@@ -175,12 +177,12 @@ function SidebarWorkspaceEntry({
   const isLoadingThreads = threadListLoadingByWorkspace[workspace.id] ?? false;
   const showThreadLoader = isLoadingThreads && threads.length === 0;
   const isPaging = threadListPagingByWorkspace[workspace.id] ?? false;
-  const clones = clonesBySource.get(workspace.id) ?? [];
+  const clones = features.worktrees ? clonesBySource.get(workspace.id) ?? [] : [];
   const visibleClones =
     isSearchActive && !workspaceMatchesSearch
       ? clones.filter((clone) => workspaceVisibleDuringSearchById.get(clone.id))
       : clones;
-  const worktrees =
+  const worktrees = !features.worktrees ? [] :
     isSearchActive && !workspaceMatchesSearch
       ? (worktreesByParent.get(workspace.id) ?? []).filter((worktree) =>
           workspaceVisibleDuringSearchById.get(worktree.id),
@@ -238,7 +240,7 @@ function SidebarWorkspaceEntry({
             >
               New agent
             </PopoverMenuItem>
-            <PopoverMenuItem
+            {features.worktrees && <PopoverMenuItem
               className="workspace-add-option"
               onClick={(event) => {
                 event.stopPropagation();
@@ -248,8 +250,8 @@ function SidebarWorkspaceEntry({
               icon={<GitBranch aria-hidden />}
             >
               New worktree agent
-            </PopoverMenuItem>
-            <PopoverMenuItem
+            </PopoverMenuItem>}
+            {features.worktrees && <PopoverMenuItem
               className="workspace-add-option"
               onClick={(event) => {
                 event.stopPropagation();
@@ -259,7 +261,7 @@ function SidebarWorkspaceEntry({
               icon={<Copy aria-hidden />}
             >
               New clone agent
-            </PopoverMenuItem>
+            </PopoverMenuItem>}
           </PopoverSurface>,
           document.body,
         )}
@@ -397,6 +399,8 @@ export function SidebarWorkspaceGroups({
         name={group.name}
         showHeader={showGroupHeader}
         isCollapsed={isGroupCollapsed}
+        ungrouped={group.id === null}
+        isSelected={group.workspaces.some(workspace => workspace.id === entryProps.activeWorkspaceId)}
         onToggleCollapse={toggleGroupCollapse}
       >
         {group.workspaces.map((workspace) => (

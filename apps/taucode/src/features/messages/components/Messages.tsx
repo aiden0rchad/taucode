@@ -1,3 +1,5 @@
+import { DigitalRain } from "@/features/themes/DigitalRain";
+import { useFeatures } from "@settings/features";
 import { useCheckpointWarnings } from "@/features/checkpoints/useCheckpointWarnings";
 import { RewindAction } from "@/features/checkpoints/Checkpoints";
 import { memo, useCallback } from "react";
@@ -84,6 +86,8 @@ export const Messages = memo(function Messages({
   onOpenThreadLink,
   onQuoteMessage, onSideChat, sideChatDisabledReason, onSendToMain,
 }: MessagesProps) {
+  const features = useFeatures();
+  if (!features.sideChats) onSideChat = undefined;
   const lastUserId = [...items].reverse().find((item) => item.kind === "message" && item.role === "user")?.id;
   const checkpointWarnings = useCheckpointWarnings(workspaceId, threadId, lastUserId);
   const activeUserInputRequestId =
@@ -171,7 +175,7 @@ export const Messages = memo(function Messages({
           key={item.id}
           item={item}
           isCopied={isCopied}
-          rewindAction={item.role === "user" && workspaceId && threadId ? <><RewindAction workspaceId={workspaceId} threadId={threadId} userItemId={item.id} running={isThinking} />{checkpointWarnings[item.id] && <span role="status">{checkpointWarnings[item.id]}</span>}</> : undefined}
+          rewindAction={features.checkpoints && item.role === "user" && workspaceId && threadId ? <><RewindAction workspaceId={workspaceId} threadId={threadId} userItemId={item.id} running={isThinking} />{checkpointWarnings[item.id] && <span role="status">{checkpointWarnings[item.id]}</span>}</> : undefined}
           onSideChat={onSideChat}
           sideChatDisabledReason={sideChatDisabledReason}
           onSendToMain={onSendToMain}
@@ -323,7 +327,8 @@ export const Messages = memo(function Messages({
         />
         {!items.length && !userInputNode && !isThinking && !isLoadingMessages && (
           <div className="empty messages-empty">
-            {threadId ? "Send a prompt to the agent." : "Send a prompt to start a new agent."}
+            <DigitalRain />
+            <h1>What should we build?</h1>
           </div>
         )}
         {!items.length && !userInputNode && !isThinking && isLoadingMessages && (

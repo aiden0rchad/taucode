@@ -1,3 +1,4 @@
+import { useSidePanel } from "@/features/panels/SidePanel";
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import { useRunningAgents } from "@/features/agents/agents";
 import Users from "lucide-react/dist/esm/icons/users";
@@ -27,6 +28,7 @@ const defaultTabs: PanelTab[] = [
 ];
 
 export function PanelTabs({ active, onSelect, tabs = defaultTabs }: PanelTabsProps) {
+  const panel = useSidePanel();
   const running = useRunningAgents();
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const activeIndex = tabs.findIndex((tab) => tab.id === active);
@@ -69,6 +71,7 @@ export function PanelTabs({ active, onSelect, tabs = defaultTabs }: PanelTabsPro
     }
   };
 
+  if (panel) return null;
   return (
     <div className="panel-tabs" role="tablist" aria-label="Panel" aria-orientation="horizontal">
       {tabs.map((tab, index) => {

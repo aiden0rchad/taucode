@@ -1,3 +1,4 @@
+import { SidebarTree } from "./SidebarTree";
 import { useMemo, useState, type MouseEvent } from "react";
 
 import type { ThreadSummary } from "../../../types";
@@ -68,7 +69,7 @@ export function PinnedThreadList({
 
   return (
     <div className="thread-list pinned-thread-list">
-      {visibility.visibleRows.map((row) => {
+      <SidebarTree baseDepth={0} rows={visibility.visibleRows} rowKey={row => `${row.workspaceId}:${row.thread.id}`} selected={row => row.workspaceId === activeWorkspaceId && row.thread.id === activeThreadId}>{row => {
         const { thread, depth, workspaceId } = row;
         const threadKey = `${workspaceId}:${thread.id}`;
         return (
@@ -94,7 +95,7 @@ export function PinnedThreadList({
             showPinnedLabel={false}
           />
         );
-      })}
+      }}</SidebarTree>
     </div>
   );
 }

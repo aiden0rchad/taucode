@@ -81,7 +81,7 @@
 .branch-switcher-modal-item-worktree {
   font-size: 11px;
   color: #7dd3fc;
-  background: rgba(125, 211, 252, 0.15);
+  background: color-mix(in srgb, rgb(125, 211, 252) 15%, var(--surface-app));
   padding: 2px 6px;
   border-radius: 4px;
 }

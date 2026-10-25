@@ -1188,3 +1188,136 @@ async fn side_chat_current_blocks_mutations_and_two_turn_checkpoints_bind_real_i
     session.shutdown().await;
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+
+#[tokio::test]
+async fn detected_levels_agree_with_pi_and_are_set_before_turn_on_model_switch() {
+    let dir = temp();
+    let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into_owned(), None, Arc::new(|_, _| {}));
+    engine.fake = true;
+    engine.keys = Arc::new(Keys);
+    let first = crate::shared::reasoning::capability(true, &["low", "medium", "high", "xhigh", "max"], "effort", "api");
+    let second = crate::shared::reasoning::capability(true, &["low", "high"], "effort", "api");
+    let registry: Vec<ProviderEntry> = serde_json::from_value(json!([{"id":"first","name":"Test","kind":"openai-compatible","baseUrl":"https://lab.test/v1","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"a","enabled":true,"reasoning":first},{"id":"b","enabled":true,"reasoning":second}]}])).unwrap();
+    engine.configure("workspace", registry, AgentPolicy::default()).await;
+    let started = engine.request("workspace", "thread/start", json!({"model":"first/a"})).await.unwrap();
+    let id = started["result"]["thread"]["id"].as_str().unwrap();
+    let process = engine.sessions.lock().await[id].process.clone().unwrap();
+    assert_eq!(process.request(json!({"type":"get_available_thinking_levels"})).await.unwrap()["levels"], json!(first.levels));
+    engine.request("workspace", "turn/start", json!({"threadId":id,"model":"first/b","effort":"max","input":[{"type":"text","text":"Hello"}]})).await.unwrap();
+    assert_eq!(process.request(json!({"type":"get_available_thinking_levels"})).await.unwrap()["levels"], json!(second.levels));
+    let file = engine.sessions.lock().await[id].file.clone();
+    let requests: Vec<Value> = std::fs::read_to_string(file.with_extension("requests")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let prompt = requests.iter().position(|r| r["type"] == "prompt").unwrap();
+    assert_eq!(requests[prompt - 1]["type"], "set_thinking_level");
+    assert_eq!(requests[prompt - 1]["level"], "high");
+    assert_eq!(requests[prompt - 2]["type"], "set_model");
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires the installed omp and Bun runtimes"]
+async fn live_omp_streams_from_registry_stub() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            tokio::spawn(async move {
+                let mut request = Vec::new();
+                let mut buffer = [0; 8192];
+                loop {
+                    let n = stream.read(&mut buffer).await.unwrap_or(0);
+                    if n == 0 { return; }
+                    request.extend_from_slice(&buffer[..n]);
+                    if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&request[..end]);
+                        let length = headers.lines().find_map(|line| line.to_ascii_lowercase().strip_prefix("content-length:").and_then(|v| v.trim().parse::<usize>().ok())).unwrap_or(0);
+                        if request.len() >= end + 4 + length { break; }
+                    }
+                }
+                let chunks = [json!({"id":"stub","object":"chat.completion.chunk","created":1,"model":"stub","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello from omp"},"finish_reason":null}]}),json!({"id":"stub","object":"chat.completion.chunk","created":1,"model":"stub","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}})];
+                let body = format!("data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",chunks[0],chunks[1]);
+                let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len());
+                let _ = stream.write_all(response.as_bytes()).await;
+            });
+        }
+    });
+    let dir = temp();
+    let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_,_| {}));
+    engine.profile.definition = crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), "omp").unwrap().0;
+    let provider: ProviderEntry = serde_json::from_value(json!({"id":"local","name":"Stub","kind":"openai-compatible","baseUrl":format!("http://{address}/v1"),"enabled":true,"auth":{"type":"none"},"models":[{"id":"stub","enabled":true,"contextWindow":8192}]})).unwrap();
+    engine.configure("workspace", vec![provider], AgentPolicy::default()).await;
+    let mut events = engine.events();
+    let start = engine.request("workspace", "thread/start", json!({"model":"local/stub"})).await.unwrap();
+    let id = start["result"]["thread"]["id"].as_str().unwrap();
+    engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"Say hello"}],"accessMode":"read-only"})).await.unwrap();
+    let mut streamed = false;
+    tokio::time::timeout(Duration::from_secs(45), async {
+        loop {
+            let event = events.recv().await.unwrap();
+            if event["method"] == "item/agentMessage/delta" && event.to_string().contains("Hello from omp") { streamed = true; }
+            if event["method"] == "turn/completed" { assert_eq!(event["params"]["turn"]["status"], "completed", "{event}"); break; }
+        }
+    }).await.unwrap();
+    assert!(streamed);
+    assert!(dir.join("omp/agent/workspace/models.yml").exists());
+    assert!(!dir.join("omp/agent/workspace/auth.json").exists());
+    engine.shutdown().await.unwrap();
+    server.abort();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn omp_models_are_yaml_compatible_and_do_not_contain_credentials() {
+    let providers: Vec<ProviderEntry> = serde_json::from_value(json!([{"id":"test","name":"Test","kind":"openai-compatible","baseUrl":"http://localhost:9000/v1","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"stub","enabled":true}]}])).unwrap();
+    let models = profile::omp_models(&providers);
+    assert_eq!(models["providers"]["taucode-test"]["apiKey"], "TAUCODE_PROVIDER_TEST_KEY");
+    assert_eq!(models["providers"]["taucode-test"]["api"], "openai-completions");
+}
+
+#[tokio::test]
+async fn real_omp_profile_with_offline_transport_fixture() {
+    if !Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/omp/node_modules/.bin/bun").exists() { return; }
+    let dir = temp();
+    let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_,_| {}));
+    engine.fixture_transport = true;
+    engine.profile.definition = crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), "omp").unwrap().0;
+    let provider: ProviderEntry = serde_json::from_value(json!({"id":"local","name":"Stub","kind":"openai-compatible","baseUrl":"http://127.0.0.1:9019/v1","enabled":true,"auth":{"type":"none"},"models":[{"id":"stub","enabled":true,"contextWindow":8192}]})).unwrap();
+    engine.configure("workspace", vec![provider], AgentPolicy::default()).await;
+    let mut events = engine.events();
+    let start = engine.request("workspace", "thread/start", json!({"model":"local/stub"})).await.unwrap();
+    let id = start["result"]["thread"]["id"].as_str().unwrap();
+    assert_eq!(start["result"]["thread"]["engine"], "omp");
+    engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"Say hello"}],"accessMode":"read-only"})).await.unwrap();
+    let mut streamed = false;
+    tokio::time::timeout(Duration::from_secs(45), async {
+        loop {
+            let event = events.recv().await.unwrap();
+            if event["method"] == "item/agentMessage/delta" && event.to_string().contains("Hello from omp") { streamed = true; }
+            if event["method"] == "turn/completed" { assert_eq!(event["params"]["turn"]["status"], "completed", "{event}"); break; }
+        }
+    }).await.unwrap();
+    assert!(streamed);
+    engine.shutdown().await.unwrap();
+    assert!(dir.join("omp/agent/workspace/models.yml").exists());
+    assert!(!dir.join("omp/agent/workspace/auth.json").exists());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn omp_preload_blocks_auth_and_unconfigured_network() {
+    let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/omp");
+    let bun = runtime.join("node_modules/.bin/bun");
+    if !bun.exists() { return; }
+    let dir = temp();
+    std::fs::create_dir_all(dir.join("taucode")).unwrap();
+    std::fs::write(dir.join("taucode/network.json"), "[]").unwrap();
+    let result = std::process::Command::new(bun).arg(runtime.join("no-accounts.test.mjs"))
+        .env_clear().envs(crate::shared::engine_registry::environment(std::env::vars(), &dir))
+        .env("PI_CODING_AGENT_DIR", &dir).output().unwrap();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    std::fs::remove_dir_all(dir).unwrap();
+}

@@ -1,3 +1,4 @@
+import { threadEffortKey } from "@/features/models/reasoning";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chatRequest } from "@services/tauri";
 import { subscribeAppServerEvents } from "@services/events";
@@ -27,6 +28,14 @@ export function useChat() {
     return result.result.thread;
   }, []);
   useEffect(() => { void refresh().catch(e => setError(String(e))); }, [refresh]);
+  useEffect(() => {
+    if (import.meta.env.MODE === "uipreview") {
+      void import("@/dev/uiPreview").then(({ selectConversation }) => selectConversation("chat", id => {
+        setActive(id);
+        void read(id).catch(e => setError(String(e)));
+      }));
+    }
+  }, [read]);
   useEffect(() => subscribeAppServerEvents(event => {
     if (event.workspace_id !== "chats") return;
     const method = event.message.method;
@@ -67,7 +76,7 @@ export function useChat() {
     const result = await chatRequest<ChatResponse>("fork", { threadId: id, model, beforeUserItemId });
     return adopt(result.result.thread);
   };
-  const send = async (text: string, images: string[], model: string | null, beforeUserItemId?: string, web = false) => {
+  const send = async (text: string, images: string[], model: string | null, beforeUserItemId?: string, web = false, effort: string | null = null) => {
     let id = active;
     if (!id) {
       const result = await chatRequest<ChatResponse>("start", { model });
@@ -78,7 +87,8 @@ export function useChat() {
     if (!chats.find(c => c.id === id)?.chat.title && title) await chatRequest("rename", { threadId: id, title });
     setRunning(current => ({ ...current, [id]: true }));
     try {
-      await chatRequest("send", { threadId: id, input: [{ type: "text", text }, ...images.map(url => ({ type: "image", url }))] });
+      if (effort) localStorage.setItem(threadEffortKey(id), effort);
+      await chatRequest("send", { threadId: id, ...(effort ? { effort } : {}), input: [{ type: "text", text }, ...images.map(url => ({ type: "image", url }))] });
       await refresh();
     } catch (e) { setRunning(current => ({ ...current, [id]: false })); throw e; }
   };

@@ -43,6 +43,7 @@ pub(crate) fn models(registry: &[ProviderEntry]) -> Value {
             let mut v = json!({"id":m.id,"name":m.display_name.as_ref().unwrap_or(&m.id)});
             if let Some(n) = m.context_window { v["contextWindow"] = json!(n); }
             if let Some(images) = m.supports_images { v["input"] = if images { json!(["text","image"]) } else { json!(["text"]) }; }
+            if let Some(cap) = &m.reasoning { super::super::reasoning::pi_config(&mut v, cap, p.kind); }
             v
         }).collect::<Vec<_>>()});
         if custom
@@ -198,6 +199,7 @@ pub(super) fn prepare(
     keys: &dyn KeyStore,
 ) -> Result<HashMap<String, String>, String> {
     std::fs::create_dir_all(home.join("extensions")).map_err(|e| e.to_string())?;
+    #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; std::fs::set_permissions(home, std::fs::Permissions::from_mode(0o700)).map_err(|e|e.to_string())?; }
     std::fs::create_dir_all(home.join("extensions/lib")).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(home.join("taucode")).map_err(|e| e.to_string())?;
     for (name, source) in [

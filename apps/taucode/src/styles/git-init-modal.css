@@ -12,8 +12,6 @@
 .git-init-modal .ds-modal-backdrop {
   /* Fully opaque backdrop; no blur/transparency so nothing bleeds through. */
   background: color-mix(in srgb, var(--surface-sidebar-opaque) 18%, black);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
 }
 
 .git-init-modal-checkbox-row {

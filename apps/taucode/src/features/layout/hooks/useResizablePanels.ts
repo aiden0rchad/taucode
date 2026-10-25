@@ -1,35 +1,31 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const STORAGE_KEY_SIDEBAR = "codexmonitor.sidebarWidth";
+import { useSidebarState } from "./useSidebarState";
 const STORAGE_KEY_RIGHT_PANEL = "codexmonitor.rightPanelWidth";
 const STORAGE_KEY_CHAT_DIFF_SPLIT_POSITION_PERCENT =
   "codexmonitor.chatDiffSplitPositionPercent";
 const STORAGE_KEY_PLAN_PANEL = "codexmonitor.planPanelHeight";
 const STORAGE_KEY_TERMINAL_PANEL = "codexmonitor.terminalPanelHeight";
 const STORAGE_KEY_DEBUG_PANEL = "codexmonitor.debugPanelHeight";
-const MIN_SIDEBAR_WIDTH = 220;
-const MAX_SIDEBAR_WIDTH = 420;
 const MIN_CHAT_DIFF_SPLIT_POSITION_PERCENT = 20;
 const MAX_CHAT_DIFF_SPLIT_POSITION_PERCENT = 80;
-const MIN_RIGHT_PANEL_WIDTH = 270;
-const MAX_RIGHT_PANEL_WIDTH = 420;
+const MIN_RIGHT_PANEL_WIDTH = 320;
+const MAX_RIGHT_PANEL_WIDTH = 900;
 const MIN_PLAN_PANEL_HEIGHT = 140;
 const MAX_PLAN_PANEL_HEIGHT = 420;
 const MIN_TERMINAL_PANEL_HEIGHT = 140;
 const MAX_TERMINAL_PANEL_HEIGHT = 480;
 const MIN_DEBUG_PANEL_HEIGHT = 120;
 const MAX_DEBUG_PANEL_HEIGHT = 420;
-const DEFAULT_SIDEBAR_WIDTH = 280;
 const DEFAULT_CHAT_DIFF_SPLIT_POSITION_PERCENT = 50;
-const DEFAULT_RIGHT_PANEL_WIDTH = 230;
+const DEFAULT_RIGHT_PANEL_WIDTH = 360;
 const DEFAULT_PLAN_PANEL_HEIGHT = 220;
 const DEFAULT_TERMINAL_PANEL_HEIGHT = 220;
 const DEFAULT_DEBUG_PANEL_HEIGHT = 180;
 
 type ResizeState = {
   type:
-    | "sidebar"
     | "right-panel"
     | "chat-diff-split"
     | "plan-panel"
@@ -47,7 +43,6 @@ const CSS_VAR_MAP: Record<
   ResizeState["type"],
   { prop: string; unit: string }
 > = {
-  sidebar: { prop: "--sidebar-width", unit: "px" },
   "right-panel": { prop: "--right-panel-width", unit: "px" },
   "chat-diff-split": {
     prop: "--chat-diff-split-position-percent",
@@ -84,14 +79,7 @@ function getContainerPointerPercent(event: MouseEvent, resize: ResizeState) {
 }
 
 export function useResizablePanels() {
-  const [sidebarWidth, setSidebarWidth] = useState(() =>
-    readStoredWidth(
-      STORAGE_KEY_SIDEBAR,
-      DEFAULT_SIDEBAR_WIDTH,
-      MIN_SIDEBAR_WIDTH,
-      MAX_SIDEBAR_WIDTH,
-    ),
-  );
+  const { sidebarWidth, onSidebarResizeStart, isResizing: sidebarResizing } = useSidebarState();
   const [chatDiffSplitPositionPercent, setChatDiffSplitPositionPercent] =
     useState(() =>
       readStoredWidth(
@@ -139,10 +127,6 @@ export function useResizablePanels() {
   const [isResizing, setIsResizing] = useState(false);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY_SIDEBAR, String(sidebarWidth));
-  }, [sidebarWidth]);
-
-  useEffect(() => {
     window.localStorage.setItem(
       STORAGE_KEY_CHAT_DIFF_SPLIT_POSITION_PERCENT,
       String(chatDiffSplitPositionPercent),
@@ -187,14 +171,7 @@ export function useResizablePanels() {
       event.preventDefault();
 
       let next: number;
-      if (resize.type === "sidebar") {
-        const delta = event.clientX - resize.startX;
-        next = clamp(
-          resize.startWidth + delta,
-          MIN_SIDEBAR_WIDTH,
-          MAX_SIDEBAR_WIDTH,
-        );
-      } else if (resize.type === "chat-diff-split") {
+      if (resize.type === "chat-diff-split") {
         const pointerPercent = getContainerPointerPercent(event, resize);
         next = clamp(
           pointerPercent,
@@ -244,9 +221,6 @@ export function useResizablePanels() {
       const finalValue = liveValueRef.current;
       if (finalValue !== null) {
         switch (resize.type) {
-          case "sidebar":
-            setSidebarWidth(finalValue);
-            break;
           case "chat-diff-split":
             setChatDiffSplitPositionPercent(finalValue);
             break;
@@ -278,23 +252,6 @@ export function useResizablePanels() {
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, []);
-
-  const onSidebarResizeStart = useCallback(
-    (event: ReactMouseEvent) => {
-      event.preventDefault();
-      resizeRef.current = {
-        type: "sidebar",
-        startX: event.clientX,
-        startY: event.clientY,
-        startWidth: sidebarWidth,
-        startHeight: planPanelHeight,
-      };
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      setIsResizing(true);
-    },
-    [planPanelHeight, sidebarWidth],
-  );
 
   const onChatDiffSplitPositionResizeStart = useCallback(
     (event: ReactMouseEvent) => {
@@ -393,9 +350,10 @@ export function useResizablePanels() {
 
   return {
     appRef,
-    isResizing,
+    isResizing: isResizing || sidebarResizing,
     sidebarWidth,
     rightPanelWidth,
+    setRightPanelWidth,
     planPanelHeight,
     terminalPanelHeight,
     debugPanelHeight,

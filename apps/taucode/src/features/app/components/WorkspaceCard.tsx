@@ -1,3 +1,6 @@
+import { Squircle } from "@/features/design-system/components/squircle/Squircle";
+import { Folder, FolderOpen } from "lucide-react";
+import { ProjectEngine } from "./SidebarTree";
 import type { MouseEvent } from "react";
 
 import type { WorkspaceInfo } from "../../../types";
@@ -41,20 +44,24 @@ export function WorkspaceCard({
   const contentCollapsedClass = isCollapsed ? " collapsed" : "";
 
   return (
-    <div className="workspace-card">
+    <ProjectEngine engine={workspace.settings.agentPolicy?.defaultEngine}><Squircle className={`workspace-card project-group-card${isActive ? " is-selected" : ""}`}>
       <div
         className={`workspace-row ${isActive ? "active" : ""}`}
+        title={[workspace.name, summary].filter(Boolean).join(" · ")}
+        data-depth={0}
         role="button"
+      aria-label={workspace.name}
         tabIndex={0}
         onClick={() => onSelectWorkspace(workspace.id)}
         onContextMenu={(event) => onShowWorkspaceMenu(event, workspace.id)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
+          if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
             event.preventDefault();
             onSelectWorkspace(workspace.id);
           }
         }}
       >
+        {isCollapsed ? <Folder size={14} aria-hidden /> : <FolderOpen size={14} aria-hidden />}
         <div className="workspace-copy">
           <div className="workspace-name-row">
             <div className="workspace-title">
@@ -73,8 +80,8 @@ export function WorkspaceCard({
               </button>
             </div>
           </div>
-          {summary && <div className="workspace-summary">{summary}</div>}
         </div>
+        <span className="workspace-count">{summary?.match(/^\d+/)?.[0]}</span>
         <div className="workspace-actions">
           <button
             className="ghost workspace-add"
@@ -106,7 +113,7 @@ export function WorkspaceCard({
           {!workspace.connected && (
             <span
               className="connect"
-              title="Connect workspace context to the shared Codex server"
+              title="Connect workspace to its engine"
               onClick={(event) => {
                 event.stopPropagation();
                 onConnectWorkspace(workspace);
@@ -124,6 +131,6 @@ export function WorkspaceCard({
       >
         <div className="workspace-card-content-inner">{children}</div>
       </div>
-    </div>
+    </Squircle></ProjectEngine>
   );
 }

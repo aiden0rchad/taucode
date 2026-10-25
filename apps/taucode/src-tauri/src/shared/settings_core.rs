@@ -42,6 +42,7 @@ pub(crate) async fn update_app_settings_core(
     app_settings: &Mutex<AppSettings>,
     settings_path: &PathBuf,
 ) -> Result<AppSettings, String> {
+    super::engine_registry::validate_settings(&settings)?;
     crate::shared::providers::validate(&settings.providers, &settings.agent_policy)?;
     super::connectors::validate(&settings.mcp_servers, false)?;
     super::browser::validate(&settings.browser)?;

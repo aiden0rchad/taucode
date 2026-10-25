@@ -1,12 +1,10 @@
+import { SettingsRow, SettingsSection } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useEffect, useState } from "react";
 import type { AppSettings } from "@/types";
 import {
   getAppBuildType,
   type AppBuildType,
 } from "@services/tauri";
-import {
-  SettingsSection,
-} from "@/features/design-system/components/settings/SettingsPrimitives";
 
 type SettingsAboutSectionProps = {
   appSettings: AppSettings;
@@ -45,23 +43,10 @@ export function SettingsAboutSection(_props: SettingsAboutSectionProps) {
 
   return (
     <SettingsSection title="About" subtitle="App version and build metadata.">
-      <div className="settings-field">
-        <div className="settings-help">
-          Version: <code>{__APP_VERSION__}</code>
-        </div>
-        <div className="settings-help">
-          Build type: <code>{appBuildType}</code>
-        </div>
-        <div className="settings-help">
-          Branch: <code>{__APP_GIT_BRANCH__ || "unknown"}</code>
-        </div>
-        <div className="settings-help">
-          Commit: <code>{__APP_COMMIT_HASH__ || "unknown"}</code>
-        </div>
-        <div className="settings-help">
-          Build date: <code>{buildDateLabel}</code>
-        </div>
-      </div>
+      <dl className="settings-build-info">
+        {Object.entries({ Version: __APP_VERSION__, "Build type": appBuildType, Branch: __APP_GIT_BRANCH__ || "unknown", Commit: __APP_COMMIT_HASH__ || "unknown", "Build date": buildDateLabel }).map(([label, value]) =>
+          <SettingsRow key={label}><dt>{label}:</dt><dd><code>{value}</code></dd></SettingsRow>)}
+      </dl>
     </SettingsSection>
   );
 }

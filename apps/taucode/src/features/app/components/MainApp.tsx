@@ -1,3 +1,6 @@
+import { useFeatures } from "@settings/features";
+import { exportMarkdownFile } from "@services/tauri";
+import { buildThreadTranscript } from "@utils/threadText";
 import { Checkpoints } from "@/features/checkpoints/Checkpoints";
 import { useModeSettings } from "@/features/chat/ModeShell";
 import { AgentsContext, agentThreadDetails } from "@/features/agents/agents";
@@ -11,7 +14,6 @@ import { MainAppShell } from "@app/components/MainAppShell";
 import { useThreads } from "@threads/hooks/useThreads";
 import { usePullRequestComposer } from "@/features/git/hooks/usePullRequestComposer";
 import { useAutoExitEmptyDiff } from "@/features/git/hooks/useAutoExitEmptyDiff";
-import { isMissingRepo } from "@/features/git/utils/repoErrors";
 import { useModels } from "@/features/models/hooks/useModels";
 import { modelsForThread } from "@/features/models/utils/modelListResponse";
 import { useCollaborationModes } from "@/features/collaboration/hooks/useCollaborationModes";
@@ -83,7 +85,10 @@ import {
 import { useAppShellOrchestration } from "@app/orchestration/useLayoutOrchestration";
 import { normalizeCodexArgsInput } from "@/utils/codexArgsInput";
 import { subscribeTrayOpenThread } from "@services/events";
-import { BrowserDock } from "@/features/browser/BrowserDock";
+import { WorkspaceShell, PanelToolRequest } from "@/features/panels/SidePanel";
+import { buildGitNodes } from "@/features/layout/hooks/layoutNodes/buildGitNodes";
+import { formatShortcut } from "@utils/shortcuts";
+import { AppModals } from "./AppModals";
 
 const SettingsView = lazy(() =>
   import("@settings/components/SettingsView").then((module) => ({
@@ -91,7 +96,8 @@ const SettingsView = lazy(() =>
   })),
 );
 
-export default function MainApp() {
+export default function MainApp({ settingsOnly = false, onCloseModeSettings }: { settingsOnly?: boolean; onCloseModeSettings?: () => void } = {}) {
+  const features = useFeatures();
   const [selectedEngine, setSelectedEngine] = useState<import("@/types").EngineKind | undefined>();
   const {
     appSettings,
@@ -99,8 +105,6 @@ export default function MainApp() {
     doctor,
     codexUpdate,
     appSettingsLoading,
-    reduceTransparency,
-    setReduceTransparency,
     scaleShortcutTitle,
     scaleShortcutText,
     queueSaveSettings,
@@ -123,7 +127,6 @@ export default function MainApp() {
     addDebugEntry,
     handleCopyDebug,
     clearDebugEntries,
-    shouldReduceTransparency,
   } = useAppBootstrapOrchestration();
   useModeSettings(appSettings);
   const {
@@ -293,6 +296,7 @@ export default function MainApp() {
     selectedEffort,
     setSelectedEffort, refreshModels,
   } = useModels({
+    threadId: activeThreadIdRef.current,
     activeWorkspace,
     onDebug: addDebugEntry,
     preferredModelId: preferredModelId ?? (modelKey(activeWorkspace?.settings.agentPolicy?.defaultModel ?? appSettings.agentPolicy?.defaultModel) || null),
@@ -611,7 +615,6 @@ export default function MainApp() {
     selectedCommitSha,
     diffSource,
     setDiffSource,
-    gitStatus,
     gitLogEntries,
     gitLogAheadEntries,
     gitLogBehindEntries,
@@ -997,8 +1000,6 @@ export default function MainApp() {
       moveWorkspaceGroup,
       deleteWorkspaceGroup,
       assignWorkspaceGroup,
-      reduceTransparency,
-      setReduceTransparency,
       appSettings,
       openAppIconById,
       queueSaveSettings,
@@ -1369,7 +1370,6 @@ export default function MainApp() {
     isTablet,
     sidebarCollapsed,
     rightPanelCollapsed,
-    shouldReduceTransparency,
     isWorkspaceDropActive,
     centerMode,
     selectedDiffPath,
@@ -1457,11 +1457,6 @@ export default function MainApp() {
     Boolean(activeWorkspace?.connected) &&
     appSettings.backendMode === "remote" &&
     remoteThreadConnectionState === "polling";
-  const gitRootOverride = activeWorkspace?.settings.gitRoot;
-  const hasGitRootOverride =
-    typeof gitRootOverride === "string" && gitRootOverride.trim().length > 0;
-  const showGitInitBanner =
-    Boolean(activeWorkspace) && !hasGitRootOverride && isMissingRepo(gitStatus.error);
   const displayNodes = useMainAppDisplayNodes({
     showCompactCodexThreadActions,
     handleMobileThreadRefresh,
@@ -1475,7 +1470,7 @@ export default function MainApp() {
     workspaceHomeProps: activeWorkspace
       ? {
           workspace: activeWorkspace,
-          showGitInitBanner,
+          showGitInitBanner: false,
           initGitRepoLoading,
           onInitGitRepo: modalActions.openInitGitRepoPrompt,
           runs: workspaceRuns,
@@ -1511,7 +1506,7 @@ export default function MainApp() {
           prompts,
           files,
           onFileAutocompleteActiveChange: setFileAutocompleteActive,
-          dictationEnabled: appSettings.dictationEnabled && dictationReady,
+          dictationEnabled: features.dictation && appSettings.dictationEnabled && dictationReady,
           dictationState,
           dictationLevel,
           onToggleDictation: handleToggleDictation,
@@ -1552,7 +1547,7 @@ export default function MainApp() {
 
       followUpMessageBehavior: appSettings.followUpMessageBehavior,
       composerFollowUpHintEnabled: appSettings.composerFollowUpHintEnabled,
-      dictationEnabled: appSettings.dictationEnabled,
+      dictationEnabled: features.dictation && appSettings.dictationEnabled,
       splitChatDiffView: appSettings.splitChatDiffView,
       gitDiffIgnoreWhitespaceChanges:
         appSettings.gitDiffIgnoreWhitespaceChanges,
@@ -1747,7 +1742,7 @@ export default function MainApp() {
   const sideChats = useSideChats({
     workspace: activeWorkspace, threadId: activeThreadId,
     threads: threadsByWorkspace[activeWorkspaceId ?? ""] ?? [],
-    engine: parentEngine, model: resolvedModel,
+    engine: parentEngine, model: selectedModel?.id ?? resolvedModel,
     refresh: refreshThread, list: listThreadsForWorkspace,
   });
 
@@ -1778,6 +1773,7 @@ export default function MainApp() {
       ...layoutSurfaces.primary,
       sidebarProps: {
         ...layoutSurfaces.primary.sidebarProps,
+        newThreadShortcut: appSettings.newAgentShortcut,
         onSelectThread: (workspaceId, threadId) => {
           const thread = threadsByWorkspace[workspaceId]?.find(t => t.id === threadId);
           if (thread?.sideOf) {
@@ -1790,14 +1786,15 @@ export default function MainApp() {
       },
       mainHeaderProps: layoutSurfaces.primary.mainHeaderProps ? {
         ...layoutSurfaces.primary.mainHeaderProps,
-        extraActionsNode: <>{layoutSurfaces.primary.mainHeaderProps.extraActionsNode}
-          {activeThreadId && <span title={sideChats.disabledReason}><button className="ghost" disabled={sideChats.creating || Boolean(sideChats.disabledReason)} onClick={() => void sideChats.create()} title={sideChats.disabledReason ?? "Side chat (⌘⇧K)"}>Side chat</button></span>}
+        model: threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.modelId ?? selectedModel?.id ?? resolvedModel,
+        extraActionsNode: <>
           {sideChats.error && <span role="alert">{sideChats.error}</span>}
+          {layoutSurfaces.primary.mainHeaderProps.extraActionsNode}
         </>,
       } : null,
       messagesProps: {
         ...layoutSurfaces.primary.messagesProps,
-        onSideChat: itemId => void sideChats.create(itemId),
+        onSideChat: features.sideChats ? itemId => void sideChats.create(itemId) : undefined,
         sideChatDisabledReason: sideChats.messageDisabledReason ?? (sideChats.creating ? "Creating side chat…" : undefined),
         hasOlderHistory: Boolean(activeThreadId && historyCursorByThread[activeThreadId]),
         isLoadingHistory: Boolean(activeThreadId && historyLoadingByThread[activeThreadId]),
@@ -1810,17 +1807,34 @@ export default function MainApp() {
   });
 
   const sideChat = sideChats.current;
-  const mainMessagesNode = showWorkspaceHome ? workspaceHomeNode : sideChat && activeWorkspace ? (
-    <SideChatSplit compact={isCompact} main={<>{messagesNode}{composerNode}</>}>
+  const [splitSideChatId, setSplitSideChatId] = useState<string | null>(null);
+  const sideChatInSplit = Boolean(features.sideChats && sideChat && splitSideChatId === sideChat.id);
+  useEffect(() => {
+    if (import.meta.env.MODE === "uipreview") {
+      void import("@/dev/uiPreview").then(({ selectSideChat }) => selectSideChat(activeThreadId, sideChats.open));
+    }
+  }, [activeThreadId, sideChats.open]);
+  useEffect(() => {
+    if (import.meta.env.MODE === "uipreview") {
+      void import("@/dev/uiPreview").then(({ selectCode }) => selectCode(
+        workspaces, layoutSurfaces.primary.sidebarProps.onSelectThread, modalActions.openSettings,
+      ));
+    }
+  }, [workspaces, layoutSurfaces.primary.sidebarProps.onSelectThread, modalActions.openSettings]);
+
+  const mainMessagesNode = showWorkspaceHome ? workspaceHomeNode : messagesNode;
+  const sideChatNode = sideChat && activeWorkspace ? (
       <SideChatPane key={sideChat.id} chat={sideChat}
         items={itemsByThread[sideChat.id] ?? []}
         running={threadStatusById[sideChat.id]?.isProcessing ?? false}
-        models={models} messageProps={layoutSurfaces.primary.messagesProps}
-        onClose={sideChats.close}
+        models={models} parentModel={selectedModel} messageProps={layoutSurfaces.primary.messagesProps}
+        onClose={() => { setSplitSideChatId(null); sideChats.close(); }}
+        onRename={() => handleRenameThread(sideChat.workspaceId, sideChat.id)}
+        onOpenSplit={() => setSplitSideChatId(sideChat.id)}
         onDelete={() => { removeThread(sideChat.workspaceId, sideChat.id); sideChats.close(); }}
         onInterrupt={() => interruptThread(sideChat.workspaceId, sideChat.id)}
-        onSend={async (text, model, mode) => {
-          const result = await sendUserMessageToThread(activeWorkspace, sideChat.id, text, [], { model, accessMode: mode, collaborationMode: null });
+        onSend={async (text, model, mode, effort) => {
+          const result = await sendUserMessageToThread(activeWorkspace, sideChat.id, text, [], { model, effort, accessMode: mode, collaborationMode: null });
           if (result.threadId && result.threadId !== sideChat.id) {
             sideChats.open({ id: result.threadId, name: sideChat.title, updatedAt: Date.now(), engine: sideChat.engine, modelId: model,
               sideOf: { threadId: sideChat.parentId, workspaceId: sideChat.workspaceId, atItemId: null } });
@@ -1831,8 +1845,7 @@ export default function MainApp() {
           [composerWorkspaceState.activeDraft, sideChatQuote(sideChat.title, text)].filter(Boolean).join("\n\n")
         )}
       />
-    </SideChatSplit>
-  ) : messagesNode;
+  ) : <button onClick={() => void sideChats.create()} disabled={sideChats.creating || Boolean(sideChats.disabledReason)}>Start side chat</button>;
   const compactThreadConnectionState: "live" | "polling" | "disconnected" =
     !activeWorkspace?.connected
       ? "disconnected"
@@ -1873,8 +1886,8 @@ export default function MainApp() {
       hasActivePlan: hasActivePlan,
       activeWorkspace: Boolean(activeWorkspace),
       sidebarNode,
-      messagesNode: mainMessagesNode,
-      composerNode: sideChat && !showWorkspaceHome ? null : composerNode,
+      messagesNode: sideChatInSplit ? <SideChatSplit compact={isCompact} main={<>{mainMessagesNode}{composerNode}</>}>{sideChatNode}</SideChatSplit> : mainMessagesNode,
+      composerNode: sideChatInSplit ? null : composerNode,
       approvalToastsNode,
       updateToastNode,
       errorToastsNode,
@@ -1906,11 +1919,29 @@ export default function MainApp() {
   });
 
   const agentDetails = useMemo(() => agentThreadDetails(Object.values(threadsByWorkspace).flat(), threadStatusById, tokenUsageByThread), [threadsByWorkspace, threadStatusById, tokenUsageByThread]);
+  if (settingsOnly) return <div className="mode-settings-host" style={mainAppShellProps.appStyle}><AppModals {...mainAppShellProps.appModalsProps} settingsOpen onCloseSettings={onCloseModeSettings ?? mainAppShellProps.appModalsProps.onCloseSettings} /></div>;
   return <AgentsContext.Provider value={{ details: agentDetails, workspaceId: activeWorkspaceId, threadId: activeThreadId, itemsByThread,
     policy: appSettings.agentPolicy ? { ...appSettings.agentPolicy.subagents, ...activeWorkspace?.settings.agentPolicy?.subagents } : undefined }}>
-    <Checkpoints running={threadStatusById} onChanged={async (workspace, thread, text) => {
+    {features.checkpoints && <Checkpoints running={threadStatusById} onChanged={async (workspace, thread, text) => {
     await refreshThread(workspace, thread);
     if (text !== undefined) composerWorkspaceState.restoreDraftForThread(thread, text);
     if (text !== undefined && workspace === activeWorkspaceId && thread === activeThreadId) setPrefillDraft({ id: `rewind-${Date.now()}`, text, createdAt: Date.now() });
-  }} /><BrowserDock searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><MainAppShell {...mainAppShellProps} /></BrowserDock></AgentsContext.Provider>;
+  }} />}<WorkspaceShell reservedShortcuts={Object.entries(appSettings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`code:${encodeURIComponent(activeWorkspaceId ?? "")}:${encodeURIComponent(activeThreadId ?? "")}`} code title={threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.name || activeWorkspace?.name || "taucode"}
+    onNavigate={scope => { const [, workspace, thread] = scope.split(":").map(decodeURIComponent); if (workspace && thread) layoutSurfaces.primary.sidebarProps.onSelectThread(workspace, thread); else if (workspace) layoutSurfaces.primary.sidebarProps.onSelectWorkspace(workspace); else layoutSurfaces.primary.sidebarProps.onSelectHome(); }}
+    actions={activeWorkspaceId && activeThreadId ? [
+      { label: "Rename", onClick: () => handleRenameThread(activeWorkspaceId, activeThreadId) },
+      { label: "Copy", onClick: () => { void layoutSurfaces.primary.mainHeaderProps?.onCopyThread?.(); } },
+      { label: "Export", onClick: () => { void exportMarkdownFile(buildThreadTranscript(activeItems), "thread.md", "Export thread").catch(error => console.error(error)); } },
+      { label: "Archive", onClick: handleArchiveActiveThread },
+    ] : []}
+    tools={activeWorkspace ? [
+      ...(["git", "files", "agents", "prompts"] as const).map(id => ({ id, label: { git: "Changes", files: "Files", agents: "Agents", prompts: "Prompts" }[id], shortcut: id === "git" ? "⌃⇧G" : id === "files" ? "⌘P" : undefined,
+        onOpen: () => layoutSurfaces.git.gitDiffPanelProps.onFilePanelModeChange(id),
+        content: buildGitNodes({ ...layoutSurfaces.git, filePanelMode: id, gitDiffPanelProps: { ...layoutSurfaces.git.gitDiffPanelProps, planSection: hasActivePlan ? <details className="changes-plan" open><summary>Plan</summary>{planPanelNode}</details> : null } }).gitDiffPanelNode,
+      })),
+      { id: "terminal", label: "Terminal", shortcut: formatShortcut(appSettings.toggleTerminalShortcut || "ctrl+`"), onOpen: openTerminalWithFocus, onClose: closeTerminalPanel, content: terminalDockNode },
+      { id: "sidechat", label: "Side chat", shortcut: "⌘⇧K", target: sideChat?.id, content: sideChatInSplit ? null : sideChatNode, onClose: sideChats.close,
+        onOpen: (tab: import("@/features/panels/panelState").PanelTab) => { setSplitSideChatId(null); if (tab.target && sideChat?.id !== tab.target && activeThreadId) sideChats.open({ id: tab.target, name: "Side chat", updatedAt: Date.now(), engine: parentEngine, sideOf: { threadId: activeThreadId, workspaceId: activeWorkspace.id, atItemId: null } }); },
+      },
+    ].filter(tool => tool.id === "git" ? features.git : tool.id === "agents" ? features.subagents : tool.id === "terminal" ? features.terminal : tool.id === "sidechat" ? features.sideChats : true) : []} searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><PanelToolRequest id="terminal" requestKey={layoutSurfaces.secondary.terminalDockProps.isOpen} /><PanelToolRequest id="sidechat" requestKey={sideChatInSplit ? null : sideChat?.id} /><MainAppShell {...mainAppShellProps} /></WorkspaceShell></AgentsContext.Provider>;
 }

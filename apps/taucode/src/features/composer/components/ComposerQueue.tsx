@@ -1,3 +1,4 @@
+import { Ellipsis } from "lucide-react";
 import { useCallback } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { QueuedMessage } from "../../../types";
@@ -93,7 +94,7 @@ function QueueMenuButton({ item, onEditQueued, onDeleteQueued }: QueueMenuButton
         aria-haspopup="menu"
         aria-expanded={menu.isOpen}
       >
-        ...
+        <Ellipsis aria-hidden />
       </button>
       {menu.isOpen && (
         <PopoverSurface className="composer-queue-item-popover" role="menu">

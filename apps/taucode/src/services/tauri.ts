@@ -1,4 +1,20 @@
+import { downloadDir } from "@tauri-apps/api/path";
+import { openPath } from "@tauri-apps/plugin-opener";
 import { invoke, Channel } from "@tauri-apps/api/core";
+import type { ThemeFile, ThemeManifest } from '@/features/themes/validate';
+export const themesList = () => invoke<ThemeFile[]>('themes_list');
+export const themesSave = (manifest: ThemeManifest, replace = false) => invoke<void>('themes_save', { manifest, replace });
+export const themesDelete = (id: string) => invoke<void>('themes_delete', { id });
+export const themesImport = (path: string, resolution?: 'replace' | 'keepBoth') => invoke<{ conflict?: boolean; manifest: ThemeManifest }>('themes_import', { path, resolution });
+export const themesExport = (manifest: ThemeManifest, path: string) => invoke<void>('themes_export', { id: manifest.id, path, manifest });
+export const themesRevealFile = (file: string) => invoke<void>('themes_reveal_file', { file });
+export const themesOpenFolder = () => invoke<void>('themes_open_folder');
+export const windowSetMaterial = (material: string | null) => invoke<void>('window_set_material', { material });
+export async function pickThemeFile() {
+  const path = await open({ multiple: false, filters: [{ name: 'taucode theme', extensions: ['json'] }] });
+  return typeof path === 'string' ? path : null;
+}
+export const pickThemeExport = (id: string) => save({ defaultPath: `${id}.taucode-theme.json`, filters: [{ name: 'taucode theme', extensions: ['json'] }] });
 export function importRequest<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
   return invoke<T>("import_request", { action, params });
 }
@@ -416,8 +432,8 @@ export async function compactThread(workspaceId: string, threadId: string) {
   return invoke<any>("compact_thread", { workspaceId, threadId });
 }
 
-export type EngineRuntimeStatus = { engine: string; state: string; message: string };
-export function engineRuntime(action: "status" | "prepare", engine?: string) {
+export type EngineRuntimeStatus = { engine: string; state: string; message: string; version?: string; progress?: number };
+export function engineRuntime(action: "status" | "prepare" | "cancel", engine?: string) {
   return invoke<EngineRuntimeStatus[]>("engine_runtime", { action, engine: engine ?? null });
 }
 
@@ -745,8 +761,8 @@ export async function localUsageSnapshot(
   return invoke("local_usage_snapshot", payload);
 }
 
-export async function getModelList(workspaceId: string) {
-  return invoke<any>("model_list", { workspaceId });
+export async function getModelList(workspaceId: string, threadId?: string | null) {
+  return invoke<any>("model_list", { workspaceId, ...(threadId ? { threadId } : {}) });
 }
 
 export async function getExperimentalFeatureList(
@@ -1228,7 +1244,7 @@ export function rebuildCodegraph(workspaceId: string): Promise<CodegraphStatus> 
 export const providerSetApiKey = (id: string, key: string) => invoke<void>("provider_set_api_key", { id, key });
 export const providerHasApiKey = (id: string) => invoke<boolean>("provider_has_api_key", { id });
 export const providerDeleteApiKey = (id: string) => invoke<void>("provider_delete_api_key", { id });
-export const providerTestAndFetch = (id: string) => invoke<{ ok: boolean; latencyMs: number; models: import("../types").ProviderModel[]; error?: string }>("provider_test_and_fetch", { id });
+export const providerTestAndFetch = (id: string, modelId?: string) => invoke<{ ok: boolean; latencyMs: number; models: import("../types").ProviderModel[]; error?: string }>("provider_test_and_fetch", { id, ...(modelId ? { modelId } : {}) });
 
 export function checkpointRequest(workspaceId: string, params: Record<string, unknown>): Promise<import("@/types").CheckpointResponse> {
   return invoke("checkpoint_request", { workspaceId, params });
@@ -1252,4 +1268,13 @@ export async function workOutput(taskId: string, path: string, action: "open" | 
 export async function pickWorkAttachments(): Promise<string[]> {
   const selection = await open({ directory: false, multiple: true });
   return selection ? Array.isArray(selection) ? selection : [selection] : [];
+}
+
+export async function openBrowserDownloads(): Promise<void> { await openPath(await downloadDir()); }
+
+export function testEngine(definition: import("@/types").EngineDefinition) { return invoke<EngineRuntimeStatus>("engine_test", { definition }); }
+
+export async function pickEngineExecutable(): Promise<string | null> {
+  const selected = await open({ directory: false, multiple: false, title: "Choose engine executable" });
+  return typeof selected === "string" ? selected : null;
 }

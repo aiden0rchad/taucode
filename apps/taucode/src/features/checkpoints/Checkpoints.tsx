@@ -1,3 +1,5 @@
+import { useFeatures } from "@settings/features";
+import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Checkpoint, CheckpointChange } from "@/types";
 import { CLAUDE_REWIND_REASON, engineCapabilities } from "@threads/utils/engineCapabilities";
@@ -8,7 +10,8 @@ import { ToastCard, ToastViewport } from "@/features/design-system/components/to
 import "./checkpoints.css";
 
 export function RewindAction({ workspaceId, threadId, userItemId, running }: CheckpointOpen & { running: boolean }) {
-  return <button type="button" className="ghost" disabled={running} title={running ? "Finish or interrupt the turn before rewinding" : "Rewind files or conversation"} onClick={() => openCheckpoints({ workspaceId, threadId, userItemId })}>Rewind…</button>;
+  if (!useFeatures().checkpoints) return null;
+  return <button type="button" className="ghost icon-button" aria-label="Rewind…" disabled={running} title={running ? "Finish or interrupt the turn before rewinding" : "Rewind files or conversation"} onClick={() => openCheckpoints({ workspaceId, threadId, userItemId })}><RotateCcw aria-hidden /></button>;
 }
 
 export function Checkpoints({ running, onChanged, requestCheckpoint = checkpointRequest }: {

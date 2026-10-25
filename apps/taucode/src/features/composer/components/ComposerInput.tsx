@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useRef } from "react";
 import type {
   ChangeEvent,
@@ -5,25 +6,28 @@ import type {
   KeyboardEvent,
   RefObject,
   SyntheticEvent,
+  ReactNode,
 } from "react";
 import type { AutocompleteItem } from "../hooks/useComposerAutocomplete";
-import ImagePlus from "lucide-react/dist/esm/icons/image-plus";
-import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
-import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
+import { ComposerShell, ComposerSendButton } from "./ComposerShell";
 import Mic from "lucide-react/dist/esm/icons/mic";
 import Square from "lucide-react/dist/esm/icons/square";
 import X from "lucide-react/dist/esm/icons/x";
 import { useComposerImageDrop } from "../hooks/useComposerImageDrop";
-import { ComposerMobileActionsMenu } from "./ComposerMobileActionsMenu";
+
 import { ComposerSuggestionsPopover } from "./ComposerSuggestionsPopover";
 import { ComposerAttachments } from "./ComposerAttachments";
 import { DictationWaveform } from "../../dictation/components/DictationWaveform";
 import { useComposerDictationControls } from "../hooks/useComposerDictationControls";
 import { useComposerInputLayout } from "../hooks/useComposerInputLayout";
-import { useComposerMobileActions } from "../hooks/useComposerMobileActions";
+
 import type { ReviewPromptState, ReviewPromptStep } from "../../threads/hooks/useReviewPrompt";
 
 type ComposerInputProps = {
+  toolbar?: ReactNode;
+  controls?: ReactNode;
+  addMenu?: ReactNode;
+  engine?: import("@/types").EngineKind;
   text: string;
   disabled: boolean;
   sendLabel: string;
@@ -82,12 +86,13 @@ type ComposerInputProps = {
 };
 
 export function ComposerInput({
+  toolbar, controls, addMenu,
+  engine = "codex",
   text,
   disabled,
   sendLabel,
   canStop,
   canSend,
-  isProcessing,
   onStop,
   onSend,
   dictationState = "idle",
@@ -143,8 +148,7 @@ export function ComposerInput({
     text,
     textareaRef,
   });
-  const { mobileActionsOpen, mobileActionsRef, setMobileActionsOpen } =
-    useComposerMobileActions({ disabled });
+
   const {
     dropTargetRef,
     isDragOver,
@@ -157,13 +161,6 @@ export function ComposerInput({
     disabled,
     onAttachImages,
   });
-  const handleActionClick = useCallback(() => {
-    if (canStop) {
-      onStop();
-      return;
-    }
-    onSend();
-  }, [canStop, onSend, onStop]);
   const {
     handleMicClick,
     isDictating,
@@ -205,27 +202,7 @@ export function ComposerInput({
     [handlePaste, onTextPaste],
   );
 
-  const handleMobileAttachClick = useCallback(() => {
-    if (disabled || !onAddAttachment) {
-      return;
-    }
-    setMobileActionsOpen(false);
-    onAddAttachment();
-  }, [disabled, onAddAttachment]);
-
-  const handleMobileExpandClick = useCallback(() => {
-    if (disabled || !onToggleExpand) {
-      return;
-    }
-    setMobileActionsOpen(false);
-    onToggleExpand();
-  }, [disabled, onToggleExpand]);
-
-  const handleMobileDictationClick = useCallback(() => {
-    setMobileActionsOpen(false);
-    handleMicClick();
-  }, [handleMicClick]);
-
+  const features = useFeatures();
   return (
     <div className={`composer-input${isPhoneLayout && isPhoneTallInput ? " is-phone-tall" : ""}`}>
       <div
@@ -236,74 +213,8 @@ export function ComposerInput({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <ComposerAttachments
-          attachments={attachments}
-          disabled={disabled}
-          onRemoveAttachment={onRemoveAttachment}
-        />
-        <div className="composer-input-row">
-          <button
-            type="button"
-            className="composer-attach"
-            onClick={onAddAttachment}
-            disabled={disabled || !onAddAttachment}
-            aria-label="Add image"
-            title="Add image"
-          >
-            <ImagePlus size={14} aria-hidden />
-          </button>
-          <ComposerMobileActionsMenu
-            disabled={disabled}
-            handleMobileAttachClick={handleMobileAttachClick}
-            handleMobileDictationClick={handleMobileDictationClick}
-            handleMobileExpandClick={handleMobileExpandClick}
-            isDictating={isDictating}
-            isDictationProcessing={isDictationProcessing}
-            isExpanded={isExpanded}
-            micAriaLabel={micAriaLabel}
-            micDisabled={micDisabled}
-            mobileActionsOpen={mobileActionsOpen}
-            mobileActionsRef={mobileActionsRef}
-            onAddAttachment={onAddAttachment}
-            onToggleExpand={onToggleExpand}
-            setMobileActionsOpen={setMobileActionsOpen}
-            showDictationAction={Boolean(
-              onToggleDictation || onOpenDictationSettings || onCancelDictation,
-            )}
-          />
-          <textarea
-            ref={textareaRef}
-            placeholder={
-              disabled
-                ? "Review in progress. Chat will re-enable when it completes."
-                : "Ask Codex to do something..."
-            }
-            value={text}
-            onChange={handleTextareaChange}
-            onSelect={handleTextareaSelect}
-            disabled={disabled}
-            onKeyDown={onKeyDown}
-            onDragOver={handleDragOver}
-            onDragEnter={handleDragEnter}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onPaste={handleTextareaPaste}
-          />
-          <div className="composer-input-actions">
-            {onToggleExpand && (
-              <button
-                className={`composer-action composer-action--expand${
-                  isExpanded ? " is-active" : ""
-                }`}
-                onClick={onToggleExpand}
-                disabled={disabled}
-                aria-label={isExpanded ? "Collapse input" : "Expand input"}
-                title={isExpanded ? "Collapse input" : "Expand input"}
-              >
-                {isExpanded ? <ChevronDown aria-hidden /> : <ChevronUp aria-hidden />}
-              </button>
-            )}
-            <button
+        <ComposerShell toolbar={toolbar} controls={controls} menu={<><button type="button" disabled={disabled || !onAddAttachment} title={!onAddAttachment ? "Image attachment is unavailable" : "Attach images"} onClick={onAddAttachment}>Attach images</button>{addMenu}{onToggleExpand && <button type="button" disabled={disabled} onClick={onToggleExpand}>{isExpanded ? "Collapse input" : "Expand input"}</button>}</>} actions={          <div className="composer-input-actions">
+            {features.dictation && <button
               className={`composer-action composer-action--mic${
                 isDictationBusy ? " is-active" : ""
               }${isDictationProcessing ? " is-processing is-stop" : ""}${
@@ -321,36 +232,36 @@ export function ComposerInput({
               ) : (
                 <Mic aria-hidden />
               )}
-            </button>
-            <button
-              className={`composer-action${canStop ? " is-stop" : " is-send"}${
-                canStop && isProcessing ? " is-loading" : ""
-              }`}
-              onClick={handleActionClick}
-              disabled={(disabled && !canStop) || isDictationBusy || (!canStop && !canSend)}
-              aria-label={canStop ? "Stop" : sendLabel}
-              title={canStop ? "Stop" : sendLabel}
-            >
-              {canStop ? (
-                <>
-                  <span className="composer-action-stop-square" aria-hidden />
-                  {isProcessing && (
-                    <span className="composer-action-spinner" aria-hidden />
-                  )}
-                </>
-              ) : (
-                <svg viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <path
-                    d="M12 5l6 6m-6-6L6 11m6-6v14"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              )}
-            </button>
-          </div>
+            </button>}
+            <ComposerSendButton runningHint={`Enter to ${sendLabel.toLowerCase()} a follow-up; Shift+Enter for a new line`} running={canStop} disabled={disabled || isDictationBusy || !canSend} disabledReason={disabled ? "Review in progress" : isDictationBusy ? "Finish dictation first" : "Write a message or add an attachment"} onSend={onSend} onStop={onStop} label={sendLabel} />
+          </div>}>
+        {isDragOver && <div className="composer-drop-overlay">Drop images to attach</div>}
+        <ComposerAttachments
+          attachments={attachments}
+          disabled={disabled}
+          onRemoveAttachment={onRemoveAttachment}
+        />
+        <div className="composer-input-row">
+          <textarea
+            aria-label="Message"
+            ref={textareaRef}
+            placeholder={
+              disabled
+                ? "Review in progress. Chat will re-enable when it completes."
+                : `Ask ${{ pi: "taucode", codex: "Codex", claude: "Claude Code" }[engine]} to do something…`
+            }
+            value={text}
+            onChange={handleTextareaChange}
+            onSelect={handleTextareaSelect}
+            disabled={disabled}
+            onKeyDown={onKeyDown}
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onPaste={handleTextareaPaste}
+          />
+
         </div>
         {isDictationBusy && (
           <DictationWaveform
@@ -385,6 +296,7 @@ export function ComposerInput({
             )}
           </div>
         )}
+        </ComposerShell>
         <ComposerSuggestionsPopover
           highlightIndex={highlightIndex}
           highlightedBranchIndex={highlightedBranchIndex}

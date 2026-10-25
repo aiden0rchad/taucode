@@ -1,3 +1,4 @@
+import { useDiffTheme } from "@/features/design-system/diff/diffViewerTheme";
 import { useMemo } from "react";
 import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff, WorkerPoolContextProvider } from "@pierre/diffs/react";
@@ -70,15 +71,17 @@ export function PierreDiffBlock({
     [displayPath],
   );
 
+  const themeType = useDiffTheme();
   const diffOptions = useMemo(
     () => ({
       diffStyle,
       hunkSeparators: "line-info" as const,
       overflow: "scroll" as const,
       unsafeCSS: DIFF_VIEWER_SCROLL_CSS,
+      themeType,
       disableFileHeader: true,
     }),
-    [diffStyle],
+    [diffStyle, themeType],
   );
 
   if (!diff.trim()) {

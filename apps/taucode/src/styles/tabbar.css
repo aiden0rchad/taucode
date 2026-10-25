@@ -5,7 +5,6 @@
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border-subtle);
   background: var(--surface-topbar);
-  backdrop-filter: blur(24px) saturate(1.2);
   -webkit-app-region: no-drag;
   min-height: var(--tabbar-height, 56px);
   flex-shrink: 0;
@@ -26,10 +25,6 @@ html[data-mobile-composer-focus="true"] .app.layout-phone .tabbar {
   opacity: 0;
   overflow: hidden;
   pointer-events: none;
-}
-
-.app.reduced-transparency .tabbar {
-  backdrop-filter: none;
 }
 
 .tabbar-item {

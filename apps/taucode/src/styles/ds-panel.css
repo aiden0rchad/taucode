@@ -22,12 +22,6 @@
   user-select: text;
 }
 
-.app.reduced-transparency .ds-panel {
-  background: var(--surface-right-panel);
-  border: 1px solid var(--ds-border-subtle);
-  border-radius: 14px;
-}
-
 .ds-panel-header {
   display: flex;
   justify-content: space-between;

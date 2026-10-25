@@ -1,13 +1,4 @@
-.work-layout { grid-template-columns: 260px minmax(0, 1fr); }
-.work-space h3 { margin: 14px 8px 6px; color: var(--text-faint); font-size: 11px; font-weight: 500; }
 .work-inbox { border-bottom: 1px solid var(--border-subtle); padding-bottom: 14px; }
-.work-task { display: grid; grid-template-columns: 8px 1fr; gap: 6px 9px; width: 100%; text-align: left; margin: 4px 0; overflow-wrap: anywhere; }
-.work-task small { grid-column: 2; color: var(--text-faint); font-size: 10px; }
-.work-task[aria-current="page"] { border-color: var(--border-accent); background: var(--surface-card-strong); }
-.work-status { width: 6px; height: 6px; margin-top: 5px; border-radius: 50%; background: var(--text-faint); }
-.work-status.running { background: #4caa8d; }
-.work-status.needs-input { background: #d49639; }
-.work-status.failed { background: #d76969; }
 .work-concurrency { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
 .work-empty { padding-top: clamp(32px, 6vh, 70px); padding-bottom: 24px; }
 .work-templates { grid-template-columns: repeat(3, 1fr); margin-top: 24px; }
@@ -27,7 +18,7 @@
 .work-plan input { flex-shrink: 0; margin-top: 3px; }
 .work-output { margin: 18px 0; }
 .work-output strong { display: block; overflow-wrap: anywhere; font-size: 12px; font-weight: 500; margin-bottom: 8px; }
-.work-output button { font-size: 10px; padding: 5px 7px; }
+.work-output button { font-size: 11px; padding: 5px 7px; }
 .work-input { margin: 18px 0; padding: 18px; border: 1px solid var(--border-accent); border-radius: 10px; background: var(--surface-card-muted); }
 .work-input h3 { font-size: 14px; margin: 0 0 12px; }
 .work-input pre, .work-tool pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 250px; overflow: auto; font-size: 11px; }
@@ -35,7 +26,6 @@
 .work-add-space { padding: 20px 28px; border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
 .work-error { padding: 12px 28px; color: var(--text-strong); background: var(--surface-card-muted); margin: 0; }
 @media (max-width: 1100px) {
-  .work-layout { grid-template-columns: 220px minmax(0, 1fr); }
   .work-task-view { display: flex; flex-direction: column; overflow: auto; }
   .work-task-view .chat-scroll { flex: none; overflow: visible; }
   .work-inspector { border-left: 0; border-top: 1px solid var(--border-subtle); overflow: visible; }

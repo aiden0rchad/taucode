@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useMemo } from "react";
 import type {
 
@@ -76,6 +77,7 @@ export function usePullRequestComposer({
   clearActiveImages,
   handleSend,
 }: UsePullRequestComposerOptions) {
+  if (!useFeatures().git) activeWorkspace = null;
   const isPullRequestComposer = useMemo(
     () =>
       Boolean(selectedPullRequest) &&

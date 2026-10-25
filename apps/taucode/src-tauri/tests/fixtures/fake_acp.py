@@ -26,7 +26,7 @@ def update(session, update_kind, **fields):
 
 
 def capabilities(session):
-    return {"sessionId": session, "modes": {"currentModeId": "default", "availableModes": [{"id": "default", "name": "Default"}, {"id": "plan", "name": "Plan"}]}, "configOptions": [{"id": "model", "category": "model", "currentValue": "model", "type": "select", "options": [{"value": "model", "name": "Model"}, {"value": "other", "name": "Other"}]}]}
+    return {"sessionId": session, "modes": {"currentModeId": "default", "availableModes": [{"id": "default", "name": "Default"}, {"id": "plan", "name": "Plan"}]}, "configOptions": [{"id": "model", "category": "model", "currentValue": "model", "type": "select", "options": [{"value": "model", "name": "Model"}, {"value": "other", "name": "Other"}]}, {"id": "effort", "category": "thought_level", "currentValue": "low", "type": "select", "options": [{"value": "low", "name": "Low"}, {"value": "high", "name": "High"}]}]}
 
 
 for line in sys.stdin:
@@ -50,9 +50,16 @@ for line in sys.stdin:
         response(request, capabilities(session))
     elif method in ("session/set_mode", "session/set_config_option", "_session/steering"):
         assert params.get("modeId") != "bypassPermissions"
+        if params.get("configId") == "effort":
+            assert params["value"] in ("low", "high")
+            sessions[session]["effort"] = params["value"]
         response(request, {})
     elif method == "session/prompt":
         text = " ".join(p.get("text", "") for p in params["prompt"])
+        if text == "reasoning-high":
+            assert sessions[session]["effort"] == "high"
+            response(request, {"stopReason": "end_turn"})
+            continue
         if text == "auth":
             send({"id": request["id"], "error": {"code": -32000, "message": "Authentication required: sign in"}})
             continue

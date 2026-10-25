@@ -42,6 +42,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   ask: vi.fn(async () => true),
 }));
 
+import { pushErrorToast } from "../../../services/toasts";
 vi.mock("../../../services/toasts", () => ({
   pushErrorToast: vi.fn(),
 }));
@@ -73,7 +74,7 @@ describe("GitDiffPanel", () => {
     const { container } = render(
       <GitDiffPanel
         {...baseProps}
-        error="not a git repository"
+        error="could not find repository at '/notes'; class=Repository (6); code=NotFound (-3)"
         onInitGitRepo={onInitGitRepo}
       />,
     );
@@ -81,6 +82,8 @@ describe("GitDiffPanel", () => {
     const initButton = within(container).getByRole("button", { name: "Initialize Git" });
     fireEvent.click(initButton);
     expect(onInitGitRepo).toHaveBeenCalledTimes(1);
+    expect(within(container).getAllByText("This workspace is not a Git repository.")).toHaveLength(1);
+    expect(pushErrorToast).not.toHaveBeenCalled();
   });
 
   it("does not show initialize git when the git root path is invalid", () => {
@@ -289,7 +292,7 @@ describe("GitDiffPanel", () => {
 
   it("shows Agent edits option in mode selector", () => {
     render(<GitDiffPanel {...baseProps} />);
-    const options = screen.getAllByRole("option", { name: "Agent edits" });
+    const options = screen.getAllByRole("button", { name: "Agent edits" });
     expect(options.length).toBeGreaterThan(0);
   });
 
@@ -332,4 +335,18 @@ describe("GitDiffPanel", () => {
     );
   });
 
+});
+
+it("places the view switcher and totals before an in-flow collapsible plan, branch and commit box", () => {
+  const onModeChange = vi.fn();
+  const { container } = render(<GitDiffPanel {...baseProps} totalAdditions={12} totalDeletions={3} onModeChange={onModeChange} planSection={<details className="changes-plan" open><summary>Plan</summary><p>Inspect changes</p></details>} />);
+  const toolbar = within(container).getByRole("group", { name: "Git panel view" });
+  const header = toolbar.closest(".git-panel-header")!;
+  expect(header.contains(within(container).getByLabelText("Change totals"))).toBe(true);
+  expect(within(container).getByLabelText("Change totals").textContent).toBe("+12 / −3");
+  expect(header.nextElementSibling?.tagName).toBe("DETAILS");
+  expect(header.nextElementSibling?.nextElementSibling?.className).toBe("git-panel-overview");
+  fireEvent.click(within(toolbar).getByRole("button", { name: "Log" }));
+  expect(onModeChange).toHaveBeenCalledWith("log");
+  expect(container.querySelector('.git-panel-select')).toBeNull();
 });

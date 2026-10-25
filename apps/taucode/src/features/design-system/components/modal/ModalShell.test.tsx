@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
-import { fireEvent, render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModalShell } from "./ModalShell";
+
+afterEach(cleanup);
 
 describe("ModalShell", () => {
   it("renders root and card classes and handles backdrop click", () => {
     const onBackdropClick = vi.fn();
-    const { container } = render(
+    const { baseElement } = render(
       <ModalShell
         className="custom-modal"
         cardClassName="custom-card"
@@ -17,9 +19,9 @@ describe("ModalShell", () => {
       </ModalShell>,
     );
 
-    const modal = container.querySelector(".ds-modal.custom-modal");
-    const card = container.querySelector(".ds-modal-card.custom-card");
-    const backdrop = container.querySelector(".ds-modal-backdrop");
+    const modal = baseElement.querySelector(".ds-modal.custom-modal");
+    const card = baseElement.querySelector(".ds-modal-card.custom-card");
+    const backdrop = baseElement.querySelector(".ds-modal-backdrop");
     expect(modal).toBeTruthy();
     expect(card).toBeTruthy();
     expect(backdrop).toBeTruthy();
@@ -32,14 +34,14 @@ describe("ModalShell", () => {
   });
 
   it("supports aria-labelledby and aria-describedby", () => {
-    const { container } = render(
+    const { baseElement } = render(
       <ModalShell ariaLabelledBy="dialog-title" ariaDescribedBy="dialog-description">
         <h2 id="dialog-title">Dialog title</h2>
         <p id="dialog-description">Dialog description</p>
       </ModalShell>,
     );
 
-    const modal = container.querySelector(".ds-modal");
+    const modal = baseElement.querySelector(".ds-modal");
     expect(modal?.getAttribute("aria-labelledby")).toBe("dialog-title");
     expect(modal?.getAttribute("aria-describedby")).toBe("dialog-description");
   });

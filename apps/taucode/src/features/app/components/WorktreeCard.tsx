@@ -35,6 +35,7 @@ export function WorktreeCard({
       <div
         className={`worktree-row ${isActive ? "active" : ""}${isDeleting ? " deleting" : ""}`}
         role="button"
+        aria-label={worktreeLabel}
         tabIndex={isDeleting ? -1 : 0}
         aria-disabled={isDeleting}
         onClick={() => {
@@ -51,7 +52,7 @@ export function WorktreeCard({
           if (isDeleting) {
             return;
           }
-          if (event.key === "Enter" || event.key === " ") {
+          if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
             event.preventDefault();
             onSelectWorkspace(worktree.id);
           }
@@ -84,7 +85,7 @@ export function WorktreeCard({
               {!worktree.connected && (
                 <span
                   className="connect"
-                  title="Connect workspace context to the shared Codex server"
+                  title="Connect workspace to its engine"
                   onClick={(event) => {
                     event.stopPropagation();
                     onConnectWorkspace(worktree);

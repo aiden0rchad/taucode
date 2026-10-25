@@ -1,5 +1,7 @@
+import { useFeatures } from "@settings/features";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Check from "lucide-react/dist/esm/icons/check";
+import { HeaderActions } from "./HeaderActions";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import Terminal from "lucide-react/dist/esm/icons/terminal";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -20,6 +22,7 @@ import type { WorkspaceLaunchScriptsState } from "../hooks/useWorkspaceLaunchScr
 import { useMenuController } from "../hooks/useMenuController";
 
 type MainHeaderProps = {
+  model?: string | null;
   engine?: import("@/types").EngineKind;
   workspace: WorkspaceInfo;
   parentName?: string | null;
@@ -75,8 +78,8 @@ type MainHeaderProps = {
 
 export function MainHeader({
   engine,
+  model,
   workspace,
-  parentName = null,
   worktreeLabel = null,
   disableBranchMenu = false,
   parentPath = null,
@@ -109,6 +112,8 @@ export function MainHeader({
   launchScriptsState,
   worktreeRename,
 }: MainHeaderProps) {
+  const features = useFeatures();
+  if (!features.git) { branchName = ""; disableBranchMenu = false; }
   const [branchQuery, setBranchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState(false);
@@ -190,10 +195,8 @@ export function MainHeader({
     <header className="main-header" data-tauri-drag-region>
       <div className="workspace-header">
         <div className="workspace-title-line">
-          <span className="workspace-title">
-            {parentName ? parentName : workspace.name}
-            {engine && <span className="engine-badge">{engine}</span>}
-          </span>
+          {engine && <span className="engine-badge">{engine}</span>}
+          {model && <span className="thread-header-model" title={model}>{model}</span>}
           <span className="workspace-separator" aria-hidden>
             ›
           </span>
@@ -339,7 +342,7 @@ export function MainHeader({
                 </PopoverSurface>
               )}
             </div>
-          ) : (
+          ) : branchName && branchName !== "unknown" ? (
             <div className="workspace-branch-menu" ref={menuRef}>
               <MenuTrigger
                 isOpen={menuOpen}
@@ -476,10 +479,10 @@ export function MainHeader({
                 </PopoverSurface>
               )}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
-      <div className="main-header-actions">
+      <HeaderActions>
         {showWorkspaceTools &&
           onRunLaunchScript &&
           onOpenLaunchScriptEditor &&
@@ -573,7 +576,7 @@ export function MainHeader({
           </span>
         </button>
         {extraActionsNode}
-      </div>
+      </HeaderActions>
     </header>
   );
 }

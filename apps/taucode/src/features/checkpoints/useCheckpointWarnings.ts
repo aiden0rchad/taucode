@@ -1,8 +1,10 @@
+import { useFeatures } from "@settings/features";
 import { useEffect, useRef, useState } from "react";
 import { checkpointRequest } from "@services/tauri";
 import { subscribeAppServerEvents } from "@services/events";
 
 export function useCheckpointWarnings(workspaceId: string | null, threadId: string | null, latestUserId?: string) {
+  if (!useFeatures().checkpoints) workspaceId = null;
   const [warnings, setWarnings] = useState<Record<string, string>>({});
   const scope = useRef(`${workspaceId}:${threadId}`);
   useEffect(() => {
