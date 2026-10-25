@@ -34,10 +34,10 @@ export function createFixtures(now = Date.now()) {
     providers: [
       { id: "openai", name: "OpenAI", kind: "openai", enabled: true, auth: { type: "none" }, models: [
         { id: "gpt-5", reasoning: reasoning(["low", "medium", "high", "xhigh", "max"]), displayName: "GPT-5", enabled: true, contextWindow: 200000, supportsTools: true, supportsImages: true },
-        { id: "gpt-5-mini", reasoning: reasoning(["low", "high", "max"]), displayName: "GPT-5 mini", enabled: true, contextWindow: 128000, supportsTools: true, supportsImages: true },
+        { id: "gpt-5-mini", reasoning: { ...reasoning(["low", "high", "max"]), default: "high" }, displayName: "GPT-5 mini · Extended reasoning preview", enabled: true, contextWindow: 128000, supportsTools: true, supportsImages: true },
       ] },
       { id: "anthropic", name: "Anthropic", kind: "anthropic", enabled: true, auth: { type: "none" }, models: [
-        { id: "toggle-model", displayName: "Thinking toggle", enabled: true, reasoning: reasoning(["off", "high"], "thinking-toggle") },
+        { id: "toggle-model", displayName: "Thinking toggle", enabled: true, reasoning: { ...reasoning(["off", "high"], "thinking-toggle"), default: "high" } },
         { id: "plain-model", displayName: "No reasoning", enabled: true, reasoning: reasoning([]) },
         { id: "unknown-model", displayName: "Unknown reasoning", enabled: true },
         { id: "claude-sonnet-4", reasoning: reasoning(["low", "medium", "high"], "adaptive"), displayName: "Claude Sonnet 4", enabled: true, contextWindow: 200000, supportsTools: true, supportsImages: true },

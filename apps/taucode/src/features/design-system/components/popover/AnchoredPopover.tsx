@@ -25,15 +25,11 @@ export function AnchoredPopover({ anchorRef, surfaceRef, style, ...props }: Prop
       surface.style.top = `${Math.max(top, rect.top - surface.offsetHeight - 8)}px`;
     };
     place();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
-    observer?.observe(anchor);
-    observer?.observe(surface);
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     window.visualViewport?.addEventListener("resize", place);
     window.visualViewport?.addEventListener("scroll", place);
     return () => {
-      observer?.disconnect();
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
       window.visualViewport?.removeEventListener("resize", place);

@@ -1,6 +1,6 @@
 import { ReasoningControl } from "./ReasoningControl";
 import type { CSSProperties } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { engineRuntime } from "@services/tauri";
 import { SlidersHorizontal, Zap, ListChecks, Shield } from "lucide-react";
 import type { AccessMode, ServiceTier, ThreadTokenUsage } from "../../../types";
@@ -51,6 +51,7 @@ export function ComposerMetaBar({
   contextUsage = null,
 }: ComposerMetaBarProps) {
   const [claudeRuntimeReason, setClaudeRuntimeReason] = useState("");
+  const modelPickerRef = useRef<HTMLSelectElement>(null);
   const hasClaudeModels = models.some(m => m.engines?.includes("claude"));
   useEffect(() => {
     if (!hasClaudeModels && engine !== "claude") return;
@@ -150,7 +151,7 @@ export function ComposerMetaBar({
             </div>
           )
         )}
-        <ReasoningControl capability={engine === "claude" ? selectedModel?.acpReasoning : selectedModel?.reasoning ?? (reasoningSupported ? { supported: true, levels: reasoningOptions, default: selectedEffort, control: "effort", source: "heuristic", detectedAt: 0 } : selectedModel?.reasoning)} value={selectedEffort} onChange={onSelectEffort} disabled={disabled} unavailable={engine === "claude" && !selectedModel?.acpReasoning ? "This Claude session does not advertise a reasoning option" : undefined} />
+        <ReasoningControl modelName={selectedModelLabel} modelPickerRef={modelPickerRef} capability={engine === "claude" ? selectedModel?.acpReasoning : selectedModel?.reasoning ?? (reasoningSupported ? { supported: true, levels: reasoningOptions, default: selectedEffort, control: "effort", source: "heuristic", detectedAt: 0 } : selectedModel?.reasoning)} value={selectedEffort} onChange={onSelectEffort} disabled={disabled} unavailable={engine === "claude" && !selectedModel?.acpReasoning ? "This Claude session does not advertise a reasoning option" : undefined} />
         <div className="composer-select-wrap composer-select-wrap--model">
           <span className="composer-icon composer-icon--model" aria-hidden>
             <span className="provider-dot">{(selectedModel?.providerName || selectedModel?.providerId || selectedModelLabel)[0]?.toUpperCase()}</span>
@@ -159,6 +160,7 @@ export function ComposerMetaBar({
           <select
             className="composer-select composer-select--model"
             aria-label="Model"
+            ref={modelPickerRef}
             value={selectedModelId ?? ""}
             onChange={(event) => onSelectModel(event.target.value)}
             disabled={disabled}
