@@ -385,7 +385,7 @@ const renderFeaturesSection = (
     onDownloadDictationModel: vi.fn(),
     onCancelDictationDownload: vi.fn(),
     onRemoveDictationModel: vi.fn(),
-    initialSection: "features",
+    initialSection: "codex-flags",
   };
 
   render(<SettingsView {...props} />);

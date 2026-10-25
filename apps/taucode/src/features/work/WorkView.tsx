@@ -1,4 +1,5 @@
 import { DigitalRain } from "@/features/themes/DigitalRain";
+import { useFeatures } from "@settings/features";
 import { Squircle } from "@/features/design-system/components/squircle/Squircle";
 import { SidebarTree } from "@app/components/SidebarTree";
 import { buildThreadTranscript } from "@utils/threadText";
@@ -47,6 +48,7 @@ function InputRequest({ request, busy, respond }: { request: WorkRequest; busy: 
 }
 
 export function WorkView({ settings, onOpenSettings = () => {} }: { settings: AppSettings; onOpenSettings?: () => void }) {
+  const features = useFeatures();
   const work = useWork();
   const { sidebarCollapsed, setSidebarCollapsed } = useSidebarState();
   const searchInput = useRef<HTMLInputElement>(null);
@@ -180,7 +182,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           <div className="chat-examples work-templates starter-pills">{templates.map(template => <button key={template.title} onClick={() => { setBrief(template.brief); setAccess(template.access); }}>{createElement(templateIcons[template.title], { "aria-hidden": true })}{template.title}</button>)}</div>
       </div></div>}
     </main>
-    <Checkpoints requestCheckpoint={checkpoints} running={Object.fromEntries(work.state.tasks.filter(t => t.threadId).map(t => [t.threadId!, { isProcessing: ["running","needs-input"].includes(t.status) }]))} onChanged={async (_space, thread) => { const task = tasksRef.current.find(t => t.threadId === thread); if (task) await work.read(task); await work.refresh(); }} />
+    {features.checkpoints && <Checkpoints requestCheckpoint={checkpoints} running={Object.fromEntries(work.state.tasks.filter(t => t.threadId).map(t => [t.threadId!, { isProcessing: ["running","needs-input"].includes(t.status) }]))} onChanged={async (_space, thread) => { const task = tasksRef.current.find(t => t.threadId === thread); if (task) await work.read(task); await work.refresh(); }} />}
   </div></WorkspaceShell>;
 }
 

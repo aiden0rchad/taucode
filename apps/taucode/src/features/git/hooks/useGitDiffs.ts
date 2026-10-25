@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getGitDiffs } from "../../../services/tauri";
 import type { GitFileDiff, GitFileStatus, WorkspaceInfo } from "../../../types";
@@ -20,6 +21,7 @@ export function useGitDiffs(
   enabled: boolean,
   ignoreWhitespaceChanges: boolean,
 ) {
+  if (!useFeatures().git) activeWorkspace = null;
   const [state, setState] = useState<GitDiffState>(emptyState);
   const requestIdRef = useRef(0);
   const cacheKeyRef = useRef<string | null>(null);

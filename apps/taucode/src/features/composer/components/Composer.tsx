@@ -1,3 +1,5 @@
+import { useEngines } from "@settings/engines";
+import { useFeatures } from "@settings/features";
 import { FolderTree, Bug, Hammer, Folder, GitBranch, Cpu, MessagesSquare } from "lucide-react";
 import {
   memo,
@@ -244,6 +246,11 @@ export const Composer = memo(function Composer({
   onFileAutocompleteActiveChange,
   contextActions = [],
 }: ComposerProps) {
+  const features = useFeatures();
+  const engineDefinition = useEngines().find(e => e.id === engine);
+  const engineDisabled = engineDefinition?.enabled === false;
+  disabled ||= engineDisabled;
+  dictationEnabled &&= features.dictation;
   const [text, setText] = useState(draftText);
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
   const internalRef = useRef<HTMLTextAreaElement | null>(null);
@@ -536,6 +543,7 @@ export const Composer = memo(function Composer({
 
   return (
     <footer className={`composer${disabled ? " is-disabled" : ""}`}>
+      {engineDisabled && <p role="status">Enable {engineDefinition.name} to continue</p>}
       <ComposerQueue
         queuedMessages={queuedMessages}
         pausedReason={queuePausedReason}
@@ -649,7 +657,7 @@ export const Composer = memo(function Composer({
       />
 
       {selectedServiceTier === "fast" && <span className="composer-tier-note" aria-label="Fast mode enabled">Fast</span>}
-      {context && <div className="composer-context-row"><span><Folder aria-hidden />{context.worktree ? "Worktree" : "Local"}</span>{context.branch && <span><GitBranch aria-hidden />{context.branch}</span>}<span><Cpu aria-hidden /><ComposerEngineControl engine={engine} models={models} selectedModelId={selectedModelId} onSelectModel={onSelectModel} onSelectEngine={onSelectEngine} disabled={disabled} /></span>{context.sideChat && <span><MessagesSquare aria-hidden />Side chat</span>}</div>}
+      {context && <div className="composer-context-row"><span><Folder aria-hidden />{features.worktrees && context.worktree ? "Worktree" : "Local"}</span>{features.git && context.branch && <span><GitBranch aria-hidden />{context.branch}</span>}<span><Cpu aria-hidden /><ComposerEngineControl engine={engine} models={models} selectedModelId={selectedModelId} onSelectModel={onSelectModel} onSelectEngine={onSelectEngine} disabled={disabled} /></span>{context.sideChat && <span><MessagesSquare aria-hidden />Side chat</span>}</div>}
       {isEmpty && <div className="starter-pills">{[{ prompt: "Explore this project", Icon: FolderTree }, { prompt: "Fix a bug", Icon: Bug }, { prompt: "Build a feature", Icon: Hammer }].map(({ prompt, Icon }) => <button key={prompt} type="button" onClick={() => { setComposerText(prompt); textareaRef.current?.focus(); }}><Icon aria-hidden />{prompt}</button>)}</div>}
     </footer>
   );

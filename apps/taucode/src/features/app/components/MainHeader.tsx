@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Check from "lucide-react/dist/esm/icons/check";
 import { HeaderActions } from "./HeaderActions";
@@ -111,6 +112,8 @@ export function MainHeader({
   launchScriptsState,
   worktreeRename,
 }: MainHeaderProps) {
+  const features = useFeatures();
+  if (!features.git) { branchName = ""; disableBranchMenu = false; }
   const [branchQuery, setBranchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState(false);

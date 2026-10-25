@@ -65,9 +65,9 @@ export default function (pi: ExtensionAPI) {
           r.model = model; r.status = "running"; update();
           const cli = process.env.TAUCODE_PI_CLI ?? process.argv[1];
           if (!cli) throw new Error("Missing managed pi CLI");
-          const args = [...process.execArgv, cli, "--mode", "json", "-p", "--no-session", "--no-approve", "--no-extensions", "-e", join(home, "extensions/taucode-gate.ts"), "-e", join(home, "extensions/taucode-subagents.ts"), "--provider", provider, "--model", modelId];
+          const args = [...process.execArgv, cli, "--mode", "json", "-p", "--no-session", ...(process.env.TAUCODE_OMP === "1" ? ["--no-lsp", "--no-pty", "--no-title", "--no-skills", "--no-rules"] : ["--no-approve"]), "--no-extensions", "-e", join(home, "extensions/taucode-gate.ts"), "-e", join(home, "extensions/taucode-subagents.ts"), "--provider", provider, "--model", modelId];
           const toolAccess = process.env.TAUCODE_TOOL_ACCESS === "read-only" ? "read-only" : role.toolAccess;
-          if (toolAccess === "read-only") args.push("--tools", "read,grep,find,ls");
+          if (toolAccess === "read-only") args.push("--tools", process.env.TAUCODE_OMP === "1" ? "read,grep,glob" : "read,grep,find,ls");
           if (role.instructions) args.push("--append-system-prompt", role.instructions);
           args.push(`Task: ${r.task}`);
           r.exitCode = await new Promise<number>((resolve, reject) => {

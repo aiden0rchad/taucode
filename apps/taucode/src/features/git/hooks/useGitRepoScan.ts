@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceInfo } from "../../../types";
 import { listGitRoots } from "../../../services/tauri";
@@ -13,6 +14,7 @@ type GitRepoScanState = {
 const DEFAULT_DEPTH = 2;
 
 export function useGitRepoScan(activeWorkspace: WorkspaceInfo | null) {
+  if (!useFeatures().git) activeWorkspace = null;
   const [state, setState] = useState<GitRepoScanState>({
     repos: [],
     isLoading: false,

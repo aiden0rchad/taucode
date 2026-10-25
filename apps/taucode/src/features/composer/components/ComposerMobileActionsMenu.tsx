@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
@@ -46,6 +47,7 @@ export function ComposerMobileActionsMenu({
   setMobileActionsOpen,
   showDictationAction,
 }: ComposerMobileActionsMenuProps) {
+  const features = useFeatures();
   return (
     <div
       className={`composer-mobile-menu${mobileActionsOpen ? " is-open" : ""}`}
@@ -83,7 +85,7 @@ export function ComposerMobileActionsMenu({
               {isExpanded ? "Collapse input" : "Expand input"}
             </PopoverMenuItem>
           )}
-          {showDictationAction && (
+          {features.dictation && showDictationAction && (
             <PopoverMenuItem
               onClick={handleMobileDictationClick}
               disabled={micDisabled}

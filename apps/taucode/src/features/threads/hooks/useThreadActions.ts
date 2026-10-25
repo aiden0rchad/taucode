@@ -202,7 +202,7 @@ export function useThreadActions({
         if (threadId) {
           dispatch({ type: "ensureThread", workspaceId, threadId });
           const thread = extractThreadFromResponse(response);
-          dispatch({ type: "mergeThreadSummary", workspaceId, threadId, patch: { ...extractEngineCapabilities(thread), engine: thread?.engine === "claude" ? "claude" : thread?.engine === "pi" ? "pi" : "codex", modelProvider: String(thread?.modelProvider ?? "") } });
+          dispatch({ type: "mergeThreadSummary", workspaceId, threadId, patch: { ...extractEngineCapabilities(thread), engine: String(thread?.engine ?? "codex"), modelProvider: String(thread?.modelProvider ?? "") } });
           if (shouldActivate) {
             dispatch({ type: "setActiveThreadId", workspaceId, threadId });
           }

@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import type { MutableRefObject } from "react";
 import { useTauriEvent } from "./useTauriEvent";
 import {
@@ -59,6 +60,7 @@ export function useAppMenuEvents({
   onExpandRightPanel,
   onCollapseRightPanel,
 }: Params) {
+  const features = useFeatures();
   useTauriEvent(subscribeMenuNewAgent, () => {
     const workspace = activeWorkspaceRef.current;
     if (workspace) {
@@ -67,6 +69,7 @@ export function useAppMenuEvents({
   });
 
   useTauriEvent(subscribeMenuNewWorktreeAgent, () => {
+    if (!features.worktrees) return;
     const workspace = baseWorkspaceRef.current;
     if (workspace) {
       onAddWorktreeAgent(workspace);
@@ -74,6 +77,7 @@ export function useAppMenuEvents({
   });
 
   useTauriEvent(subscribeMenuNewCloneAgent, () => {
+    if (!features.worktrees) return;
     const workspace = baseWorkspaceRef.current;
     if (workspace) {
       onAddCloneAgent(workspace);
@@ -113,7 +117,7 @@ export function useAppMenuEvents({
   });
 
   useTauriEvent(subscribeMenuToggleTerminal, () => {
-    onToggleTerminal();
+    if (features.terminal) onToggleTerminal();
   });
 
   useTauriEvent(subscribeMenuToggleProjectsSidebar, () => {
@@ -125,6 +129,7 @@ export function useAppMenuEvents({
   });
 
   useTauriEvent(subscribeMenuToggleGitSidebar, () => {
+    if (!features.git) return;
     if (rightPanelCollapsed) {
       onExpandRightPanel();
     } else {

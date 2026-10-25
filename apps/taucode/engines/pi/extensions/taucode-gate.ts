@@ -5,8 +5,32 @@ import { decide, normalizeRule, safeReadOnlyCommand, type Access } from "./lib/p
 import { connectorDecision, type Connector } from "./lib/connectors.ts";
 
 export default function (pi: ExtensionAPI) {
-  pi.on("session_start", (_event, ctx) => { ctx.ui.setStatus("taucode-gate", "ready"); });
+  pi.on("session_start", async (_event, ctx) => {
+    if (process.env.TAUCODE_OMP === "1") {
+      const features = JSON.parse(process.env.TAUCODE_FEATURES || "{}");
+      await pi.setActiveTools(pi.getActiveTools().filter(name => ["read", "bash", "edit", "write", "grep", "glob", "lsp", "debug", "eval"].includes(name) || (name === "subagent" && features.subagents !== false) || (name.startsWith("mcp__") && features.connectors !== false)));
+    }
+    ctx.ui.setStatus("taucode-gate", "ready");
+  });
   pi.on("tool_call", async (event, ctx) => {
+    if (process.env.TAUCODE_OMP === "1") {
+      if (["task", "browser", "computer", "login"].includes(event.toolName)) return { block: true, reason: "Use taucode-managed tools and subagents" };
+      if (event.toolName.startsWith("mcp__") && !event.toolName.slice(5).includes("__")) {
+        const connectors = JSON.parse(readFileSync(join(process.env.PI_CODING_AGENT_DIR!, "taucode/connectors.json"), "utf8")) as Connector[];
+        const connector = connectors.sort((a, b) => b.id.length - a.id.length).find(c => event.toolName.startsWith(`mcp__${c.id.replace(/-/g, "_")}_`));
+        if (!connector) return { block: true, reason: "Unknown connector" };
+        const prefix = `mcp__${connector.id.replace(/-/g, "_")}_`;
+        event = { ...event, toolName: prefix.slice(0, -1) + "__" + event.toolName.slice(prefix.length) };
+      }
+      if (!["read", "grep", "find", "glob", "bash", "write", "edit", "subagent"].includes(event.toolName) && !event.toolName.startsWith("mcp__")) {
+        const home = process.env.PI_CODING_AGENT_DIR!, session = process.env.TAUCODE_SESSION_KEY!;
+        const access = JSON.parse(readFileSync(join(home, "taucode/threads", `${session}.json`), "utf8")) as Access;
+        if (access.accessMode === "read-only" || process.env.TAUCODE_SUBAGENT_DEPTH || !ctx.hasUI) return { block: true, reason: "Native tool requires interactive approval" };
+        const title = "taucode:approval:" + JSON.stringify({ toolCallId: event.toolCallId, tool: event.toolName, command: event.toolName, cwd: ctx.cwd });
+        if (await ctx.ui.select(title, ["Allow", "Block"]) !== "Allow") return { block: true, reason: "Native tool denied" };
+        return;
+      }
+    }
     if (process.env.TAUCODE_CHAT === "1" && !(process.env.TAUCODE_CHAT_WEB === "1" && ["mcp__taucode_browser__browser_navigate", "mcp__taucode_browser__browser_snapshot", "mcp__taucode_browser__browser_take_screenshot"].includes(event.toolName))) return { block: true, reason: "Tools are disabled in Chat mode" };
     if (!["bash", "write", "edit", ...(process.env.TAUCODE_WORK === "1" ? ["read", "ls", "find", "grep"] : [])].includes(event.toolName) && !event.toolName.startsWith("mcp__")) return;
     const home = process.env.PI_CODING_AGENT_DIR!;

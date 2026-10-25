@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { Terminal } from "@xterm/xterm";
@@ -119,6 +120,7 @@ export function useTerminalSession({
   onDebug,
   onSessionExit,
 }: UseTerminalSessionOptions): TerminalSessionState {
+  if (!useFeatures().terminal) { activeWorkspace = null; isVisible = false; }
   useEffect(() => {
     const update = () => {
       if (!terminalRef.current) return;

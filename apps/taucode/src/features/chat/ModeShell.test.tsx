@@ -27,3 +27,13 @@ describe("mode switching", () => {
     expect(modeShortcut(new KeyboardEvent("keydown", { key: "2", metaKey: true, shiftKey: true }), {} as AppSettings)).toBeUndefined();
   });
 });
+
+it("falls back to Code when a saved mode is disabled and hides both disabled segments", async () => {
+  vi.mocked(getAppSettings).mockResolvedValue({ windowModes: { "second-window": "chat" }, features: { chatMode: false, workMode: false } } as unknown as AppSettings);
+  render(<ModeShell><ModeSwitcher /><p>Code content</p></ModeShell>);
+  expect(await screen.findByText("Code content")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Chat" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Work" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Code" })).toBeTruthy();
+  expect(setWindowMode).toHaveBeenCalledWith("code");
+});

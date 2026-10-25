@@ -34,12 +34,12 @@ export function SettingsSection({ children, ...props }: SettingsSectionProps) {
   return <SettingsPage {...props}><SettingsGroup title="Preferences">{children}</SettingsGroup></SettingsPage>;
 }
 
-export function SettingsGroup({ title, subtitle, children, disabled = false, collapsible = false, className, ...props }: Omit<ComponentPropsWithoutRef<"div">, "title"> & { title?: ReactNode; subtitle?: ReactNode; disabled?: boolean; collapsible?: boolean }) {
+export function SettingsGroup({ title, subtitle, children, actions, disabled = false, collapsible = false, className, ...props }: Omit<ComponentPropsWithoutRef<"div">, "title"> & { title?: ReactNode; subtitle?: ReactNode; actions?: ReactNode; disabled?: boolean; collapsible?: boolean }) {
   const inherited = useContext(Disabled);
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
   return <Disabled.Provider value={disabled || inherited}><div {...props} className={joinClassNames("settings-group", className)}>
-    {title && <h3 className="settings-group-title">{collapsible ? <button type="button" className="settings-group-disclosure" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(!expanded)}><ChevronRight size={16} aria-hidden />{title}</button> : title}</h3>}
+    {title && <h3 className="settings-group-title">{collapsible ? <button type="button" className="settings-group-disclosure" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(!expanded)}><ChevronRight size={16} aria-hidden />{title}</button> : title}{actions && <span className="settings-group-actions">{actions}</span>}</h3>}
     {subtitle && <p className="settings-group-description">{subtitle}</p>}
     <div id={contentId} className="settings-group-card" aria-disabled={disabled || inherited || undefined} hidden={collapsible && !expanded}>{children}</div>
   </div></Disabled.Provider>;

@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Flame, RotateCcw, Zap } from "lucide-react";
 import type { ReasoningCapability } from "@/types";
@@ -22,6 +23,7 @@ export type ReasoningControlProps = {
   onSelectModel?: (id: string) => void | boolean | Promise<void | boolean>;
 };
 export function ReasoningControl({ capability, value, onChange, disabled, unavailable, onOpenSettings, modelName = "Model", models = [], selectedModelId, defaultModelId, onSelectModel }: ReasoningControlProps) {
+  const effects = useFeatures().reasoningEffects;
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<number | null>(null);
@@ -33,7 +35,7 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
     if (next === view) return;
     previousHeight.current = popover.current?.offsetHeight ?? 0;
     returning.current = next === "slider";
-    setOutgoing(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? null : view);
+    setOutgoing(!effects || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? null : view);
     setView(next);
   };
   const [selecting, setSelecting] = useState(false);
@@ -43,13 +45,13 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
     if (!menu.isOpen || !outgoing) return;
     const surface = popover.current!;
     const incoming = surface.querySelector<HTMLElement>(".reasoning-view.incoming")!;
-    const animation = surface.animate?.(
+    const animation = effects && surface.animate?.(
       [{ height: previousHeight.current + "px" }, { height: incoming.offsetHeight + 26 + "px" }],
       { duration: 220, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
     );
     const timer = window.setTimeout(() => setOutgoing(null), 220);
-    return () => { window.clearTimeout(timer); animation?.cancel(); };
-  }, [menu.isOpen, view, outgoing]);
+    return () => { window.clearTimeout(timer); animation && animation.cancel(); };
+  }, [menu.isOpen, view, outgoing, effects]);
   useEffect(() => {
     if (menu.isOpen) {
       const surface = popover.current?.querySelector<HTMLElement>(".reasoning-view:not(.outgoing)");
@@ -69,13 +71,13 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
   const label = unknown ? "?" : reasoningLabel(shownLevel!);
   const chipLabel = level ? reasoningLabel(level) : "?";
   const labels = levels.length ? levels.map(reasoningLabel) : ["?"];
-  const heat = last > 0 ? position / last : 1;
-  useReasoningAnimationSpeed(popover, menu.isOpen && view === "slider" && !!level && !unavailable, heat);
+  const heat = effects ? (last > 0 ? position / last : 1) : 0;
+  useReasoningAnimationSpeed(popover, effects && menu.isOpen && view === "slider" && !!level && !unavailable, heat);
   const noReasoning = capability?.supported === false || !!unavailable;
-  const burning = !unknown && position === last;
-  const warm = !unknown && !burning && Math.round(position) === last - 1;
+  const burning = effects && !unknown && position === last;
+  const warm = effects && !unknown && !burning && Math.round(position) === last - 1;
   const sliderStyle = {
-    "--reasoning-position": `${last > 0 ? heat * 100 : 0}%`,
+    "--reasoning-position": `${last > 0 ? position / last * 100 : 0}%`,
     "--reasoning-particle-color": `color-mix(in srgb, white, #ffbd64 ${heat * 15}%)`,
     "--reasoning-color": heat < 0.5 ? `color-mix(in srgb, #8998ef, #e9ac38 ${heat * 200}%)` : `color-mix(in srgb, #e9ac38, #f06436 ${(heat - 0.5) * 200}%)`,
   } as CSSProperties;
@@ -97,7 +99,7 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
       <span className="reasoning-chip-model">{modelName}</span>{!noReasoning && <span className="reasoning-chip-dot" aria-hidden />}
       {!noReasoning && <span className={`reasoning-chip-label${unknown ? " unknown" : ""}`} style={{ minWidth: `${Math.max(...labels.map(text => text.length))}ch` }}>{labels.map(text => <span className="reasoning-chip-sizer" aria-hidden="true" key={text}>{text}</span>)}<span>{chipLabel}</span></span>}<ChevronDown size={12} aria-hidden />
     </button>
-    {menu.isOpen && <AnchoredPopover anchorRef={trigger} surfaceRef={popover} className={`reasoning-popover${burning ? " burning" : warm ? " warm" : ""}${drag !== null ? " dragging" : ""}`} style={sliderStyle} role="dialog" aria-label={view === "models" ? "Select model" : "Model and reasoning"} onKeyDown={event => { if (event.key === "Escape" && view === "models") { event.preventDefault(); event.stopPropagation(); switchView("slider"); } }}>
+    {menu.isOpen && <AnchoredPopover anchorRef={trigger} surfaceRef={popover} className={`reasoning-popover${effects ? "" : " effects-off"}${burning ? " burning" : warm ? " warm" : ""}${drag !== null ? " dragging" : ""}`} style={sliderStyle} role="dialog" aria-label={view === "models" ? "Select model" : "Model and reasoning"} onKeyDown={event => { if (event.key === "Escape" && view === "models") { event.preventDefault(); event.stopPropagation(); switchView("slider"); } }}>
       {(["slider", "models"] as const).filter(panel => panel === view || panel === outgoing).map(panel => <div key={panel} className={`reasoning-view${outgoing ? ` ${view === "models" ? "forward" : "back"} ${panel === outgoing ? "outgoing" : "incoming"}` : ""}`} aria-hidden={panel === outgoing || undefined} inert={panel === outgoing ? true : undefined}>
       {panel === "models" ? <><div className="reasoning-model-heading"><button type="button" aria-label="Back to reasoning" onClick={() => switchView("slider")}><ChevronLeft size={16} aria-hidden /></button><strong>Select model</strong></div><ComposerModelList models={models} selectedId={selectedModelId} defaultId={defaultModelId} disabled={disabled || selecting} onSelect={selectModel} />{modelError && <p role="alert">{modelError}</p>}</> : <>
         <div className="reasoning-heading">
@@ -110,7 +112,7 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
         </div>
         {noReasoning ? <p className="reasoning-empty">{unavailable || "This model does not support reasoning."}</p> : unknown ? <div className="reasoning-empty"><p>Reasoning capabilities are unknown.</p><button type="button" onClick={onOpenSettings ?? (() => window.dispatchEvent(new Event("taucode:provider-settings")))}>Detect in Settings</button></div> : <div className="reasoning-slider">
           <div className="reasoning-rail" aria-hidden="true">
-            <span className="reasoning-fill">{Array.from({ length: 10 }, (_, dot) => <span className="reasoning-particle" key={dot} style={{ left: `${dot * 8}%`, top: `${20 + (dot % 3) * 25}%`, width: `${2 + dot % 2}px`, height: `${2 + dot % 2}px`, "--particle-drift": `${24 + (dot % 3) * 10}px`, "--particle-opacity": 0.35 + (dot % 3) * 0.125, animationDelay: `${dot * -0.43}s` } as CSSProperties} />)}</span>
+            <span className="reasoning-fill">{effects && Array.from({ length: 10 }, (_, dot) => <span className="reasoning-particle" key={dot} style={{ left: `${dot * 8}%`, top: `${20 + (dot % 3) * 25}%`, width: `${2 + dot % 2}px`, height: `${2 + dot % 2}px`, "--particle-drift": `${24 + (dot % 3) * 10}px`, "--particle-opacity": 0.35 + (dot % 3) * 0.125, animationDelay: `${dot * -0.43}s` } as CSSProperties} />)}</span>
             {levels.map((stop, stopIndex) => <span className="reasoning-tick" key={stop} style={{ left: `${last > 0 ? stopIndex / last * 100 : 0}%` }} />)}
             <span className="reasoning-thumb">{burning && Array.from({ length: 6 }, (_, ember) => <span className="reasoning-ember" key={ember} />)}</span>
           </div>

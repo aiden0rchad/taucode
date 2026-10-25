@@ -1,0 +1,10 @@
+{
+  "name": "taucode-engine-omp",
+  "private": true,
+  "description": "Pinned oh-my-pi (omp) coding agent runtime and Bun used by taucode's omp engine",
+  "type": "module",
+  "dependencies": {
+    "@oh-my-pi/pi-coding-agent": "18.12.6",
+    "bun": "1.4.4"
+  }
+}

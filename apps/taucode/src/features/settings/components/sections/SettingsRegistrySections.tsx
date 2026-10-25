@@ -1,3 +1,4 @@
+import { useEngines } from "@settings/engines";
 import { SettingsPage, SettingsButton, SettingsTextField, SettingsSelect, SettingsNumberStepper, SettingsTextArea, SettingsGroup, SettingsFieldRow, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { formatRelativeTimeShort } from "@utils/time";
@@ -107,11 +108,12 @@ export function SettingsProvidersSection({ appSettings, onUpdateAppSettings }: P
 }
 
 export function AgentPolicyEditor({ policy, providers, onChange, tab }: { tab?: "defaults" | "subagents" | "roles"; policy: AgentPolicy; providers: ProviderEntry[]; onChange: (p: AgentPolicy) => void }) {
+  const engines = useEngines();
   const models = providers.filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => ({ value: p.id + "/" + m.id, label: p.name + " / " + (m.displayName || m.id) })));
   const sub = policy.subagents;
   const modelSelect = (label: string, value: string, change: (value: string) => void) => <SettingsFieldRow  title={<>{label}</>}><SettingsSelect value={value} onChange={e => change(e.target.value)}><option value="">Inherit</option>{models.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</SettingsSelect></SettingsFieldRow>;
   return <div className="registry-policy">
-    {(!tab || tab === "defaults") && <SettingsGroup title="Defaults" subtitle="Engine enforcement: pi enforces every field. Codex enforces max concurrent, max depth, default subagent model, and roles."><SettingsFieldRow  title={<>Default engine</>}><SettingsSelect value={policy.defaultEngine} onChange={e => onChange({ ...policy, defaultEngine: e.target.value as AgentPolicy["defaultEngine"] })}><option value="pi">pi</option><option value="codex">codex</option><option value="claude" disabled={!providers.some(p => p.enabled && providerEngines(p).includes("claude") && p.models.some(m => m.enabled))}>Claude Code (ACP)</option></SettingsSelect></SettingsFieldRow>
+    {(!tab || tab === "defaults") && <SettingsGroup title="Defaults" subtitle="Engine enforcement: pi enforces every field. Codex enforces max concurrent, max depth, default subagent model, and roles."><SettingsFieldRow  title={<>Default engine</>}><SettingsSelect value={policy.defaultEngine} onChange={e => onChange({ ...policy, defaultEngine: e.target.value as AgentPolicy["defaultEngine"] })}>{engines.filter(e => e.enabled).map(e => <option key={e.id} value={e.id} disabled={e.id === "claude" && !providers.some(p => p.enabled && providerEngines(p).includes("claude") && p.models.some(m => m.enabled))}>{e.name}</option>)}</SettingsSelect></SettingsFieldRow>
     {!providers.some(p => p.enabled && providerEngines(p).includes("claude") && p.models.some(m => m.enabled)) && <small>Claude Code needs an enabled Anthropic or Anthropic-compatible provider and model.</small>}
 
     {modelSelect("Default model", modelKey(policy.defaultModel), v => onChange({ ...policy, defaultModel: modelRef(v) }))}

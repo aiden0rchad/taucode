@@ -432,8 +432,8 @@ export async function compactThread(workspaceId: string, threadId: string) {
   return invoke<any>("compact_thread", { workspaceId, threadId });
 }
 
-export type EngineRuntimeStatus = { engine: string; state: string; message: string };
-export function engineRuntime(action: "status" | "prepare", engine?: string) {
+export type EngineRuntimeStatus = { engine: string; state: string; message: string; version?: string; progress?: number };
+export function engineRuntime(action: "status" | "prepare" | "cancel", engine?: string) {
   return invoke<EngineRuntimeStatus[]>("engine_runtime", { action, engine: engine ?? null });
 }
 
@@ -1271,3 +1271,10 @@ export async function pickWorkAttachments(): Promise<string[]> {
 }
 
 export async function openBrowserDownloads(): Promise<void> { await openPath(await downloadDir()); }
+
+export function testEngine(definition: import("@/types").EngineDefinition) { return invoke<EngineRuntimeStatus>("engine_test", { definition }); }
+
+export async function pickEngineExecutable(): Promise<string | null> {
+  const selected = await open({ directory: false, multiple: false, title: "Choose engine executable" });
+  return typeof selected === "string" ? selected : null;
+}

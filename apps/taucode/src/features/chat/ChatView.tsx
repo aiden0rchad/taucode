@@ -1,4 +1,5 @@
 import { DigitalRain } from "@/features/themes/DigitalRain";
+import { useFeatures } from "@settings/features";
 import { threadEffortKey, useReasoningSelection } from "@/features/models/reasoning";
 import { SidebarResizeHandle } from "@/features/layout/components/SidebarResizeHandle";
 import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
@@ -25,6 +26,7 @@ import { RowMenu } from "./RowMenu";
 const examples = [{ label: "Explore an idea", prompt: "Explain something surprising about the ocean", Icon: Lightbulb }, { label: "Plan a weekend", prompt: "Help me plan a relaxing weekend", Icon: Calendar }, { label: "Write a story", prompt: "Give me three ideas for a short story", Icon: PenLine }];
 
 export function ChatView({ settings, onOpenSettings = () => {} }: { settings: AppSettings; onOpenSettings?: () => void }) {
+  const features = useFeatures();
   const chat = useChat();
   const { sidebarCollapsed, setSidebarCollapsed } = useSidebarState();
   const updateSettings = useModeSettings(settings);
@@ -150,7 +152,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
       </div>
       <form className="chat-composer chat-column" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }} onDrop={e => { e.preventDefault(); setDragOver(false); if (!disabled) addFiles(Array.from(e.dataTransfer.files)); }}>
         <input ref={fileInput} hidden type="file" aria-label="Attach files" multiple disabled={disabled} onChange={e => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
-        <ComposerShell reasoning={{ modelName: models.find(m => m.key === model)?.displayName || models.find(m => m.key === model)?.id, models: models.map(m => ({ id: m.key, name: m.displayName || m.id, provider: m.provider })), selectedModelId: model, defaultModelId: settings.agentPolicy?.defaultModel ? settings.agentPolicy.defaultModel.providerId + "/" + settings.agentPolicy.defaultModel.modelId : undefined, onSelectModel: selectModel, capability, value: reasoning.requested, onChange: reasoning.onChange, disabled, onOpenSettings }} menu={<><button type="button" disabled={disabled} onClick={() => fileInput.current?.click()}>Attach files or images</button>{settings.mcpServers?.some(c => c.id === "taucode-browser" && c.enabled) && <button type="button" disabled={disabled} aria-pressed={web} onClick={toggleWeb}><Globe aria-hidden />{web ? "Turn off Web" : "Turn on Web"}</button>}<button type="button" disabled={disabled || !model} onClick={() => { void run(async () => {
+        <ComposerShell reasoning={{ modelName: models.find(m => m.key === model)?.displayName || models.find(m => m.key === model)?.id, models: models.map(m => ({ id: m.key, name: m.displayName || m.id, provider: m.provider })), selectedModelId: model, defaultModelId: settings.agentPolicy?.defaultModel ? settings.agentPolicy.defaultModel.providerId + "/" + settings.agentPolicy.defaultModel.modelId : undefined, onSelectModel: selectModel, capability, value: reasoning.requested, onChange: reasoning.onChange, disabled, onOpenSettings }} menu={<><button type="button" disabled={disabled} onClick={() => fileInput.current?.click()}>Attach files or images</button>{features.browser && features.connectors && settings.mcpServers?.some(c => c.id === "taucode-browser" && c.enabled) && <button type="button" disabled={disabled} aria-pressed={web} onClick={toggleWeb}><Globe aria-hidden />{web ? "Turn off Web" : "Turn on Web"}</button>}<button type="button" disabled={disabled || !model} onClick={() => { void run(async () => {
           const value = defaultModel === model ? "" : model;
           const updated = await updateAppSettings({ ...await getAppSettings(), chatDefaultModel: modelRef(value) });
           updateSettings?.(updated);

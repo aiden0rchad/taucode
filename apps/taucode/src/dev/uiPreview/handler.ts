@@ -12,7 +12,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const state = createFixtures();
   const query = new URLSearchParams(search);
   const mode = query.get("mode");
-  if (query.get("dictation") === "ready") state.settings.dictationEnabled = true;
+  if (query.get("dictation") === "ready") { state.settings.dictationEnabled = true; state.settings.features = { ...state.settings.features, dictation: true }; }
   state.settings.windowModes = { main: query.has("settings") ? "code" : mode === "chat" || mode === "work" ? mode : "code" };
   const theme = query.get("theme");
   if (theme && (builtinIds.includes(theme) || theme === "system" || theme === customTheme.id)) state.settings.theme = theme;
@@ -177,7 +177,8 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "get_subagent_transcript": return { messages: [assistantMessage("review-result", "All tests pass. No issues found.")], truncated: false };
       case "model_list": return page(state.settings.providers?.flatMap(p => p.models.map(m => ({ id: `${p.id}/${m.id}`, model: `${p.id}/${m.id}`, displayName: m.displayName, description: p.name, isDefault: m.id === "gpt-5", reasoning: m.reasoning, providerId: p.id, providerName: p.name, modelId: m.id, engines: ["pi", "codex", "claude"], supportedReasoningEfforts: m.reasoning?.levels.map(level => ({ reasoningEffort: level, description: level })) ?? [], defaultReasoningEffort: m.reasoning?.default ?? null }))) ?? []);
       case "get_config_model": return { model: "openai/gpt-5" };
-      case "engine_runtime": return ["pi", "codex", "claude", "browser", "computer"].map(engine => ({ engine, state: "ready", message: "Runtime ready" }));
+      case "engine_test": return { engine: record(args.definition).id, state: "ready", version: "1.2.3", message: "Protocol handshake passed · v1.2.3 (preview)" };
+      case "engine_runtime": return ["pi", "omp", "codex", "claude-acp", "browser", "computer"].map(engine => ({ engine, state: "ready", message: engine === "omp" ? "Ready v18.12.6" : "Ready v1.4.0" }));
       case "get_git_status": {
         const files = args.workspaceId === "workspace-atlas" ? [{ path: "src/greeting.ts", status: "M", additions: 1, deletions: 1 }] : [];
         return { branchName: files.length ? "feature/welcome" : "", files, stagedFiles: [], unstagedFiles: files, totalAdditions: files.length, totalDeletions: files.length };

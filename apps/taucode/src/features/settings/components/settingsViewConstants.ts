@@ -93,6 +93,8 @@ export const SETTINGS_SECTION_LABELS: Record<CodexSection, string> = {
   computer: "Computer Use",
   codex: "Codex",
   features: "Features",
+  engines: "Engines",
+  "codex-flags": "Codex flags",
 };
 
 export const SHORTCUT_DRAFT_KEY_BY_SETTING: Record<

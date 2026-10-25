@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { browserRequest, subscribeBrowser } from "@services/tauri";
@@ -10,9 +11,11 @@ import { panelReducer, readPanel, workspaceLayout, type PanelTab, type PanelStat
 import type { WorkspaceShellProps } from "@/features/panels/SidePanel";
 
 export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowserSettings.searchUrl, onNavigate, reservedShortcuts = [] }: Pick<WorkspaceShellProps, "scope" | "tools" | "searchUrl" | "onNavigate" | "reservedShortcuts">) {
+  const features = useFeatures();
   const [saved, setSaved] = useState(() => ({ scope, state: readPanel(scope, tools.some(t => t.id === "task")) }));
   if (saved.scope !== scope) setSaved({ scope, state: readPanel(scope, tools.some(t => t.id === "task")) });
-  const state = saved.state;
+  const tabs = saved.state.tabs.filter(tab => tab.kind === "browser" ? features.browser : tools.some(t => t.id === tab.kind));
+  const state = { ...saved.state, tabs, active: tabs.some(t => t.id === saved.state.active) ? saved.state.active : null };
   const currentScope = useRef(scope); currentScope.current = scope;
   const update = useCallback((fn: (state: PanelState) => PanelState) => setSaved(previous => ({ ...previous, state: fn(previous.state) })), []);
   const browser = useBrowserController(false);
@@ -74,6 +77,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     if (scope.startsWith("code:")) window.dispatchEvent(new CustomEvent("taucode:panel-visibility", { detail: state.open }));
   }, [scope, state.open]);
   useEffect(() => {
+    if (!features.browser) return;
     let disposed = false; let stop: (() => void) | undefined;
     void subscribeBrowser(value => {
       if (disposed) return;
@@ -109,7 +113,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
       });
     }).then(unsubscribe => { if (disposed) unsubscribe(); else stop = unsubscribe; }).catch(e => { if (!disposed) setError(String(e)); });
     return () => { disposed = true; stop?.(); };
-  }, []);
+  }, [features.browser]);
   const openTool = useCallback((id: string, preserveActive = false) => {
     const tool = toolRef.current.find(t => t.id === id);
     if (tool) update(s => {
@@ -122,6 +126,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
   const activeId = active?.id, activeKind = active?.kind, activeTarget = active?.target;
   useEffect(() => { if (state.open && activeKind && activeKind !== "browser") toolRef.current.find(t => t.id === activeKind)?.onOpen?.({ id: activeId!, kind: activeKind, title: "", target: activeTarget }); }, [scope, state.open, activeId, activeKind, activeTarget]);
   const openPage = useCallback(async (input = "about:blank", existing?: PanelTab) => {
+    if (!features.browser) return;
     if (pending.current) return;
     setBusy(true); setError("");
     try {
@@ -137,7 +142,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
       setAddress("");
     } catch (e) { pending.current = null; setError(String(e)); }
     finally { setBusy(false); }
-  }, [scope, searchUrl, update]);
+  }, [scope, searchUrl, update, features.browser]);
   const pageRef = useRef(openPage); pageRef.current = openPage;
   const activeRef = useRef(active); activeRef.current = active;
   useEffect(() => { const tab = activeRef.current; if (state.open && tab?.kind === "browser") void pageRef.current(tab.url, tab); }, [scope, state.open, activeId, activeKind]);

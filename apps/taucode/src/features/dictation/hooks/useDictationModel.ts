@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useEffect, useState } from "react";
 import type { DictationModelStatus } from "../../../types";
 import {
@@ -17,6 +18,7 @@ type UseDictationModelResult = {
 };
 
 export function useDictationModel(modelId: string | null): UseDictationModelResult {
+  if (!useFeatures().dictation) modelId = null;
   const [status, setStatus] = useState<DictationModelStatus | null>(null);
 
   const refresh = useCallback(async () => {

@@ -79,7 +79,9 @@ pub(crate) async fn create(
     }
     // Pi copies the saved branch without switching or stopping the parent's RPC process.
     // Codex currently has no safe item-level fork contract in this adapter.
-    if !session.pi.owns(workspace, parent).await && params["atItemId"].is_string() {
+    let mut pi = session.pi.owns(workspace, parent).await;
+    for engine in session.extra_pi.lock().await.values() { pi |= engine.owns(workspace, parent).await; }
+    if !pi && params["atItemId"].is_string() {
         return Err("Codex side chats can currently fork only at the latest point".into());
     }
     let mut response = Box::pin(session.send_request_for_workspace(

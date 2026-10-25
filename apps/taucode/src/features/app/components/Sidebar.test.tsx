@@ -82,8 +82,8 @@ describe("Sidebar", () => {
         { id: null, name: "Ungrouped", workspaces: workspaces.slice(2) },
       ]} threadsByWorkspace={{ notes: [{ id: "note", name: "A note", updatedAt: 1 }] }} />);
     expect(container.querySelectorAll(".workspace-card.squircle")).toHaveLength(3);
-    expect(container.querySelectorAll(".ungrouped-card.squircle")).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Notes" }).closest(".ungrouped-card")).toBeTruthy();
+    expect(container.querySelector(".sidebar .squircle .squircle")).toBeNull();
+    expect(screen.getByRole("button", { name: "Notes" }).closest(".workspace-card.squircle")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Atlas" }).closest(".project-group-card")?.classList.contains("is-selected")).toBe(true);
     expect(screen.getByRole("button", { name: "Orbit" }).closest(".project-group-card")?.querySelector(".workspace-card-content")?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.getByText("A note").closest(".project-group-card")).toBe(screen.getByRole("button", { name: "Notes" }).closest(".project-group-card"));

@@ -384,6 +384,8 @@ pub(crate) struct RemoteBackendTarget {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct AppSettings {
+    #[serde(default)] pub features: Features,
+    #[serde(default)] pub engines: Vec<EngineDefinition>,
     #[serde(default, rename = "windowModes")]
     pub(crate) window_modes: std::collections::HashMap<String, String>,
     #[serde(default, rename = "chatDefaultModel")]
@@ -1150,6 +1152,8 @@ fn default_codegraph_enabled() -> bool {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            features: Features::default(),
+            engines: Vec::new(),
             browser: Default::default(),
             computer: Default::default(),
             mcp_servers: default_mcp_servers(),
@@ -1453,14 +1457,67 @@ mod tests {
     }
 }
 // Registry and engine policy are owned by taucode, independent of engine config.
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum EngineKind {
-    Codex,
-    Claude,
-    #[default]
-    #[serde(other)]
-    Pi,
+pub(crate) type EngineKind = String;
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum EngineProtocol { PiRpc, CodexAppServer, Acp }
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EngineDefinition {
+    pub id: String,
+    pub name: String,
+    pub protocol: EngineProtocol,
+    #[serde(default)] pub built_in: bool,
+    #[serde(default)] pub command: Option<String>,
+    #[serde(default)] pub args: Vec<String>,
+    #[serde(default)] pub env: std::collections::HashMap<String, String>,
+    #[serde(default)] pub config_dir_env: Option<String>,
+    #[serde(default = "feature_on")] pub enabled: bool,
+    #[serde(default)] pub description: Option<String>,
+}
+fn feature_on() -> bool { true }
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(default, rename_all = "camelCase")]
+pub(crate) struct Features {
+    pub git: bool,
+    pub worktrees: bool,
+    pub browser: bool,
+    pub computer_use: bool,
+    pub terminal: bool,
+    pub side_chats: bool,
+    pub subagents: bool,
+    pub checkpoints: bool,
+    pub chat_mode: bool,
+    pub work_mode: bool,
+    pub connectors: bool,
+    pub import_tools: bool,
+    pub dictation: bool,
+    pub reasoning_effects: bool,
+}
+impl Default for Features {
+    fn default() -> Self { Self {
+        git: true,
+        worktrees: true,
+        browser: true,
+        computer_use: true,
+        terminal: true,
+        side_chats: true,
+        subagents: true,
+        checkpoints: true,
+        chat_mode: true,
+        work_mode: true,
+        connectors: true,
+        import_tools: true,
+        dictation: true,
+        reasoning_effects: true,
+    } }
+}
+impl AppSettings {
+    pub fn features(&self) -> Features {
+        let mut features = self.features.clone();
+        features.worktrees &= features.git;
+        features
+    }
 }
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -1601,13 +1658,14 @@ impl Default for SubagentPolicy {
         }
     }
 }
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct AgentPolicy {
     pub default_model: Option<ModelRef>,
     pub default_engine: EngineKind,
     pub subagents: SubagentPolicy,
 }
+impl Default for AgentPolicy { fn default() -> Self { Self { default_model: None, default_engine: "pi".into(), subagents: SubagentPolicy::default() } } }
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct SubagentPolicyOverride {

@@ -194,8 +194,8 @@ pub(crate) fn effective_policy(
         if let Some(m) = &o.default_model {
             p.default_model = Some(m.clone());
         }
-        if let Some(e) = o.default_engine {
-            p.default_engine = e;
+        if let Some(e) = &o.default_engine {
+            p.default_engine = e.clone();
         }
         if let Some(s) = &o.subagents {
             macro_rules! merge { ($($field:ident),*) => { $(if let Some(v) = &s.$field { p.subagents.$field = v.clone(); })* }; }
@@ -815,7 +815,7 @@ mod tests {
         )
         .unwrap();
         let mut policy = effective_policy(&AgentPolicy::default(), Some(&over));
-        assert_eq!(policy.default_engine, EngineKind::Codex);
+        assert_eq!(policy.default_engine, "codex".to_owned());
         assert_eq!(policy.subagents.max_concurrent, 7);
         assert_eq!(policy.subagents.max_per_turn, 8);
         assert_eq!(policy.subagents.roles.len(), 3);

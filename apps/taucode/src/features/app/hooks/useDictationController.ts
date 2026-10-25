@@ -1,3 +1,4 @@
+import { features } from "@settings/features";
 import { useCallback, useEffect, useRef } from "react";
 import { useDictation } from "../../dictation/hooks/useDictation";
 import { useDictationModel } from "../../dictation/hooks/useDictationModel";
@@ -23,7 +24,8 @@ type DictationController = {
 };
 
 export function useDictationController(appSettings: AppSettings): DictationController {
-  const dictationModel = useDictationModel(appSettings.dictationModelId);
+  appSettings = { ...appSettings, dictationEnabled: appSettings.dictationEnabled && features(appSettings).dictation };
+  const dictationModel = useDictationModel(features(appSettings).dictation ? appSettings.dictationModelId : null);
   const {
     state: dictationState,
     level: dictationLevel,

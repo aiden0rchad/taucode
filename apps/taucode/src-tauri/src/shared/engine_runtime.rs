@@ -12,11 +12,15 @@ use std::{
 };
 use tokio::process::Command;
 
+static INSTALLS: OnceLock<std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Notify>>>> = OnceLock::new();
+pub(crate) fn cancel(engine: &str) {
+    if let Some(notify) = INSTALLS.get_or_init(Default::default).lock().unwrap().get(engine) { notify.notify_one(); }
+}
 pub(crate) static RESOURCES: OnceLock<PathBuf> = OnceLock::new();
 
 fn manifest(engine: &str) -> Result<&'static str, String> {
     match engine {
-        "pi" | "browser" | "claude-acp" => Ok("package-lock.json"),
+        "pi" | "omp" | "browser" | "claude-acp" => Ok("package-lock.json"),
         "computer" | "work" => Ok("uv.lock"),
         _ => Err("Unknown engine runtime".into()),
     }
@@ -58,6 +62,7 @@ pub(crate) fn source(engine: &str, resource: Option<&Path>) -> Result<PathBuf, S
 fn executable(engine: &str) -> &'static str {
     match engine {
         "pi" => "node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js",
+        "omp" => "node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js",
         "browser" => "node_modules/@playwright/mcp/cli.js",
         "claude-acp" => "node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js",
         _ if cfg!(windows) => ".venv/Scripts/python.exe",
@@ -77,17 +82,44 @@ fn status_file(data: &Path, engine: &str, state: &str, message: &str) -> Result<
 }
 
 pub(crate) async fn status(data: &Path) -> Value {
-    let mut status = json!(["pi", "browser", "computer", "claude-acp", "work"].map(|engine| {
+    let mut status = json!(["pi", "browser", "computer", "claude-acp", "work", "omp"].map(|engine| {
         fs::read(data.join("engines").join(format!("{engine}-setup.json"))).ok()
             .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
             .unwrap_or_else(|| json!({"engine":engine,"state":"pending","message":"Ready to set up on first use"}))
     }));
+    for engine in ["pi", "omp", "claude-acp"] {
+        let installed = data.join("engines").join(engine);
+        let dir = if installed.join(executable(engine)).is_file() { Some(installed) } else {
+            #[cfg(debug_assertions)] { source(engine, None).ok().filter(|p| p.join(executable(engine)).is_file()) }
+            #[cfg(not(debug_assertions))] { None }
+        };
+        if let Some(dir) = dir {
+            let package = match engine { "omp" => "@oh-my-pi/pi-coding-agent", "pi" => "@earendil-works/pi-coding-agent", _ => "@agentclientprotocol/claude-agent-acp" };
+            let version = fs::read(dir.join("node_modules").join(package).join("package.json")).ok().and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok()).and_then(|v| v["version"].as_str().map(str::to_owned)).unwrap_or_default();
+            if let Some(row) = status.as_array_mut().and_then(|rows| rows.iter_mut().find(|r| r["engine"] == engine)) {
+                if !matches!(row["state"].as_str(), Some("installing" | "preparing")) {
+                    let bun = engine != "omp" || dir.join("node_modules/.bin/bun").is_file();
+                    row["state"] = json!(if bun { "ready" } else { "error" });
+                    row["message"] = json!(if bun { format!("Ready v{version}") } else { "Bun is missing; reinstall oh-my-pi".into() });
+                }
+            }
+        }
+    }
     if let Err(error) = check_node(&std::env::var_os("TAUCODE_NODE").unwrap_or_else(|| "node".into())).await {
         if let Some(claude) = status.as_array_mut().and_then(|r| r.iter_mut().find(|r| r["engine"] == "claude-acp")) {
             claude["state"] = json!("error");
             claude["message"] = json!(error);
         }
     }
+    let settings = super::engine_registry::settings(Some(data));
+    let mut command = Command::new(settings.codex_bin.as_deref().unwrap_or("codex"));
+    command.arg("--version").stdin(Stdio::null()).kill_on_drop(true);
+    let (state, message) = match tokio::time::timeout(Duration::from_secs(3), command.output()).await {
+        Ok(Ok(output)) if output.status.success() => ("ready", format!("Ready {}", String::from_utf8_lossy(&output.stdout).trim())),
+        Ok(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => ("pending", "Install Codex to use this engine".into()),
+        _ => ("error", "Codex version check failed".into()),
+    };
+    status.as_array_mut().unwrap().push(json!({"engine":"codex","state":state,"message":message}));
     status
 }
 
@@ -124,6 +156,8 @@ pub(crate) async fn prepare(
     resource: Option<&Path>,
 ) -> Result<PathBuf, String> {
     let lock_name = manifest(engine)?;
+    let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
+    INSTALLS.get_or_init(Default::default).lock().unwrap().insert(engine.into(), cancel.clone());
     let root = data.join("engines");
     fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     // The browser launcher, daemon and app can all request the same install.
@@ -167,15 +201,26 @@ pub(crate) async fn prepare(
                 cmd.args(["ci", "--omit=dev", "--no-audit", "--no-fund"]);
                 cmd
             };
-            let output = command.current_dir(&dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true).status().await
+            let mut child = command.current_dir(&dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true).spawn()
                 .map_err(|_| if matches!(engine, "computer" | "work") { "Install uv to prepare Computer Use" } else { "Install system Node >=22.19 and npm to prepare this runtime" })?;
+            let output = tokio::select! {
+                output = child.wait() => output.map_err(|e| e.to_string())?,
+                _ = cancel.notified() => { super::process_core::kill_child_process_tree(&mut child).await; return Err("Installation cancelled".into()); }
+            };
             if !output.success() || !dir.join(executable(engine)).is_file() {
                 return Err(format!("{engine} runtime installation failed. Check {} and network access, then retry setup in Settings.", if matches!(engine, "computer" | "work") { "uv" } else { "Node >=22.19 and npm" }));
             }
             fs::write(dir.join(".installed-lock"), locked).map_err(|e| e.to_string())?;
         }
+        if engine == "omp" {
+            let bun = dir.join("node_modules/.bin/bun");
+            let version = Command::new(&bun).arg("--version").output().await.map_err(|_| "Bun is missing; reinstall oh-my-pi")?;
+            let parts: Vec<u32> = String::from_utf8_lossy(&version.stdout).trim().split('.').filter_map(|part| part.parse().ok()).collect();
+            if !version.status.success() || parts.len() != 3 || parts.as_slice() < [1, 3, 14].as_slice() { return Err("oh-my-pi requires Bun >= 1.3.14".into()); }
+        }
         Ok(dir)
     }.await;
+    INSTALLS.get_or_init(Default::default).lock().unwrap().remove(engine);
     match &result {
         Ok(_) => status_file(data, engine, "ready", "Ready")?,
         Err(error) => status_file(data, engine, "error", error)?,
@@ -186,6 +231,17 @@ pub(crate) async fn prepare(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn omp_install_copies_bundled_auth_guard_without_dependencies() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/omp");
+        let target = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let bundle: Value = serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        assert_eq!(bundle["bundle"]["resources"]["../engines/omp/no-accounts.mjs"], "engines/omp/no-accounts.mjs");
+        copy_tree(&source, &target).unwrap();
+        assert_eq!(fs::read(target.join("no-accounts.mjs")).unwrap(), fs::read(source.join("no-accounts.mjs")).unwrap());
+        assert!(!target.join("node_modules").exists());
+        fs::remove_dir_all(target).unwrap();
+    }
     #[test]
     fn copy_tree_adds_updates_prunes_and_preserves_installed_dependencies() {
         let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
@@ -272,7 +328,7 @@ mod tests {
     #[test]
     fn resolves_packaged_daemon_and_debug_paths_without_release_fallback() {
         let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
-        for engine in ["pi", "browser", "computer", "claude-acp", "work"] {
+        for engine in ["pi", "browser", "computer", "claude-acp", "work", "omp"] {
             for dir in [
                 root.join("resources/engines"),
                 root.join("bin/engines"),

@@ -1,3 +1,5 @@
+import { features } from "../features";
+import { engineRegistry } from "../engines";
 import { defaultAgentPolicy } from "../registry";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppSettings } from "@/types";
@@ -250,6 +252,8 @@ function normalizeAppSettings(settings: AppSettings): AppSettings {
   return {
     ...settings,
     ...remoteBackendSettings,
+    features: features(settings),
+    engines: engineRegistry(settings),
     codegraphEnabled: settings.codegraphEnabled ?? true,
     codexBin: settings.codexBin?.trim() ? settings.codexBin.trim() : null,
     codexArgs: settings.codexArgs?.trim() ? settings.codexArgs.trim() : null,

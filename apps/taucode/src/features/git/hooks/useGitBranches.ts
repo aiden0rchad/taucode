@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BranchInfo, DebugEntry, WorkspaceInfo } from "../../../types";
 import {
@@ -13,6 +14,7 @@ type UseGitBranchesOptions = {
 };
 
 export function useGitBranches({ activeWorkspace, onDebug }: UseGitBranchesOptions) {
+  if (!useFeatures().git) activeWorkspace = null;
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const lastFetchedWorkspaceId = useRef<string | null>(null);

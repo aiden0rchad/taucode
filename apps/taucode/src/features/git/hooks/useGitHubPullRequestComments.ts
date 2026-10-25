@@ -1,3 +1,4 @@
+import { useFeatures } from "@settings/features";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GitHubPullRequestComment, WorkspaceInfo } from "../../../types";
 import { getGitHubPullRequestComments } from "../../../services/tauri";
@@ -19,6 +20,7 @@ export function useGitHubPullRequestComments(
   prNumber: number | null,
   enabled: boolean,
 ) {
+  if (!useFeatures().git) activeWorkspace = null;
   const [state, setState] = useState<PullRequestCommentsState>(emptyState);
   const requestIdRef = useRef(0);
   const workspaceIdRef = useRef<string | null>(activeWorkspace?.id ?? null);

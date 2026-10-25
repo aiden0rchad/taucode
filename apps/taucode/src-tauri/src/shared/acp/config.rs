@@ -23,15 +23,7 @@ pub(super) fn environment(
     if token.trim().is_empty() {
         return Err("Save an API key for this provider in Settings".into());
     }
-    let mut env: BTreeMap<_, _> = parent
-        .into_iter()
-        .filter(|(key, _)| {
-            matches!(
-                key.as_str(),
-                "PATH" | "HOME" | "LANG" | "TMPDIR" | "SYSTEMROOT" | "WINDIR"
-            )
-        })
-        .collect();
+    let mut env: BTreeMap<_, _> = super::super::engine_registry::environment(parent, home).into_iter().collect();
     env.insert("CLAUDE_CONFIG_DIR".into(), home.to_string_lossy().into());
     env.insert(
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".into(),

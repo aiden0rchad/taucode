@@ -4,7 +4,7 @@ use super::*;
 fn unknown_engine_migrates_to_default() {
     assert_eq!(
         serde_json::from_value::<crate::types::EngineKind>(json!("future")).unwrap(),
-        crate::types::EngineKind::Pi
+        "future".to_owned()
     );
 }
 
@@ -78,7 +78,7 @@ fn registry_auth_environment_is_allowlisted_and_isolated() {
     .unwrap();
     assert_eq!(env["ANTHROPIC_API_KEY"], "registry-key");
     assert_eq!(env["CLAUDE_CONFIG_DIR"], "/app/claude/workspace");
-    assert_eq!(env["HOME"], "/home/user");
+    assert_eq!(env["HOME"], "/app/claude/workspace");
     assert_eq!(env["ANTHROPIC_BASE_URL"], "https://api.example.test");
     assert!(!env.contains_key("CLAUDE_CODE_OAUTH_TOKEN"));
     assert!(!env.contains_key("CLAUDE_CODE_USE_BEDROCK"));

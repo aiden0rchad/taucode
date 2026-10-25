@@ -212,6 +212,7 @@ impl Work {
         session
     }
     async fn pump(&self, state: &mut State) {
+        if !super::engine_registry::features(Some(&self.data)).work_mode { return; }
         while let Some(index) = next_task(&state.store) {
             state.store.tasks[index].status = "running".into();
             if let Err(error) = self.save(&state.store) {
@@ -242,7 +243,7 @@ impl Work {
         let text = format!("{}\n\nAttached files (inside this space):\n{}\n\nRead-only folders:\n{}", task.brief, task.attachments.join("\n"), space.read_only_folders.join("\n"));
         let params = json!({"threadId":thread,"accessMode":task.access_mode,"effort":task.effort,"input":[{"type":"text","text":text}]});
         let checkpoints = session.checkpoints.as_ref().unwrap();
-        checkpoints.before(&space.id, &thread, "pi", &params).await?;
+        if super::engine_registry::features(Some(&self.data)).checkpoints { checkpoints.before(&space.id, &thread, "pi", &params).await?; }
         if let Err(error) = session.pi.request(&space.id, "turn/start", params).await {
             if let Some(finish) = checkpoints.complete(&space.id, &thread) { let _ = finish.await; }
             return Err(error);
@@ -293,6 +294,7 @@ impl Work {
         Ok(())
     }
     pub async fn request(self: &Arc<Self>, settings: &AppSettings, action: &str, params: Value) -> Result<Value, String> {
+        if !settings.features().work_mode && !matches!(action, "stop" | "interrupt" | "list" | "read") { return Err("Enable Work in Settings → Features".into()); }
         let mut state = self.state.lock().await;
         self.initialize(&mut state).await?;
         state.settings = settings.clone();
