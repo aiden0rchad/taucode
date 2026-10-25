@@ -17,7 +17,6 @@
   --thread-subagent-pill-accent: 56%;
   --thread-subagent-pill-hue: 228;
   --thread-subagent-pill-saturation: 72%;
-  --titlebar-drag-strip-z-index: 2;
   --window-caption-gap: 0px;
   --window-caption-width: 0px;
   --window-drag-hit-height: var(--titlebar-height);
@@ -121,7 +120,7 @@ button.icon-button:hover, .main-header-action:hover { background: var(--surface-
 .composer-shell .composer-attachment-thumb, .composer-shell .chat-attachments img { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; }
 .chat-attachments button, .composer-attachment-remove { opacity: 0; }
 .chat-attachments li:hover button, .chat-attachments li:focus-within button, .composer-attachment:hover .composer-attachment-remove, .composer-attachment:focus-within .composer-attachment-remove { opacity: 1; }
-.composer-drop-overlay { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: var(--surface-composer); border: 2px dashed var(--border-accent); border-radius: var(--radius-composer); pointer-events: none; }
+.composer-drop-overlay { position: absolute; inset: 0; z-index: var(--z-sticky); display: grid; place-items: center; background: var(--surface-composer); border: 2px dashed var(--border-accent); border-radius: var(--radius-composer); pointer-events: none; }
 .composer-followup-hint { display: none; }
 .chat-main.is-empty .chat-scroll { flex: 0 1 auto; overflow: visible; padding-bottom: 0; }
 .chat-main.is-empty { overflow-y: auto; }

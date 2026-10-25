@@ -19,7 +19,7 @@
   left: 0;
   right: 0;
   height: var(--side-panel-drag-strip-height, 0px);
-  z-index: var(--titlebar-drag-strip-z-index, 2);
+  z-index: var(--z-sticky);
   pointer-events: var(--window-drag-strip-pointer-events, auto);
 }
 
@@ -39,7 +39,7 @@
 .workspace-drop-overlay {
   position: absolute;
   inset: 0;
-  z-index: 8;
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -101,7 +101,7 @@
   margin-bottom: 0;
   -webkit-app-region: no-drag;
   position: relative;
-  z-index: 6;
+  z-index: var(--z-sticky);
 }
 
 .sidebar-header-title {
@@ -212,7 +212,7 @@
   padding: 6px;
   max-height: min(72vh, 420px);
   overflow-y: auto;
-  z-index: 14;
+  z-index: var(--z-popover);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -334,7 +334,7 @@
 .sidebar-search {
   position: sticky;
   top: 0;
-  z-index: 4;
+  z-index: var(--z-sticky);
   padding: 6px 4px 10px;
 }
 
@@ -757,7 +757,7 @@
     background 150ms ease,
     border-color 150ms ease,
     box-shadow 150ms ease;
-  z-index: -1;
+  z-index: var(--z-behind);
 }
 
 .workspace-row.active {
@@ -926,7 +926,7 @@
   flex-direction: column;
   gap: 4px;
   min-width: 160px;
-  z-index: 9999;
+  z-index: var(--z-popover);
 }
 
 .all-threads-add-menu {

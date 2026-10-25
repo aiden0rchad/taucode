@@ -1,5 +1,5 @@
 .mobile-setup-wizard-overlay {
-  z-index: calc(var(--ds-layer-modal, 40) + 80);
+  z-index: var(--z-sticky);
 }
 
 .mobile-setup-wizard-overlay .ds-modal-backdrop {

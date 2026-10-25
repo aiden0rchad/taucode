@@ -42,5 +42,5 @@ export function AnchoredPopover({ anchorRef, surfaceRef, style, ...props }: Prop
       window.visualViewport?.removeEventListener("scroll", place);
     };
   }, [anchorRef, surfaceRef]);
-  return createPortal(<PopoverSurface {...props} ref={surfaceRef} style={{ color: "var(--text-primary)", ...style, position: "fixed", top: "auto", right: "auto", minWidth: 0, boxSizing: "border-box", overflowY: "auto", zIndex: 1000 }} />, document.body);
+  return createPortal(<PopoverSurface {...props} ref={surfaceRef} style={{ color: "var(--text-primary)", ...style, position: "fixed", top: "auto", right: "auto", minWidth: 0, boxSizing: "border-box", overflowY: "auto", zIndex: anchorRef.current?.closest(".ds-modal") ? "var(--z-tooltip)" : "var(--z-popover)" }} />, document.body);
 }

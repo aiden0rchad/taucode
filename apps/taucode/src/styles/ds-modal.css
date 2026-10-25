@@ -1,10 +1,12 @@
 .ds-modal {
+  font-family: var(--ui-font-family);
   position: fixed;
   inset: 0;
-  z-index: var(--ds-layer-modal, 40);
+  z-index: var(--z-modal);
 }
 
 .ds-modal-backdrop {
+  z-index: var(--z-modal-scrim);
   position: absolute;
   inset: 0;
   background: var(--ds-modal-backdrop);
@@ -20,6 +22,7 @@
 }
 
 .ds-modal-card {
+  z-index: var(--z-modal);
   position: absolute;
   top: 50%;
   left: 50%;

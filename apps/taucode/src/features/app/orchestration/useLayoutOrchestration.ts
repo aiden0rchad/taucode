@@ -72,7 +72,6 @@ export function useAppShellOrchestration({
       ...(isWindows
         ? {
             "--titlebar-height": "8px",
-            "--titlebar-drag-strip-z-index": "5",
             "--side-panel-drag-strip-height": "56px",
             "--window-drag-hit-height": "44px",
             "--window-drag-strip-pointer-events": "none",

@@ -9,7 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppSettings, WorkspaceInfo } from "@/types";
 import {
   connectWorkspace,
@@ -1861,40 +1861,40 @@ describe("SettingsView mobile layout", () => {
       );
 
       expect(
-        within(rendered.container).queryByText("Sections"),
+        within(rendered.baseElement).queryByText("Sections"),
       ).toBeNull();
       expect(
-        rendered.container.querySelectorAll(".ds-panel-nav-item-disclosure")
+        rendered.baseElement.querySelectorAll(".ds-panel-nav-item-disclosure")
           .length,
       ).toBeGreaterThan(0);
 
       fireEvent.click(
-        within(rendered.container).getByRole("button", {
+        within(rendered.baseElement).getByRole("button", {
           name: "Display & Sound",
         }),
       );
 
       await waitFor(() => {
         expect(
-          within(rendered.container).getByRole("button", {
+          within(rendered.baseElement).getByRole("button", {
             name: "Back to settings sections",
           }),
         ).toBeTruthy();
         expect(
-          within(rendered.container).getByText("Display & Sound", {
+          within(rendered.baseElement).getByText("Display & Sound", {
             selector: ".settings-mobile-detail-title",
           }),
         ).toBeTruthy();
       });
 
       fireEvent.click(
-        within(rendered.container).getByRole("button", {
+        within(rendered.baseElement).getByRole("button", {
           name: "Back to settings sections",
         }),
       );
 
       await waitFor(() => {
-        expect(within(rendered.container).queryByText("Sections")).toBeNull();
+        expect(within(rendered.baseElement).queryByText("Sections")).toBeNull();
       });
     } finally {
       if (originalMatchMedia) {
@@ -2014,7 +2014,7 @@ describe("SettingsView Shortcuts", () => {
 
   it("closes when clicking the modal backdrop", async () => {
     const onClose = vi.fn();
-    const { container } = render(
+    const { baseElement } = render(
       <SettingsView
         workspaceGroups={[]}
         groupedWorkspaces={[]}
@@ -2043,7 +2043,7 @@ describe("SettingsView Shortcuts", () => {
       />,
     );
 
-    const backdrop = container.querySelector(".ds-modal-backdrop");
+    const backdrop = baseElement.querySelector(".ds-modal-backdrop");
     expect(backdrop).toBeTruthy();
     if (!backdrop) {
       throw new Error("Expected settings modal backdrop");
@@ -2132,3 +2132,5 @@ describe("SettingsView Shortcuts", () => {
     });
   });
 });
+
+afterEach(cleanup);

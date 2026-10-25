@@ -38,9 +38,17 @@
   --ds-diff-lib-bg-system-light: color-mix(in srgb, rgb(255, 255, 255) 35%, var(--surface-app));
   --ds-diff-lib-bg-system-dark: color-mix(in srgb, rgb(10, 12, 16) 35%, var(--surface-app));
 
-  /* Global layer scale (keep numeric so it works with z-index + calc()). */
-  --ds-layer-modal: 10000;
-  --ds-layer-toast: 11000;
+  /* One layer scale, from local decoration through global overlays. */
+  --z-behind: -1;
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-panel: 20;
+  --z-sheet: 30;
+  --z-popover: 40;
+  --z-modal-scrim: 50;
+  --z-modal: 51;
+  --z-toast: 60;
+  --z-tooltip: 70;
 
   /* ── Motion ── */
   --ds-dur-fast: 120ms;

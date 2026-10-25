@@ -1,4 +1,5 @@
 import type { MouseEventHandler, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { joinClassNames } from "../classNames";
 
 type ModalShellProps = {
@@ -20,7 +21,7 @@ export function ModalShell({
   ariaLabelledBy,
   ariaDescribedBy,
 }: ModalShellProps) {
-  return (
+  return createPortal(
     <div
       className={joinClassNames("ds-modal", className)}
       role="dialog"
@@ -31,6 +32,6 @@ export function ModalShell({
     >
       <div className="ds-modal-backdrop" onClick={onBackdropClick} />
       <div className={joinClassNames("ds-modal-card", cardClassName)}>{children}</div>
-    </div>
+    </div>, document.body
   );
 }

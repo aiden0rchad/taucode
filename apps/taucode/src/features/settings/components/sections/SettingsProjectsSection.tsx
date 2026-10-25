@@ -1,4 +1,4 @@
-import { SettingsTextField, SettingsButton, SettingsSelect, SettingsPage, SettingsGroup } from "@/features/design-system/components/settings/SettingsPrimitives";
+import { SettingsFieldRow, SettingsTextField, SettingsButton, SettingsSelect, SettingsPage, SettingsGroup } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { CodegraphProjectSettings } from "./CodegraphProjectSettings";
 import type { WorkspaceSettings } from "@/types";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
@@ -213,7 +213,7 @@ export function SettingsProjectsSection({
                     <div className="settings-project-path">{workspace.path}</div>
                     <CodegraphProjectSettings workspace={workspace} globalEnabled={codegraphEnabled} onUpdate={onUpdateWorkspaceSettings} />
                   </div>
-                  <div className="settings-project-actions">
+                  <SettingsFieldRow title="Group">
                     <SettingsSelect
                       className="settings-select settings-select--compact"
                       aria-label={"Group for " + workspace.name}
@@ -230,6 +230,8 @@ export function SettingsProjectsSection({
                         </option>
                       ))}
                     </SettingsSelect>
+                  </SettingsFieldRow>
+                  <div className="settings-project-actions">
                     <SettingsButton
                       type="button"
                       className="ghost icon-button"

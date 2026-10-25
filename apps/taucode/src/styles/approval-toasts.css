@@ -5,7 +5,7 @@
   width: min(460px, calc(100vw - 48px));
   max-height: min(520px, calc(100vh - 140px));
   overflow: auto;
-  z-index: 5;
+  z-index: var(--z-toast);
   pointer-events: auto;
   -webkit-app-region: no-drag;
   transform: translate(-50%, -50%);

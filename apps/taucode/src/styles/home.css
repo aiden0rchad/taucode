@@ -429,7 +429,7 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;
-  z-index: 2;
+  z-index: var(--z-sticky);
 }
 
 .home-usage-bar:hover::after {

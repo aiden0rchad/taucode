@@ -87,7 +87,7 @@
   bottom: calc(100% + 4px);
   min-width: 110px;
   padding: 4px;
-  z-index: 40;
+  z-index: var(--z-popover);
 }
 
 .composer-followup-hint {
@@ -180,7 +180,7 @@
   padding: 6px;
   display: grid;
   gap: 4px;
-  z-index: 30;
+  z-index: var(--z-popover);
 }
 
 .composer-attach {
@@ -257,7 +257,7 @@
     opacity 0.15s ease,
     transform 0.15s ease;
   pointer-events: none;
-  z-index: 20;
+  z-index: var(--z-popover);
 }
 
 .workspace-home .composer-attachment:hover .composer-attachment-preview,
@@ -561,7 +561,7 @@
   right: auto;
   bottom: calc(100% + 6px);
   top: auto;
-  z-index: 10;
+  z-index: var(--z-popover);
   display: grid;
   gap: 4px;
   padding: 8px;
