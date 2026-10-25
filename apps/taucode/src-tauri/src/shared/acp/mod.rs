@@ -319,7 +319,7 @@ impl ClaudeAcpEngine {
         } else { config::environment(std::env::vars(), &home, provider, token.as_deref().ok_or("Save an API key for this provider in Settings")?, model)? };
         let (_, mut secrets) = config::mcp_servers(&connectors, self.keys.as_ref(), workspace)?;
         secrets.extend(token);
-        let node = std::env::var("TAUCODE_NODE").unwrap_or_else(|_| "node".into());
+        let node = super::engine_runtime::node_path();
         #[cfg(test)]
         let (node, cli) = if self.fake {
             (
@@ -345,6 +345,7 @@ impl ClaudeAcpEngine {
         command
             .env_clear()
             .envs(env)
+            .env("PATH", super::engine_runtime::node_path_env(&super::engine_runtime::node_path())?)
             .current_dir(cwd);
         if let Some(definition) = &self.definition {
             command.envs(&definition.env).env("HOME", &home).env("XDG_CONFIG_HOME", &home).env("OTEL_SDK_DISABLED", "true");

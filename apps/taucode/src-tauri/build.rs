@@ -13,7 +13,21 @@ fn main() {
         }
         engine_files::copy_tree(&source, &target).expect("stage engine resources");
     }
+    // The CLI bundles these after beforeBundleCommand builds the real helpers.
+    // tauri-build must not copy stale sidecars over Cargo's own output binaries.
+    let original = std::env::var_os("TAURI_CONFIG");
+    let mut config: serde_json::Value = original.as_ref()
+        .map(|v| serde_json::from_str(&v.to_string_lossy()).expect("TAURI_CONFIG JSON"))
+        .unwrap_or_else(|| serde_json::json!({}));
+    config["bundle"]["externalBin"] = serde_json::json!([]);
+    // Resource staging belongs to the CLI bundler, not Cargo's target output.
+    config["bundle"]["resources"] = serde_json::json!([]);
+    std::env::set_var("TAURI_CONFIG", config.to_string());
     tauri_build::build();
+    match original {
+        Some(value) => std::env::set_var("TAURI_CONFIG", value),
+        None => std::env::remove_var("TAURI_CONFIG"),
+    }
 
     // ScreenCaptureKit's Swift bridge needs the active toolchain's compatibility libraries.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {

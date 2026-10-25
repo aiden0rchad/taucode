@@ -313,3 +313,25 @@ it.each(["code", "chat", "work"].flatMap(mode => [500, 740].map(width => ({ mode
   expect(input.closest(".composer-shell")).toBeTruthy();
   expect(document.querySelector(".tablet-nav")).toBeNull();
 });
+
+it.each(["", "?setup=0", "?setup=1"])("opens the checklist only for the setup preview flag: %s", async query => {
+  vi.stubEnv("MODE", "uipreview");
+  window.history.replaceState(null, "", "/" + query);
+  localStorage.setItem("taucode.setup-checklist.v1", "done");
+  installUiPreview();
+  const warn = vi.spyOn(console, "warn");
+  render(<App />);
+  await screen.findByRole("button", { name: "Open settings" });
+  if (query === "?setup=1") {
+    const dialog = within(screen.getByRole("dialog", { name: "Welcome to taucode" }));
+    const status = (name: string) => within(dialog.getByRole("group", { name })).getByRole("status");
+    await waitFor(() => expect(status("Screen Recording").textContent).toBe("Granted"));
+    expect(status("Accessibility").textContent).toBe("Not granted");
+    expect(status("Codegraph").textContent).toBe("Ready");
+    expect(dialog.queryByText("Checking")).toBeNull();
+    expect(dialog.getAllByRole("group")).toHaveLength(6);
+    fireEvent.click(dialog.getByRole("button", { name: "Done" }));
+  }
+  expect(screen.queryByRole("dialog", { name: "Welcome to taucode" })).toBeNull();
+  expect(warn.mock.calls.filter(([message]) => String(message).includes("Unhandled IPC"))).toEqual([]);
+});

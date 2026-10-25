@@ -6,8 +6,9 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
+    "beforeBuildCommand": "node scripts/bundle-node.mjs && npm run build",
+    "frontendDist": "../dist",
+    "beforeBundleCommand": "node scripts/bundle-helpers.mjs"
   },
   "app": {
     "windows": [
@@ -82,8 +83,15 @@
       "../engines/omp/package.json": "engines/omp/package.json",
       "../engines/omp/package-lock.json": "engines/omp/package-lock.json",
       "../engines/omp/.gitignore": "engines/omp/.gitignore",
-      "../engines/omp/no-accounts.mjs": "engines/omp/no-accounts.mjs"
-    }
+      "../engines/omp/no-accounts.mjs": "engines/omp/no-accounts.mjs",
+      "target/engine-resources/node/": "node/",
+      "target/engine-resources/uv/": "uv/"
+    },
+    "externalBin": [
+      "binaries/codex_monitor_daemon",
+      "binaries/codex_monitor_daemonctl",
+      "binaries/taucode-diag-mcp"
+    ]
   },
   "plugins": {}
 }

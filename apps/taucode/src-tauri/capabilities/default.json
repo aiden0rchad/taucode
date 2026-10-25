@@ -4,8 +4,15 @@
     {
       "identifier": "desktop-default",
       "description": "Capability for desktop windows",
-      "windows": ["main", "about"],
-      "platforms": ["macOS", "windows", "linux"],
+      "windows": [
+        "main",
+        "about"
+      ],
+      "platforms": [
+        "macOS",
+        "windows",
+        "linux"
+      ],
       "permissions": [
         "core:default",
         "core:webview:allow-set-webview-zoom",
@@ -19,14 +26,30 @@
         "core:window:allow-minimize",
         "core:window:allow-toggle-maximize",
         "core:window:allow-set-effects",
-        "core:window:allow-start-dragging"
+        "core:window:allow-start-dragging",
+        {
+          "identifier": "opener:allow-open-url",
+          "allow": [
+            {
+              "url": "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+            },
+            {
+              "url": "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            }
+          ]
+        }
       ]
     },
     {
       "identifier": "mobile-default",
       "description": "Capability for mobile main window",
-      "windows": ["main"],
-      "platforms": ["iOS", "android"],
+      "windows": [
+        "main"
+      ],
+      "platforms": [
+        "iOS",
+        "android"
+      ],
       "permissions": [
         "core:default",
         "core:webview:allow-set-webview-zoom",

@@ -1286,3 +1286,11 @@ export async function pickEngineExecutable(): Promise<string | null> {
   const selected = await open({ directory: false, multiple: false, title: "Choose engine executable" });
   return typeof selected === "string" ? selected : null;
 }
+
+// These checks always describe this Mac, including when the engine backend is remote.
+export type SetupStatus = { permissions: { screen: boolean; accessibility: boolean; unsupported?: boolean }; codegraph: boolean };
+export const getSetupStatus = () => invoke<SetupStatus>("setup_status");
+export async function openSetupPrivacy(pane: "screen" | "accessibility") {
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(`x-apple.systempreferences:com.apple.preference.security?${pane === "screen" ? "Privacy_ScreenCapture" : "Privacy_Accessibility"}`);
+}

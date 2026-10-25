@@ -7,6 +7,7 @@ import { getAppSettings, setWindowMode, windowSetMaterial } from "@services/taur
 import { applyTheme } from '@/features/themes/applyTheme';
 import { builtins } from '@/features/themes/builtins';
 vi.mock("@services/tauri", () => ({ getAppSettings: vi.fn(), setWindowMode: vi.fn().mockResolvedValue(undefined), themesList: vi.fn(async () => []), windowSetMaterial: vi.fn(async () => {}) }));
+vi.mock("@/features/onboarding/SetupChecklist", () => ({ SetupChecklist: () => null }));
 vi.mock("@/features/work/WorkView", () => ({ WorkView: () => <><ModeSwitcher /><p>Work content</p></> }));
 vi.mock("./ChatView", () => ({ ChatView: () => <><ModeSwitcher /><p>Chat content</p></> }));
 vi.mock("@/features/layout/hooks/useWindowLabel", () => ({ useWindowLabel: () => "second-window" }));

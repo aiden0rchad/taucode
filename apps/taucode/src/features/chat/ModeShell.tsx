@@ -1,3 +1,4 @@
+import { SetupChecklist, type SetupSection } from "@/features/onboarding/SetupChecklist";
 import { FeedbackComposer, DiagnosticsCommands } from "@/features/diagnostics/FeedbackComposer";
 import { diagnosticContext, record } from "@/features/diagnostics/client";
 import { FeatureSettings, features, useFeatures } from "@settings/features";
@@ -39,7 +40,7 @@ export function modeShortcut(event: KeyboardEvent, settings: AppSettings): AppMo
   return next === "code" || (next === "chat" ? enabled.chatMode : enabled.workMode) ? next : undefined;
 }
 
-export function ModeShell({ children, renderSettings }: { children: ReactNode; renderSettings?: (onClose: () => void) => ReactNode }) {
+export function ModeShell({ children, renderSettings }: { children: ReactNode; renderSettings?: (onClose: () => void, section?: SetupSection) => ReactNode }) {
   useSidebarDensity();
   const label = useWindowLabel();
   const [mode, setMode] = useState<AppMode>("code");
@@ -48,6 +49,7 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [setupSection, setSetupSection] = useState<SetupSection>();
   useThemePreference(settings ?? { theme: "system" }, () => {
     if (!settings) return;
     const next = { ...settings, theme: "system" };
@@ -90,6 +92,10 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
     {mode === "code" && <SidebarEngine.Provider value={settings?.agentPolicy?.defaultEngine ?? "pi"}>{children}</SidebarEngine.Provider>}
     {mode === "chat" && settings && <ChatView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
     {mode === "work" && settings && <WorkView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
-    {settingsOpen && renderSettings?.(() => { setSettingsOpen(false); void getAppSettings().then(setSettings).catch(e => setError(String(e))); })}
+    <SetupChecklist onNavigate={section => {
+      if (mode === "code" && !settingsOpen) window.dispatchEvent(new CustomEvent("taucode:setup-settings", { detail: section }));
+      else { setSetupSection(section); setSettingsOpen(true); }
+    }} />
+    {settingsOpen && renderSettings?.(() => { setSettingsOpen(false); setSetupSection(undefined); void getAppSettings().then(setSettings).catch(e => setError(String(e))); }, setupSection)}
   </ModeContext.Provider></FeatureSettings.Provider>;
 }

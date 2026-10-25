@@ -37,6 +37,7 @@ fn every_engine_file_is_bundled_at_its_runtime_path() {
     let resources = config["bundle"]["resources"].as_object().unwrap();
     let mappings = resources
         .iter()
+        .filter(|(_, target)| target.as_str().is_some_and(|p| p.starts_with("engines/")))
         .map(|(source, target)| {
             (
                 root.join(source).to_string_lossy().into_owned(),
@@ -91,6 +92,19 @@ fn every_engine_file_is_bundled_at_its_runtime_path() {
             format!("engines/{dir}/")
         );
     }
+}
+
+#[test]
+fn packaging_hooks_bundle_runtimes_and_all_helpers() {
+    let config: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+    for runtime in ["node", "uv"] {
+        assert_eq!(config["bundle"]["resources"][format!("target/engine-resources/{runtime}/")], format!("{runtime}/"));
+    }
+    for helper in ["codex_monitor_daemon", "codex_monitor_daemonctl", "taucode-diag-mcp"] {
+        assert!(config["bundle"]["externalBin"].as_array().unwrap().contains(&Value::String(format!("binaries/{helper}"))));
+    }
+    assert!(config["build"]["beforeBuildCommand"].as_str().unwrap().contains("bundle-node.mjs"));
+    assert!(config["build"]["beforeBundleCommand"].as_str().unwrap().contains("bundle-helpers.mjs"));
 }
 
 #[test]
