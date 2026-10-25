@@ -41,3 +41,5 @@ pub(crate) mod checkpoints;
 pub(crate) mod work;
 
 pub(crate) mod engine_registry;
+
+pub(crate) mod diagnostics_core;

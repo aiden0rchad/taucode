@@ -3,6 +3,7 @@ import { DigitalRain } from "@/features/themes/DigitalRain";
 import { useFeatures } from "@settings/features";
 import { Squircle } from "@/features/design-system/components/squircle/Squircle";
 import { SidebarTree } from "@app/components/SidebarTree";
+import { formatRelativeTimeShort } from "@utils/time";
 import { buildThreadTranscript } from "@utils/threadText";
 import { exportMarkdownFile } from "@services/tauri";
 import { WorkConcurrency } from "./WorkConcurrency";
@@ -12,7 +13,7 @@ import { SidebarResizeHandle } from "@/features/layout/components/SidebarResizeH
 import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
 import { ComposerDictation } from "@/features/composer/components/ComposerDictation";
 import { NewConversationRow } from "@/features/chat/NewConversationRow";
-import { Folder, X, FolderTree, FileSearch, Table, Presentation, Trash2, CheckCircle2, Circle, ExternalLink, FolderOpen, Eye, Copy, Terminal, LoaderCircle, Search, ChevronDown, FilePenLine, Globe, Bot, ListChecks, CircleAlert } from "lucide-react";
+import { Folder, FolderLock, X, FolderTree, FileSearch, Table, Presentation, Trash2, CheckCircle2, Circle, ExternalLink, FolderOpen, Eye, Copy, Terminal, LoaderCircle, Search, ChevronDown, FilePenLine, Globe, Bot, ListChecks, CircleAlert } from "lucide-react";
 import { ComposerShell, ComposerSendButton, ComposerAccessControl } from "@/features/composer/components/ComposerShell";
 import { getFileTypeIconUrl } from "@utils/fileTypeIcons";
 import { createElement, useCallback, useEffect, useRef, useState } from "react";
@@ -55,6 +56,8 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const searchInput = useRef<HTMLInputElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const lastInputTask = useRef<string | null>(null);
+  const [scrollTask, setScrollTask] = useState<string | null>(null);
   const [collapsedSpaces, setCollapsedSpaces] = useState<string[]>([]);
   const { sidebarBodyRef, scrollFade, updateScrollFade } = useSidebarScrollFade([work.state, search, collapsedSpaces]);
   const [dragOver, setDragOver] = useState(false);
@@ -99,10 +102,35 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     work.setActive(created.id); setBrief(""); setAttachments([]); if (window.innerWidth < 760) setSidebarCollapsed(true);
   });
   const selectTask = (id: string) => { work.setActive(id); setSpaceId(""); if (window.innerWidth < 760) setSidebarCollapsed(true); };
-  const taskButton = (entry: WorkTask) => <RowMenu key={entry.id} label={entry.title} actions={[
+  const jumpToInput = () => {
+    const entry = needs[(needs.findIndex(t => t.id === lastInputTask.current) + 1) % needs.length];
+    if (!entry) return;
+    lastInputTask.current = entry.id;
+    setSearch("");
+    setCollapsedSpaces(current => current.filter(id => id !== entry.spaceId));
+    work.setActive(entry.id);
+    setSpaceId("");
+    setScrollTask(entry.id);
+  };
+  useEffect(() => {
+    if (!scrollTask) return;
+    const row = Array.from(sidebarBodyRef.current?.querySelectorAll<HTMLButtonElement>(".work-task-row") ?? []).find(row => row.dataset.taskId === scrollTask);
+    row?.scrollIntoView({ block: "nearest" });
+    setScrollTask(null);
+  }, [scrollTask, sidebarBodyRef]);
+  const taskButton = (entry: WorkTask) => {
+    const status = entry.status.replace("-", " ");
+    const timestamp = entry.updatedAt ?? entry.createdAt;
+    const attention = entry.status === "needs-input" || entry.status === "failed";
+    const title = [
+      entry.title, work.state.spaces.find(space => space.id === entry.spaceId)?.name, entry.model, status,
+      ...(["createdAt", "updatedAt"] as const).flatMap(key => entry[key] == null ? [] : [`${key === "createdAt" ? "Created" : "Updated"}: ${new Date(entry[key] * 1000).toLocaleString()}`]),
+    ].filter(Boolean).join(" · ");
+    return <RowMenu key={entry.id} label={entry.title} actions={[
     { label: "Open task", onClick: () => selectTask(entry.id) },
     ...(["running", "needs-input", "queued"].includes(entry.status) ? [{ label: "Stop task", disabled: busy, onClick: () => { void run(() => work.mutate("stop", { taskId: entry.id })); } }] : []),
-  ]}><button className={`thread-row has-secondary-line is-nested${work.active === entry.id ? " active" : ""}`} data-depth={1} title={`${entry.title} · pi · ${entry.model} · ${entry.status}`} aria-label={entry.title} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}><span className={`thread-status ${entry.status === "running" ? "processing" : entry.status === "needs-input" ? "reviewing" : "ready"}`} aria-label={entry.status} /><span className="thread-content"><span className="thread-name">{entry.title}</span><span className="thread-details">{entry.model}</span></span><span className="thread-time">{entry.status.replace("-", " ")}</span></button></RowMenu>;
+  ]}><button className={`thread-row work-task-row is-nested${work.active === entry.id ? " active" : ""}`} data-task-id={entry.id} data-depth={1} title={title} aria-label={entry.title} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}><span className={`thread-status work-status-${entry.status}`} aria-label={status} /><span className="thread-name">{entry.title}</span>{(attention || timestamp != null) && <span className={`thread-time${attention ? ` work-attention-${entry.status}` : ""}`}>{attention ? status : formatRelativeTimeShort(timestamp! * 1000)}</span>}</button></RowMenu>;
+  };
   const checkpoints = useCallback<typeof checkpointRequest>((_space, params) => {
     const task = tasksRef.current.find(t => t.threadId === params.threadId);
     return workRequest("checkpoint", { taskId: task?.id, request: params });
@@ -126,13 +154,13 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       <ModeSwitcher />
       {!searchOpen && <NewConversationRow label="New task" disabled={busy} shortcut={settings.newAgentShortcut} handleShortcut onSearch={() => setSearchOpen(true)} onNew={() => { work.setActive(null); if (window.innerWidth < 760) setSidebarCollapsed(true); }} />}
       {searchOpen && <label className="sidebar-search is-open"><Search aria-hidden /><input autoFocus onKeyDown={e => { if (e.key === "Escape") { setSearch(""); setSearchOpen(false); } }} ref={searchInput} type="search" aria-label="Search tasks" placeholder="Search tasks" value={search} onChange={e => setSearch(e.target.value)} /><button type="button" className="ghost icon-button" aria-label="Close search" onClick={() => { setSearch(""); setSearchOpen(false); }}><X aria-hidden /></button></label>}
+      {needs.length > 0 && <button className="ghost work-input-callout" onClick={jumpToInput}><span className="thread-status work-status-needs-input" aria-hidden />{needs.length} {needs.length === 1 ? "task needs" : "tasks need"} your input</button>}
       <div className="sidebar-section-header"><span className="sidebar-section-title">Spaces</span><div className="mode-section-actions"><button className="ghost sidebar-title-add" aria-label="Add space…" title="Add space…" disabled={busy} onClick={() => { void run(async () => { const path = await pickWorkspacePath(); if (path) { setFolder(path); setReadOnlyFolders([]); work.setActive(null); if (window.innerWidth < 760) setSidebarCollapsed(true); } }); }}><Plus size={14} aria-hidden /></button><WorkConcurrency value={work.state.concurrency} disabled={busy} onChange={count => { void run(() => work.mutate("concurrency", { count })); }} /></div></div>
       <div ref={sidebarBodyRef} onScroll={updateScrollFade} className={`chat-list sidebar-body${scrollFade.top ? " fade-top" : ""}${scrollFade.bottom ? " fade-bottom" : ""}`}>
-        <section aria-label="Needs input inbox" className="work-inbox"><h2 className="sidebar-section-header"><span className="sidebar-section-title">Needs input · {needs.length}</span></h2>{needs.filter(t => t.title.toLowerCase().includes(search.toLowerCase())).map(taskButton)}{!needs.length && <p className="chat-muted">You’re all caught up.</p>}</section>
         {work.state.spaces.map(space => <Squircle as="section" className={`work-space project-group-card${(task?.spaceId ?? selectedSpace) === space.id ? " is-selected" : ""}`} key={space.id} aria-label={space.name}>
           <h2 className="workspace-row" data-depth={0} title={space.path}><button className="ghost sidebar-section-title work-space-toggle" aria-expanded={!collapsedSpaces.includes(space.id)} onClick={() => setCollapsedSpaces(current => current.includes(space.id) ? current.filter(id => id !== space.id) : [...current, space.id])}>{collapsedSpaces.includes(space.id) ? <Folder aria-hidden /> : <FolderOpen aria-hidden />}<span className="workspace-name">{space.name}</span><ChevronDown className="work-space-chevron" aria-hidden /></button><span className="workspace-count">{work.state.tasks.filter(t => t.spaceId === space.id).length}</span><button type="button" className="ghost sidebar-title-add" aria-label={`New task in ${space.name}`} title={`New task in ${space.name}`} disabled={busy || space.readOnly} onClick={() => { setSpaceId(space.id); work.setActive(null); if (window.innerWidth < 760) setSidebarCollapsed(true); }}><Plus aria-hidden /></button></h2>
           {!collapsedSpaces.includes(space.id) && space.readOnly && <p className="chat-muted">Read-only history. Choose an available space to continue.</p>}
-          {!collapsedSpaces.includes(space.id) && !!space.readOnlyFolders.length && <details className="work-readonly-folders"><summary><ChevronDown aria-hidden />{space.readOnlyFolders.length} read-only folders</summary>{space.readOnlyFolders.map(path => <p key={path} className="chat-muted">{path}</p>)}</details>}
+          {!collapsedSpaces.includes(space.id) && !!space.readOnlyFolders.length && <details className="work-readonly-folders"><summary><FolderLock aria-hidden /><span>{space.readOnlyFolders.length} read-only {space.readOnlyFolders.length === 1 ? "folder" : "folders"}</span><ChevronDown aria-hidden /></summary>{space.readOnlyFolders.map(path => <p key={path} className="chat-muted">{path}</p>)}</details>}
           {!collapsedSpaces.includes(space.id) && <SidebarTree rows={workGroups.flatMap(([, statuses]) => work.state.tasks.filter(t => t.spaceId === space.id && t.title.toLowerCase().includes(search.toLowerCase()) && (statuses as readonly string[]).includes(t.status))).map(task => ({ ...task, depth: 0 }))} rowKey={task => task.id} selected={task => work.active === task.id}>{taskButton}</SidebarTree>}
         </Squircle>)}
       </div>

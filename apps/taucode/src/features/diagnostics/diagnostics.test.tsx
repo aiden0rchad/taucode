@@ -12,6 +12,7 @@ function enable() { send.mockResolvedValue(undefined); vi.useFakeTimers({ toFake
 afterEach(() => { cleanup(); configureDiagnostics({ features: { diagnostics: false } }, send); vi.useRealTimers(); vi.restoreAllMocks(); send.mockClear(); });
 describe("diagnostics", () => {
   it("matches the shared Rust redaction fixtures", () => { for (const [input, output] of fixtures.fixtures) expect(redact(input, "/Users/test", ["real-key"])).toBe(output); });
+  it("preserves identifiers while redacting known secrets", () => { for (const [input, output] of fixtures.identifierFixtures) expect(redact(input, "/Users/test", ["real-key"], true)).toBe(output); });
   it("does no work while off and cancels timers when disabled", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] }); const spy = vi.spyOn(window, "addEventListener");
     configureDiagnostics({ features: { diagnostics: false } }, send); record({ kind: "error", area: "ui", code: "ui.test", message: "test" });

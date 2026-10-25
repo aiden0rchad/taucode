@@ -29,6 +29,7 @@ pub(super) struct Process {
     dialogs: Mutex<HashMap<String, Value>>,
     next_id: AtomicU64,
     touched: Mutex<Instant>,
+    diagnostic_start: Mutex<Option<std::time::Instant>>,
     emit: Emit,
     graph: Option<CodegraphSetup>,
     omp: bool,
@@ -53,7 +54,6 @@ impl Process {
         let mut child = command
             .spawn()
             .map_err(|e| { taucode_diag_mcp::writer::record(|| {let mut event=taucode_diag_mcp::core::event("error","engine","engine.spawn_failed","Engine spawn failed");event.context=serde_json::json!({"engine":"pi"});event.detail=serde_json::json!({"errorClass":format!("{:?}",e.kind())});event});e.to_string() })?;
-        taucode_diag_mcp::observe::spawned(if omp {"omp"} else {"pi"},diagnostic_start);
         let diagnostic_pid=child.id();
         taucode_diag_mcp::observe::child(diagnostic_pid,if omp {"omp"} else {"pi"});
         let stdout = child.stdout.take().ok_or("Pi stdout unavailable")?;
@@ -71,6 +71,7 @@ impl Process {
             dialogs: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
             touched: Mutex::new(Instant::now()),
+            diagnostic_start: Mutex::new(diagnostic_start),
             emit,
             graph,
             omp,
@@ -258,6 +259,7 @@ impl Process {
         value["id"] = json!(id);
         let (tx, rx) = oneshot::channel();
         self.pending.lock().await.insert(id.clone(), tx);
+        let initial_state = value["type"] == "get_state";
         if let Err(e) = self.write(value).await {
             self.pending.lock().await.remove(&id);
             return Err(e);
@@ -268,6 +270,9 @@ impl Process {
             Err(_) => Err("Pi request timed out after 300 seconds".into()),
         };
         self.pending.lock().await.remove(&id);
+        if initial_state && result.is_ok() {
+            taucode_diag_mcp::observe::ready(if self.omp {"omp"} else {"pi"}, self.diagnostic_start.lock().await.take());
+        }
         result
     }
     pub async fn answer(&self, id: &str, result: Value) -> Result<(), String> {

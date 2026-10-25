@@ -119,7 +119,8 @@ it("synchronizes title-bar visibility with existing panel shortcuts and file pol
   expect(screen.getByRole("status").textContent).toBe("open");
   fireEvent.click(screen.getByRole("button", { name: "Expand existing panel" }));
   expect(screen.getByRole("button", { name: "Toggle side panel" }).getAttribute("aria-expanded")).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "Close side panel" }));
+  expect(screen.queryByRole("button", { name: "Close side panel" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
   expect(screen.getByRole("status").textContent).toBe("collapsed");
 });
 

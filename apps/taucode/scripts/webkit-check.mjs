@@ -20,7 +20,7 @@ try {
       const url = new URL(base);
       url.search = new URLSearchParams({ mode: 'code', ...params }).toString();
       await page.goto(url.href);
-      await page.locator('.app').waitFor();
+      await page.locator(params.mode === 'work' ? '.work-layout' : '.app').waitFor();
       if (params.theme) await page.waitForFunction(id => document.documentElement.dataset.themeId === id, params.theme);
       await page.evaluate(() => document.fonts.ready);
     };
@@ -96,6 +96,50 @@ try {
       assert(geometry.card.height > 0 && Math.abs(geometry.card.x - geometry.left) <= 2 && Math.abs(geometry.card.width - geometry.width) <= 2, `Project must fill padded sidebar: ${JSON.stringify(geometry)}`);
       await page.screenshot({ path: resolve(out, `${theme}-${width}x${height}.png`), animations: 'disabled' });
     });
+    for (const theme of ['glass-dark', 'cyberpunk-neon', 'dark', 'light']) {
+      for (const sidebarWidth of [220, 280, 420]) {
+        for (const density of ['compact', 'comfortable']) await check(`Work ${theme} ${sidebarWidth}px ${density}`, async () => {
+          await open({ mode: 'work', theme, task: 'task-needs-input' });
+          await page.locator('.work-task-row').first().waitFor();
+          await page.evaluate(({ sidebarWidth, density }) => {
+            const layout = document.querySelector('.work-layout');
+            layout.style.setProperty('--sidebar-width', `${sidebarWidth}px`);
+            layout.style.setProperty('--layout-sidebar-column', `${sidebarWidth}px`);
+            document.documentElement.dataset.sidebarDensity = density;
+          }, { sidebarWidth, density });
+          const geometry = await page.locator('.work-layout .sidebar').evaluate(sidebar => {
+            const rect = element => element.getBoundingClientRect().toJSON();
+            return {
+              sidebar: rect(sidebar),
+              cards: [...sidebar.querySelectorAll('.work-space')].map(card => ({
+                card: rect(card),
+                rows: [...card.querySelectorAll('.work-task-row')].map(row => ({
+                  row: rect(row), content: [...row.children].map(rect),
+                  metaVisible: row.querySelector('.thread-time') ? getComputedStyle(row.querySelector('.thread-time')).visibility : null,
+                  ellipsis: getComputedStyle(row.querySelector('.thread-name')).textOverflow,
+                })),
+              })),
+            };
+          });
+          const details = JSON.stringify(geometry);
+          assert(Math.abs(geometry.sidebar.width - sidebarWidth) <= 1, `Sidebar width: ${details}`);
+          assert(geometry.cards.flatMap(card => card.rows).length > 0, 'Missing Work task rows');
+          for (const { card, rows } of geometry.cards) {
+            for (const [i, { row, content, metaVisible, ellipsis }] of rows.entries()) {
+              assert(row.height > 0 && row.height <= 34 && Math.abs(row.height - (density === 'compact' ? 28 : 32)) <= 1, `Work row height: ${details}`);
+              assert(row.x >= card.x && row.right <= card.right + 1 && row.y >= card.y && row.bottom <= card.bottom + 1, `Work row outside card: ${details}`);
+              assert(!i || row.y - rows[i - 1].row.bottom >= 1.5, `Work rows overlap or lack gap: ${details}`);
+              assert(content.every(child => child.x >= row.x && child.right <= row.right + 1 && child.y >= row.y && child.bottom <= row.bottom + 1), `Work row content overflow: ${details}`);
+              assert((metaVisible === null || metaVisible === 'visible') && ellipsis === 'ellipsis', `Work metadata/title: ${details}`);
+            }
+          }
+          await page.locator('.work-task-row:has(.thread-time)').first().hover();
+          assert(await page.locator('.work-task-row .thread-time').first().evaluate(element => getComputedStyle(element).visibility === 'visible'), 'Work metadata hidden on hover');
+          await page.screenshot({ path: resolve(out, `work-${theme}-${sidebarWidth}-${density}-${width}x${height}.png`), animations: 'disabled' });
+          console.log(`PASS Work ${theme} ${sidebarWidth}px ${density} ${width}x${height}`);
+        });
+      }
+    }
     await page.close();
   }
 } finally { await browser.close(); }

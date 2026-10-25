@@ -35,7 +35,7 @@ pub fn observe(message: &Value) {
             .unwrap_or_else(|| json!({}));
         context["threadId"] = json!(thread);
         context["turnId"] = turn["id"].clone();
-        for key in ["engine", "model", "providerKind", "codegraph"] {
+        for key in ["engine", "model", "providerKind", "codegraph", "zeroCost"] {
             if !p[key].is_null() {
                 context[key] = p[key].clone();
             }
@@ -120,15 +120,18 @@ pub fn observe(message: &Value) {
             ("cachedTokens", "cachedInputTokens"),
             ("costUsd", "cost"),
         ] {
-            let amount = total[source]
+            let mut amount = total[source]
                 .as_f64()
                 .map(|n| (n - baseline[source].as_f64().unwrap_or(0.0)).max(0.0))
-                .or(last[source].as_f64())
-                .unwrap_or(0.0);
+                .or(last[source].as_f64());
+            if dest == "costUsd" && last.get(source).is_some_and(Value::is_null) {
+                amount = None;
+            }
             value[dest] = if dest == "costUsd" {
-                json!(amount)
+                let zero_cost = tracker.turns.get(thread).is_some_and(|(turn, _)| turn.context["zeroCost"] == true);
+                json!(amount.filter(|cost| *cost > 0.0 || (*cost == 0.0 && zero_cost)))
             } else {
-                json!(amount as u64)
+                json!(amount.unwrap_or(0.0) as u64)
             };
         }
         tracker.totals.insert(thread.into(), total.clone());
@@ -191,19 +194,15 @@ pub fn observe(message: &Value) {
         }
     }
 }
-pub fn spawned(engine: &str, start: Option<Instant>) {
+pub fn ready(engine: &str, start: Option<Instant>) {
     if let Some(start) = start {
         writer::record(|| {
             let duration = start.elapsed().as_millis() as u64;
             let mut e = core::event(
                 "perf",
                 "engine",
-                if duration > 3000 {
-                    "engine.spawn_slow"
-                } else {
-                    "engine.spawn"
-                },
-                "Engine spawn",
+                "engine.ready",
+                "Engine ready",
             );
             e.context = json!({"engine":engine});
             e.metrics = json!({"durationMs":duration});

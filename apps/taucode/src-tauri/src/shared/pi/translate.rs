@@ -37,6 +37,7 @@ pub(super) struct Translator {
     pub provider: String,
     pub diagnostic_engine: String,
     pub diagnostic_codegraph: bool,
+    pub diagnostic_zero_cost: bool,
     pub diagnostic_provider_kind: String,
     pub connectors: HashMap<String, String>,
     pub access_mode: String,
@@ -65,6 +66,7 @@ impl Translator {
             provider: String::new(),
             diagnostic_engine: "pi".into(),
             diagnostic_codegraph: false,
+            diagnostic_zero_cost: false,
             diagnostic_provider_kind: String::new(),
             connectors: HashMap::new(),
             access_mode: "ask".into(),
@@ -92,7 +94,7 @@ impl Translator {
     }
     fn event(&self, method: &str, mut params: Value) -> Value {
         params["threadId"] = json!(self.thread);
-        if taucode_diag_mcp::writer::enabled() && method=="turn/started" {params["engine"]=json!(self.diagnostic_engine);params["model"]=self.model["id"].clone();params["providerKind"]=json!(self.diagnostic_provider_kind);params["codegraph"]=json!(self.diagnostic_codegraph);}
+        if taucode_diag_mcp::writer::enabled() && method=="turn/started" {params["engine"]=json!(self.diagnostic_engine);params["model"]=self.model["id"].clone();params["providerKind"]=json!(self.diagnostic_provider_kind);params["codegraph"]=json!(self.diagnostic_codegraph);params["zeroCost"]=json!(self.diagnostic_zero_cost);}
         json!({"method":method,"params":params})
     }
     fn item_event(&self, method: &str, item: &Value) -> Value {
@@ -210,12 +212,12 @@ impl Translator {
             last[canonical] = json!(n);
             self.total[canonical] = json!(self.total[canonical].as_u64().unwrap_or(0) + n);
         }
-        self.cost += u["cost"]["total"]
+        let cost = u["cost"]["total"]
             .as_f64()
-            .or(u["cost"].as_f64())
-            .unwrap_or(0.0);
+            .or(u["cost"].as_f64());
+        self.cost += cost.unwrap_or(0.0);
         self.total["cost"] = json!(self.cost);
-        last["cost"]=json!(u["cost"]["total"].as_f64().or(u["cost"].as_f64()).unwrap_or(0.0));
+        last["cost"] = json!(cost);
         out.push(self.event("thread/tokenUsage/updated",json!({"turnId":self.turn_id(),"tokenUsage":{"last":last,"total":self.total,"modelContextWindow":self.model["contextWindow"]}})));
     }
     fn message_end(&mut self, m: &Value, out: &mut Vec<Value>) {

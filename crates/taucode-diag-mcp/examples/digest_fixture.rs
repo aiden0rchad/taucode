@@ -2,29 +2,31 @@ use serde_json::json;
 use taucode_diag_mcp::core::*;
 fn main() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/fixtures");
-    let mut events = vec![
-        event(
-            "error",
-            "engine",
-            "engine.spawn_failed",
-            "Engine spawn failed",
-        ),
-        event("perf", "engine", "engine.first_token", "First token"),
-        event("usage", "agent", "agent.turn", "Turn completed"),
-        event("feedback", "ui", "feedback.idea", "User idea"),
-    ];
+    let thread = "e53185da-2175-4cf4-9846-79306911b175";
+    let mut events = vec![event("perf", "engine", "engine.ready", "Engine ready")];
+    events[0].context = json!({"engine":"omp"});
+    events[0].metrics = json!({"durationMs":8200});
+    for turn in 1..=2 {
+        let context = json!({"engine":"omp","model":"GLM 5.3","threadId":thread,"turnId":format!("{thread}:turn:{turn}"),"responseId":format!("{thread}:message:1792960351528:{turn}")});
+        let mut first = event("perf", "engine", "engine.first_token", "First token");
+        first.context = context.clone();
+        first.metrics = json!({"durationMs":9717});
+        events.push(first);
+        let mut usage = event("usage", "agent", "agent.turn", "Turn completed");
+        usage.context = context;
+        usage.metrics = json!({"tokensIn":129,"tokensOut":102,"cachedTokens":14080,"costUsd":null,"durationMs":9777,"toolCalls":1});
+        events.push(usage);
+    }
+    let mut feedback = event("feedback", "ui", "feedback.idea", "User idea");
+    feedback.context = json!({"threadId":thread,"responseId":format!("{thread}:message:1792960351528:2")});
+    feedback.detail = json!({"note":format!("Investigate thread {thread}")});
+    events.push(feedback);
     for (i, e) in events.iter_mut().enumerate() {
         e.ts = format!("2026-10-25T21:04:0{i}.000Z");
         e.run = "00000000-0000-4000-8000-000000000001".into();
         e.seq = i as u64 + 1;
-        e.context =
-            json!({"engine":"pi","model":"fixture-model","turnId":"turn-1","codegraph":true});
-        e.fingerprint = fingerprint(e);
+        *e = sanitize(e.clone(), &Options::default(), "", &[]).unwrap();
     }
-    events[1].metrics = json!({"durationMs":1250});
-    events[2].metrics =
-        json!({"tokensIn":1000,"tokensOut":200,"cachedTokens":100,"costUsd":0.01,"toolCalls":2});
-    events[3].detail = json!({"note":"Please make retries easier to see"});
     let mut issues = Issues::new();
     aggregate(&mut issues, &events);
     std::fs::write(

@@ -1137,7 +1137,6 @@ async fn spawn_codex_engine<E: EventSink>(
 
     let diagnostic_start=taucode_diag_mcp::writer::enabled().then(std::time::Instant::now);
     let mut child = command.spawn().map_err(|e| {taucode_diag_mcp::writer::record(||taucode_diag_mcp::core::event("error","engine","engine.spawn_failed","Codex spawn failed"));e.to_string()})?;
-    taucode_diag_mcp::observe::spawned("codex",diagnostic_start);
     let diagnostic_pid=child.id();
     taucode_diag_mcp::observe::child(diagnostic_pid,"codex");
     let stdin = child.stdin.take().ok_or("missing stdin")?;
@@ -1250,7 +1249,10 @@ async fn spawn_codex_engine<E: EventSink>(
             );
         }
     };
-    init_response?;
+    let init_response = init_response?;
+    if init_response.get("result").is_some() && init_response.get("error").is_none() {
+        taucode_diag_mcp::observe::ready("codex", diagnostic_start);
+    }
     session.send_notification("initialized", None).await?;
 
     Ok(session)

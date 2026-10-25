@@ -61,7 +61,7 @@ pub(crate) async fn update_app_settings(
     }
     let updated =
         update_app_settings_core(settings, &state.app_settings, &state.settings_path).await?;
-    crate::diagnostics::configure(window.app_handle(), &updated)?;
+    crate::shared::diagnostics_core::configure(window.app_handle().path().app_data_dir().map_err(|e| e.to_string())?.join("diagnostics"), &updated)?;
     if should_reset_remote_backend(&previous, &updated) {
         *state.remote_backend.lock().await = None;
     }

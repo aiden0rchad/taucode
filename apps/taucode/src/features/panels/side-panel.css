@@ -50,7 +50,7 @@
 .side-panel-content .terminal-panel { display: flex; flex: 1; height: 100%; min-height: 200px; flex-direction: column; }
 .side-panel-content .terminal-panel-resizer { display: none; }
 .side-panel-content .terminal-body { flex: 1; min-height: 0; }
-.side-panel-content .work-inspector { border: 0; width: auto; padding: 16px; }
+.side-panel-content .work-inspector { border: 0; width: auto; padding: 16px; background: transparent; }
 .side-panel-content .diff-header { flex-wrap: wrap; gap: 8px; }
 .side-panel-content .diff-header-actions { flex-wrap: wrap; min-width: 0; }
 .side-panel-content .diff-list { min-height: 80px; }

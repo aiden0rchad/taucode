@@ -175,13 +175,13 @@ mod tests {
         let text = content["content"][0]["text"].as_str().unwrap();
         assert!(text.starts_with("[\n"));
         let issues: Vec<Issue> = serde_json::from_str(text).unwrap();
-        assert_eq!(issues[0].code, "engine.spawn_failed");
+        assert_eq!(issues[0].code, "engine.ready");
         assert!(issues
             .iter()
-            .all(|i| !matches!(i.last_event.kind.as_str(), "perf" | "usage" | "feedback")));
+            .all(|i| crate::core::is_issue(&i.last_event)));
         let spawn = issues
             .iter()
-            .find(|i| i.code == "engine.spawn_failed")
+            .find(|i| i.code == "engine.ready")
             .unwrap();
         let result = client
             .call_tool(CallToolRequestParams::new("diag_digest"))
@@ -231,7 +231,7 @@ mod tests {
             serde_json::from_str(content["content"][0]["text"].as_str().unwrap()).unwrap();
         assert!(issues
             .iter()
-            .any(|i| i.code == "engine.spawn_failed" && i.status == "acknowledged"));
+            .any(|i| i.code == "engine.ready" && i.status == "acknowledged"));
         assert_eq!(std::fs::read_to_string(&index).unwrap(), "{}");
         client.cancel().await.unwrap();
         task.await.unwrap();

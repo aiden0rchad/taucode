@@ -35,12 +35,16 @@ impl Turn {
         let mut base = event("usage", "agent", "agent.turn", "Turn completed");
         base.context = self.context;
         base.metrics = metrics;
+        if base.metrics["costUsd"].as_f64().is_none_or(|cost| cost <= 0.0 && base.context["zeroCost"] != true) {
+            base.metrics["costUsd"] = Value::Null;
+        }
         base.metrics["toolCalls"] = json!(self.tools.values().sum::<u64>());
         base.metrics["errors"] = json!(self.errors);
         if let Some(start) = self.started {
             base.metrics["durationMs"] = json!(start.elapsed().as_millis() as u64);
         }
         let tokens = base.metrics["tokensIn"].as_u64().unwrap_or(0)
+            + base.metrics["cachedTokens"].as_u64().unwrap_or(0)
             + base.metrics["tokensOut"].as_u64().unwrap_or(0);
         let model = base.context["model"]
             .as_str()

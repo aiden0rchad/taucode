@@ -12,6 +12,9 @@ fn sample() -> Event {
 #[test]
 fn shared_redaction_fixtures() {
     let data: Value = serde_json::from_str(REDACTION).unwrap();
+    for row in data["identifierFixtures"].as_array().unwrap() {
+        assert_eq!(redact_field(row[0].as_str().unwrap(), "/Users/test", &["real-key".into()], true), row[1].as_str().unwrap());
+    }
     for row in data["fixtures"].as_array().unwrap() {
         assert_eq!(
             redact(
@@ -22,6 +25,51 @@ fn shared_redaction_fixtures() {
             row[1].as_str().unwrap()
         );
     }
+}
+#[test]
+fn identifiers_survive_sanitization_but_secrets_do_not() {
+    let id = "e53185da-2175-4cf4-9846-79306911b175";
+    let mut e = sample();
+    e.run = id.into();
+    e.context = json!({"threadId":id,"turnId":format!("{id}:turn:1"),"responseId":format!("{id}:message:1792960351528:1"),"itemId":format!("{id}:sk-secret"),"workspace":"a".repeat(40),"workspaceId":id});
+    e.message = "secret aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into();
+    e.metrics = json!({"costUsd":null});
+    let clean = sanitize(e.clone(), &Options::default(), "", &[]).unwrap();
+    assert_eq!(clean.run, id);
+    for key in ["threadId", "turnId", "responseId", "workspace", "workspaceId"] {
+        assert_eq!(clean.context[key], e.context[key]);
+    }
+    assert_eq!(clean.context["itemId"], format!("{id}:[REDACTED]"));
+    assert_eq!(clean.message, "secret [REDACTED]");
+    assert_eq!(clean.metrics.get("costUsd"), Some(&Value::Null));
+}
+
+#[test]
+fn high_tokens_uses_cached_input_and_both_strict_thresholds() {
+    for (input, cached, baseline, high) in [(100, 14080, 100, false), (0, 50000, 100, false), (0, 60000, 30000, false), (1, 60000, 30000, true)] {
+        let t = signals::Turn { context: json!({"model":"m","turnId":"turn-1"}), ..Default::default() };
+        let out = t.finish(json!({"tokensIn":input,"cachedTokens":cached,"costUsd":0}), &mut BTreeMap::from([("m".into(),vec![baseline])]));
+        assert_eq!(out.iter().any(|e| e.code == "agent.high_tokens"), high);
+        assert_eq!(digest(&out, &Issues::new(), "").contains("Token-heavy turn: turn-1"), high);
+        assert_eq!(out[0].metrics["costUsd"], Value::Null);
+    }
+}
+
+#[test]
+fn efficiency_distinguishes_unknown_paid_and_free_costs() {
+    for (cost, free, expected) in [(Value::Null, false, "cost unknown"), (json!(0), false, "cost unknown"), (Value::Null, true, "cost unknown"), (json!(0), true, "$0"), (json!(0.125), false, "$0.1250")] {
+        let t = signals::Turn { context: json!({"engine":"pi","model":"m","zeroCost":free}), ..Default::default() };
+        let out = t.finish(json!({"tokensIn":900000,"cachedTokens":100000,"tokensOut":1200,"costUsd":cost}), &mut BTreeMap::new());
+        let e = sanitize(out[0].clone(), &Options::default(), "", &[]).unwrap();
+        let text = digest(&[e.clone()], &Issues::new(), "");
+        assert!(text.contains(&format!("in 1.0M (10% cached) · out 1.2k · {expected}")), "{text}");
+        assert_eq!(e.metrics["costUsd"].is_null(), expected == "cost unknown");
+    }
+    let mut paid = event("usage", "agent", "agent.turn", "Turn completed");
+    paid.metrics = json!({"costUsd":1});
+    let mut unknown = paid.clone();
+    unknown.metrics["costUsd"] = Value::Null;
+    assert!(digest(&[paid, unknown], &Issues::new(), "").contains("cost unknown"));
 }
 #[test]
 fn fingerprint_normalization_and_stack() {
@@ -173,6 +221,7 @@ fn issue_kinds_and_perf_thresholds() {
         ("startup.interactive", 5000.0),
         ("startup.first_paint", 5000.0),
         ("engine.first_token", 10000.0),
+        ("engine.ready", 5000.0),
     ] {
         let mut e = event("perf", "ui", code, code);
         e.fingerprint = fingerprint(&e);

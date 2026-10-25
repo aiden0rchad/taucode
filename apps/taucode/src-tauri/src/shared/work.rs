@@ -34,10 +34,22 @@ struct Task {
     effort: Option<String>,
     access_mode: String,
     status: String,
+    #[serde(default)]
+    created_at: Option<i64>,
+    #[serde(default)]
+    updated_at: Option<i64>,
     plan: Vec<Value>,
     outputs: Vec<String>,
     pending: Vec<Value>,
     error: Option<String>,
+}
+impl Task {
+    fn set_status(&mut self, status: &str) {
+        if self.status != status {
+            self.status = status.into();
+            self.updated_at = Some(chrono::Utc::now().timestamp());
+        }
+    }
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -120,7 +132,7 @@ impl Work {
             };
             for task in &mut state.store.tasks {
                 if occupied(&task.status) {
-                    task.status = "stopped".into();
+                    task.set_status("stopped");
                     task.error = Some("Interrupted by app restart. Start a new task to continue.".into());
                     task.pending.clear();
                 }
@@ -173,7 +185,7 @@ impl Work {
                 id: task_id.clone(), import_id: Some(id), space_id: space.id, thread_id: Some(task_id),
                 title: history["title"].as_str().unwrap_or("Imported Cowork task").into(),
                 brief: history["messages"].as_array().and_then(|m| m.iter().find(|m| m["role"] == "user")).and_then(|m| m["text"].as_str()).unwrap_or_default().into(),
-                attachments: vec![], model: String::new(), effort: None, access_mode: "read-only".into(),
+                created_at: None, updated_at: None, attachments: vec![], model: String::new(), effort: None, access_mode: "read-only".into(),
                 status: if completed { "done" } else { "stopped" }.into(), plan: vec![],
                 outputs: history["attachments"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_owned)).collect(),
                 pending: vec![], error: history["warning"].as_str().map(str::to_owned),
@@ -214,16 +226,16 @@ impl Work {
     async fn pump(&self, state: &mut State) {
         if !super::engine_registry::features(Some(&self.data)).work_mode { return; }
         while let Some(index) = next_task(&state.store) {
-            state.store.tasks[index].status = "running".into();
+            state.store.tasks[index].set_status("running");
             if let Err(error) = self.save(&state.store) {
-                state.store.tasks[index].status = "failed".into();
+                state.store.tasks[index].set_status("failed");
                 state.store.tasks[index].error = Some(error);
                 self.publish(state, Some(&state.store.tasks[index]), Some("queued"));
                 break;
             }
             let result = self.start(state, index).await;
             if let Err(error) = result {
-                state.store.tasks[index].status = "failed".into();
+                state.store.tasks[index].set_status("failed");
                 state.store.tasks[index].error = Some(error);
             }
             if let Err(error) = self.save(&state.store) {
@@ -262,17 +274,17 @@ impl Work {
         if occupied(&task.status) {
             if method.ends_with("/requestApproval") || method == "item/tool/requestUserInput" {
                 if !task.pending.iter().any(|p| p["id"] == event.message["id"]) { task.pending.push(event.message.clone()); }
-                task.status = "needs-input".into();
+                task.set_status("needs-input");
             }
             if method == "turn/completed" {
-                task.status = match params["turn"]["status"].as_str() { Some("failed") => "failed", Some("interrupted") => "stopped", _ => "done" }.into();
+                task.set_status(match params["turn"]["status"].as_str() { Some("failed") => "failed", Some("interrupted") => "stopped", _ => "done" });
                 task.error = params["turn"]["error"]["message"].as_str().map(str::to_owned);
                 task.pending.clear();
             }
         }
         if method == "serverRequest/resolved" {
             task.pending.retain(|p| p["id"] != params["requestId"]);
-            if task.status == "needs-input" && task.pending.is_empty() { task.status = "running".into(); }
+            if task.status == "needs-input" && task.pending.is_empty() { task.set_status("running"); }
         }
         if method == "item/completed" || method == "item/started" {
             let item = &params["item"];
@@ -349,7 +361,7 @@ impl Work {
                 let model = params["model"].as_str().ok_or("Select a model")?;
                 let (provider, model_id) = model.split_once('/').ok_or("Select a registry model")?;
                 if !state.settings.providers.iter().any(|p| p.enabled && p.id == provider && p.models.iter().any(|m| m.enabled && m.id == model_id)) { return Err("Enable this registry model in Settings".into()); }
-                let task = Task { id: uuid::Uuid::new_v4().to_string(), import_id: None, space_id: space_id.into(), thread_id: None, title: brief.lines().next().unwrap().chars().take(100).collect(), brief: brief.into(), attachments, model: model.into(), effort: params["effort"].as_str().map(str::to_owned), access_mode: mode.into(), status: "queued".into(), plan: vec![], outputs: vec![], pending: vec![], error: None };
+                let task = Task { created_at: Some(chrono::Utc::now().timestamp()), updated_at: None, id: uuid::Uuid::new_v4().to_string(), import_id: None, space_id: space_id.into(), thread_id: None, title: brief.lines().next().unwrap().chars().take(100).collect(), brief: brief.into(), attachments, model: model.into(), effort: params["effort"].as_str().map(str::to_owned), access_mode: mode.into(), status: "queued".into(), plan: vec![], outputs: vec![], pending: vec![], error: None };
                 let result = json!(task);
                 if params["runNow"] == true { state.store.tasks.insert(0, task); } else { state.store.tasks.push(task); }
                 return Ok(result);
@@ -384,7 +396,7 @@ impl Work {
                 session.pi.respond_to_server_request(request["id"].clone(), params["answer"].clone()).await?;
                 let task = &mut state.store.tasks[index];
                 task.pending.retain(|p| p["id"] != params["requestId"]);
-                if task.pending.is_empty() { task.status = "running".into(); }
+                if task.pending.is_empty() { task.set_status("running"); }
                 Ok(json!({}))
             }
             "checkpoint" => {
@@ -416,7 +428,7 @@ impl Work {
             }
         }
         if occupied(&task.status) || task.status == "queued" {
-            state.store.tasks[index].status = "stopped".into();
+            state.store.tasks[index].set_status("stopped");
             state.store.tasks[index].pending.clear();
         }
         Ok(())
@@ -480,7 +492,23 @@ mod tests {
         fn emit_terminal_exit(&self, _: TerminalExit) {}
     }
     fn task(id: &str, space: &str, status: &str) -> Task {
-        Task { import_id: None, id: id.into(), space_id: space.into(), thread_id: Some(id.into()), title: id.into(), brief: "brief".into(), attachments: vec![], model: "local/test".into(), effort: None, access_mode: "ask".into(), status: status.into(), plan: vec![], outputs: vec![], pending: vec![], error: None }
+        Task { created_at: None, updated_at: None, import_id: None, id: id.into(), space_id: space.into(), thread_id: Some(id.into()), title: id.into(), brief: "brief".into(), attachments: vec![], model: "local/test".into(), effort: None, access_mode: "ask".into(), status: status.into(), plan: vec![], outputs: vec![], pending: vec![], error: None }
+    }
+    #[test]
+    fn task_timestamps_are_backward_compatible_and_track_status_changes() {
+        let mut value = json!(task("legacy", "space", "queued"));
+        value.as_object_mut().unwrap().remove("createdAt");
+        value.as_object_mut().unwrap().remove("updatedAt");
+        let mut task: Task = serde_json::from_value(value).unwrap();
+        assert_eq!(task.updated_at, None);
+        task.set_status("queued");
+        assert_eq!(task.updated_at, None);
+        task.set_status("running");
+        let updated = task.updated_at.unwrap();
+        assert!(updated <= chrono::Utc::now().timestamp());
+        assert_eq!(json!(task)["updatedAt"], updated);
+        task.set_status("running");
+        assert_eq!(task.updated_at, Some(updated));
     }
     fn temp() -> PathBuf {
         let root = std::env::temp_dir().join(format!("work-test-{}", uuid::Uuid::new_v4()));

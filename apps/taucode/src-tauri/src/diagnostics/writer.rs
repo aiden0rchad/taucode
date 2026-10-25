@@ -204,6 +204,36 @@ mod tests {
         record(|| panic!("disabled instrumentation must not run"));
         assert!(!path.exists());
         configure(true, path.clone(), Options::default()).unwrap();
+        let thread = "e53185da-2175-4cf4-9846-79306911b175";
+        crate::observe::ready("omp", Some(std::time::Instant::now() - std::time::Duration::from_millis(8200)));
+        for n in 1..=2 {
+            crate::observe::observe(&json!({"method":"turn/started","params":{"threadId":thread,"turn":{"id":format!("{thread}:turn:{n}")},"engine":"omp","model":"GLM 5.3"}}));
+            crate::observe::observe(&json!({"method":"thread/tokenUsage/updated","params":{"threadId":thread,"tokenUsage":{"total":{"inputTokens":129*n,"cachedInputTokens":14080*n,"outputTokens":102*n,"cost":0}}}}));
+            crate::observe::observe(&json!({"method":"turn/completed","params":{"threadId":thread,"turn":{"status":"completed"}}}));
+        }
+        flush().unwrap();
+        let observed = events(&path);
+        let ready = observed.iter().find(|e| e.code == "engine.ready").unwrap();
+        assert!(ready.metrics["durationMs"].as_u64().unwrap() >= 8200);
+        assert!(is_issue(ready));
+        let turns = observed.iter().filter(|e| e.code == "agent.turn").collect::<Vec<_>>();
+        assert_eq!(turns.len(), 2);
+        for turn in turns {
+            assert_eq!(turn.context["threadId"], thread);
+            assert_eq!(turn.metrics["tokensIn"], 129);
+            assert_eq!(turn.metrics["cachedTokens"], 14080);
+            assert_eq!(turn.metrics["tokensOut"], 102);
+            assert_eq!(turn.metrics.get("costUsd"), Some(&Value::Null));
+        }
+        assert!(!observed.iter().any(|e| e.code == "agent.high_tokens"));
+        for (n, cost) in [json!(1), Value::Null, json!(2)].into_iter().enumerate() {
+            crate::observe::observe(&json!({"method":"turn/started","params":{"threadId":"pricing","turn":{"id":format!("priced-{n}")}}}));
+            crate::observe::observe(&json!({"method":"thread/tokenUsage/updated","params":{"threadId":"pricing","tokenUsage":{"last":{"cost":cost},"total":{"cost":if n == 2 {3} else {1}}}}}));
+            crate::observe::observe(&json!({"method":"turn/completed","params":{"threadId":"pricing","turn":{"status":"completed"}}}));
+        }
+        flush().unwrap();
+        let costs = events(&path).into_iter().filter(|e| e.code == "agent.turn" && e.context["threadId"] == "pricing").map(|e| e.metrics["costUsd"].clone()).collect::<Vec<_>>();
+        assert_eq!(costs, vec![json!(1.0), Value::Null, json!(2.0)]);
         remember_secret("private-key-value");
         for _ in 0..2000 {
             record(|| {

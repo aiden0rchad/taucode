@@ -195,6 +195,9 @@ impl DaemonState {
         let settings_path = config.data_dir.join("settings.json");
         let workspaces = read_workspaces(&storage_path).unwrap_or_default();
         let app_settings = read_settings(&settings_path).unwrap_or_default();
+        if let Err(error) = shared::diagnostics_core::configure(config.data_dir.join("diagnostics"), &app_settings) {
+            eprintln!("Diagnostics configuration failed: {error}");
+        }
         let daemon_binary_path = std::env::current_exe()
             .ok()
             .and_then(|path| path.to_str().map(str::to_string));
@@ -617,8 +620,10 @@ impl DaemonState {
     }
 
     async fn update_app_settings(&self, settings: AppSettings) -> Result<AppSettings, String> {
-        settings_core::update_app_settings_core(settings, &self.app_settings, &self.settings_path)
-            .await
+        let updated = settings_core::update_app_settings_core(settings, &self.app_settings, &self.settings_path)
+            .await?;
+        shared::diagnostics_core::configure(self.data_dir.join("diagnostics"), &updated)?;
+        Ok(updated)
     }
 
     async fn set_codex_feature_flag(
@@ -1644,6 +1649,72 @@ mod tests {
         }
     }
 
+    #[test]
+    fn diagnostics_follow_daemon_settings_and_observe_engine_events() {
+        run_async_test(async {
+            use taucode_diag_mcp::{core, observe, writer};
+            let temp = make_temp_dir("diagnostics");
+            let dir = temp.as_path().join("diagnostics");
+            let state = test_state(temp.as_path());
+            let emit = |engine: &str, method: &str, params: Value| {
+                let mut params = params;
+                params["threadId"] = json!(format!("diagnostics-test-{engine}"));
+                state.event_sink.emit_app_server_event(AppServerEvent {
+                    workspace_id: "diagnostics-test".into(),
+                    message: json!({"method":method,"params":params}),
+                });
+            };
+            let mut settings = state.app_settings.lock().await.clone();
+            state.update_app_settings(settings.clone()).await.unwrap();
+            emit("pi", "error", json!({}));
+            assert!(!dir.exists());
+
+            settings.features.diagnostics = true;
+            settings = state.update_app_settings(settings).await.unwrap();
+            assert!(writer::enabled());
+            writer::remember_secret("diagnostics-private-key");
+            for engine in ["pi", "omp", "claude", "codex"] {
+                observe::ready(engine, Some(std::time::Instant::now()));
+                emit(engine, "turn/started", json!({"engine":engine,"model":"test","turn":{"id":"turn"}}));
+                emit(engine, "thread/tokenUsage/updated", json!({"tokenUsage":{"total":{"inputTokens":42,"outputTokens":7}}}));
+                emit(engine, "item/completed", json!({"item":{"type":"mcpToolCall","tool":"diagnostics-private-key","status":"failed"}}));
+                emit(engine, "turn/completed", json!({"turn":{"id":"turn","status":"completed"}}));
+            }
+            writer::flush().unwrap();
+            let events = core::events(&dir);
+            for engine in ["pi", "omp", "claude", "codex"] {
+                assert!(events.iter().any(|e| e.code == "engine.ready" && e.context["engine"] == engine));
+                assert!(events.iter().any(|e| e.code == "agent.tool_failed" && e.context["engine"] == engine));
+                assert!(events.iter().any(|e| e.code == "agent.turn" && e.context["engine"] == engine && e.metrics["tokensIn"] == 42 && e.metrics["tokensOut"] == 7));
+            }
+            assert!(!serde_json::to_string(&events).unwrap().contains("diagnostics-private-key"));
+            assert!(std::fs::read_dir(&dir).unwrap().flatten().any(|entry| entry.file_name().to_string_lossy().starts_with("events-")));
+
+            // Reload persisted settings through the startup diagnostics wiring.
+            writer::stop();
+            shared::diagnostics_core::configure(dir.clone(), &read_settings(&state.settings_path).unwrap()).unwrap();
+            assert!(writer::enabled());
+            settings.diagnostics.level = "essential".into();
+            state.update_app_settings(settings.clone()).await.unwrap();
+            emit("essential", "turn/started", json!({"turn":{"id":"turn"}}));
+            emit("essential", "turn/completed", json!({"turn":{"id":"turn","status":"completed"}}));
+            writer::flush().unwrap();
+            assert!(!core::events(&dir).iter().any(|e| e.context["threadId"] == "diagnostics-test-essential"));
+
+            settings.features.diagnostics = false;
+            state.update_app_settings(settings.clone()).await.unwrap();
+            assert!(!writer::enabled());
+            let before = serde_json::to_value(core::events(&dir)).unwrap();
+            emit("disabled", "error", json!({}));
+            writer::flush().unwrap();
+            assert_eq!(serde_json::to_value(core::events(&dir)).unwrap(), before);
+            settings.diagnostics.retention = 0;
+            assert!(state.update_app_settings(settings).await.is_err());
+            writer::stop();
+            std::fs::remove_dir_all(temp).unwrap();
+        });
+    }
+
     async fn insert_workspace(state: &DaemonState, workspace_id: &str, workspace_path: &str) {
         let entry = WorkspaceEntry {
             id: workspace_id.to_string(),
@@ -1964,6 +2035,7 @@ mod tests {
 
 fn main() {
     proxy_cli::dispatch();
+    taucode_diag_mcp::writer::install_panic_hook();
     if let Err(err) = fix_path_env::fix() {
         eprintln!("Failed to sync PATH from shell: {err}");
     }
@@ -2031,6 +2103,7 @@ fn main() {
         state.browser.shutdown().await;
         0
     });
+    taucode_diag_mcp::writer::stop();
     if exit_code != 0 {
         std::process::exit(exit_code);
     }
