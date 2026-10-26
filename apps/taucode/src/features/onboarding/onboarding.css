@@ -54,7 +54,14 @@
 .setup-card[aria-pressed=true]::after{content:'✓';position:absolute;right:8px;top:8px;display:grid;place-items:center;width:17px;height:17px;border-radius:50%;color:var(--text-accent);background:var(--surface-active);font-size:11px;animation:setup-spring .42s}
 .setup-card:disabled{opacity:.5;cursor:default}
 .setup-theme{padding:7px 7px 12px;align-items:center;gap:10px}
-.setup-theme .theme-mini{width:100%;height:60px;pointer-events:none}
+.setup-theme .theme-mini{width:100%;height:78px;pointer-events:none}
+/* The wizard card is smaller than the gallery card: tighten the mini app so the Send button stays in frame. */
+.setup-theme .theme-mini-sidebar{padding:10px 6px;gap:7px}
+.setup-theme .theme-mini-content{padding:10px 8px;gap:6px}
+.setup-theme .theme-mini-message{padding:4px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.setup-theme .theme-mini-prose{font-size:16px;line-height:1}
+.setup-theme{container-type:inline-size}
+@container(max-width:140px){.setup-theme .theme-mini-sidebar{width:20%;padding-inline:4px}.setup-theme .theme-mini-button{font-size:0;padding:4px 6px}}
 .setup-theme::after{display:none!important}
 .setup-fields{display:grid;gap:14px;padding-top:8px;min-height:0;overflow:hidden}
 .setup-fields label,.setup-models label{display:grid;gap:7px;font-size:12px}

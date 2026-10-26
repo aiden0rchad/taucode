@@ -84,6 +84,16 @@ try {
       const rect = await centered('Settings', '.settings-window');
       assert(Math.abs(rect.width - Math.min(1180, width * .94)) <= 2 && Math.abs(rect.height - Math.min(900, height * .92)) <= 2, `Settings size: ${JSON.stringify(rect)}`);
     });
+    await check('Setup theme previews', async () => {
+      await open({ setup: '1' });
+      await page.getByRole('button', { name: 'Get started', exact: true }).click();
+      await page.locator('.setup-theme .theme-mini').first().waitFor();
+      const clipped = await page.locator('.setup-theme .theme-mini').evaluateAll(minis => minis.flatMap(mini => {
+        const box = mini.getBoundingClientRect();
+        return [...mini.querySelectorAll('.theme-mini-message, .theme-mini-prose, .theme-mini-button')].map(el => [el.className, el.getBoundingClientRect()]).filter(([, r]) => r.left < box.left || r.right > box.right || r.top < box.top || r.bottom > box.bottom).map(([name]) => name);
+      }));
+      assert.deepEqual(clipped, []);
+    });
     await check('Theme editor', async () => {
       await open({ settings: 'appearance', theme: 'dark' });
       await page.getByRole('button', { name: 'Actions for Dark', exact: true }).click();
