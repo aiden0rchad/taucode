@@ -23,6 +23,7 @@ import { normalizeOpenAppTargets } from "@app/utils/openApp";
 import { getDefaultInterruptShortcut, isMacPlatform } from "@utils/shortcuts";
 import { isMobilePlatform } from "@utils/platformPaths";
 import { DEFAULT_COMMIT_MESSAGE_PROMPT } from "@utils/commitMessagePrompt";
+import { DEFAULT_THEME_ID } from "@/features/themes/defaults";
 
 
 const allowedPersonality = new Set(["friendly", "pragmatic"]);
@@ -173,7 +174,7 @@ export function buildDefaultSettings(): AppSettings {
     lastComposerModelId: null,
     lastComposerReasoningEffort: null,
     uiScale: UI_SCALE_DEFAULT,
-    theme: "system",
+    theme: DEFAULT_THEME_ID,
     themeLight: "light",
     themeDark: "dark",
     themeAnimations: {},

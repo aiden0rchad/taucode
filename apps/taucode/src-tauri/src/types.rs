@@ -735,8 +735,9 @@ fn default_ui_scale() -> f64 {
 fn default_theme_light() -> String { "light".into() }
 fn default_theme_dark() -> String { "dark".into() }
 
+// Fresh installs start on Glass Dark; keep in sync with DEFAULT_THEME_ID in src/features/themes/defaults.ts.
 fn default_theme() -> String {
-    "system".to_string()
+    "glass-dark".to_string()
 }
 
 fn default_usage_show_remaining() -> bool {
@@ -1366,7 +1367,7 @@ mod tests {
         assert!(settings.last_composer_model_id.is_none());
         assert!(settings.last_composer_reasoning_effort.is_none());
         assert!((settings.ui_scale - 1.0).abs() < f64::EPSILON);
-        assert_eq!(settings.theme, "system");
+        assert_eq!(settings.theme, "glass-dark");
         assert!(!settings.usage_show_remaining);
         assert!(settings.show_message_file_path);
         assert_eq!(settings.chat_history_scrollback_items, Some(200));

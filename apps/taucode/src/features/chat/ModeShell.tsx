@@ -13,6 +13,7 @@ import { notifySetupChanged } from "@services/events";
 import { matchesShortcut } from "@utils/shortcuts";
 import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import { useThemePreference } from "@/features/layout/hooks/useThemePreference";
+import { DEFAULT_THEME_ID } from "@/features/themes/defaults";
 import { WorkView } from "@/features/work/WorkView";
 import { ChatView } from "./ChatView";
 import "./chat.css";
@@ -59,7 +60,7 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   }, [mode, setupWorkspace]);
   const [evalsFull, setEvalsFull] = useState<{runId?:string}|null>(null);
   useEffect(() => { const open = (event:Event) => setEvalsFull({runId:(event as CustomEvent<{runId?:string}>).detail?.runId}); window.addEventListener("taucode:evals-full", open); return () => window.removeEventListener("taucode:evals-full", open); }, []);
-  useThemePreference(settings ?? { theme: "system" }, () => {
+  useThemePreference(settings ?? { theme: DEFAULT_THEME_ID }, () => {
     if (!settings) return;
     const next = { ...settings, theme: "system" };
     setSettings(next);

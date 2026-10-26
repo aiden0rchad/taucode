@@ -110,7 +110,7 @@ it('renders background-matching swatches and preserves alpha above the checkerbo
 });
 it('renders cards, applies, opens duplicate editor and excludes built-in delete', async () => {
   const update = vi.fn(async () => {});
-  render(<ThemeGallery settings={buildDefaultSettings()} update={update} />);
+  render(<ThemeGallery settings={{...buildDefaultSettings(),theme:'system'}} update={update} />);
   fireEvent.click(screen.getByRole('button',{ name:'Apply Matrix' }));
   expect(update).toHaveBeenCalledWith(expect.objectContaining({ theme:'matrix' }));
   const card = screen.getByRole('button',{ name:'Apply Matrix' }).closest('article')!;
@@ -126,7 +126,7 @@ it('renders cards, applies, opens duplicate editor and excludes built-in delete'
 });
 it('validates pasted JSON inline and lists broken files', async () => {
   vi.mocked(themesList).mockResolvedValue([{file:'broken.taucode-theme.json',error:'Unknown token: --evil'}]);
-  render(<ThemeGallery settings={buildDefaultSettings()} update={vi.fn(async () => {})} />);
+  render(<ThemeGallery settings={{...buildDefaultSettings(),theme:'system'}} update={vi.fn(async () => {})} />);
   expect(await screen.findByText('Unknown token: --evil')).toBeTruthy();
   fireEvent.click(screen.getByRole('button',{name:'Reveal file'}));
   await waitFor(() => expect(themesRevealFile).toHaveBeenCalledWith('broken.taucode-theme.json'));
@@ -179,7 +179,7 @@ it('follows OS changes with custom System pairings and remembers animation prefe
   let dark = false;
   const callbacks = new Set<() => void>();
   Object.defineProperty(window,'matchMedia',{configurable:true,value:() => ({ get matches() { return dark; }, addEventListener: (_: string, fn: () => void) => callbacks.add(fn), removeEventListener: (_: string, fn: () => void) => callbacks.delete(fn) })});
-  const view = renderHook(() => useThemePreference({...buildDefaultSettings(),themeLight:'claude-light',themeDark:'matrix',themeAnimations:{matrix:false}},vi.fn()));
+  const view = renderHook(() => useThemePreference({...buildDefaultSettings(),theme:'system',themeLight:'claude-light',themeDark:'matrix',themeAnimations:{matrix:false}},vi.fn()));
   await waitFor(() => expect(document.documentElement.dataset.themeId).toBe('claude-light'));
   act(() => { dark = true; callbacks.forEach(fn => fn()); });
   expect(document.documentElement.dataset.themeId).toBe('matrix');
@@ -189,7 +189,7 @@ it('follows OS changes with custom System pairings and remembers animation prefe
 });
 
 it('uses roving arrow-key focus and System pairing rows above the gallery', () => {
-  render(<ThemeGallery settings={buildDefaultSettings()} update={vi.fn(async () => {})} />);
+  render(<ThemeGallery settings={{...buildDefaultSettings(),theme:'system'}} update={vi.fn(async () => {})} />);
   const gallery = screen.getByRole('group',{name:'Themes'});
   const cards = within(gallery).getAllByRole('button',{name:/^Apply /});
   expect(cards.filter(c => c.tabIndex === 0)).toHaveLength(1);
@@ -207,7 +207,7 @@ it('offers apply, export and copy in a keyboard-accessible anchored menu', async
   const update = vi.fn(async () => {}), writeText = vi.fn(async (_text: string) => {});
   Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText}});
   vi.mocked(pickThemeExport).mockResolvedValue('/themes/matrix.json');
-  render(<ThemeGallery settings={buildDefaultSettings()} update={update} />);
+  render(<ThemeGallery settings={{...buildDefaultSettings(),theme:'system'}} update={update} />);
   const trigger = screen.getByRole('button',{name:'Actions for Matrix'});
   fireEvent.click(trigger);
   const menu = screen.getByRole('menu',{name:'Theme actions'});
@@ -231,7 +231,7 @@ it('offers apply, export and copy in a keyboard-accessible anchored menu', async
 });
 it('marks custom themes, offers edit and confirms deletion', async () => {
   vi.mocked(themesList).mockResolvedValue([{file:'custom.taucode-theme.json',manifest:{...builtins[0],id:'custom',name:'Custom palette'}}]);
-  render(<ThemeGallery settings={buildDefaultSettings()} update={vi.fn(async () => {})} />);
+  render(<ThemeGallery settings={{...buildDefaultSettings(),theme:'system'}} update={vi.fn(async () => {})} />);
   const trigger = await screen.findByRole('button',{name:'Actions for Custom palette'});
   expect(within(trigger.closest('article')!).getByText('Custom')).toBeTruthy();
   fireEvent.click(trigger);
