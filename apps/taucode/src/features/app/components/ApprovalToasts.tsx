@@ -68,15 +68,10 @@ export function ApprovalToasts({
       .replace(/_/g, " ")
       .trim();
 
-  const methodLabel = (method: string) => {
-    const trimmed = method.replace(/^codex\/requestApproval\/?/, "");
-    return trimmed || method;
-  };
+  const hasValue = (value: unknown) =>
+    value !== null && value !== undefined && value !== "None" && value !== "";
 
   const renderParamValue = (value: unknown) => {
-    if (value === null || value === undefined) {
-      return { text: "None", isCode: false };
-    }
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       return { text: String(value), isCode: false };
     }
@@ -95,7 +90,19 @@ export function ApprovalToasts({
         const workspaceName = workspaceLabels.get(request.workspace_id);
         const params = request.params ?? {};
         const commandInfo = getApprovalCommandInfo(params);
-        const entries = Object.entries(params);
+        const reason = typeof params.reason === "string" && hasValue(params.reason) ? params.reason : null;
+        const command = typeof params.command === "string" && hasValue(params.command)
+          ? params.command : params.command === "None" ? null : commandInfo?.preview;
+        const path = typeof params.path === "string" && hasValue(params.path) ? params.path : null;
+        const tool = typeof params.tool === "string" && hasValue(params.tool) ? params.tool : null;
+        const connector = reason?.startsWith("Connector requests permission") ||
+          tool?.startsWith("mcp__") || command?.startsWith("mcp__") || path?.startsWith("xd://mcp__");
+        const title = connector ? "Use a connector tool"
+          : request.method.includes("fileChange") || path ? "Change a file" : "Run a command";
+        const entries = Object.entries(params).filter(([key, value]) =>
+          !["approvalId", "itemId", "threadId", "turnId", "availableDecisions", "grantRoot",
+            "reason", "command", "path", "tool", "cwd", "diffPreview"].includes(key) && hasValue(value),
+        );
         return (
           <ToastCard
             key={`${request.workspace_id}-${request.request_id}`}
@@ -103,37 +110,47 @@ export function ApprovalToasts({
             role="alert"
           >
             <ToastHeader className="approval-toast-header">
-              <ToastTitle className="approval-toast-title">Approval needed</ToastTitle>
+              <ToastTitle className="approval-toast-title">{title}</ToastTitle>
               {workspaceName ? (
                 <div className="approval-toast-workspace">{workspaceName}</div>
               ) : null}
             </ToastHeader>
-            <div className="approval-toast-method">{methodLabel(request.method)}</div>
             <div className="approval-toast-details">
-              {entries.length ? (
-                entries.map(([key, value]) => {
-                  const rendered = renderParamValue(value);
-                  return (
-                    <div key={key} className="approval-toast-detail">
-                      <div className="approval-toast-detail-label">
-                        {formatLabel(key)}
+              {reason && <ToastBody>{reason}</ToastBody>}
+              {[...new Set([command, path, tool].filter(Boolean))].map((value) => (
+                <code key={value} className="approval-toast-chip">{value}</code>
+              ))}
+              {typeof params.cwd === "string" && hasValue(params.cwd) && (
+                <div className="approval-toast-cwd">{params.cwd}</div>
+              )}
+              {hasValue(params.diffPreview) && (
+                <ToastError className="approval-toast-detail-code">
+                  {renderParamValue(params.diffPreview).text}
+                </ToastError>
+              )}
+              {entries.length > 0 && (
+                <details className="approval-toast-more">
+                  <summary>More details</summary>
+                  {entries.map(([key, value]) => {
+                    const rendered = renderParamValue(value);
+                    return (
+                      <div key={key} className="approval-toast-detail">
+                        <div className="approval-toast-detail-label">
+                          {formatLabel(key)}
+                        </div>
+                        {rendered.isCode ? (
+                          <ToastError className="approval-toast-detail-code">
+                            {rendered.text}
+                          </ToastError>
+                        ) : (
+                          <ToastBody className="approval-toast-detail-value">
+                            {rendered.text}
+                          </ToastBody>
+                        )}
                       </div>
-                      {rendered.isCode ? (
-                        <ToastError className="approval-toast-detail-code">
-                          {rendered.text}
-                        </ToastError>
-                      ) : (
-                        <ToastBody className="approval-toast-detail-value">
-                          {rendered.text}
-                        </ToastBody>
-                      )}
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="approval-toast-detail approval-toast-detail-empty">
-                  No extra details.
-                </div>
+                    );
+                  })}
+                </details>
               )}
             </div>
             <ToastActions className="approval-toast-actions">

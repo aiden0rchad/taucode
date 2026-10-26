@@ -143,3 +143,42 @@ it("includes the shared sidebar resize handle", () => {
   render(<ChatView settings={settings} />);
   expect(screen.getByRole("separator", { name: "Resize sidebar" })).toBeTruthy();
 });
+
+
+it("shows a sent user message before a reply and replaces its server echo", async () => {
+  render(<ChatView settings={settings} />); await open();
+  const original = vi.mocked(chatRequest).getMockImplementation()!;
+  let finish!: (value: unknown) => void;
+  vi.mocked(chatRequest).mockImplementation((action, params) => action === "send" ? new Promise(resolve => { finish = resolve; }) : original(action, params));
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "Immediate prompt" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Immediate prompt", { selector: "p" });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "My conversation" })); });
+  expect(screen.getAllByText("Immediate prompt", { selector: "p" })).toHaveLength(1);
+  act(() => listener({ workspace_id: "chats", message: { method: "item/started", params: { threadId: "chat", item: { id: "canonical-user", type: "userMessage", content: [{ type: "text", text: "Immediate prompt" }] } } } }));
+  expect(screen.getAllByText("Immediate prompt", { selector: "p" })).toHaveLength(1);
+  await act(async () => { finish({}); });
+});
+
+it("removes an unaccepted optimistic message and preserves the draft after a send failure", async () => {
+  render(<ChatView settings={settings} />); await open();
+  const original = vi.mocked(chatRequest).getMockImplementation()!;
+  vi.mocked(chatRequest).mockImplementation((action, params) => action === "send" ? Promise.reject(new Error("Send disconnected")) : original(action, params));
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "Retry me" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Error: Send disconnected");
+  expect(screen.queryByText("Retry me", { selector: "p" })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty("value", "Retry me");
+});
+
+
+it("keeps an accepted optimistic message if refreshing the chat list fails", async () => {
+  render(<ChatView settings={settings} />); await open();
+  const original = vi.mocked(chatRequest).getMockImplementation()!;
+  vi.mocked(chatRequest).mockImplementation((action, params) => action === "send" ? Promise.resolve({}) : action === "list" ? Promise.reject(new Error("List unavailable")) : original(action, params));
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "Already accepted" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Error: List unavailable");
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty("value", ""));
+  expect(screen.getByText("Already accepted", { selector: "p" })).toBeTruthy();
+});

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as Sentry from "@sentry/react";
 import {
   sendUserMessage as sendUserMessageService,
+  convertImagesToDataUrls,
   steerTurn as steerTurnService,
   startReview as startReviewService,
   interruptTurn as interruptTurnService,
@@ -22,6 +23,7 @@ vi.mock("@sentry/react", () => ({
 
 vi.mock("@services/tauri", () => ({
   sendUserMessage: vi.fn(),
+  convertImagesToDataUrls: vi.fn(),
   steerTurn: vi.fn(),
   startReview: vi.fn(),
   interruptTurn: vi.fn(),
@@ -68,6 +70,7 @@ describe("useThreadMessaging telemetry", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(convertImagesToDataUrls).mockImplementation(async images => images.map(image => image.startsWith("data:") ? image : "data:image/png;base64,a"));
     vi.mocked(sendUserMessageService).mockResolvedValue({
       result: {
         turn: { id: "turn-1" },
@@ -92,6 +95,39 @@ describe("useThreadMessaging telemetry", () => {
     vi.mocked(compactThreadService).mockResolvedValue(
       {} as Awaited<ReturnType<typeof compactThreadService>>,
     );
+  });
+
+  it.each(["image-error", "rejected", "rpc", "missing-turn", "sent"])("shows the user message before the %s send response, then reconciles failure", async outcome => {
+    let settle!: (value: unknown) => void;
+    let fail!: (error: Error) => void;
+    if (outcome === "image-error") vi.mocked(convertImagesToDataUrls).mockRejectedValueOnce(new Error("Cannot read image"));
+    else vi.mocked(sendUserMessageService).mockImplementationOnce(() => new Promise((resolve, reject) => { settle = resolve; fail = reject; }));
+    const dispatch = vi.fn();
+    const { result } = renderHook(() => useThreadMessaging({
+      activeWorkspace: workspace, activeThreadId: "thread-1", steerEnabled: false, customPrompts: [],
+      threadStatusById: {}, activeTurnIdByThread: {}, pendingInterruptsRef: { current: new Set() }, dispatch,
+      getCustomName: () => undefined, markProcessing: vi.fn(), markReviewing: vi.fn(), setActiveTurnId: vi.fn(),
+      recordThreadActivity: vi.fn(), safeMessageActivity: vi.fn(), pushThreadErrorMessage: vi.fn(),
+      ensureThreadForActiveWorkspace: async () => "thread-1", ensureThreadForWorkspace: async () => "thread-1",
+      refreshThread: async () => null, forkThreadForWorkspace: async () => null, updateThreadParent: vi.fn(),
+    }));
+    let sending!: ReturnType<typeof result.current.sendUserMessageToThread>;
+    await act(async () => { sending = result.current.sendUserMessageToThread(workspace, "thread-1", "Before reply", ["image.png"]); });
+    const optimistic = dispatch.mock.calls.map(([action]) => action).find(action => action.type === "upsertItem");
+    expect(optimistic.item).toEqual({ id: expect.stringMatching(/^optimistic-user-/), kind: "message", role: "user", text: "Before reply", images: ["image.png"] });
+    await act(async () => {
+      if (outcome === "rejected") fail(new Error("Disconnected"));
+      else if (outcome !== "image-error") settle(outcome === "rpc" ? { error: { message: "Denied" } } : outcome === "missing-turn" ? {} : { result: { turn: { id: "turn-1" } } });
+      await sending;
+    });
+    expect(convertImagesToDataUrls).toHaveBeenCalledWith(["image.png"]);
+    if (outcome === "image-error") expect(sendUserMessageService).not.toHaveBeenCalled();
+    else {
+      expect(sendUserMessageService).toHaveBeenCalledWith(workspace.id, "thread-1", "Before reply", expect.objectContaining({ images: ["data:image/png;base64,a"] }));
+      expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "upsertItem", item: expect.objectContaining({ id: optimistic.item.id, images: ["data:image/png;base64,a"] }) }));
+    }
+    if (outcome === "sent") expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: "removeItem" }));
+    else expect(dispatch).toHaveBeenCalledWith({ type: "removeItem", threadId: "thread-1", itemId: optimistic.item.id });
   });
 
   it("records prompt_sent once for one message send", async () => {

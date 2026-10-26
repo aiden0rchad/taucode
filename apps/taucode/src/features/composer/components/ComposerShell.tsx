@@ -45,5 +45,5 @@ export function ComposerSendButton({ running, disabled, disabledReason, onSend, 
 }
 
 export function ComposerAccessControl({ value, onChange, disabled, title }: { value: "ask" | "read-only" | "full-access"; onChange?: (value: "ask" | "read-only" | "full-access") => void; disabled?: boolean; title?: string }) {
-  return <label className="composer-chip composer-access-chip" title={title ?? `Access: ${value}`}><Settings2 size={16} aria-hidden /><select aria-label="Access mode" value={value} disabled={disabled || !onChange} onChange={event => onChange?.(event.target.value as typeof value)}><option value="ask">Ask</option><option value="read-only">Read-only</option><option value="full-access">Full access</option></select><ChevronsUpDown className="composer-access-chevron" size={16} aria-hidden /></label>;
+  return <div className="composer-chip composer-access-chip" title={title ?? `Access: ${value}`}><Settings2 size={16} aria-hidden /><select aria-label="Access mode" value={value} disabled={disabled || !onChange} onChange={event => { onChange?.(event.target.value as typeof value); event.currentTarget.blur(); }}><option value="ask">Ask</option><option value="read-only">Read-only</option><option value="full-access">Full access</option></select><ChevronsUpDown className="composer-access-chevron" size={16} aria-hidden /></div>;
 }

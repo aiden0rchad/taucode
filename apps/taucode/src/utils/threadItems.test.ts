@@ -921,3 +921,33 @@ describe("threadItems", () => {
   });
 
 });
+
+
+it("replaces one matching optimistic user message while retaining real repeated prompts", () => {
+  const real: ConversationItem = { id: "user-old", kind: "message", role: "user", text: "Again", images: ["data:image/png;base64,a"] };
+  const pending = { ...real, id: "optimistic-user-1" };
+  const assistant: ConversationItem = { id: "reply", kind: "message", role: "assistant", text: "Reply" };
+  const echo = { ...real, id: "user-new" };
+  const items = upsertItem([real, pending, assistant], echo);
+  expect(items.map(item => item.id)).toEqual(["user-old", "user-new", "reply"]);
+  expect(upsertItem(items, echo)).toEqual(items);
+  expect(upsertItem([pending], { ...echo, images: ["data:image/png;base64,b"] })).toHaveLength(2);
+});
+
+
+it("reconciles pending user items in snapshots without matching an old identical prompt", () => {
+  const old: ConversationItem = { id: "old", kind: "message", role: "user", text: "Again" };
+  const pending = { ...old, id: "optimistic-user-2" };
+  const echo = { ...old, id: "new" };
+  expect(mergeThreadItems([old], [old, pending]).map(item => item.id)).toEqual(["old", "optimistic-user-2"]);
+  expect(mergeThreadItems([old, echo], [old, pending]).map(item => item.id)).toEqual(["old", "new"]);
+  expect(upsertItem([pending], { ...echo, text: " Again " })).toHaveLength(1);
+});
+
+it("consumes each snapshot echo once when identical prompts are pending", () => {
+  const pending: ConversationItem = { id: "optimistic-user-first", kind: "message", role: "user", text: "Again" };
+  const second = { ...pending, id: "optimistic-user-second" };
+  const echo = { ...pending, id: "canonical-first" };
+  expect(mergeThreadItems([echo], [pending, second]).map(item => item.id)).toEqual(["canonical-first", "optimistic-user-second"]);
+  expect(mergeThreadItems([echo, { ...echo, id: "canonical-second" }], [pending, second]).map(item => item.id)).toEqual(["canonical-first", "canonical-second"]);
+});

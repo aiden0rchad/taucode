@@ -1834,6 +1834,8 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
       <SideChatPane key={sideChat.id} chat={sideChat}
         items={itemsByThread[sideChat.id] ?? []}
         running={threadStatusById[sideChat.id]?.isProcessing ?? false}
+        processingStartedAt={threadStatusById[sideChat.id]?.processingStartedAt ?? null}
+        lastDurationMs={threadStatusById[sideChat.id]?.lastDurationMs ?? null}
         models={models} parentModel={selectedModel} messageProps={layoutSurfaces.primary.messagesProps}
         onClose={() => { setSplitSideChatId(null); sideChats.close(); }}
         onRename={() => handleRenameThread(sideChat.workspaceId, sideChat.id)}

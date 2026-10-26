@@ -2,7 +2,7 @@ import { threadEffortKey } from "@/features/models/reasoning";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chatRequest } from "@services/tauri";
 import { subscribeAppServerEvents } from "@services/events";
-import { buildConversationItem, buildItemsFromThread, previewThreadName } from "@utils/threadItems";
+import { buildConversationItem, buildItemsFromThread, previewThreadName, upsertItem, mergeThreadItems } from "@utils/threadItems";
 import { clampThreadName } from "@threads/utils/threadNaming";
 import type { Chat, ChatMessage, ChatResponse, ChatThread } from "./chat";
 
@@ -23,7 +23,11 @@ export function useChat() {
     const result = await chatRequest<ChatResponse>("read", { threadId: id });
     if (revision === (revisions.current[id] ?? 0)) {
       const items = buildItemsFromThread(result.result.thread).filter((item): item is ChatMessage => item.kind === "message");
-      setMessages(current => ({ ...current, [id]: items }));
+      setMessages(current => {
+        const remoteIds = new Set(items.map(item => item.id));
+        const merged = mergeThreadItems(items, current[id] ?? []).filter(item => remoteIds.has(item.id) || item.id.startsWith("optimistic-user-")) as ChatMessage[];
+        return { ...current, [id]: merged };
+      });
     }
     return result.result.thread;
   }, []);
@@ -47,7 +51,7 @@ export function useChat() {
       const item = buildConversationItem(params.item as Record<string, unknown>);
       if (item?.kind === "message") setMessages(current => {
         const items = current[id] ?? [];
-        return { ...current, [id]: items.some(i => i.id === item.id) ? items.map(i => i.id === item.id ? item : i) : [...items, item] };
+        return { ...current, [id]: upsertItem(items, item) as ChatMessage[] };
       });
     }
     if (method === "item/agentMessage/delta") setMessages(current => {
@@ -85,12 +89,18 @@ export function useChat() {
     } else if (beforeUserItemId) id = await fork(id, model, beforeUserItemId);
     const title = clampThreadName(previewThreadName(text, "New chat"));
     if (!chats.find(c => c.id === id)?.chat.title && title) await chatRequest("rename", { threadId: id, title });
+    const optimisticId = `optimistic-user-${crypto.randomUUID()}`;
+    revisions.current[id] = (revisions.current[id] ?? 0) + 1;
+    setMessages(current => ({ ...current, [id]: [...(current[id] ?? []), { id: optimisticId, kind: "message", role: "user", text, images }] }));
     setRunning(current => ({ ...current, [id]: true }));
     try {
       if (effort) localStorage.setItem(threadEffortKey(id), effort);
       await chatRequest("send", { threadId: id, ...(effort ? { effort } : {}), input: [{ type: "text", text }, ...images.map(url => ({ type: "image", url }))] });
-      await refresh();
-    } catch (e) { setRunning(current => ({ ...current, [id]: false })); throw e; }
+      await refresh().catch(e => setError(String(e)));
+    } catch (e) {
+      setMessages(current => ({ ...current, [id]: (current[id] ?? []).filter(item => item.id !== optimisticId) }));
+      setRunning(current => ({ ...current, [id]: false })); throw e;
+    }
   };
   return { chats, active, setActive, messages: active ? messages[active] ?? [] : [], running: active ? Boolean(running[active]) : false, error, setError, refresh, open, fork, send };
 }

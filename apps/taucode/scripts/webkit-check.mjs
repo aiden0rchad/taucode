@@ -65,6 +65,22 @@ try {
       assert(await page.locator('.workspace-titlebar, .main-header').getByRole('button', { name: 'Browser', exact: true }).count() === 0, 'Redundant Browser header button');
       console.log(`PASS ${label} row alignment ${width}x${height}: ${JSON.stringify(result)}`);
     });
+    for (const mode of ['code', 'chat', 'work']) await check(`${mode} composer controls`, async () => {
+      await open({ mode, task: 'new' });
+      const composer = page.locator('.composer-shell').first();
+      await composer.waitFor();
+      for (const size of [300, 420, 470, 560, 680]) {
+        await composer.evaluate((element, width) => { element.style.width = `${width}px`; element.style.maxWidth = 'none'; }, size);
+        const overflow = await composer.evaluate(element => {
+          const box = element.getBoundingClientRect();
+          return [...element.querySelectorAll('.composer-shell-toolbar button, .composer-shell-toolbar select')].filter(control => {
+            const r = control.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && (r.left < box.left || r.right > box.right + 1 || r.top < box.top || r.bottom > box.bottom + 1);
+          }).map(control => control.getAttribute('aria-label') || control.textContent);
+        });
+        assert.deepEqual(overflow, [], `${mode} composer ${size}px`);
+      }
+    });
     await check('Native browser toolbar', async () => {
       await open({ panel: 'browser' });
       await page.locator('.browser-native-slot').waitFor();

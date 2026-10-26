@@ -13,6 +13,7 @@ import type {
 } from "@/types";
 import {
   compactThread as compactThreadService,
+  convertImagesToDataUrls,
   sendUserMessage as sendUserMessageService,
   steerTurn as steerTurnService,
   startReview as startReviewService,
@@ -211,6 +212,9 @@ export function useThreadMessaging({
         threadId,
         timestamp,
       });
+      const optimisticId = shouldSteer ? null : `optimistic-user-${crypto.randomUUID()}`;
+      if (optimisticId) dispatch({ type: "upsertItem", workspaceId: workspace.id, threadId, hasCustomName: Boolean(customThreadName), item: { id: optimisticId, kind: "message", role: "user", text: finalText, images } });
+      const removeOptimisticMessage = () => { if (optimisticId) dispatch({ type: "removeItem", threadId, itemId: optimisticId }); };
       markProcessing(threadId, true);
       safeMessageActivity();
       onDebug?.({
@@ -233,6 +237,8 @@ export function useThreadMessaging({
         },
       });
       try {
+        const inputImages = !shouldSteer && images.length ? await convertImagesToDataUrls(images) : images;
+        if (optimisticId && inputImages !== images) dispatch({ type: "upsertItem", workspaceId: workspace.id, threadId, hasCustomName: Boolean(customThreadName), item: { id: optimisticId, kind: "message", role: "user", text: finalText, images: inputImages } });
         const shouldPreflightRuntimeCodexArgs =
           shouldPreflightRuntimeCodexArgsForSend?.(workspace.id, threadId) ?? true;
         if (
@@ -260,7 +266,7 @@ export function useThreadMessaging({
               serviceTier: resolvedServiceTier,
               collaborationMode: sanitizedCollaborationMode,
               accessMode: resolvedAccessMode,
-              images,
+              images: inputImages,
 
             }),
           )) as Record<string, unknown>;
@@ -275,6 +281,7 @@ export function useThreadMessaging({
           payload: response,
         });
         if (rpcError) {
+          removeOptimisticMessage();
           if (requestMode !== "steer") {
             markProcessing(threadId, false);
             setActiveTurnId(threadId, null);
@@ -307,6 +314,7 @@ export function useThreadMessaging({
           | null;
         const turnId = asString(turn?.id ?? "");
         if (!turnId) {
+          removeOptimisticMessage();
           markProcessing(threadId, false);
           setActiveTurnId(threadId, null);
           pushThreadErrorMessage(threadId, "Turn failed to start.");
@@ -316,6 +324,7 @@ export function useThreadMessaging({
         setActiveTurnId(threadId, turnId);
         return { status: "sent", ...(summary?.sideOf ? { threadId } : {}) };
       } catch (error) {
+        removeOptimisticMessage();
         const errorMessage = error instanceof Error ? error.message : String(error);
         if (requestMode !== "steer") {
           markProcessing(threadId, false);

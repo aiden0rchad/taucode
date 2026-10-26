@@ -1,5 +1,6 @@
 import type { ConversationItem } from "@/types";
 import { normalizeItem, prepareThreadItems, upsertItem } from "@utils/threadItems";
+import { removeEchoedOptimisticMessages } from "@utils/threadItems.listOps";
 import type { ThreadAction, ThreadState } from "../useThreadsReducer";
 import {
   addSummaryBoundary,
@@ -20,7 +21,8 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
   switch (action.type) {
     case "prependThreadHistory": {
       const snapshot = new Map(action.snapshot.map((item) => [item.id, item]));
-      const current = state.itemsByThread[action.threadId] ?? [];
+      let current = state.itemsByThread[action.threadId] ?? [];
+      if (action.recent) current = removeEchoedOptimisticMessages(current, action.items);
       const local = action.replace ? current.filter((item) => snapshot.get(item.id) !== item) : current;
       const localById = new Map(local.map((item) => [item.id, item]));
       const remoteIds = new Set(action.items.map((item) => item.id));
@@ -42,6 +44,8 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
         itemsByThread: { ...state.itemsByThread, [action.threadId]: [...merged.values()] },
       };
     }
+    case "removeItem":
+      return { ...state, itemsByThread: { ...state.itemsByThread, [action.threadId]: (state.itemsByThread[action.threadId] ?? []).filter(item => item.id !== action.itemId) } };
     case "addAssistantMessage": {
       const list = state.itemsByThread[action.threadId] ?? [];
       const message: ConversationItem = {

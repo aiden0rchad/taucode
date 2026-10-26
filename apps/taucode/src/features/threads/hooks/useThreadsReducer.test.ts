@@ -4,6 +4,25 @@ import { initialState, threadReducer } from "./useThreadsReducer";
 import type { ThreadState } from "./useThreadsReducer";
 
 describe("threadReducer", () => {
+  it.each([
+    ["turn-1", ["other-turn", "other-thread", "other-workspace", "unscoped"]],
+    [undefined, ["other-thread", "other-workspace", "unscoped"]],
+  ])("removes only matching thread approvals with turn %s", (turnId, remaining) => {
+    const approvals = [
+      { request_id: "matching", workspace_id: "ws-1", params: { threadId: "thread-1", turnId: "turn-1" } },
+      { request_id: "no-turn", workspace_id: "ws-1", params: { threadId: "thread-1" } },
+      { request_id: "null-turn", workspace_id: "ws-1", params: { threadId: "thread-1", turnId: null } },
+      { request_id: "other-turn", workspace_id: "ws-1", params: { threadId: "thread-1", turnId: "turn-2" } },
+      { request_id: "other-thread", workspace_id: "ws-1", params: { threadId: "thread-2", turnId: "turn-1" } },
+      { request_id: "other-workspace", workspace_id: "ws-2", params: { threadId: "thread-1", turnId: "turn-1" } },
+      { request_id: "unscoped", workspace_id: "ws-1", params: {} },
+    ].map((approval) => ({ ...approval, method: "item/commandExecution/requestApproval" }));
+    const next = threadReducer({ ...initialState, approvals }, {
+      type: "removeThreadApprovals", workspaceId: "ws-1", threadId: "thread-1", turnId,
+    });
+    expect(next.approvals.map((approval) => approval.request_id)).toEqual(remaining);
+  });
+
   it("ensures thread with default name and active selection", () => {
     const next = threadReducer(initialState, {
       type: "ensureThread",

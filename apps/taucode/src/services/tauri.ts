@@ -454,7 +454,7 @@ function isInlineImageUrl(image: string) {
   );
 }
 
-async function convertImagesToDataUrls(images: string[]): Promise<string[]> {
+export async function convertImagesToDataUrls(images: string[]): Promise<string[]> {
   return Promise.all(
     images.map(async (image) => {
       if (isInlineImageUrl(image)) {

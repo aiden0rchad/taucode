@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { ComposerShell, ComposerSendButton } from "./ComposerShell";
+import { ComposerShell, ComposerSendButton, ComposerAccessControl } from "./ComposerShell";
 
 afterEach(cleanup);
 it("explains disabled send and switches to stop without losing the callback", () => {
@@ -48,4 +48,16 @@ it("keeps the compact model chip's full accessible name and reasoning level", ()
   expect(chip.querySelector(".reasoning-chip-dot")?.getAttribute("aria-hidden")).toBe("true");
   fireEvent.click(chip);
   expect(screen.getByRole("dialog", { name: "Model and reasoning" })).toBeTruthy();
+});
+
+
+it("releases the native access picker after choosing a mode", () => {
+  const onChange = vi.fn();
+  render(<ComposerAccessControl value="ask" onChange={onChange} />);
+  const select = screen.getByRole("combobox", { name: "Access mode" });
+  expect(select.closest("label")).toBeNull();
+  select.focus();
+  fireEvent.change(select, { target: { value: "full-access" } });
+  expect(onChange).toHaveBeenCalledWith("full-access");
+  expect(document.activeElement).not.toBe(select);
 });

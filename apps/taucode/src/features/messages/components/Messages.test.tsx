@@ -1703,3 +1703,18 @@ describe("Messages", () => {
     expect(screen.getByText("[error] Missing config")).toBeTruthy();
   });
 });
+
+
+it("advances the working timer before a thread start timestamp is available", () => {
+  vi.useFakeTimers();
+  try {
+    const { container, rerender } = render(<Messages items={[]} threadId={null} isThinking openTargets={[]} selectedOpenAppId="" />);
+    expect(container.querySelector(".working-timer-clock")?.textContent).toBe("0:00");
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(container.querySelector(".working-timer-clock")?.textContent).toBe("0:02");
+    rerender(<Messages items={[]} threadId="started" isThinking processingStartedAt={Date.now() - 5000} openTargets={[]} selectedOpenAppId="" />);
+    expect(container.querySelector(".working-timer-clock")?.textContent).toBe("0:05");
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(container.querySelector(".working-timer-clock")?.textContent).toBe("0:06");
+  } finally { vi.useRealTimers(); }
+});

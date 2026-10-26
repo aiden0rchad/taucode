@@ -6,7 +6,7 @@ import type { ModelOption } from "@/types";
 import { SideChatPane, SideChatSplit } from "./SideChatPane";
 import { sideChatQuote } from "./useSideChats";
 
-vi.mock("@/features/messages/components/Messages", () => ({ Messages: ({ onSendToMain }: { onSendToMain: (text: string) => void }) => <button onClick={() => onSendToMain("Answer\nSecond line")}>Send to main</button> }));
+vi.mock("@/features/messages/components/Messages", () => ({ Messages: ({ onSendToMain, processingStartedAt, lastDurationMs }: { onSendToMain: (text: string) => void; processingStartedAt?: number | null; lastDurationMs?: number | null }) => <button data-start={processingStartedAt} data-duration={lastDurationMs} onClick={() => onSendToMain("Answer\nSecond line")}>Send to main</button> }));
 afterEach(cleanup);
 const chat = { id: "child", parentId: "main", workspaceId: "ws", title: "Research", engine: "pi" as const, model: "test/model" };
 const props = () => ({ chat, items: [], models: [], running: false, messageProps: { openTargets: [], selectedOpenAppId: "" }, onSend: vi.fn().mockResolvedValue({ status: "sent" }), onInterrupt: vi.fn().mockResolvedValue(undefined), onClose: vi.fn(), onDelete: vi.fn(), onSendToMain: vi.fn() });
@@ -70,4 +70,13 @@ describe("Side chats", () => {
     expect(screen.queryByRole("separator")).toBeNull();
     expect(screen.getByRole("complementary", { name: "Side chat" })).toBeTruthy();
   });
+});
+
+
+it("uses side chat timing instead of the parent's message props", () => {
+  const p = props();
+  render(<SideChatPane {...p} running processingStartedAt={100} lastDurationMs={200} messageProps={{ ...p.messageProps, ...{ processingStartedAt: 900, lastDurationMs: 800 } }} />);
+  const message = screen.getByRole("button", { name: "Send to main" });
+  expect(message.dataset.start).toBe("100");
+  expect(message.dataset.duration).toBe("200");
 });

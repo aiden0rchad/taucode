@@ -322,13 +322,14 @@ export const WorkingIndicator = memo(function WorkingIndicator({
   );
 
   useEffect(() => {
-    if (!isThinking || !processingStartedAt) {
+    if (!isThinking) {
       setElapsedMs(0);
       return undefined;
     }
-    setElapsedMs(Date.now() - processingStartedAt);
+    const startedAt = processingStartedAt ?? Date.now();
+    setElapsedMs(Math.max(0, Date.now() - startedAt));
     const interval = window.setInterval(() => {
-      setElapsedMs(Date.now() - processingStartedAt);
+      setElapsedMs(Math.max(0, Date.now() - startedAt));
     }, 1000);
     return () => window.clearInterval(interval);
   }, [isThinking, processingStartedAt]);

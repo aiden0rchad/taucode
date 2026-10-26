@@ -30,6 +30,42 @@ const approvals: ApprovalRequest[] = [
 ];
 
 describe("ApprovalToasts", () => {
+  it("shows readable details and actions without internal IDs or empty values", () => {
+    const request: ApprovalRequest = { ...approvals[0], params: {
+      reason: "Run the project tests", command: "npm test", cwd: "/project",
+      diffPreview: "+ new line", approvalId: "secret-approval", itemId: "secret-item",
+      threadId: "secret-thread", turnId: "secret-turn", grantRoot: "/secret-root",
+      availableDecisions: ["accept", "acceptForSession", "decline", "cancel"],
+      empty: null, absent: undefined, missing: "None", extra: "extra context",
+    } };
+    const { container, unmount } = render(<ApprovalToasts approvals={[request]} workspaces={workspaces}
+      onDecision={vi.fn()} onRemember={vi.fn()} />);
+    for (const text of ["Run a command", "Run the project tests", "npm test", "/project", "+ new line"]) {
+      expect(screen.getByText(text)).toBeTruthy();
+    }
+    for (const text of ["secret-approval", "secret-item", "secret-thread", "secret-turn", "/secret-root", "None", "cancel"]) {
+      expect(container.textContent).not.toContain(text);
+    }
+    for (const name of ["Decline", "Allow for session", "Always allow", "Approve (Enter)"]) {
+      expect(screen.getByRole("button", { name })).toBeTruthy();
+    }
+    expect(container.querySelector("details")?.open).toBe(false);
+    expect(screen.getByText("More details")).toBeTruthy();
+    expect(container.querySelector(".approval-toast-details .approval-toast-actions")).toBeNull();
+    unmount();
+  });
+
+  it.each([
+    ["item/fileChange/requestApproval", { path: "src/main.ts" }, "Change a file"],
+    ["item/commandExecution/requestApproval", { tool: "mcp__server__read", reason: "Connector requests permission to call server · read" }, "Use a connector tool"],
+  ])("labels %s approvals", (method, params, title) => {
+    const { unmount } = render(<ApprovalToasts approvals={[{ ...approvals[0], method, params }]}
+      workspaces={workspaces} onDecision={vi.fn()} />);
+    expect(screen.getByText(title)).toBeTruthy();
+    expect(screen.getByText("path" in params ? params.path : params.tool)).toBeTruthy();
+    unmount();
+  });
+
   it.each(["commandExecution", "fileChange"])("uses the shared approval controls for pi %s including session approval", (kind) => {
     const onDecision = vi.fn();
     const request: ApprovalRequest = { workspace_id: "workspace-1", request_id: "pi:thread:approval", method: `item/${kind}/requestApproval`, params: { command: "npm test", availableDecisions: ["accept", "acceptForSession", "decline", "cancel"] } };
