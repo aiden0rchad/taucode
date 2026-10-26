@@ -16,6 +16,7 @@ model = {"id": args.model or "fake", "provider": args.provider or "local", "cont
 if args.session_dir:
     assert os.environ["TAUCODE_SESSION_KEY"] == header["id"]
     assert os.environ["PI_TELEMETRY"] == "0"
+    assert os.environ["PI_AUTO_QA"] == "0"
     assert os.environ["PI_SKIP_VERSION_CHECK"] == "1"
     assert not (pathlib.Path(os.environ["PI_CODING_AGENT_DIR"]) / "auth.json").exists()
     assert "keychain-secret-canary" not in " ".join(sys.argv)

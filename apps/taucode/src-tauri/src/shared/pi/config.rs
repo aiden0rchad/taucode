@@ -254,6 +254,8 @@ pub(super) fn prepare(
         home.to_string_lossy().into_owned(),
     );
     env.insert("PI_TELEMETRY".into(), "0".into());
+    // omp Auto QA posts tool-issue reports to qa.omp.sh; nothing leaves the machine unasked.
+    env.insert("PI_AUTO_QA".into(), "0".into());
     env.insert("PI_SKIP_VERSION_CHECK".into(), "1".into());
     Ok(env)
 }
