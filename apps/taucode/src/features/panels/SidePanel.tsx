@@ -11,7 +11,7 @@ import { SidebarCollapseButton } from "@/features/layout/components/SidebarResiz
 import { RowMenu } from "@/features/chat/RowMenu";
 import { BrowserPane } from "@/features/browser/BrowserPane";
 import { defaultBrowserSettings } from "@/features/browser/browser";
-import { panelReducer, type PanelTab } from "./panelState";
+import { MIN_RIGHT_PANEL_WIDTH, panelReducer, type PanelTab } from "./panelState";
 import "./side-panel.css";
 
 export type PanelTool = { id: string; label: string; shortcut?: string; content: ReactNode; target?: string; onOpen?: (tab: PanelTab) => void; onClose?: () => void };
@@ -46,7 +46,7 @@ export function WorkspaceShell({ children, scope, title, code, tools = [], searc
     <div className="workspace-body"><div className="workspace-main" ref={mainRef}>{children}</div>
     {overlay && state.open && <button className="side-panel-scrim" aria-label="Dismiss side panel" onClick={() => update(s => ({ ...s, open: false }))} />}
     {<aside ref={panelRef} tabIndex={-1} role={overlay ? "dialog" : undefined} aria-modal={overlay && state.open ? true : undefined} hidden={!state.open} className={`tabbed-side-panel${overlay ? " is-overlay" : ""}${expanded ? " is-expanded" : ""}`} style={{ width: expanded ? "min(75vw, 1000px)" : "var(--right-panel-width)" }} aria-label="Side panel">
-      <div className="side-panel-resizer" role="separator" aria-label="Resize side panel" aria-orientation="vertical" aria-valuemin={320} aria-valuemax={900} aria-valuenow={resize.rightPanelWidth} tabIndex={0} onMouseDown={resize.onRightPanelResizeStart} onKeyDown={e => { if (["ArrowLeft", "ArrowRight"].includes(e.key)) { e.preventDefault(); resize.setRightPanelWidth(w => Math.min(900, Math.max(320, w + (e.key === "ArrowLeft" ? 20 : -20)))); } }} />
+      <div className="side-panel-resizer" role="separator" aria-label="Resize side panel" aria-orientation="vertical" aria-valuemin={MIN_RIGHT_PANEL_WIDTH} aria-valuemax={resize.maxRightPanelWidth} aria-valuenow={resize.rightPanelWidth} tabIndex={0} onPointerDown={resize.onRightPanelResizeStart} onKeyDown={e => { if (["ArrowLeft", "ArrowRight"].includes(e.key)) { e.preventDefault(); resize.setRightPanelWidth(resize.rightPanelWidth + (e.key === "ArrowLeft" ? 20 : -20)); } }} />
       <div className="side-panel-tabbar"><div className="side-panel-tabs" role="tablist" aria-label="Side panel tabs">
         {state.tabs.map((tab, index) => { const Icon = icons[tab.kind as keyof typeof icons] ?? Folder; return <div className="side-panel-tab" key={tab.id} draggable onDragStart={e => e.dataTransfer.setData("text/plain", tab.id)} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); update(s => panelReducer(s, { type: "reorder", id: e.dataTransfer.getData("text/plain"), before: tab.id })); }}>
           <button role="tab" aria-selected={tab.id === state.active} tabIndex={tab.id === state.active ? 0 : -1} onClick={() => update(s => panelReducer(s, { type: "select", id: tab.id }))} onKeyDown={e => {

@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactNode } from "react";
+import type { PointerEvent, ReactNode } from "react";
 import { MainTopbar } from "../../app/components/MainTopbar";
 import { ChatPane } from "./ChatPane";
 
@@ -12,7 +12,7 @@ type TabletLayoutProps = {
   showWorkspace: boolean;
   sidebarNode: ReactNode;
   tabletTab: "projects" | "codex" | "git" | "log";
-  onSidebarResizeStart: (event: MouseEvent<HTMLDivElement>) => void;
+  onSidebarResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
   topbarLeftNode: ReactNode;
   topbarActionsNode?: ReactNode;
   messagesNode: ReactNode;
@@ -50,7 +50,7 @@ export function TabletLayout({
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize projects"
-        onMouseDown={onSidebarResizeStart}
+        onPointerDown={onSidebarResizeStart}
       />
       <section className="tablet-main">
         {approvalToastsNode}

@@ -31,13 +31,16 @@ export function readPanel(key: string, task = false): PanelState {
   } catch { return fallback; }
 }
 
-export const sidePanelIsOverlay = (windowWidth: number, sidebarWidth: number, panelWidth: number) => windowWidth - sidebarWidth - panelWidth < 520;
+export const MIN_RIGHT_PANEL_WIDTH = 320;
+const dockedPanelSpace = (windowWidth: number, sidebarWidth: number) => windowWidth - sidebarWidth - (sidebarWidth ? 480 : 360);
+export const sidePanelIsOverlay = (windowWidth: number, sidebarWidth: number, panelWidth: number) => dockedPanelSpace(windowWidth, sidebarWidth) < Math.max(MIN_RIGHT_PANEL_WIDTH, panelWidth);
 
 export function workspaceLayout(width: number, preferredSidebarWidth: number, sidebarCollapsed: boolean, panelWidth: number, panelOpen: boolean) {
   const sidebarOverlay = width < 760;
   const sidebarWidth = Math.min(preferredSidebarWidth, sidebarOverlay ? width : Math.max(0, width - 520));
   const sidebarColumn = sidebarCollapsed || sidebarOverlay ? 0 : sidebarWidth;
-  const panelOverlay = sidePanelIsOverlay(width, sidebarColumn, panelWidth);
+  const panelOverlay = sidebarOverlay || sidePanelIsOverlay(width, sidebarColumn, panelWidth);
+  const maxPanelWidth = Math.max(MIN_RIGHT_PANEL_WIDTH, panelOverlay ? width - 80 : dockedPanelSpace(width, sidebarColumn));
   const conversationWidth = width - sidebarColumn - (panelOpen && !panelOverlay ? panelWidth : 0);
-  return { sidebarWidth, sidebarColumn, sidebarOverlay, panelOverlay, conversationWidth };
+  return { sidebarWidth, sidebarColumn, sidebarOverlay, panelOverlay, maxPanelWidth, conversationWidth };
 }

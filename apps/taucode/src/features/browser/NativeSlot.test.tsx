@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { NativeSlot, roundedRect } from "./NativeSlot";
 import { browserNativeBounds } from "@services/tauri";
 import { intersects, registerNativeOverlay } from "@/features/design-system/nativeOverlays";
 import { ModalShell } from "@/features/design-system/components/modal/ModalShell";
 import { PopoverSurface } from "@/features/design-system/components/popover/PopoverPrimitives";
+import { useResizablePanels } from "@/features/layout/hooks/useResizablePanels";
 vi.mock("@services/tauri", () => ({ browserNativeBounds: vi.fn().mockResolvedValue(undefined) }));
 let callbacks: Map<number, FrameRequestCallback>;
 let next: number;
@@ -55,4 +56,30 @@ it("does not hide for nonintersecting overlays or touching edges", async () => {
   render(<NativeSlot tabId="one" ready blocked={false} onError={error} />); await frame();
   expect(browserNativeBounds).toHaveBeenLastCalledWith("one", expect.anything(), true);
   unregister(); overlay.remove();
+});
+
+it.each(["sidebar", "side panel"])("hides the native view behind the %s resize overlay and restores it on release", async kind => {
+  localStorage.clear();
+  function Panels() {
+    const resize = useResizablePanels();
+    return <div ref={resize.appRef} className="tabbed-side-panel">
+      <div role="separator" onPointerDown={kind === "sidebar" ? resize.onSidebarResizeStart : resize.onRightPanelResizeStart} />
+      <NativeSlot tabId="one" ready blocked={false} snapshot="AAAA" onError={error} />
+    </div>;
+  }
+  render(<Panels />); await frame();
+  const handle = screen.getByRole("separator");
+  handle.setPointerCapture = vi.fn();
+  handle.hasPointerCapture = vi.fn(() => true);
+  handle.releasePointerCapture = vi.fn();
+  fireEvent.pointerDown(handle, { pointerId: 1, button: 0, isPrimary: true, clientX: 400 });
+  expect(handle.setPointerCapture).toHaveBeenCalledWith(1);
+  expect(document.querySelector<HTMLElement>(".panel-resize-overlay")?.style.cursor).toBe("col-resize");
+  await frame();
+  expect(browserNativeBounds).toHaveBeenLastCalledWith("one", expect.anything(), false);
+  expect(screen.getByLabelText("Native browser page").getAttribute("data-native-hidden")).toBe("true");
+  expect(screen.getByAltText("Last page snapshot").getAttribute("src")).toBe("data:image/png;base64,AAAA");
+  fireEvent.pointerUp(handle, { pointerId: 1 }); await frame();
+  expect(document.querySelector(".panel-resize-overlay")).toBeNull();
+  expect(browserNativeBounds).toHaveBeenLastCalledWith("one", expect.anything(), true);
 });

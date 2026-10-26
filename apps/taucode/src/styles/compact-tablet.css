@@ -123,6 +123,7 @@
 }
 
 .projects-resizer {
+  touch-action: none;
   position: absolute;
   top: 0;
   bottom: 0;

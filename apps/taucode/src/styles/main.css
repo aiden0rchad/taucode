@@ -991,6 +991,7 @@
 }
 
 .content-split-resizer {
+  touch-action: none;
   position: absolute;
   top: var(--main-topbar-height);
   bottom: 0;
@@ -1125,6 +1126,7 @@
 }
 
 .right-panel-resizer {
+  touch-action: none;
   position: absolute;
   top: 0;
   bottom: 0;

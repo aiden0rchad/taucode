@@ -19,9 +19,9 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
   const currentScope = useRef(scope); currentScope.current = scope;
   const update = useCallback((fn: (state: PanelState) => PanelState) => setSaved(previous => ({ ...previous, state: fn(previous.state) })), []);
   const browser = useBrowserController(false);
-  const resize = useResizablePanels();
   const [expanded, setExpanded] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const resize = useResizablePanels(windowWidth, expanded);
   const { sidebarWidth, sidebarCollapsed, setSidebarCollapsed } = useSidebarState();
   const layout = workspaceLayout(windowWidth, sidebarWidth, sidebarCollapsed, expanded ? Math.min(windowWidth * .75, 1000) : resize.rightPanelWidth, state.open);
   const narrow = layout.sidebarOverlay;

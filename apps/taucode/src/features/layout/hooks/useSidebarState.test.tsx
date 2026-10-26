@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useSidebarState } from "./useSidebarState";
 import { SidebarResizeHandle } from "../components/SidebarResizeHandle";
 
@@ -21,9 +21,13 @@ it("shares persisted width and collapse across simultaneous mode consumers", () 
 it("clamps drag and keyboard resizing and releases listeners on unmount", () => {
   const { unmount } = render(<SidebarResizeHandle />);
   const handle = screen.getByRole("separator");
-  fireEvent.mouseDown(handle, { clientX: 280 }); fireEvent.mouseMove(window, { clientX: 0 }); fireEvent.mouseUp(window);
+  handle.setPointerCapture = vi.fn();
+  handle.hasPointerCapture = vi.fn(() => true);
+  handle.releasePointerCapture = vi.fn();
+  fireEvent.pointerDown(handle, { pointerId: 1, isPrimary: true, button: 0, clientX: 280 }); fireEvent.pointerMove(handle, { pointerId: 1, isPrimary: true, button: 0, clientX: 0 }); fireEvent.pointerUp(handle, { pointerId: 1 });
+  expect(handle.setPointerCapture).toHaveBeenCalledWith(1);
   expect(localStorage.getItem("codexmonitor.sidebarWidth")).toBe("220");
   fireEvent.keyDown(handle, { key: "ArrowRight" }); expect(localStorage.getItem("codexmonitor.sidebarWidth")).toBe("230");
-  fireEvent.mouseDown(handle, { clientX: 230 }); unmount(); fireEvent.mouseMove(window, { clientX: 400 });
+  fireEvent.pointerDown(handle, { pointerId: 1, isPrimary: true, button: 0, clientX: 230 }); unmount(); fireEvent.pointerMove(handle, { pointerId: 1, isPrimary: true, button: 0, clientX: 400 });
   expect(document.body.style.cursor).toBe(""); expect(localStorage.getItem("codexmonitor.sidebarWidth")).toBe("230");
 });

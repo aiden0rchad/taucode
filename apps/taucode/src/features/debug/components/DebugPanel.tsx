@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import type { DebugEntry } from "../../../types";
 
 type DebugPanelProps = {
@@ -7,7 +7,7 @@ type DebugPanelProps = {
   isOpen: boolean;
   onClear: () => void;
   onCopy: () => void;
-  onResizeStart?: (event: ReactMouseEvent) => void;
+  onResizeStart?: (event: ReactPointerEvent) => void;
   variant?: "dock" | "full";
 };
 
@@ -97,7 +97,7 @@ export function DebugPanel({
           role="separator"
           aria-orientation="horizontal"
           aria-label="Resize debug panel"
-          onMouseDown={onResizeStart}
+          onPointerDown={onResizeStart}
         />
       ) : null}
       <div className="debug-header">
