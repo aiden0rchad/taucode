@@ -206,3 +206,16 @@ fn installed_runtime(data:&Path,engine:&str,version:&str) {
  assert_eq!(stops.load(Ordering::SeqCst),0);assert!(!service.data.join("evals/work").exists());
  std::fs::remove_dir_all(&service.data).unwrap();
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn inside_accepts_a_root_reached_through_a_system_alias() {
+ let root=Path::new("/tmp").join(format!("tau-inside-{}",uuid::Uuid::new_v4()));
+ std::fs::create_dir_all(&root).unwrap();
+ let canonical=root.canonicalize().unwrap();
+ assert!(inside(&root,"new.txt"));
+ assert!(inside(&root,canonical.join("new.txt").to_str().unwrap()));
+ assert!(!inside(&root,"/private/etc/hosts"));
+ assert!(!inside(&root,"../escape"));
+ std::fs::remove_dir_all(root).unwrap();
+}

@@ -30,8 +30,9 @@ if args.session_dir:
         if os.environ.get("TAUCODE_CHAT_WEB") != "1":
             assert "builtin:mcp" not in sys.argv
             assert json.loads((pathlib.Path(os.environ["PI_CODING_AGENT_DIR"]) / "mcp.json").read_text())["mcpServers"] == {}
-        assert pathlib.Path.cwd() == pathlib.Path(header["cwd"])
-        session.with_suffix(".spawn").write_text(json.dumps({"args": sys.argv, "cwd": str(pathlib.Path.cwd())}))
+        # Compare resolved paths: macOS temp dirs live under /var, a link to /private/var.
+        assert pathlib.Path.cwd().resolve() == pathlib.Path(header["cwd"]).resolve()
+        session.with_suffix(".spawn").write_text(json.dumps({"args": sys.argv, "cwd": header["cwd"]}))
 
 
 def record(request):

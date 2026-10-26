@@ -41,15 +41,26 @@ pub(super) fn safe(path: &Path) -> Result<(), String> {
         {
             return Err("Credential paths are not importable".into());
         }
-        if fs::symlink_metadata(&current)
-            .map_err(|e| e.to_string())?
-            .file_type()
-            .is_symlink()
-        {
+        let meta = fs::symlink_metadata(&current).map_err(|e| e.to_string())?;
+        if meta.file_type().is_symlink() && !system_alias(&current, &meta) {
             return Err("Source symlinks are not importable".into());
         }
     }
     Ok(())
+}
+// Top-level root-owned links such as macOS /var and /tmp (to /private/...) cannot be
+// planted by a source tree; every other symlink on the path is still refused.
+fn system_alias(path: &Path, meta: &fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        path.parent() == Some(Path::new("/")) && meta.uid() == 0
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, meta);
+        false
+    }
 }
 pub(super) fn read(path: &Path, cancel: &AtomicBool) -> Result<Vec<u8>, String> {
     check(cancel)?;
