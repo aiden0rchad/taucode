@@ -753,6 +753,26 @@ impl PiEngine {
                 return Ok(json!({"result":{}}));
             }
         }
+        if method == "thread/resume" {
+            let mut thread = s.thread.clone();
+            let mode = if let Some(p) = s.process.as_ref().filter(|p| p.alive.load(Ordering::SeqCst)) {
+                let t = p.translator.lock().await;
+                thread["turns"] = json!(t.turns);
+                t.access_mode.clone()
+            } else {
+                thread["turns"] = json!(read_session(&s.file, &registry)?.1.turns);
+                let home = self.data.as_ref().ok_or("Pi runtime is not configured")?
+                    .join(if self.chat { "chats/agent".into() } else { format!("{}/agent", self.profile.id()) })
+                    .join(if self.chat { id } else { workspace });
+                let access = match std::fs::read(home.join("taucode/threads").join(format!("{id}.json"))) {
+                    Ok(bytes) => serde_json::from_slice::<Value>(&bytes).map_err(|e| e.to_string())?,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Value::Null,
+                    Err(e) => return Err(e.to_string()),
+                };
+                access["accessMode"].as_str().unwrap_or("ask").to_owned()
+            };
+            return Ok(json!({"result":thread_response(thread, true, &mode)}));
+        }
         if matches!(
             method,
             "thread/read" | "thread/turns/list" | "thread/items/list"
@@ -953,11 +973,6 @@ impl PiEngine {
             );
         }
         let result = match method {
-            "thread/resume" => {
-                let mut thread = thread;
-                thread["turns"] = json!(p.translator.lock().await.turns);
-                thread_response(thread, true, &p.translator.lock().await.access_mode)
-            }
             "turn/steer" => {
                 let (message, images) = prompt_input(&params["input"])?;
                 let turn_id = {

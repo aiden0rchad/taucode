@@ -32,6 +32,9 @@ export default function (pi: ExtensionAPI) {
       }
     }
     if (process.env.TAUCODE_CHAT === "1" && !(process.env.TAUCODE_CHAT_WEB === "1" && ["mcp__taucode_browser__browser_navigate", "mcp__taucode_browser__browser_snapshot", "mcp__taucode_browser__browser_take_screenshot"].includes(event.toolName))) return { block: true, reason: "Tools are disabled in Chat mode" };
+    // OMP dispatches this write through the inner MCP tool's tool_call hook.
+    // Apply connector policy there once, rather than prompting for a filesystem write first.
+    if (process.env.TAUCODE_OMP === "1" && event.toolName === "write" && typeof event.input?.path === "string" && event.input.path.startsWith("xd://mcp__")) return;
     if (!["bash", "write", "edit", ...(process.env.TAUCODE_WORK === "1" ? ["read", "ls", "find", "grep"] : [])].includes(event.toolName) && !event.toolName.startsWith("mcp__")) return;
     const home = process.env.PI_CODING_AGENT_DIR!;
     const session = process.env.TAUCODE_SESSION_KEY;

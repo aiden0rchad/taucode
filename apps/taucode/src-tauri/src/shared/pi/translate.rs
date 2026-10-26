@@ -272,6 +272,13 @@ impl Translator {
         let id = m["toolCallId"].as_str().unwrap_or("");
         let name = m["toolName"].as_str().unwrap_or("");
         let a = &m["args"];
+        let virtual_name = matches!(name, "write" | "edit")
+            .then(|| a["path"].as_str().and_then(|path| path.strip_prefix("xd://")))
+            .flatten().filter(|name| name.starts_with("mcp__"));
+        let name = virtual_name.unwrap_or(name);
+        let virtual_args = virtual_name.and_then(|_| a["content"].as_str())
+            .and_then(|content| serde_json::from_str::<Value>(content).ok());
+        let a = virtual_args.as_ref().unwrap_or(a);
         self.tools
             .insert(id.into(), json!({"name":name,"arguments":a}));
         let item = match name {
@@ -331,10 +338,10 @@ impl Translator {
                 let (server, tool) = self
                     .connectors
                     .keys()
-                    .filter(|id| name.starts_with(&format!("mcp__{id}__")))
+                    .filter(|id| name.starts_with(&format!("mcp__{id}__")) || name.starts_with(&format!("mcp__{id}_")))
                     .max_by_key(|id| id.len())
-                    .map(|id| (id.as_str(), &name[7 + id.len()..]))
-                    .unwrap_or_else(|| name[5..].split_once("__").unwrap_or(("", name)));
+                    .map(|id| (id.as_str(), name[6 + id.len()..].strip_prefix('_').unwrap_or(&name[6 + id.len()..])))
+                    .unwrap_or_else(|| connector_parts(&name[5..]).unwrap_or(("", &name[5..])));
                 let server = self
                     .connectors
                     .get(server)
@@ -681,11 +688,34 @@ pub(super) fn login_requested(m: &Value) -> bool {
         .iter()
         .any(|s| text.contains(s))
 }
+fn connector_parts(name: &str) -> Option<(&str, &str)> {
+    if let Some(split) = name.split_once("__")
+        .filter(|(server, tool)| !server.is_empty() && !tool.is_empty() && !tool.contains("__")) {
+        return Some(split);
+    }
+    let mut splits = name.match_indices('_').filter_map(|(i, _)| {
+        let (server, tool) = (&name[..i], &name[i + 1..]);
+        (!server.is_empty() && !tool.is_empty() && server.rsplit('_').next() == tool.split('_').next())
+            .then_some((server, tool))
+    });
+    let split = splits.next()?;
+    splits.next().is_none().then_some(split)
+}
 pub(super) fn ui_request(m: &Value, thread: &str, turn: &str) -> Value {
     if let Some(approval) = approval(m) {
+        if let Some(name) = approval["path"].as_str()
+            .filter(|_| matches!(approval["tool"].as_str(), Some("write" | "edit")))
+            .and_then(|path| path.strip_prefix("xd://mcp__"))
+        {
+            let label = connector_parts(name).map(|(server, tool)| format!("{server} · {tool}")).unwrap_or_else(|| name.to_owned());
+            return json!({"id":format!("pi:{thread}:{}",m["id"].as_str().unwrap_or("")),"method":"item/commandExecution/requestApproval","params":{"threadId":thread,"turnId":turn,"itemId":approval["toolCallId"],"approvalId":m["id"],"tool":format!("mcp__{name}"),"cwd":approval["cwd"],"reason":format!("Connector requests permission to call {label}"),"availableDecisions":["accept","decline","cancel"],"grantRoot":null}});
+        }
         let mcp = approval["tool"]
             .as_str()
             .is_some_and(|t| t.starts_with("mcp__"));
+        if matches!(approval["tool"].as_str(), Some("eval" | "lsp" | "debug")) {
+            return json!({"id":format!("pi:{thread}:{}",m["id"].as_str().unwrap_or("")),"method":"item/commandExecution/requestApproval","params":{"threadId":thread,"turnId":turn,"itemId":approval["toolCallId"],"approvalId":m["id"],"command":approval["command"],"cwd":approval["cwd"],"reason":format!("Pi requests permission to use {}",approval["tool"].as_str().unwrap()),"availableDecisions":["accept","decline","cancel"]}});
+        }
         let bash = approval["tool"] == "bash" || mcp;
         return json!({"id":format!("pi:{thread}:{}",m["id"].as_str().unwrap_or("")),"method":if bash {"item/commandExecution/requestApproval"} else {"item/fileChange/requestApproval"},"params":{"threadId":thread,"turnId":turn,"itemId":approval["toolCallId"],"approvalId":m["id"],"command":approval["command"],"cwd":approval["cwd"],"reason":if mcp {json!("Connector requests permission to call this tool")}else if bash {json!("Pi requests permission to run this command")}else{json!(format!("Pi requests permission to change {}",approval["path"].as_str().unwrap_or("")))},"availableDecisions":if mcp {json!(["accept","decline","cancel"])}else{json!(["accept","acceptForSession","decline","cancel"])},"grantRoot":null,"diffPreview":approval["diffPreview"]}});
     }
@@ -727,7 +757,7 @@ pub(super) fn approval(m: &Value) -> Option<Value> {
     }
     let value: Value =
         serde_json::from_str(m["title"].as_str()?.strip_prefix("taucode:approval:")?).ok()?;
-    if !(matches!(value["tool"].as_str(), Some("bash" | "write" | "edit"))
+    if !(matches!(value["tool"].as_str(), Some("bash" | "write" | "edit" | "eval" | "lsp" | "debug"))
         || value["tool"]
             .as_str()
             .is_some_and(|t| t.starts_with("mcp__")))
