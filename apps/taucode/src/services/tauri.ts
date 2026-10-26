@@ -887,6 +887,13 @@ export function connectorRequest<T>(params: { action: "list" | "test" | "secrets
   return invoke<T>("connector_request", { params });
 }
 
+export function browserNativeBounds(tabId: string, rect: { x: number; y: number; w: number; h: number }, visible: boolean): Promise<void> {
+  return invoke("browser_native_bounds", { tabId, rect, visible });
+}
+export async function openBrowserUrl(url: string): Promise<void> {
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(url);
+}
 export function browserRequest<T = void>(params: Record<string, unknown>): Promise<T> {
   return invoke<T>("browser_request", { params });
 }

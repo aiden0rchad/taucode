@@ -134,6 +134,8 @@ pub fn run() {
             let _ = shared::engine_runtime::RESOURCES.set(app.path().resource_dir()?);
             let state = state::AppState::load(&app.handle());
             diagnostics::initialize(app.handle(), &tauri::async_runtime::block_on(state.app_settings.lock()).clone()).map_err(std::io::Error::other)?;
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            let _ = state.browser.native.set(std::sync::Arc::new(shared::browser::native::NativeBackend::new(app.handle().clone(), state.browser.native_state.clone(), app.path().app_data_dir()?.join("settings.json"))));
             #[cfg(desktop)]
             tauri::async_runtime::block_on(state.browser.serve()).map_err(std::io::Error::other)?;
             #[cfg(desktop)]
@@ -211,7 +213,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(|invoke| {
+            if invoke.message.webview_ref().label().starts_with("browser-") { invoke.resolver.reject("Browser content cannot invoke app commands"); return true; }
+            let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
             themes::themes_list, themes::themes_save, themes::themes_delete,
             themes::themes_import, themes::themes_export, themes::themes_open_folder, themes::themes_reveal_file,
             themes::window_set_material,
@@ -229,6 +233,15 @@ pub fn run() {
             computer_commands::computer_request,
             computer_commands::computer_request_permissions,
             browser_commands::browser_request,
+            browser_commands::browser_native_attach,
+            browser_commands::browser_native_bounds,
+            browser_commands::browser_native_navigate,
+            browser_commands::browser_native_back,
+            browser_commands::browser_native_forward,
+            browser_commands::browser_native_reload,
+            browser_commands::browser_native_stop,
+            browser_commands::browser_native_close,
+            browser_commands::browser_native_snapshot_image,
             browser_commands::browser_subscribe,
             browser_commands::browser_unsubscribe,
             checkpoint_commands::checkpoint_request,
@@ -365,7 +378,9 @@ pub fn run() {
             tailscale::tailscale_daemon_stop,
             tailscale::tailscale_daemon_status,
             is_mobile_runtime
-        ])
+        ];
+            handler(invoke)
+        })
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 

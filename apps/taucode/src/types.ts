@@ -290,7 +290,7 @@ export type OpenAppTarget = {
 };
 
 export type McpCredential = { value: string } | { secret: true };
-export type BrowserSettings = { binary: string | null; allowedOrigins: string[]; blockedOrigins: string[]; approval: "auto" | "ask"; searchUrl: string };
+export type BrowserSettings = { engine?: "native" | "cdp"; privateBrowsing?: boolean; binary: string | null; allowedOrigins: string[]; blockedOrigins: string[]; approval: "auto" | "ask"; searchUrl: string };
 export type McpServerEntry = {
   id: string; name?: string; enabled: boolean;
   transport?: { type: "stdio"; command: string; args: string[]; cwd?: string | null; env: Record<string, McpCredential> } | { type: "http"; url: string; headers: Record<string, McpCredential>; bearer?: { secret: true } | null } | null;

@@ -44,6 +44,20 @@ try {
         console.error(failures.at(-1));
       }
     };
+    await check('Native browser toolbar', async () => {
+      await open({ panel: 'browser' });
+      await page.locator('.browser-native-slot').waitFor();
+      const geometry = await page.locator('.browser-toolbar').evaluate(row => {
+        const r = row.getBoundingClientRect();
+        return { height: r.height, controls: [...row.querySelectorAll(':scope > button, .browser-address, .mode-row-menu-trigger')].map(el => {
+          const b = el.getBoundingClientRect();
+          return { label: el.getAttribute('aria-label') || el.className, delta: Math.abs(b.y + b.height / 2 - r.y - r.height / 2), height: b.height };
+        }) };
+      });
+      assert.equal(geometry.height, 36);
+      for (const control of geometry.controls) assert(control.delta <= .5, JSON.stringify(control));
+      assert(geometry.controls.every(c => c.height === 28 || c.height === 30), JSON.stringify(geometry));
+    });
     await check('Settings', async () => {
       await open({ settings: 'appearance', theme: 'dark' });
       const rect = await centered('Settings', '.settings-window');

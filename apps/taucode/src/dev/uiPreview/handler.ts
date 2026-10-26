@@ -36,7 +36,8 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const warned = new Set<string>();
   const logs: ImportLog[] = [];
   let sequence = 0;
-  const browser: BrowserState = { tabs: query.get("panel") === "browser" ? [{ id: "preview-page", title: "Example", url: "https://example.com/", loading: false }] : [], active: query.get("panel") === "browser" ? "preview-page" : "" };
+  const previewSnapshot = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700"><rect width="1000" height="700" fill="#f7f7f5"/><text x="60" y="100" font-family="system-ui" font-size="40" fill="#202020">Example Domain</text><text x="60" y="160" font-family="system-ui" font-size="20" fill="#555">Native browser preview</text></svg>')}`;
+  const browser: BrowserState = { backend: "native", tabs: query.get("panel") === "browser" ? [{ id: "preview-page", title: "Example", url: "https://example.com/", loading: false, ready: true, snapshot: previewSnapshot }] : [], active: query.get("panel") === "browser" ? "preview-page" : "" };
   const browserChannels = new Map<string, { channel: unknown; index: number }>();
   const broadcastBrowser = () => {
     for (const entry of browserChannels.values()) {
@@ -240,10 +241,11 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "connector_request": return params.action === "list" || params.action === "secrets" ? [] : { ok: true, tools: [] };
       case "computer_request": return { running: false, approval: null, steps: [], error: null, permissions: { screen: true, accessibility: true } };
       case "computer_request_permissions": return { screen: false, accessibility: false, unsupported: true };
+      case "browser_native_attach": case "browser_native_bounds": return null;
       case "browser_subscribe": { const subscription = id("browser"); browserChannels.set(subscription, { channel: args.channel, index: 0 }); broadcastBrowser(); return subscription; }
       case "browser_unsubscribe": browserChannels.delete(String(args.id)); return null;
       case "browser_request": {
-        if (params.action === "new") { browser.active = id("page"); browser.tabs.push({ id: browser.active, title: "New page", url: "about:blank", loading: false }); }
+        if (params.action === "new") { browser.active = id("page"); browser.tabs.push({ id: browser.active, title: "New page", url: "about:blank", loading: false, ready: true, snapshot: previewSnapshot }); }
         if (params.action === "activate") browser.active = String(params.id);
         if (params.action === "close") { browser.tabs = browser.tabs.filter(t => t.id !== params.id); if (browser.active === params.id) browser.active = browser.tabs[0]?.id ?? ""; }
         if (params.action === "navigate") { const tab = browser.tabs.find(t => t.id === browser.active); if (tab) { tab.url = String(params.url); tab.title = tab.url === "about:blank" ? "New page" : new URL(tab.url).hostname; } }
