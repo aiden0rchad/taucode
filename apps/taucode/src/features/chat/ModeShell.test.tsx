@@ -7,7 +7,7 @@ import { getAppSettings, setWindowMode, windowSetMaterial } from "@services/taur
 import { applyTheme } from '@/features/themes/applyTheme';
 import { builtins } from '@/features/themes/builtins';
 vi.mock("@services/tauri", () => ({ getAppSettings: vi.fn(), setWindowMode: vi.fn().mockResolvedValue(undefined), themesList: vi.fn(async () => []), windowSetMaterial: vi.fn(async () => {}), updateAppSettings: vi.fn(async (settings: unknown) => settings) }));
-vi.mock("@/features/onboarding/SetupChecklist", () => ({ SetupChecklist: () => null }));
+vi.mock("@/features/onboarding/SetupWizard", () => ({ SetupWizard: () => null }));
 vi.mock("@/features/work/WorkView", () => ({ WorkView: () => <><ModeSwitcher /><p>Work content</p></> }));
 vi.mock("./ChatView", () => ({ ChatView: () => <><ModeSwitcher /><p>Chat content</p></> }));
 vi.mock("@/features/evals/EvalsView", () => ({ EvalsView: ({full,initialRunId,onClose}:{full:boolean;initialRunId?:string;onClose:()=>void}) => <section aria-label="Full eval results"><p>{full?initialRunId:"compact"}</p><button onClick={onClose}>Close results</button></section> }));

@@ -300,6 +300,7 @@ export type McpConnectionResult = { ok: boolean; latencyMs: number; tools?: { na
 
 export type AppMode = "code" | "chat" | "work";
 export type AppSettings = {
+  setupComplete?: boolean;
   features?: Partial<import("@settings/features").Features>;
   diagnostics?: { level: "essential" | "standard" | "verbose"; retention: number; includeContentSnippets: boolean; exposeToAgents: boolean };
   engines?: EngineDefinition[];

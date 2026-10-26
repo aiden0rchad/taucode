@@ -3,6 +3,7 @@ import { createDiagnosticsFixture } from "./diagnostics";
 import { builtinIds, parseTheme, type ThemeFile, type ThemeManifest } from "@/features/themes/validate";
 import customTheme from "@/features/themes/fixtures/valid-custom.json";
 import { defaultFeatures, type Features } from '@settings/features';
+import type { EngineRuntimeStatus } from "@services/tauri";
 import type { BrowserState } from "@/features/browser/browser";
 import type { AppSettings, ImportLog, WorkTask, WorkspaceInfo } from "@/types";
 import { assistantMessage, createFixtures, diff, makeThread, userMessage, type PreviewThread } from "./fixtures";
@@ -14,6 +15,11 @@ const record = (value: unknown): Params => value && typeof value === "object" &&
 export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const state = createFixtures();
   const query = new URLSearchParams(search);
+  const setup = query.has("setup") && query.get("setup") !== "0";
+  const keys = new Map<string, boolean>();
+  const runtimes: EngineRuntimeStatus[] = ["pi", "omp", "codex", "claude-acp", "browser", "computer"].map(engine => ({ engine, state: setup && engine === "omp" ? "pending" : "ready", message: "Ready v1.4.0" }));
+  const installs = new Map<string, ReturnType<typeof setInterval>>();
+  const finishInstall = new Map<string, () => void>();
   const evals = createEvalFixture(publish);
   const diagnostics = createDiagnosticsFixture(query.get("diagnostics") === "empty");
   const mode = query.get("mode");
@@ -189,7 +195,29 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "model_list": return page(state.settings.providers?.flatMap(p => p.models.map(m => ({ id: `${p.id}/${m.id}`, model: `${p.id}/${m.id}`, displayName: m.displayName, description: p.name, isDefault: m.id === "gpt-5", reasoning: m.reasoning, providerId: p.id, providerName: p.name, modelId: m.id, engines: ["pi", "codex", "claude"], supportedReasoningEfforts: m.reasoning?.levels.map(level => ({ reasoningEffort: level, description: level })) ?? [], defaultReasoningEffort: m.reasoning?.default ?? null }))) ?? []);
       case "get_config_model": return { model: "openai/gpt-5" };
       case "engine_test": return { engine: record(args.definition).id, state: "ready", version: "1.2.3", message: "Protocol handshake passed · v1.2.3 (preview)" };
-      case "engine_runtime": return ["pi", "omp", "codex", "claude-acp", "browser", "computer"].map(engine => ({ engine, state: "ready", message: engine === "omp" ? "Ready v18.12.6" : "Ready v1.4.0" }));
+      case "engine_runtime": {
+        const runtime = runtimes.find(r => r.engine === args.engine);
+        if (args.action === "cancel" && runtime) {
+          clearInterval(installs.get(runtime.engine)); installs.delete(runtime.engine);
+          Object.assign(runtime, { state: "pending", message: "Installation cancelled", progress: 0 });
+          finishInstall.get(runtime.engine)?.(); finishInstall.delete(runtime.engine);
+        }
+        if (args.action === "prepare" && runtime) return new Promise(resolve => {
+          const finish = () => resolve(structuredClone(runtimes));
+          finishInstall.set(runtime.engine, finish);
+          Object.assign(runtime, { state: "installing", progress: 0, message: "Preparing runtime…" });
+          installs.set(runtime.engine, setInterval(() => {
+            runtime.progress = Math.min(100, (runtime.progress ?? 0) + 10);
+            runtime.message = `Installing · ${runtime.progress}%`;
+            if (runtime.progress === 100) {
+              runtime.state = "ready"; runtime.message = "Ready v1.4.0";
+              clearInterval(installs.get(runtime.engine)); installs.delete(runtime.engine); finishInstall.delete(runtime.engine); finish();
+            }
+            publish("setup", "engine/runtime", { engine: runtime.engine });
+          }, 300));
+        });
+        return structuredClone(runtimes);
+      }
       case "get_git_status": {
         const files = args.workspaceId === "workspace-atlas" ? [{ path: "src/greeting.ts", status: "M", additions: 1, deletions: 1 }] : [];
         return { branchName: files.length ? "feature/welcome" : "", files, stagedFiles: [], unstagedFiles: files, totalAdditions: files.length, totalDeletions: files.length };
@@ -225,8 +253,19 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "terminal_write": case "terminal_resize": case "terminal_close": return null;
       case "eval_request": return evals(String(args.action), params);
       case "diagnostics_request": return diagnostics(String(args.action), params);
-      case "provider_has_api_key": return false;
-      case "provider_test_and_fetch": return { ok: true, latencyMs: 12, models: state.settings.providers?.find(p => p.id === args.id)?.models ?? [] };
+      case "provider_set_api_key": keys.set(String(args.id), String(args.key).includes("bad")); return null;
+      case "provider_delete_api_key": keys.delete(String(args.id)); return null;
+      case "provider_has_api_key": return keys.has(String(args.id));
+      case "provider_test_and_fetch": {
+        const provider = state.settings.providers?.find(p => p.id === args.id);
+        if (!setup) return { ok: true, latencyMs: 12, models: provider?.models ?? [] };
+        return new Promise(resolve => setTimeout(() => {
+          if (keys.get(String(args.id))) { resolve({ ok: false, latencyMs: 900, models: [], error: "The API key was rejected. Check it and try again." }); return; }
+          const models = Array.from({ length: 23 }, (_, i) => ({ id: `model-${i + 1}`, displayName: `Model ${i + 1}`, enabled: true }));
+          if (provider) provider.models = models;
+          resolve({ ok: true, latencyMs: 900, models });
+        }, 900));
+      }
       case "local_usage_snapshot": return { updatedAt: Date.now(), days: [], topModels: [], totals: { last7DaysTokens: 0, last30DaysTokens: 0, averageDailyTokens: 0, cacheHitRatePercent: 0, peakDay: null, peakDayTokens: 0 } };
       case "import_request": {
         switch (args.action) {
@@ -261,11 +300,12 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "plugin:app|version": return "0.0.0-preview";
       case "plugin:app|name": return "taucode preview";
       case "plugin:notification|is_permission_granted": return false;
-      case "plugin:dialog|open": case "plugin:dialog|save": case "plugin:updater|check": return null;
+      case "plugin:dialog|open": return setup ? ["~/Projects/atlas"] : null;
+      case "plugin:dialog|save": case "plugin:updater|check": return null;
       case "connect_workspace": case "set_workspace_runtime_codex_args": case "set_thread_access_mode":
       case "thread_live_subscribe": case "thread_live_unsubscribe": case "turn_interrupt":
       case "menu_set_accelerators": case "set_tray_recent_threads": case "set_tray_session_usage":
-      case "work_output": case "provider_set_api_key": case "provider_delete_api_key":
+      case "work_output":
       case "plugin:window|set_title": case "plugin:window|set_theme": case "plugin:window|set_effects":
       case "plugin:webview|set_webview_zoom": return null;
       default: return unknown(command);
@@ -277,7 +317,10 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       if (command === "get_git_status" && record(payload).workspaceId === "workspace-notes") {
         return Promise.reject(new Error("could not find repository at '/preview/notes'; class=Repository (6); code=NotFound (-3)"));
       }
-      try { return structuredClone(handle(command, record(payload))); }
+      try {
+        const result = handle(command, record(payload));
+        return result instanceof Promise ? result.then(value => structuredClone(value)) : structuredClone(result);
+      }
       catch { return unknown(command); }
     },
   };

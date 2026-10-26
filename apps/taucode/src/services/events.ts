@@ -8,6 +8,12 @@ import type {
 } from "../types";
 
 export type Unsubscribe = () => void;
+const setupListeners = new Set<(workspaceId?: string) => void>();
+export function subscribeSetupChanged(listener: (workspaceId?: string) => void): Unsubscribe {
+  setupListeners.add(listener);
+  return () => { setupListeners.delete(listener); };
+}
+export function notifySetupChanged(workspaceId?: string) { for (const listener of setupListeners) listener(workspaceId); }
 const importListeners = new Set<() => void>();
 export function subscribeImportsChanged(listener: () => void): Unsubscribe {
   importListeners.add(listener);

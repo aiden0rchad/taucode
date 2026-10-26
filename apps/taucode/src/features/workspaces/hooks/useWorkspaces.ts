@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { subscribeImportsChanged } from "@services/events";
+import { subscribeImportsChanged, subscribeSetupChanged } from "@services/events";
 import type {
   AppSettings,
   DebugEntry,
@@ -103,6 +103,9 @@ export function useWorkspaces(options: UseWorkspacesOptions = {}): UseWorkspaces
     void refreshWorkspaces();
     return subscribeImportsChanged(() => { void refreshWorkspaces(); });
   }, [refreshWorkspaces]);
+  useEffect(() => subscribeSetupChanged(id => {
+    if (id) void refreshWorkspaces().then(() => setActiveWorkspaceId(id));
+  }), [refreshWorkspaces]);
 
   useEffect(() => {
     const next = new Map<string, WorkspaceSettings>();

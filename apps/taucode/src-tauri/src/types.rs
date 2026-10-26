@@ -385,6 +385,7 @@ pub(crate) struct RemoteBackendTarget {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct AppSettings {
+    #[serde(default, rename = "setupComplete")] pub setup_complete: bool,
     #[serde(default)] pub features: Features,
     #[serde(default)] pub diagnostics: taucode_diag_mcp::core::Options,
     #[serde(default)] pub engines: Vec<EngineDefinition>,
@@ -1154,6 +1155,7 @@ fn default_codegraph_enabled() -> bool {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            setup_complete: false,
             features: Features::default(),
             diagnostics: Default::default(),
             engines: Vec::new(),

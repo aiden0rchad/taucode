@@ -314,7 +314,7 @@ it.each(["code", "chat", "work"].flatMap(mode => [500, 740].map(width => ({ mode
   expect(document.querySelector(".tablet-nav")).toBeNull();
 });
 
-it.each(["", "?setup=0", "?setup=1"])("opens the checklist only for the setup preview flag: %s", async query => {
+it.each(["", "?setup=0", "?setup=1", "?setup=look", "?setup=provider", "?setup=engine", "?setup=project", "?setup=features", "?setup=permissions", "?setup=done"])("routes setup preview: %s", async query => {
   vi.stubEnv("MODE", "uipreview");
   window.history.replaceState(null, "", "/" + query);
   localStorage.setItem("taucode.setup-checklist.v1", "done");
@@ -322,16 +322,17 @@ it.each(["", "?setup=0", "?setup=1"])("opens the checklist only for the setup pr
   const warn = vi.spyOn(console, "warn");
   render(<App />);
   await screen.findByRole("button", { name: "Open settings" });
-  if (query === "?setup=1") {
-    const dialog = within(screen.getByRole("dialog", { name: "Welcome to taucode" }));
-    const status = (name: string) => within(dialog.getByRole("group", { name })).getByRole("status");
-    await waitFor(() => expect(status("Screen Recording").textContent).toBe("Granted"));
-    expect(status("Accessibility").textContent).toBe("Not granted");
-    expect(status("Codegraph").textContent).toBe("Ready");
-    expect(dialog.queryByText("Checking")).toBeNull();
-    expect(dialog.getAllByRole("group")).toHaveLength(6);
-    fireEvent.click(dialog.getByRole("button", { name: "Done" }));
+  if (query && query !== "?setup=0") {
+    const dialog = within(screen.getByRole("dialog"));
+    const expected: Record<string, string> = { "1": "Welcome to taucode", look: "Pick a look.", provider: "Connect a model provider.", engine: "Choose your engine.", project: "Open your first project.", features: "Turn on what you want.", permissions: "Let taucode see and operate apps.", done: "You're all set." };
+    expect(dialog.getByRole("heading", { level: 1 }).textContent?.trim()).toBe(expected[query.split("=")[1]]);
+    if (query === "?setup=permissions") {
+      await waitFor(() => expect(within(dialog.getByRole("group", { name: "Screen Recording" })).getByRole("status").textContent).toBe("Granted"));
+      expect(within(dialog.getByRole("group", { name: "Accessibility" })).getByRole("status").textContent).toBe("Not granted");
+    }
+    fireEvent.click(dialog.getByRole("button", { name: "Set up later" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Confirm set up later" }));
   }
-  expect(screen.queryByRole("dialog", { name: "Welcome to taucode" })).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(warn.mock.calls.filter(([message]) => String(message).includes("Unhandled IPC"))).toEqual([]);
 });

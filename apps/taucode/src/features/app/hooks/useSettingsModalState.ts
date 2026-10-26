@@ -23,6 +23,10 @@ export function useSettingsModalState() {
     setSettingsOpen(false);
     setSettingsSection(null);
   }, []);
+  useEffect(() => {
+    window.addEventListener("taucode:setup-finished", closeSettings);
+    return () => window.removeEventListener("taucode:setup-finished", closeSettings);
+  }, [closeSettings]);
 
   return {
     settingsOpen,

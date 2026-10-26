@@ -1,4 +1,5 @@
-import { SetupChecklist, type SetupSection } from "@/features/onboarding/SetupChecklist";
+import { SetupWizard } from "@/features/onboarding/SetupWizard";
+import type { SetupSection } from "@/features/onboarding/setupState";
 import { EvalsView } from "@/features/evals/EvalsView";
 import { FeedbackComposer, DiagnosticsCommands } from "@/features/diagnostics/FeedbackComposer";
 import { diagnosticContext, record } from "@/features/diagnostics/client";
@@ -8,6 +9,7 @@ import { SidebarEngine } from "@app/components/SidebarTree";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { AppMode, AppSettings } from "@/types";
 import { getAppSettings, updateAppSettings, setWindowMode } from "@services/tauri";
+import { notifySetupChanged } from "@services/events";
 import { matchesShortcut } from "@utils/shortcuts";
 import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import { useThemePreference } from "@/features/layout/hooks/useThemePreference";
@@ -51,6 +53,10 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [setupSection, setSetupSection] = useState<SetupSection>();
+  const [setupWorkspace, setSetupWorkspace] = useState<string>();
+  useEffect(() => {
+    if (mode === "code" && setupWorkspace) { notifySetupChanged(setupWorkspace); setSetupWorkspace(undefined); }
+  }, [mode, setupWorkspace]);
   const [evalsFull, setEvalsFull] = useState<{runId?:string}|null>(null);
   useEffect(() => { const open = (event:Event) => setEvalsFull({runId:(event as CustomEvent<{runId?:string}>).detail?.runId}); window.addEventListener("taucode:evals-full", open); return () => window.removeEventListener("taucode:evals-full", open); }, []);
   useThemePreference(settings ?? { theme: "system" }, () => {
@@ -98,10 +104,7 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
     {mode === "chat" && settings && <ChatView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
     {mode === "work" && settings && <WorkView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
     </div>
-    <SetupChecklist onNavigate={section => {
-      if (mode === "code" && !settingsOpen) window.dispatchEvent(new CustomEvent("taucode:setup-settings", { detail: section }));
-      else { setSetupSection(section); setSettingsOpen(true); }
-    }} />
     {settingsOpen && renderSettings?.(() => { setSettingsOpen(false); setSetupSection(undefined); void getAppSettings().then(setSettings).catch(e => setError(String(e))); }, setupSection)}
+    <SetupWizard onSettings={setSettings} onFinish={async (next, workspaceId) => { await setWindowMode(next); setMode(next); setSetupWorkspace(workspaceId); setSettingsOpen(false); }} />
   </ModeContext.Provider></FeatureSettings.Provider>;
 }

@@ -4,7 +4,7 @@ import { defaultAgentPolicy } from "../registry";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppSettings } from "@/types";
 import { getAppSettings, runCodexDoctor, updateAppSettings } from "@services/tauri";
-import { subscribeImportsChanged } from "@services/events";
+import { subscribeImportsChanged, subscribeSetupChanged } from "@services/events";
 import { clampUiScale, UI_SCALE_DEFAULT } from "@utils/uiScale";
 import { CHAT_SCROLLBACK_DEFAULT, normalizeChatHistoryScrollbackItems } from "@utils/chatScrollback";
 import {
@@ -295,6 +295,9 @@ export function useAppSettings() {
   const defaultSettings = useMemo(() => buildDefaultSettings(), []);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [isLoading, setIsLoading] = useState(true);
+  useEffect(() => subscribeSetupChanged(() => {
+    void getAppSettings().then(response => setSettings(normalizeAppSettings({ ...defaultSettings, ...response }))).catch(() => {});
+  }), [defaultSettings]);
   useEffect(() => subscribeImportsChanged(() => {
     void getAppSettings().then(response => setSettings(normalizeAppSettings({ ...defaultSettings, ...response }))).catch(() => {});
   }), [defaultSettings]);

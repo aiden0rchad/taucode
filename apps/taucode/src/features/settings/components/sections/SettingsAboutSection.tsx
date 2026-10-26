@@ -43,7 +43,7 @@ export function SettingsAboutSection(_props: SettingsAboutSectionProps) {
 
   return (
     <SettingsSection title="About" subtitle="App version and build metadata.">
-      <SettingsButton onClick={() => window.dispatchEvent(new Event("taucode:setup-checklist"))}>Setup checklist</SettingsButton>
+      <SettingsButton onClick={() => window.dispatchEvent(new Event("taucode:run-setup"))}>Run setup</SettingsButton>
       <dl className="settings-build-info">
         {Object.entries({ Version: __APP_VERSION__, "Build type": appBuildType, Branch: __APP_GIT_BRANCH__ || "unknown", Commit: __APP_COMMIT_HASH__ || "unknown", "Build date": buildDateLabel }).map(([label, value]) =>
           <SettingsRow key={label}><dt>{label}:</dt><dd><code>{value}</code></dd></SettingsRow>)}
