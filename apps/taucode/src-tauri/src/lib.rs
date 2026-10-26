@@ -122,15 +122,16 @@ pub fn run() {
                 .with_handler(|app, _, event| computer_commands::shortcut(app, event))
                 .build(),
         )
+        // Never resize the main webview here. With `unstable`, tauri builds it as a child
+        // that auto-resizes with the window; until a browser child exists, macOS
+        // Window::inner_size() reports that webview's own frame, so resizing it to that
+        // size pins it (the NSWindow resizes, the transparent UI does not).
         .on_window_event(|window, event| {
             if matches!(event, WindowEvent::Destroyed) {
                 window_material::cleanup(window);
             }
             if window.label() != "main" {
                 return;
-            }
-            if matches!(event, WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. }) {
-                let _ = window::resize_main(window);
             }
             #[cfg(target_os = "macos")]
             if matches!(event, WindowEvent::Destroyed) {

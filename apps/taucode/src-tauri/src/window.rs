@@ -1,13 +1,5 @@
 use tauri::Manager;
 
-pub(crate) fn resize_main<R: tauri::Runtime>(window: &tauri::Window<R>) -> tauri::Result<()> {
-    if let Some(webview) = window.app_handle().get_webview("main") {
-        webview.set_position(tauri::PhysicalPosition::new(0, 0))?;
-        webview.set_size(window.inner_size()?)?;
-    }
-    Ok(())
-}
-
 // window-state 2.4.1 restores and tracks geometry through Window, but its exit
 // snapshot enumerates WebviewWindows and misses main after add_child. Tauri runs
 // plugin Exit callbacks before our app callback: supplement that same file here.

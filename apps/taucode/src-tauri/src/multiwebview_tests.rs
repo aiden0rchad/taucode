@@ -101,7 +101,6 @@ fn multiwebview_commands_and_events() {
         ipc(about.as_ref(), "computer_window_probe", json!({})).unwrap_err(),
         "Approve in the main app UI"
     );
-    crate::window::resize_main(&native).unwrap();
 
     let received = Arc::new(Mutex::new(Vec::new()));
     for view in [&main, about.as_ref(), &browser] {
@@ -184,4 +183,25 @@ fn no_single_webview_assumptions_in_app_sources() {
         }
     }
     inspect(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"));
+}
+
+#[test]
+fn window_events_leave_main_webview_geometry_to_tauri() {
+    // Regression: resizing main on WindowEvent::Resized to Window::inner_size() pinned it
+    // at its first size on macOS, so the transparent window resized and the UI did not.
+    let lib = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"),
+    )
+    .unwrap();
+    let handler = lib
+        .split(".on_window_event(")
+        .nth(1)
+        .unwrap()
+        .split(".setup(")
+        .next()
+        .unwrap()
+        .to_lowercase();
+    for banned in ["webview", "resize", "set_size", "set_bounds", "set_position"] {
+        assert!(!handler.contains(banned), "on_window_event touches {banned}");
+    }
 }
