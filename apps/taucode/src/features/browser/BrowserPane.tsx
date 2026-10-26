@@ -105,7 +105,7 @@ export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettin
       <button className="ghost" type="button" aria-label={active?.loading ? "Stop loading" : "Reload"} onClick={() => send({ action: active?.loading ? "stop" : "reload" })}>{active?.loading ? <X aria-hidden /> : <RotateCw aria-hidden />}</button>
       <div className="browser-address">{url.startsWith("https:") && <LockKeyhole aria-hidden />}<input ref={address} aria-label="URL or search" placeholder="Search or enter a URL" value={url} onChange={e => setUrl(e.target.value)} onFocus={e => e.target.select()} /></div>
       <button className="ghost" type="button" aria-label="Downloads" onClick={() => { void openBrowserDownloads().catch(e => setError(String(e))); }}><Download aria-hidden /></button>
-      <RowMenu label="page" actions={[
+      <RowMenu label="page" size="md" actions={[
         { label: "Open in default browser", onClick: () => { void openBrowserUrl(url).catch(e => setError(String(e))); } },
         { label: "Copy URL", onClick: () => { void navigator.clipboard.writeText(url).catch(e => setError(String(e))); } },
         ...(native ? [

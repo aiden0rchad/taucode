@@ -140,6 +140,13 @@ button.icon-button:hover, .main-header-action:hover { background: var(--surface-
 .chat-layout .starter-pills button, .starter-pills button { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; border: 1px solid var(--border-subtle); padding: 8px 12px; font-size: 12px; background: transparent; color: var(--text-subtle); }
 .chat-layout .starter-pills button:hover, .starter-pills button:hover { background: var(--surface-hover); color: var(--text-primary); }
 .chat-layout .work-composer { margin-bottom: 0; }
+/* Empty Chat and Work: one inset column (hero, composer, starters), centered a little above middle. */
+.chat-layout .chat-main.is-empty { container-type: inline-size; padding: 32px 0 6vh; --empty-column: min(680px, calc(100% - 2 * clamp(24px, 8cqw, 96px))); }
+.chat-layout .chat-main.is-empty > .chat-scroll { flex: 0 0 auto; margin-top: auto; padding: 0; }
+.chat-layout .chat-main.is-empty :is(.chat-column, .starter-pills) { width: var(--empty-column); max-width: none; margin-inline: auto; }
+.chat-layout .chat-main.is-empty :is(.chat-empty, .work-empty) { padding: 0 0 24px; }
+.chat-layout .chat-main.is-empty .starter-pills { padding: 0; margin-top: 20px; margin-bottom: 0; }
+.chat-layout .chat-main.is-empty > :last-child { margin-bottom: auto; }
 .chat-layout .chat-message { font-size: 14.5px; line-height: 1.65; margin: 20px 0; padding: 0; }
 .chat-layout .chat-message.user { width: fit-content; max-width: 80%; margin-left: auto; border: 0; background: transparent; padding: 0; }
 .chat-message.user .chat-message-body, .work-layout .chat-message.user { background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: 14px; padding: 10px 16px; }

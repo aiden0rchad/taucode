@@ -168,7 +168,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       </div>
       <SidebarBottomRail onOpenSettings={onOpenSettings} onOpenDebug={() => {}} showDebugButton={false} />
     </aside>
-    <main className="chat-main">
+    <main className={`chat-main${task ? "" : " is-empty"}`}>
 
       {work.error && <p role="alert" className="work-error">{work.error}</p>}
       {folder && <section className="work-add-space" aria-label="New space"><h2>New space</h2><p>{folder}</p><p className="chat-muted">This is the folder where tasks can create files. Add other folders for reading only.</p>

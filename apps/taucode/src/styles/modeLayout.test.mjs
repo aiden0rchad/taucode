@@ -81,3 +81,19 @@ it("uses one sidebar width and shared resize handle across Code, Chat and Work",
   expect(declarations(".sidebar").padding).toBe("var(--sidebar-top-padding, 36px) var(--sidebar-padding) 20px");
   expect(declarations(".sidebar-bottom-rail")["min-height"]).toBe("43px");
 });
+
+it.each([["chat", "chat=new", "What’s on your mind?"], ["work", "task=new", "What would you like to make?"]])("centers the empty %s home in one inset column", async (mode, query, heading) => {
+  vi.stubEnv("MODE", "uipreview");
+  window.history.replaceState(null, "", `/?mode=${mode}&${query}`);
+  installUiPreview();
+  render(createElement(App));
+  const main = (await screen.findByRole("heading", { name: heading })).closest("main");
+  expect(main.className).toContain("is-empty");
+  const refresh = [];
+  postcss.parse(readFileSync("src/styles/visual-refresh.css", "utf8")).walkRules(rule => refresh.push(rule));
+  const decls = selector => Object.fromEntries(refresh.filter(rule => rule.selector === selector).flatMap(rule => rule.nodes.filter(node => node.type === "decl").map(node => [node.prop, node.value])));
+  expect(decls(".chat-layout .chat-main.is-empty")).toMatchObject({ "container-type": "inline-size", "--empty-column": "min(680px, calc(100% - 2 * clamp(24px, 8cqw, 96px)))" });
+  expect(decls(".chat-layout .chat-main.is-empty > .chat-scroll")["margin-top"]).toBe("auto");
+  expect(decls(".chat-layout .chat-main.is-empty > :last-child")["margin-bottom"]).toBe("auto");
+  expect(decls(".chat-layout .chat-main.is-empty :is(.chat-column, .starter-pills)")).toMatchObject({ width: "var(--empty-column)", "margin-inline": "auto" });
+});
