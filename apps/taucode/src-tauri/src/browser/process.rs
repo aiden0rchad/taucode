@@ -123,7 +123,11 @@ pub async fn launch(
     width: u32,
     height: u32,
 ) -> Result<Process, String> {
-    let binary = discover(settings, Path::is_file)?;
+    let binary = match discover(settings, Path::is_file) {
+        Ok(binary) => binary,
+        Err(error) if settings.binary.as_ref().is_some_and(|p| !p.is_empty()) => return Err(error),
+        Err(_) => managed_chromium(data).await?,
+    };
     let dir = profile(data);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     #[cfg(unix)]
@@ -183,4 +187,31 @@ pub async fn launch(
     }
     process.stop().await;
     Err("Browser did not create DevToolsActivePort within 15 seconds".into())
+}
+
+async fn managed_chromium(data: &Path) -> Result<PathBuf, String> {
+    let runtime = crate::shared::engine_runtime::prepare(data, "browser", None).await?;
+    let node = crate::shared::engine_runtime::node_path();
+    // Keep downloaded browsers outside the source-synchronized engine directory.
+    let browsers = data.join("browser/runtimes");
+    let mut query = Command::new(&node);
+    query.current_dir(&runtime).env("PLAYWRIGHT_BROWSERS_PATH", &browsers)
+        .args(["-e", "process.stdout.write(require('./node_modules/playwright').chromium.executablePath())"])
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(15), query.output()).await
+        .map_err(|_| "Browser path lookup timed out")?.map_err(|e| e.to_string())?;
+    if !output.status.success() { return Err("Cannot locate managed Chromium".into()); }
+    let binary = PathBuf::from(String::from_utf8(output.stdout).map_err(|e| e.to_string())?);
+    if !binary.is_absolute() || !binary.starts_with(&browsers) { return Err("Invalid managed Chromium path".into()); }
+    if !binary.is_file() {
+        let mut install = Command::new(&node);
+        install.current_dir(&runtime).env("PLAYWRIGHT_BROWSERS_PATH", &browsers)
+            .env("PATH", crate::shared::engine_runtime::node_path_env(&node)?)
+            .arg(runtime.join("node_modules/playwright/cli.js")).args(["install", "chromium"])
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true);
+        let status = tokio::time::timeout(std::time::Duration::from_secs(600), install.status()).await
+            .map_err(|_| "Chromium installation timed out; retry Browser setup")?.map_err(|e| e.to_string())?;
+        if !status.success() || !binary.is_file() { return Err("Chromium installation failed. Check network access and retry.".into()); }
+    }
+    Ok(binary)
 }

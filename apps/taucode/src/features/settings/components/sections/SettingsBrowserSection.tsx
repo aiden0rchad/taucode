@@ -15,16 +15,18 @@ export function SettingsBrowserSection({ appSettings, onUpdateAppSettings, onMan
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const run = async (action: () => Promise<void>) => { setBusy(true); setError(""); setMessage(""); try { await action(); } catch (e) { setError(String(e)); } finally { setBusy(false); } };
-  return <SettingsPage className="registry-settings" title="Browser" subtitle="A shared browser for you, Pi and Codex."><SettingsRuntimeSetup engine="browser" onManage={onManageEngines} />
+  return <SettingsPage className="registry-settings" title="Browser" subtitle="A shared browser for you and your agents.">{draft.engine === "cdp" && <SettingsRuntimeSetup engine="browser" onManage={onManageEngines} />}
 
     <form onSubmit={e => { e.preventDefault(); void run(async () => {
       const url = new URL(draft.searchUrl.split("{query}").join("test"));
       if (!["http:","https:"].includes(url.protocol) || !draft.searchUrl.includes("{query}")) throw new Error("Search URL must use HTTP(S) and contain {query}");
       const lines = (v: string) => v.split("\n").map(s => s.trim()).filter(Boolean);
       await onUpdateAppSettings({ ...appSettings, browser: { ...draft, allowedOrigins: lines(allow), blockedOrigins: lines(block) } });
-      setMessage("Saved. Browser binary changes apply on next browser start; origin and approval changes apply on next engine start.");
+      setMessage("Saved. Engine and private browsing changes apply immediately. Browser binary and origin changes apply to new browser sessions.");
     }); }}>
       <SettingsGroup disabled={busy} title={<>Browser preferences</>}>
+        <SettingsFieldRow title={<>Engine</>} help={<>Native shares the embedded page with agents. Headless Chromium supports sites that require trusted input. Linux uses Chromium; Windows native agent tools use Chromium.</>}><SettingsSelect value={draft.engine ?? "native"} onChange={e => setDraft({ ...draft, engine: e.target.value as "native" | "cdp" })}><option value="native">Native</option><option value="cdp">Headless Chromium (advanced)</option></SettingsSelect></SettingsFieldRow>
+        <SettingsFieldRow title={<>Private browsing</>} help={<>Use an ephemeral native browser store. Changing this restarts open native tabs.</>}><SettingsSelect value={String(draft.privateBrowsing ?? false)} onChange={e => setDraft({ ...draft, privateBrowsing: e.target.value === "true" })}><option value="false">Off</option><option value="true">On</option></SettingsSelect></SettingsFieldRow>
         <SettingsFieldRow  title={<>Browser binary</>}><SettingsTextField value={draft.binary ?? ""} placeholder="Auto-detect Chrome, Edge, Chromium" onChange={e => setDraft({ ...draft, binary: e.target.value || null })} /></SettingsFieldRow>
         <SettingsFieldRow title={<>Allowed origins (one per line)</>} className="settings-field-row-long"><SettingsTextArea value={allow} onChange={e => setAllow(e.target.value)} /></SettingsFieldRow>
         <SettingsFieldRow title={<>Blocked origins (one per line)</>} className="settings-field-row-long"><SettingsTextArea value={block} onChange={e => setBlock(e.target.value)} /></SettingsFieldRow>

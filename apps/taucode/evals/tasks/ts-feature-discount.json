@@ -1,0 +1,25 @@
+{
+  "id": "ts-feature-discount",
+  "repo": "ts-lib",
+  "category": "feature",
+  "tags": [
+    "smoke",
+    "hard"
+  ],
+  "prompt": "Implement allocateDiscount(amounts, discountCents) in hard/invoice/money.ts. Return per-line integer discounts proportional to the amounts using largest remainders; ties go to earlier lines. Do not mutate inputs. Reject noninteger/negative amounts or discounts and discounts exceeding the total; an all-zero or empty order accepts only zero. Update both checkout and quote to use it so totals reconcile. Add a direct allocator test in hard/invoice/money.test.ts. Read the failing integration tests first. Run node --test hard/invoice/*.test.ts.",
+  "setup": [],
+  "check": {
+    "command": "node --test hard/invoice/*.test.ts",
+    "expectExit": 0
+  },
+  "extraChecks": [
+    {
+      "file": "hard/invoice/money.test.ts",
+      "contains": "allocateDiscount"
+    }
+  ],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

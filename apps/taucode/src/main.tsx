@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import * as Sentry from "@sentry/react";
 import App from "./App";
 import { isMobilePlatform } from "./utils/platformPaths";
+import { restoreTheme } from "@/features/themes/applyTheme";
 
 const sentryDsn =
   import.meta.env.VITE_SENTRY_DSN ??
@@ -94,6 +95,7 @@ async function mount() {
     const { installUiPreview } = await import("./dev/uiPreview");
     installUiPreview();
   }
+  restoreTheme();
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <App />

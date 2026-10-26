@@ -96,7 +96,7 @@ const SettingsView = lazy(() =>
   })),
 );
 
-export default function MainApp({ settingsOnly = false, onCloseModeSettings }: { settingsOnly?: boolean; onCloseModeSettings?: () => void } = {}) {
+export default function MainApp({ settingsOnly = false, onCloseModeSettings, initialSettingsSection }: { settingsOnly?: boolean; initialSettingsSection?: import("@settings/components/settingsTypes").CodexSection; onCloseModeSettings?: () => void } = {}) {
   const features = useFeatures();
   const [selectedEngine, setSelectedEngine] = useState<import("@/types").EngineKind | undefined>();
   const {
@@ -128,7 +128,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
     handleCopyDebug,
     clearDebugEntries,
   } = useAppBootstrapOrchestration();
-  useModeSettings(appSettings);
+  useModeSettings(appSettingsLoading ? null : appSettings);
   const {
     threadListSortKey,
     setThreadListSortKey,
@@ -306,6 +306,8 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
 
   useEffect(() => { void refreshModels(); }, [appSettings.providers, refreshModels]);
 
+  const threadEngines = useRef<Record<string, import("@/types").ThreadSummary[]>>({});
+  const activeEngine = threadEngines.current[activeWorkspaceId ?? ""]?.find(thread => thread.id === activeThreadIdRef.current)?.engine ?? selectedEngine ?? activeWorkspace?.settings.agentPolicy?.defaultEngine ?? appSettings.agentPolicy?.defaultEngine ?? "pi";
   const {
     collaborationModes,
     selectedCollaborationMode,
@@ -313,6 +315,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
     setSelectedCollaborationModeId,
   } = useCollaborationModes({
     activeWorkspace,
+    engine: activeEngine,
     enabled: appSettings.collaborationModesEnabled,
     preferredModeId: preferredCollabModeId,
     selectionKey: threadCodexSelectionKey,
@@ -405,7 +408,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
     reasoningSupported,
     onFocusComposer: () => composerInputRef.current?.focus(),
   });
-  const { skills } = useSkills({ activeWorkspace, onDebug: addDebugEntry });
+  const { skills } = useSkills({ activeWorkspace, engine: activeEngine, onDebug: addDebugEntry });
   const {
     prompts,
     createPrompt,
@@ -1490,10 +1493,9 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
           collaborationModes,
           selectedCollaborationModeId,
           onSelectCollaborationMode: setSelectedCollaborationModeId,
-          reasoningOptions,
+          engine: selectedEngine ?? activeWorkspace.settings.agentPolicy?.defaultEngine ?? appSettings.agentPolicy?.defaultEngine ?? "pi",
           selectedEffort,
           onSelectEffort: setSelectedEffort,
-          reasoningSupported,
           error: workspaceRunError,
           isSubmitting: workspaceRunSubmitting,
           activeWorkspaceId,
@@ -1519,6 +1521,10 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
           dictationTranscript,
           onDictationTranscriptHandled: clearDictationTranscript,
           textareaRef: workspaceHomeTextareaRef,
+          agentMdFilename: agentMdState.selectedFile,
+          agentMdStatuses: agentMdState.fileStatuses,
+          agentMdDetected: agentMdState.detected,
+          onAgentMdSelect: agentMdState.selectFile,
           agentMdContent,
           agentMdExists,
           agentMdTruncated,
@@ -1738,6 +1744,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
     handleDebugClick,
   });
 
+  threadEngines.current = threadsByWorkspace;
   const parentEngine = threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.engine ?? selectedEngine ?? activeWorkspace?.settings.agentPolicy?.defaultEngine ?? appSettings.agentPolicy?.defaultEngine ?? "pi";
   const sideChats = useSideChats({
     workspace: activeWorkspace, threadId: activeThreadId,
@@ -1919,7 +1926,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings }: {
   });
 
   const agentDetails = useMemo(() => agentThreadDetails(Object.values(threadsByWorkspace).flat(), threadStatusById, tokenUsageByThread), [threadsByWorkspace, threadStatusById, tokenUsageByThread]);
-  if (settingsOnly) return <div className="mode-settings-host" style={mainAppShellProps.appStyle}><AppModals {...mainAppShellProps.appModalsProps} settingsOpen onCloseSettings={onCloseModeSettings ?? mainAppShellProps.appModalsProps.onCloseSettings} /></div>;
+  if (settingsOnly) return <div className="mode-settings-host" style={mainAppShellProps.appStyle}><AppModals {...mainAppShellProps.appModalsProps} settingsOpen settingsSection={initialSettingsSection ?? mainAppShellProps.appModalsProps.settingsSection} onCloseSettings={onCloseModeSettings ?? mainAppShellProps.appModalsProps.onCloseSettings} /></div>;
   return <AgentsContext.Provider value={{ details: agentDetails, workspaceId: activeWorkspaceId, threadId: activeThreadId, itemsByThread,
     policy: appSettings.agentPolicy ? { ...appSettings.agentPolicy.subagents, ...activeWorkspace?.settings.agentPolicy?.subagents } : undefined }}>
     {features.checkpoints && <Checkpoints running={threadStatusById} onChanged={async (workspace, thread, text) => {

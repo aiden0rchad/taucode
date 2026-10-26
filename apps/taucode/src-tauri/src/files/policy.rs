@@ -10,7 +10,14 @@ pub(crate) enum FileScope {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum FileKind {
+    #[serde(alias = "AGENTS.md")]
     Agents,
+    #[serde(rename = "CLAUDE.md")]
+    Claude,
+    #[serde(rename = "GEMINI.md")]
+    Gemini,
+    #[serde(rename = ".github/copilot-instructions.md")]
+    Copilot,
     Config,
 }
 
@@ -28,8 +35,13 @@ const CONFIG_FILENAME: &str = "config.toml";
 
 pub(crate) fn policy_for(scope: FileScope, kind: FileKind) -> Result<FilePolicy, String> {
     match (scope, kind) {
-        (FileScope::Workspace, FileKind::Agents) => Ok(FilePolicy {
-            filename: AGENTS_FILENAME,
+        (FileScope::Workspace, FileKind::Agents | FileKind::Claude | FileKind::Gemini | FileKind::Copilot) => Ok(FilePolicy {
+            filename: match kind {
+                FileKind::Claude => "CLAUDE.md",
+                FileKind::Gemini => "GEMINI.md",
+                FileKind::Copilot => ".github/copilot-instructions.md",
+                _ => AGENTS_FILENAME,
+            },
             root_context: "workspace root",
             root_may_be_missing: false,
             create_root: false,
@@ -52,12 +64,25 @@ pub(crate) fn policy_for(scope: FileScope, kind: FileKind) -> Result<FilePolicy,
         (FileScope::Workspace, FileKind::Config) => {
             Err("config.toml is only supported for global scope".to_string())
         }
+        (FileScope::Global, _) => Err("Instruction file is only supported for workspace scope".to_string()),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{policy_for, FileKind, FileScope};
+
+    #[test]
+    fn instruction_filenames_are_allowlisted() {
+        for name in ["AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md"] {
+            let kind: FileKind = serde_json::from_value(serde_json::json!(name)).expect("allowed filename");
+            assert_eq!(policy_for(FileScope::Workspace, kind).unwrap().filename, name);
+        }
+        for name in ["../CLAUDE.md", "/tmp/AGENTS.md", "foo.md", ".github/../AGENTS.md", "claude.md"] {
+            assert!(serde_json::from_value::<FileKind>(serde_json::json!(name)).is_err());
+        }
+        assert!(policy_for(FileScope::Global, FileKind::Claude).is_err());
+    }
 
     #[test]
     fn workspace_agents_policy_is_strict() {

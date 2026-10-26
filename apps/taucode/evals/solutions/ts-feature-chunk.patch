@@ -1,0 +1,11 @@
+--- a/src/lib.js
++++ b/src/lib.js
+@@ -4,7 +4,7 @@
+ export const clamp = (n,lo,hi) => Math.max(lo,Math.max(hi,n));
+ export const median = (xs) => xs[0];
+ export const slug = (s) => s.toLowerCase();
+-export const chunk = (xs,n) => [];
++export const chunk = (xs,n) => Array.from({length:Math.ceil(xs.length/n)},(_,i)=>xs.slice(i*n,(i+1)*n));
+ export const count = (xs) => {};
+ export const partition = (xs,fn) => [xs,[]];
+ export const even = (xs) => xs.filter(x=>x%2===0).map(x=>x*2);

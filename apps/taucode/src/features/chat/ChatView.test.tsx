@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { assertRowAlignment } from "@/test/rowAlignment.mjs";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppServerEvent, AppSettings } from "@/types";
@@ -34,7 +35,13 @@ beforeEach(() => {
     return {};
   });
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { assertRowAlignment(document.body); cleanup(); vi.clearAllMocks(); });
+it("exposes the Chat layout and rows used by the WebKit audit", async () => {
+  render(<ChatView settings={settings} />);
+  const row = await screen.findByRole("button", { name: "My conversation" });
+  expect(document.querySelector(".chat-layout:not(.work-layout) .chat-list .thread-row")).toBe(row);
+  expect(document.querySelector(".app")).toBeNull();
+});
 async function open() {
   fireEvent.click(await screen.findByRole("button", { name: "My conversation" }));
   await screen.findByText("Original answer");

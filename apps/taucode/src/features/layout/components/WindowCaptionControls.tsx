@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import Minus from "lucide-react/dist/esm/icons/minus";
 import Square from "lucide-react/dist/esm/icons/square";
@@ -96,7 +97,7 @@ export function WindowCaptionControls() {
 
   return (
     <div className="window-caption-controls" role="group" aria-label="Window controls">
-      <button
+      <IconButton
         type="button"
         className="window-caption-control"
         aria-label="Minimize window"
@@ -104,8 +105,8 @@ export function WindowCaptionControls() {
         onClick={handleMinimize}
       >
         <Minus aria-hidden />
-      </button>
-      <button
+      </IconButton>
+      <IconButton
         type="button"
         className="window-caption-control"
         aria-label={isMaximized ? "Restore window" : "Maximize window"}
@@ -113,8 +114,8 @@ export function WindowCaptionControls() {
         onClick={handleToggleMaximize}
       >
         {isMaximized ? <Copy aria-hidden /> : <Square aria-hidden />}
-      </button>
-      <button
+      </IconButton>
+      <IconButton
         type="button"
         className="window-caption-control window-caption-control-close"
         aria-label="Close window"
@@ -122,7 +123,7 @@ export function WindowCaptionControls() {
         onClick={handleClose}
       >
         <X aria-hidden />
-      </button>
+      </IconButton>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { assertRowAlignment } from "@/test/rowAlignment.mjs";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -115,6 +116,7 @@ describe("Composer send triggers", () => {
     expect(screen.getByPlaceholderText(`Ask ${label} to do something…`)).toBeTruthy();
   });
   afterEach(() => {
+    assertRowAlignment(document.body);
     cleanup();
     vi.mocked(isMobilePlatform).mockReturnValue(false);
     vi.restoreAllMocks();

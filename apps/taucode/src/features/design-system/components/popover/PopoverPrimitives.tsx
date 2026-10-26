@@ -1,3 +1,4 @@
+import { useNativeOverlay } from "../../nativeOverlays";
 import {
   forwardRef,
   type ComponentPropsWithoutRef,
@@ -5,6 +6,7 @@ import {
   type RefObject,
 } from "react";
 import { joinClassNames } from "../classNames";
+import { IconButton } from "../IconButton";
 
 type PopoverSurfaceProps = ComponentPropsWithoutRef<"div"> & {
   children: ReactNode;
@@ -12,7 +14,8 @@ type PopoverSurfaceProps = ComponentPropsWithoutRef<"div"> & {
 
 export const PopoverSurface = forwardRef<HTMLDivElement, PopoverSurfaceProps>(
   function PopoverSurface({ className, ...props }, ref) {
-    return <div ref={ref} className={joinClassNames("ds-popover", className)} {...props} />;
+    const overlay = useNativeOverlay(ref);
+    return <div ref={overlay} className={joinClassNames("ds-popover", className)} {...props} />;
   },
 );
 
@@ -116,9 +119,9 @@ export function SplitActionMenu({
     <div className={className} ref={containerRef}>
       <div className={buttonGroupClassName}>
         {actionButton}
-        <MenuTrigger
-          isOpen={isOpen}
-          popupRole={popoverRole}
+        <IconButton
+          aria-expanded={isOpen}
+          aria-haspopup={popoverRole}
           className={toggleClassName}
           onClick={onToggle}
           aria-label={toggleAriaLabel}
@@ -128,7 +131,7 @@ export function SplitActionMenu({
           data-tooltip-align={toggleTooltipAlign}
         >
           {toggleIcon}
-        </MenuTrigger>
+        </IconButton>
       </div>
       {isOpen && (
         <PopoverSurface className={popoverClassName} role={popoverRole}>

@@ -1,4 +1,7 @@
 :root[data-theme="light"] {
+  --setup-base: #f7f7fb;
+  --setup-blob-1: #dfe3ff;
+  --setup-blob-2: #ece0ff;
   --surface-app: #f7f7f8;
   color-scheme: light;
   --text-primary: #1a1d24;

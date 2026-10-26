@@ -1,5 +1,5 @@
 import { memo } from "react";
-import type { MouseEvent, ReactNode } from "react";
+import type { PointerEvent, ReactNode } from "react";
 import { DesktopLayout } from "../../layout/components/DesktopLayout";
 import { TabletLayout } from "../../layout/components/TabletLayout";
 import { PhoneLayout } from "../../layout/components/PhoneLayout";
@@ -36,10 +36,10 @@ type AppLayoutProps = {
   compactEmptyCodexNode: ReactNode;
   compactEmptyGitNode: ReactNode;
   compactGitBackNode: ReactNode;
-  onSidebarResizeStart: (event: MouseEvent<HTMLDivElement>) => void;
-  onChatDiffSplitPositionResizeStart: (event: MouseEvent<HTMLDivElement>) => void;
-  onRightPanelResizeStart: (event: MouseEvent<HTMLDivElement>) => void;
-  onPlanPanelResizeStart: (event: MouseEvent<HTMLDivElement>) => void;
+  onSidebarResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
+  onChatDiffSplitPositionResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
+  onRightPanelResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
+  onPlanPanelResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
 };
 
 export const AppLayout = memo(function AppLayout({

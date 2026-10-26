@@ -19,7 +19,7 @@ pub(crate) async fn chat_request(state: State<'_, AppState>, app: AppHandle, act
 
 // Window mode is local UI state even when conversations run on a remote daemon.
 #[tauri::command]
-pub(crate) async fn set_window_mode(state: State<'_, AppState>, window: tauri::WebviewWindow, mode: String) -> Result<(), String> {
+pub(crate) async fn set_window_mode<R: tauri::Runtime>(state: State<'_, AppState>, window: tauri::Window<R>, mode: String) -> Result<(), String> {
     if !["code", "chat", "work"].contains(&mode.as_str()) { return Err("Invalid mode".into()); }
     let mut settings = state.app_settings.lock().await;
     let mut updated = settings.clone();

@@ -1,3 +1,7 @@
+import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import { IconButton } from "@/features/design-system/components/IconButton";
+import { useFeatureSettings } from "@settings/features";
+import { formatModelRef } from "@settings/registry";
 import { Bot, GitFork, Ellipsis } from "lucide-react";
 import { useContext } from "react";
 import { SidebarEngine, SidebarProjects } from "./SidebarTree";
@@ -92,6 +96,7 @@ export function ThreadRow({
   onToggleSubagents,
   showPinnedLabel = true,
 }: ThreadRowProps) {
+  const settings = useFeatureSettings();
   const inheritedEngine = useContext(SidebarEngine);
   const defaultEngine = useContext(SidebarProjects).find(workspace => workspace.id === workspaceId)?.settings.agentPolicy?.defaultEngine ?? inheritedEngine;
   const runningAgents = useRunningAgents(thread.id);
@@ -100,8 +105,8 @@ export function ThreadRow({
   const modelBadge =
     thread.modelId && thread.modelId.trim().length > 0
       ? thread.effort && thread.effort.trim().length > 0
-        ? `${thread.modelId} · ${thread.effort}`
-        : thread.modelId
+        ? `${formatModelRef(settings, thread.modelId).name} · ${thread.effort}`
+        : formatModelRef(settings, thread.modelId).name
       : null;
   const indentStyle =
     depth > 0
@@ -181,7 +186,7 @@ export function ThreadRow({
         }
       }}
     >
-      <span className="thread-kind">{canToggleSubagents && <button type="button" className="thread-tree-toggle" aria-label={subagentsExpanded ? "Hide sub-agents" : "Show sub-agents"} aria-expanded={subagentsExpanded} onClick={event => { event.stopPropagation(); onToggleSubagents?.(workspaceId, thread.id); }}>›</button>}{!needsInput && statusClass !== "processing" && thread.isSubagent ? <Bot size={14} aria-hidden /> : !needsInput && statusClass !== "processing" && thread.sideOf ? <GitFork size={14} aria-label="Side chat" /> : <span className={`thread-status ${statusClass}`} aria-hidden />}</span>
+      <span className="thread-kind">{canToggleSubagents && <IconButton size="sm" type="button" className="thread-tree-toggle" aria-label={subagentsExpanded ? "Hide sub-agents" : "Show sub-agents"} aria-expanded={subagentsExpanded} onClick={event => { event.stopPropagation(); onToggleSubagents?.(workspaceId, thread.id); }}><ChevronRight size={14} aria-hidden /></IconButton>}{!needsInput && statusClass !== "processing" && thread.isSubagent ? <Bot size={14} aria-hidden /> : !needsInput && statusClass !== "processing" && thread.sideOf ? <GitFork size={14} aria-label="Side chat" /> : <span className={`thread-status ${statusClass}`} aria-hidden />}</span>
       <div className="thread-content">
         <div className="thread-headline">
           <span className="thread-name">{thread.name}</span>{runningAgents > 0 && <span className="agents-count" aria-label={`${runningAgents} running subagents`}>{runningAgents}</span>}
@@ -211,7 +216,7 @@ export function ThreadRow({
               <span className={`thread-state-chip ${statusClass}`}>{statusLabel}</span>
             )}
             {contextLabel && (
-              <span className="thread-context-label" title={contextLabel}>
+              <span className="thread-context-label" title={thread.modelId ? formatModelRef(settings, thread.modelId).title : contextLabel}>
                 {contextLabel}
               </span>
             )}
@@ -222,7 +227,7 @@ export function ThreadRow({
       <div className="thread-meta">
         {(thread.engine ?? "codex") !== defaultEngine && <span className={`thread-engine-dot engine-${thread.engine ?? "codex"}`} title={thread.engine ?? "codex"} />}
         <span className="thread-time">{relativeTime ?? "Now"}</span>
-        <button type="button" className="ghost thread-menu-trigger" aria-label={`Actions for ${thread.name}`} onClick={event => { event.stopPropagation(); onShowThreadMenu(event, workspaceId, thread.id, canPin); }}><Ellipsis size={14} aria-hidden /></button>
+        <IconButton size="sm" type="button" className="ghost thread-menu-trigger" aria-label={`Actions for ${thread.name}`} onClick={event => { event.stopPropagation(); onShowThreadMenu(event, workspaceId, thread.id, canPin); }}><Ellipsis size={14} aria-hidden /></IconButton>
       </div>
     </div>
   );

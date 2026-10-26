@@ -149,6 +149,10 @@ pub(super) async fn handle_rpc_request(
     params: Value,
     client_version: String,
 ) -> Result<Value, String> {
+    if method == "eval_request" {
+        let settings = state.app_settings.lock().await.clone();
+        return state.evals.request(&settings, &parse_string(&params, "action")?, params["params"].clone()).await;
+    }
     if method == "checkpoint_request" {
         return shared::checkpoints::request(&state.sessions, parse_string(&params, "workspaceId")?, params["params"].clone()).await;
     }

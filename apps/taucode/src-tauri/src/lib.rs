@@ -35,6 +35,7 @@ mod shared;
 mod state;
 mod chats;
 mod work;
+pub mod evals;
 mod import_commands;
 mod storage;
 mod tailscale;
@@ -47,6 +48,9 @@ mod tray;
 mod types;
 mod utils;
 mod window;
+mod window_material;
+#[cfg(test)]
+mod multiwebview_tests;
 mod themes;
 mod workspaces;
 
@@ -118,9 +122,20 @@ pub fn run() {
                 .with_handler(|app, _, event| computer_commands::shortcut(app, event))
                 .build(),
         )
+        // Never resize the main webview here. With `unstable`, tauri builds it as a child
+        // that auto-resizes with the window; until a browser child exists, macOS
+        // Window::inner_size() reports that webview's own frame, so resizing it to that
+        // size pins it (the NSWindow resizes, the transparent UI does not).
         .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::Destroyed) {
+                window_material::cleanup(window);
+            }
             if window.label() != "main" {
                 return;
+            }
+            #[cfg(target_os = "macos")]
+            if matches!(event, WindowEvent::Destroyed) {
+                window::remove_main_focus(window);
             }
             #[cfg(target_os = "macos")]
             if let WindowEvent::CloseRequested { api, .. } = event {
@@ -129,10 +144,16 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            if let Some(main) = app.get_webview("main") {
+                window::install_main_focus(&main)?;
+            }
             if let Err(error) = themes::watch(app.handle()) { eprintln!("Theme watcher unavailable: {error}"); }
             let _ = shared::engine_runtime::RESOURCES.set(app.path().resource_dir()?);
             let state = state::AppState::load(&app.handle());
             diagnostics::initialize(app.handle(), &tauri::async_runtime::block_on(state.app_settings.lock()).clone()).map_err(std::io::Error::other)?;
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            let _ = state.browser.native.set(std::sync::Arc::new(shared::browser::native::NativeBackend::new(app.handle().clone(), state.browser.native_state.clone(), app.path().app_data_dir()?.join("settings.json"))));
             #[cfg(desktop)]
             tauri::async_runtime::block_on(state.browser.serve()).map_err(std::io::Error::other)?;
             #[cfg(desktop)]
@@ -159,7 +180,7 @@ pub fn run() {
             }
             #[cfg(target_os = "windows")]
             {
-                if let Some(main_window) = app.get_webview_window("main") {
+                if let Some(main_window) = app.get_window("main") {
                     let _ = main_window.set_decorations(false);
                     // Keep menu accelerators wired while suppressing a visible native menu bar.
                     let _ = main_window.hide_menu();
@@ -194,7 +215,7 @@ pub fn run() {
             }
             #[cfg(target_os = "ios")]
             {
-                if let Some(main_webview) = app.get_webview_window("main") {
+                if let Some(main_webview) = app.get_webview("main") {
                     let _ = window::configure_ios_webview_edge_to_edge(&main_webview);
                 }
             }
@@ -205,16 +226,18 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
 
     let app = builder
-        .plugin(tauri_plugin_liquid_glass::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(|invoke| {
+            if invoke.message.webview_ref().label().starts_with("browser-") { invoke.resolver.reject("Browser content cannot invoke app commands"); return true; }
+            let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
             themes::themes_list, themes::themes_save, themes::themes_delete,
             themes::themes_import, themes::themes_export, themes::themes_open_folder, themes::themes_reveal_file,
             themes::window_set_material,
             work::work_request,
+            evals::eval_request,
             work::work_attachment,
             work::work_output,
             chats::chat_request,
@@ -222,10 +245,20 @@ pub fn run() {
             chats::read_chat_attachment,
             chats::set_window_mode,
             providers::engine_runtime,
+            providers::setup_status,
             providers::engine_test,
             computer_commands::computer_request,
             computer_commands::computer_request_permissions,
             browser_commands::browser_request,
+            browser_commands::browser_native_attach,
+            browser_commands::browser_native_bounds,
+            browser_commands::browser_native_navigate,
+            browser_commands::browser_native_back,
+            browser_commands::browser_native_forward,
+            browser_commands::browser_native_reload,
+            browser_commands::browser_native_stop,
+            browser_commands::browser_native_close,
+            browser_commands::browser_native_snapshot_image,
             browser_commands::browser_subscribe,
             browser_commands::browser_unsubscribe,
             checkpoint_commands::checkpoint_request,
@@ -362,12 +395,18 @@ pub fn run() {
             tailscale::tailscale_daemon_stop,
             tailscale::tailscale_daemon_status,
             is_mobile_runtime
-        ])
+        ];
+            handler(invoke)
+        })
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
+            #[cfg(desktop)]
+            if let Err(error) = window::save_main_state(app_handle) {
+                eprintln!("Cannot save main window state: {error}");
+            }
             taucode_diag_mcp::writer::stop();
             let state = app_handle.state::<state::AppState>();
             state.computer.stop();
@@ -391,7 +430,7 @@ pub fn run() {
 
         #[cfg(target_os = "macos")]
         if let RunEvent::Reopen { .. } = event {
-            if let Some(window) = app_handle.get_webview_window("main") {
+            if let Some(window) = app_handle.get_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
             }

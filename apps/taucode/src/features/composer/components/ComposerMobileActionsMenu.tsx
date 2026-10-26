@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { useFeatures } from "@settings/features";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
@@ -53,7 +54,7 @@ export function ComposerMobileActionsMenu({
       className={`composer-mobile-menu${mobileActionsOpen ? " is-open" : ""}`}
       ref={mobileActionsRef}
     >
-      <button
+      <IconButton
         type="button"
         className="composer-action composer-action--mobile-menu"
         onClick={() => setMobileActionsOpen((prev) => !prev)}
@@ -64,7 +65,7 @@ export function ComposerMobileActionsMenu({
         title="More actions"
       >
         <Plus size={14} aria-hidden />
-      </button>
+      </IconButton>
       {mobileActionsOpen && (
         <PopoverSurface className="composer-mobile-actions-popover" role="menu">
           <PopoverMenuItem

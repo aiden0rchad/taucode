@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { assertRowAlignment } from '../src/test/rowAlignment.mjs';
 
 const require = createRequire(new URL('../engines/browser/package.json', import.meta.url));
 const { webkit } = require('playwright');
@@ -20,9 +21,11 @@ try {
       const url = new URL(base);
       url.search = new URLSearchParams({ mode: 'code', ...params }).toString();
       await page.goto(url.href);
-      await page.locator(params.mode === 'work' ? '.work-layout' : '.app').waitFor();
+      const root = { code: '.app', chat: '.chat-layout:not(.work-layout)', work: '.work-layout' }[params.mode ?? 'code'];
+      await page.locator(root).waitFor();
       if (params.theme) await page.waitForFunction(id => document.documentElement.dataset.themeId === id, params.theme);
       await page.evaluate(() => document.fonts.ready);
+      await page.mouse.move(0, 0);
     };
     const centered = async (name, selector) => {
       const card = page.locator(selector);
@@ -44,6 +47,38 @@ try {
         console.error(failures.at(-1));
       }
     };
+    for (const [label, params] of [
+      ['Code thread', { mode: 'code' }],
+      ['Code project home', { mode: 'code', thread: 'home' }],
+      ['Chat', { mode: 'chat' }],
+      ['Work composer', { mode: 'work', task: 'new' }],
+      ['Work task', { mode: 'work', task: 'task-needs-input' }],
+    ]) await check(`${label} row alignment`, async () => {
+      await open({ ...params, theme: 'glass-dark' });
+      if (params.mode === 'chat') await page.locator('.chat-layout:not(.work-layout) .chat-list .thread-row').first().waitFor();
+      if (params.thread === 'home') await page.locator('.sidebar .workspace-row').first().click();
+      if (params.task !== 'task-needs-input') await page.locator('.composer-shell-toolbar').first().waitFor();
+      const toggle = page.getByRole('button', { name: 'Toggle side panel', exact: true });
+      if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+      const result = await page.locator('body').evaluate(assertRowAlignment);
+      assert(result.rows > 0 && result.icons > 0 && result.unmeasuredRows === 0 && result.unmeasuredIcons === 0, `Missing geometry: ${JSON.stringify(result)}`);
+      assert(await page.locator('.workspace-titlebar, .main-header').getByRole('button', { name: 'Browser', exact: true }).count() === 0, 'Redundant Browser header button');
+      console.log(`PASS ${label} row alignment ${width}x${height}: ${JSON.stringify(result)}`);
+    });
+    await check('Native browser toolbar', async () => {
+      await open({ panel: 'browser' });
+      await page.locator('.browser-native-slot').waitFor();
+      const geometry = await page.locator('.browser-toolbar').evaluate(row => {
+        const r = row.getBoundingClientRect();
+        return { height: r.height, controls: [...row.querySelectorAll(':scope > button, .browser-address, .mode-row-menu-trigger')].map(el => {
+          const b = el.getBoundingClientRect();
+          return { label: el.getAttribute('aria-label') || el.className, delta: Math.abs(b.y + b.height / 2 - r.y - r.height / 2), height: b.height };
+        }) };
+      });
+      assert.equal(geometry.height, 36);
+      for (const control of geometry.controls) assert(control.delta <= .5, JSON.stringify(control));
+      assert(geometry.controls.every(c => c.height === 28 || c.height === 30), JSON.stringify(geometry));
+    });
     await check('Settings', async () => {
       await open({ settings: 'appearance', theme: 'dark' });
       const rect = await centered('Settings', '.settings-window');
@@ -109,8 +144,11 @@ try {
           }, { sidebarWidth, density });
           const geometry = await page.locator('.work-layout .sidebar').evaluate(sidebar => {
             const rect = element => element.getBoundingClientRect().toJSON();
+            const body = sidebar.querySelector('.sidebar-body');
+            const css = getComputedStyle(body), bounds = body.getBoundingClientRect();
             return {
               sidebar: rect(sidebar),
+              body: { left: bounds.x + parseFloat(css.borderLeftWidth) + parseFloat(css.paddingLeft), width: body.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight) },
               cards: [...sidebar.querySelectorAll('.work-space')].map(card => ({
                 card: rect(card),
                 rows: [...card.querySelectorAll('.work-task-row')].map(row => ({
@@ -125,6 +163,7 @@ try {
           assert(Math.abs(geometry.sidebar.width - sidebarWidth) <= 1, `Sidebar width: ${details}`);
           assert(geometry.cards.flatMap(card => card.rows).length > 0, 'Missing Work task rows');
           for (const { card, rows } of geometry.cards) {
+            assert(card.x > geometry.sidebar.x && Math.abs(card.x - geometry.body.left) <= 1 && Math.abs(card.width - geometry.body.width) <= 1, `Work card must fill the inset sidebar body: ${details}`);
             for (const [i, { row, content, metaVisible, ellipsis }] of rows.entries()) {
               assert(row.height > 0 && row.height <= 34 && Math.abs(row.height - (density === 'compact' ? 28 : 32)) <= 1, `Work row height: ${details}`);
               assert(row.x >= card.x && row.right <= card.right + 1 && row.y >= card.y && row.bottom <= card.bottom + 1, `Work row outside card: ${details}`);
@@ -133,8 +172,14 @@ try {
               assert((metaVisible === null || metaVisible === 'visible') && ellipsis === 'ellipsis', `Work metadata/title: ${details}`);
             }
           }
+          // At narrow widths the side panel opens as an overlay whose scrim would swallow the hover.
+          const scrim = page.locator('.side-panel-scrim');
+          if (await scrim.count()) await scrim.first().click();
           await page.locator('.work-task-row:has(.thread-time)').first().hover();
-          assert(await page.locator('.work-task-row .thread-time').first().evaluate(element => getComputedStyle(element).visibility === 'visible'), 'Work metadata hidden on hover');
+          assert(await page.locator('.work-task-row .thread-time').first().evaluate(element => getComputedStyle(element).visibility === 'hidden'), 'Work metadata must share the action slot on hover');
+          const action = page.locator('.mode-row:has(.work-task-row:has(.thread-time)) .mode-row-menu-trigger').first();
+          assert(await action.evaluate(element => getComputedStyle(element).opacity === '1'), 'Work row menu missing on hover');
+          await page.locator('.work-layout').evaluate(assertRowAlignment);
           await page.screenshot({ path: resolve(out, `work-${theme}-${sidebarWidth}-${density}-${width}x${height}.png`), animations: 'disabled' });
           console.log(`PASS Work ${theme} ${sidebarWidth}px ${density} ${width}x${height}`);
         });

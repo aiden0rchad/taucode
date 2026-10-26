@@ -1,0 +1,17 @@
+{
+  "id": "py-bugfix-average",
+  "repo": "py-cli",
+  "category": "bugfix",
+  "tags": [],
+  "prompt": "Fix average to return zero on empty input. Run python3 -m unittest test_cli.Tests.test_average.",
+  "setup": [],
+  "check": {
+    "command": "python3 -m unittest test_cli.Tests.test_average",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

@@ -163,12 +163,12 @@ describe("Work mode", () => {
       expect(row.classList.contains("has-secondary-line")).toBe(false);
       expect(row.querySelector(".thread-details")).toBeNull();
       expect(row.textContent).not.toContain("local/test");
-      expect(row.title).toContain(`Research · local/test · ${status.replace("-", " ")}`);
+      expect(row.title).toContain(`Research · Local · test · ${status.replace("-", " ")}`);
       expect(row.querySelector(`.thread-status.work-status-${status}`)).toBeTruthy();
       expect(row.querySelector(".thread-time")?.textContent).toBe(["needs-input", "failed"].includes(status) ? status.replace("-", " ") : undefined);
     }
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Task done" })); });
-    expect(document.querySelector(".thread-header-model")?.textContent).toContain("local/test");
+    expect(document.querySelector(".thread-header-model")?.textContent).toBe("pi · test");
     expect(document.querySelector('.tree-selected .work-task-row.active')).toBeTruthy();
   });
   it("uses available timestamps for relative time and tooltip details", async () => {

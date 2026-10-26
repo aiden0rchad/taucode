@@ -1,0 +1,19 @@
+{
+  "id": "py-bugfix-stdin",
+  "repo": "py-cli",
+  "category": "bugfix",
+  "tags": [
+    "hard"
+  ],
+  "prompt": "Fix hard_cli argument/stream handling. With no paths, read stdin. A single - consumes stdin at its exact position among UTF-8 files; repeated - is a usage error. -- must allow a filename beginning with -. --limit N limits the concatenated lines and must be nonnegative. Emit one JSON array on stdout; file/usage errors exit 2 with stderr and no traceback or partial stdout. Empty stdin yields []. Preserve line text and ordering. Run the tests and inspect their subprocess failures. Run python3 -m unittest hard_cli.test_cli.",
+  "setup": [],
+  "check": {
+    "command": "python3 -m unittest hard_cli.test_cli",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

@@ -42,6 +42,7 @@ import "./styles/compact-base.css";
 import "./styles/compact-phone.css";
 import "./styles/compact-tablet.css";
 import "./styles/visual-refresh.css";
+import "./styles/toolbars.css";
 import "./styles/scrollbars.css";
 import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import MainApp from "@app/components/MainApp";
@@ -66,5 +67,5 @@ export default function App() {
     );
   }
 
-  return <DiagnosticBoundary panel="app"><ModeShell renderSettings={onClose => <MainApp settingsOnly onCloseModeSettings={onClose} />}><MainApp /></ModeShell><ComputerApprovals /></DiagnosticBoundary>;
+  return <DiagnosticBoundary panel="app"><ModeShell renderSettings={(onClose, section) => <MainApp settingsOnly initialSettingsSection={section} onCloseModeSettings={onClose} />}><MainApp /></ModeShell><ComputerApprovals /></DiagnosticBoundary>;
 }

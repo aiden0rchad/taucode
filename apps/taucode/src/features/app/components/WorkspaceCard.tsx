@@ -1,3 +1,6 @@
+import Plus from "lucide-react/dist/esm/icons/plus";
+import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { Squircle } from "@/features/design-system/components/squircle/Squircle";
 import { Folder, FolderOpen } from "lucide-react";
 import { ProjectEngine } from "./SidebarTree";
@@ -66,7 +69,7 @@ export function WorkspaceCard({
           <div className="workspace-name-row">
             <div className="workspace-title">
               <span className="workspace-name">{workspaceName ?? workspace.name}</span>
-              <button
+              <IconButton size="sm"
                 className={`workspace-toggle ${isCollapsed ? "" : "expanded"}`}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -76,14 +79,14 @@ export function WorkspaceCard({
                 aria-label={isCollapsed ? "Show agents" : "Hide agents"}
                 aria-expanded={!isCollapsed}
               >
-                <span className="workspace-toggle-icon">›</span>
-              </button>
+                <ChevronRight className="workspace-toggle-icon" aria-hidden />
+              </IconButton>
             </div>
           </div>
         </div>
         <span className="workspace-count">{summary?.match(/^\d+/)?.[0]}</span>
         <div className="workspace-actions">
-          <button
+          <IconButton size="sm"
             className="ghost workspace-add"
             onClick={(event) => {
               event.stopPropagation();
@@ -107,9 +110,7 @@ export function WorkspaceCard({
             data-tauri-drag-region="false"
             aria-label="Add agent options"
             aria-expanded={addMenuOpen}
-          >
-            +
-          </button>
+          ><Plus aria-hidden /></IconButton>
           {!workspace.connected && (
             <span
               className="connect"

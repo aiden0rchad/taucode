@@ -545,3 +545,8 @@
     font-size: 28px;
   }
 }
+
+.workspace-home-instruction-tabs,.workspace-home-also-found{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.workspace-home-instruction-tabs button{padding:6px 10px;border-radius:var(--radius-md)}
+.workspace-home-instruction-tabs [aria-pressed=true]{background:var(--surface-active)}
+.workspace-home-also-found{font-size:12px;color:var(--text-muted)}

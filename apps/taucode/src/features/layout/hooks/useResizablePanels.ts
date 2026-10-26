@@ -1,7 +1,9 @@
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { usePanelResize } from "./usePanelResize";
 import { useSidebarState } from "./useSidebarState";
+import { MIN_RIGHT_PANEL_WIDTH, workspaceLayout } from "@/features/panels/panelState";
 const STORAGE_KEY_RIGHT_PANEL = "codexmonitor.rightPanelWidth";
 const STORAGE_KEY_CHAT_DIFF_SPLIT_POSITION_PERCENT =
   "codexmonitor.chatDiffSplitPositionPercent";
@@ -10,8 +12,6 @@ const STORAGE_KEY_TERMINAL_PANEL = "codexmonitor.terminalPanelHeight";
 const STORAGE_KEY_DEBUG_PANEL = "codexmonitor.debugPanelHeight";
 const MIN_CHAT_DIFF_SPLIT_POSITION_PERCENT = 20;
 const MAX_CHAT_DIFF_SPLIT_POSITION_PERCENT = 80;
-const MIN_RIGHT_PANEL_WIDTH = 320;
-const MAX_RIGHT_PANEL_WIDTH = 900;
 const MIN_PLAN_PANEL_HEIGHT = 140;
 const MAX_PLAN_PANEL_HEIGHT = 420;
 const MIN_TERMINAL_PANEL_HEIGHT = 140;
@@ -57,6 +57,11 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+export function getRightPanelMaxWidth(windowWidth: number, sidebarWidth: number, sidebarCollapsed: boolean, expanded = false) {
+  const panelWidth = expanded ? Math.min(windowWidth * .75, 1000) : MIN_RIGHT_PANEL_WIDTH;
+  return workspaceLayout(windowWidth, sidebarWidth, sidebarCollapsed, panelWidth, false).maxPanelWidth;
+}
+
 function readStoredWidth(key: string, fallback: number, min: number, max: number) {
   if (typeof window === "undefined") {
     return fallback;
@@ -72,14 +77,14 @@ function readStoredWidth(key: string, fallback: number, min: number, max: number
   return clamp(parsed, min, max);
 }
 
-function getContainerPointerPercent(event: MouseEvent, resize: ResizeState) {
+function getContainerPointerPercent(event: PointerEvent, resize: ResizeState) {
   const containerWidth = resize.startContainerWidth ?? 1;
   const containerLeft = resize.startContainerLeft ?? 0;
   return ((event.clientX - containerLeft) / containerWidth) * 100;
 }
 
-export function useResizablePanels() {
-  const { sidebarWidth, onSidebarResizeStart, isResizing: sidebarResizing } = useSidebarState();
+export function useResizablePanels(availableWindowWidth?: number, expanded = false) {
+  const { sidebarWidth, sidebarCollapsed, onSidebarResizeStart, isResizing: sidebarResizing } = useSidebarState();
   const [chatDiffSplitPositionPercent, setChatDiffSplitPositionPercent] =
     useState(() =>
       readStoredWidth(
@@ -89,12 +94,12 @@ export function useResizablePanels() {
         MAX_CHAT_DIFF_SPLIT_POSITION_PERCENT,
       ),
     );
-  const [rightPanelWidth, setRightPanelWidth] = useState(() =>
+  const [preferredRightPanelWidth, setPreferredRightPanelWidth] = useState(() =>
     readStoredWidth(
       STORAGE_KEY_RIGHT_PANEL,
       DEFAULT_RIGHT_PANEL_WIDTH,
       MIN_RIGHT_PANEL_WIDTH,
-      MAX_RIGHT_PANEL_WIDTH,
+      Infinity,
     ),
   );
   const [planPanelHeight, setPlanPanelHeight] = useState(() =>
@@ -121,10 +126,21 @@ export function useResizablePanels() {
       MAX_DEBUG_PANEL_HEIGHT,
     ),
   );
-  const resizeRef = useRef<ResizeState | null>(null);
+  const [viewportWidth, setWindowWidth] = useState(() => window.innerWidth);
+  const windowWidth = availableWindowWidth ?? viewportWidth;
+  useEffect(() => {
+    const resize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+  const maxRightPanelWidth = getRightPanelMaxWidth(windowWidth, sidebarWidth, sidebarCollapsed, expanded);
+  // Window and sidebar changes constrain rendering without overwriting the preference.
+  const rightPanelWidth = clamp(preferredRightPanelWidth, MIN_RIGHT_PANEL_WIDTH, maxRightPanelWidth);
+  const setRightPanelWidth = useCallback((value: number) => {
+    setPreferredRightPanelWidth(clamp(value, MIN_RIGHT_PANEL_WIDTH, maxRightPanelWidth));
+  }, [maxRightPanelWidth]);
   const appRef = useRef<HTMLDivElement | null>(null);
-  const liveValueRef = useRef<number | null>(null);
-  const [isResizing, setIsResizing] = useState(false);
+  const { isResizing, startResize } = usePanelResize();
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -136,9 +152,9 @@ export function useResizablePanels() {
   useEffect(() => {
     window.localStorage.setItem(
       STORAGE_KEY_RIGHT_PANEL,
-      String(rightPanelWidth),
+      String(preferredRightPanelWidth),
     );
-  }, [rightPanelWidth]);
+  }, [preferredRightPanelWidth]);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -161,15 +177,12 @@ export function useResizablePanels() {
     );
   }, [debugPanelHeight]);
 
-  useEffect(() => {
-    function handleMouseMove(event: MouseEvent) {
-      const resize = resizeRef.current;
+  const beginResize = useCallback((event: ReactPointerEvent, resize: ResizeState, cursor: "col-resize" | "row-resize") => {
+    let liveValue: number | null = null;
+    startResize(event, cursor, event => {
       const el = appRef.current;
-      if (!resize || !el) {
-        return;
-      }
+      if (!el) return;
       event.preventDefault();
-
       let next: number;
       if (resize.type === "chat-diff-split") {
         const pointerPercent = getContainerPointerPercent(event, resize);
@@ -183,7 +196,7 @@ export function useResizablePanels() {
         next = clamp(
           resize.startWidth - delta,
           MIN_RIGHT_PANEL_WIDTH,
-          MAX_RIGHT_PANEL_WIDTH,
+          maxRightPanelWidth,
         );
       } else if (resize.type === "plan-panel") {
         const delta = event.clientY - resize.startY;
@@ -208,59 +221,38 @@ export function useResizablePanels() {
         );
       }
 
-      liveValueRef.current = next;
+      liveValue = next;
       const { prop, unit } = CSS_VAR_MAP[resize.type];
       el.style.setProperty(prop, `${next}${unit}`);
-    }
-
-    function handleMouseUp() {
-      const resize = resizeRef.current;
-      if (!resize) {
-        return;
-      }
-      const finalValue = liveValueRef.current;
-      if (finalValue !== null) {
+    }, () => {
+      if (liveValue !== null) {
         switch (resize.type) {
           case "chat-diff-split":
-            setChatDiffSplitPositionPercent(finalValue);
+            setChatDiffSplitPositionPercent(liveValue);
             break;
           case "right-panel":
-            setRightPanelWidth(finalValue);
+            setRightPanelWidth(liveValue);
             break;
           case "plan-panel":
-            setPlanPanelHeight(finalValue);
+            setPlanPanelHeight(liveValue);
             break;
           case "terminal-panel":
-            setTerminalPanelHeight(finalValue);
+            setTerminalPanelHeight(liveValue);
             break;
           case "debug-panel":
-            setDebugPanelHeight(finalValue);
+            setDebugPanelHeight(liveValue);
             break;
         }
       }
-      resizeRef.current = null;
-      liveValueRef.current = null;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      setIsResizing(false);
-    }
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, []);
+    });
+  }, [startResize, maxRightPanelWidth, setRightPanelWidth]);
 
   const onChatDiffSplitPositionResizeStart = useCallback(
-    (event: ReactMouseEvent) => {
-      event.preventDefault();
-
+    (event: ReactPointerEvent) => {
       const content = event.currentTarget.closest(".content-split") as
         | HTMLDivElement
         | null;
-      resizeRef.current = {
+      beginResize(event, {
         type: "chat-diff-split",
         startX: event.clientX,
         startY: event.clientY,
@@ -268,84 +260,61 @@ export function useResizablePanels() {
         startHeight: 0,
         startContainerWidth: content?.clientWidth,
         startContainerLeft: content?.getBoundingClientRect().left,
-      };
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      setIsResizing(true);
+      }, "col-resize");
     },
-    [chatDiffSplitPositionPercent],
+    [beginResize, chatDiffSplitPositionPercent],
   );
 
   const onRightPanelResizeStart = useCallback(
-    (event: ReactMouseEvent) => {
-      event.preventDefault();
-
-      resizeRef.current = {
+    (event: ReactPointerEvent) => {
+      beginResize(event, {
         type: "right-panel",
         startX: event.clientX,
         startY: event.clientY,
-        startWidth: rightPanelWidth,
+        startWidth: event.currentTarget.closest(".tabbed-side-panel")?.getBoundingClientRect().width ?? rightPanelWidth,
         startHeight: planPanelHeight,
-      };
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      setIsResizing(true);
+      }, "col-resize");
     },
-    [planPanelHeight, rightPanelWidth],
+    [beginResize, planPanelHeight, rightPanelWidth],
   );
 
   const onPlanPanelResizeStart = useCallback(
-    (event: ReactMouseEvent) => {
-      event.preventDefault();
-
-      resizeRef.current = {
+    (event: ReactPointerEvent) => {
+      beginResize(event, {
         type: "plan-panel",
         startX: event.clientX,
         startY: event.clientY,
         startWidth: rightPanelWidth,
         startHeight: planPanelHeight,
-      };
-      document.body.style.cursor = "row-resize";
-      document.body.style.userSelect = "none";
-      setIsResizing(true);
+      }, "row-resize");
     },
-    [planPanelHeight, rightPanelWidth],
+    [beginResize, planPanelHeight, rightPanelWidth],
   );
 
   const onTerminalPanelResizeStart = useCallback(
-    (event: ReactMouseEvent) => {
-      event.preventDefault();
-
-      resizeRef.current = {
+    (event: ReactPointerEvent) => {
+      beginResize(event, {
         type: "terminal-panel",
         startX: event.clientX,
         startY: event.clientY,
         startWidth: rightPanelWidth,
         startHeight: terminalPanelHeight,
-      };
-      document.body.style.cursor = "row-resize";
-      document.body.style.userSelect = "none";
-      setIsResizing(true);
+      }, "row-resize");
     },
-    [rightPanelWidth, terminalPanelHeight],
+    [beginResize, rightPanelWidth, terminalPanelHeight],
   );
 
   const onDebugPanelResizeStart = useCallback(
-    (event: ReactMouseEvent) => {
-      event.preventDefault();
-
-      resizeRef.current = {
+    (event: ReactPointerEvent) => {
+      beginResize(event, {
         type: "debug-panel",
         startX: event.clientX,
         startY: event.clientY,
         startWidth: rightPanelWidth,
         startHeight: debugPanelHeight,
-      };
-      document.body.style.cursor = "row-resize";
-      document.body.style.userSelect = "none";
-      setIsResizing(true);
+      }, "row-resize");
     },
-    [debugPanelHeight, rightPanelWidth],
+    [beginResize, debugPanelHeight, rightPanelWidth],
   );
 
   return {
@@ -353,6 +322,7 @@ export function useResizablePanels() {
     isResizing: isResizing || sidebarResizing,
     sidebarWidth,
     rightPanelWidth,
+    maxRightPanelWidth,
     setRightPanelWidth,
     planPanelHeight,
     terminalPanelHeight,

@@ -728,7 +728,7 @@ pub(super) async fn list_git_branches_inner(
 ) -> Result<Value, String> {
     let entry = workspace_entry_for_id(workspaces, &workspace_id).await?;
     let repo_root = resolve_git_root(&entry)?;
-    let repo = Repository::open(&repo_root).map_err(|e| e.to_string())?;
+    let Some(repo) = crate::git_utils::open_optional_repo(&repo_root)? else { return Ok(json!([])); };
     let mut branches = Vec::new();
     let refs = repo
         .branches(Some(BranchType::Local))

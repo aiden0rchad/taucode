@@ -113,27 +113,8 @@ pub fn observe(message: &Value) {
             .get(thread)
             .cloned()
             .unwrap_or_else(|| json!({}));
-        let mut value = json!({});
-        for (dest, source) in [
-            ("tokensIn", "inputTokens"),
-            ("tokensOut", "outputTokens"),
-            ("cachedTokens", "cachedInputTokens"),
-            ("costUsd", "cost"),
-        ] {
-            let mut amount = total[source]
-                .as_f64()
-                .map(|n| (n - baseline[source].as_f64().unwrap_or(0.0)).max(0.0))
-                .or(last[source].as_f64());
-            if dest == "costUsd" && last.get(source).is_some_and(Value::is_null) {
-                amount = None;
-            }
-            value[dest] = if dest == "costUsd" {
-                let zero_cost = tracker.turns.get(thread).is_some_and(|(turn, _)| turn.context["zeroCost"] == true);
-                json!(amount.filter(|cost| *cost > 0.0 || (*cost == 0.0 && zero_cost)))
-            } else {
-                json!(amount.unwrap_or(0.0) as u64)
-            };
-        }
+        let zero_cost = tracker.turns.get(thread).is_some_and(|(turn, _)| turn.context["zeroCost"] == true);
+        let value = normalize_usage(total, last, &baseline, zero_cost);
         tracker.totals.insert(thread.into(), total.clone());
         usage = Some(value);
     }
@@ -346,4 +327,16 @@ pub fn thread_context(thread: &str, context: Value) {
 }
 pub fn response_context(id: &str) -> Option<Value> {
     TRACKER.get()?.lock().ok()?.responses.get(id).cloned()
+}
+
+/// Normalize canonical per-turn usage independently of journal enablement.
+pub fn normalize_usage(total: &Value, last: &Value, baseline: &Value, zero_cost: bool) -> Value {
+    let mut value = json!({});
+    for (dest, source) in [("tokensIn","inputTokens"),("tokensOut","outputTokens"),("cachedTokens","cachedInputTokens"),("costUsd","cost")] {
+        let amount = total[source].as_f64().map(|n|(n-baseline[source].as_f64().unwrap_or(0.)).max(0.)).or(last[source].as_f64());
+        value[dest] = if dest == "costUsd" {
+            json!(amount.filter(|n| !last.get(source).is_some_and(Value::is_null) && (*n > 0. || (*n == 0. && zero_cost))))
+        } else { json!(amount.unwrap_or(0.) as u64) };
+    }
+    value
 }

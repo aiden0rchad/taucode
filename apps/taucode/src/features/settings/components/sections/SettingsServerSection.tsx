@@ -1,3 +1,4 @@
+import { SettingsIconButton } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { SettingsRow, SettingsSelect, SettingsButton, SettingsTextField, SettingsSection, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
@@ -554,15 +555,15 @@ export function SettingsServerSection({
         >
           <div className="settings-add-remote-header">
             <div className="settings-add-remote-title">Add remote</div>
-            <SettingsButton
+            <SettingsIconButton
               type="button"
-              className="ghost icon-button settings-add-remote-close"
+              className="ghost settings-add-remote-close"
               onClick={closeAddRemoteModal}
               aria-label="Close add remote modal"
               disabled={addRemoteBusy}
             >
               <X aria-hidden />
-            </SettingsButton>
+            </SettingsIconButton>
           </div>
           <SettingsRow className="settings-field">
             <label className="settings-field-label" htmlFor="settings-add-remote-name">

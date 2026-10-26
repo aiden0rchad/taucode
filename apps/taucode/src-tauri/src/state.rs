@@ -30,6 +30,7 @@ impl Default for TcpDaemonRuntime {
 }
 
 pub(crate) struct AppState {
+    pub(crate) evals: Arc<crate::shared::evals::Evals>,
     pub(crate) work: Arc<crate::shared::work::Work>,
     pub(crate) imports: Arc<crate::shared::imports::Imports>,
     pub(crate) chats: crate::shared::chats::Chats,
@@ -55,11 +56,16 @@ impl AppState {
             .app_data_dir()
             .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| ".".into()));
         crate::codex::home::set_app_data_dir(&data_dir);
+        Self::from_data_dir(app, data_dir)
+    }
+
+    pub(crate) fn from_data_dir<R: tauri::Runtime>(app: &AppHandle<R>, data_dir: PathBuf) -> Self {
         let storage_path = data_dir.join("workspaces.json");
         let settings_path = data_dir.join("settings.json");
         let workspaces = read_workspaces(&storage_path).unwrap_or_default();
         let app_settings = read_settings(&settings_path).unwrap_or_default();
         Self {
+            evals: crate::shared::evals::Evals::new(data_dir.clone(), crate::event_sink::TauriEventSink::new(app.clone())),
             imports: crate::shared::imports::Imports::new(data_dir.clone()),
             browser: crate::shared::browser::Browser::new(data_dir.clone()),
             work: crate::shared::work::Work::new(data_dir.clone(), crate::event_sink::TauriEventSink::new(app.clone())),

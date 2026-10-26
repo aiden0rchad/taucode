@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use serde_json::Value;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
@@ -134,13 +134,13 @@ pub(crate) async fn dispatch_incoming_line(
         IncomingMessage::Notification { method, params } => match method.as_str() {
             "app-server-event" => {
                 crate::event_sink::work_status(&app, &params["message"]);
-                let _ = app.emit("app-server-event", params);
+                let _ = crate::event_sink::emit(&app, "app-server-event", params);
             }
             "terminal-output" => {
-                let _ = app.emit("terminal-output", params);
+                let _ = crate::event_sink::emit(&app, "terminal-output", params);
             }
             "terminal-exit" => {
-                let _ = app.emit("terminal-exit", params);
+                let _ = crate::event_sink::emit(&app, "terminal-exit", params);
             }
             _ => {}
         },

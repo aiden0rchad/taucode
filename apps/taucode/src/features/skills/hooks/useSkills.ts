@@ -1,3 +1,5 @@
+import { useFeatureSettings } from "@settings/features";
+import { codexReady } from "@settings/registry";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DebugEntry, SkillOption, WorkspaceInfo } from "../../../types";
 import { getSkillsList } from "../../../services/tauri";
@@ -6,10 +8,15 @@ import { isSkillsUpdateAvailableEvent } from "../../../utils/appServerEvents";
 
 type UseSkillsOptions = {
   activeWorkspace: WorkspaceInfo | null;
+  engine?: import("@/types").EngineKind;
   onDebug?: (entry: DebugEntry) => void;
 };
 
-export function useSkills({ activeWorkspace, onDebug }: UseSkillsOptions) {
+export function useSkills({ activeWorkspace, engine, onDebug }: UseSkillsOptions) {
+  const settings = useFeatureSettings();
+  const enabled = (engine ?? activeWorkspace?.settings.agentPolicy?.defaultEngine ?? settings?.agentPolicy?.defaultEngine ?? "pi") === "codex" && codexReady(settings);
+  const eligibility = useRef(enabled);
+  eligibility.current = enabled;
   const [skills, setSkills] = useState<SkillOption[]>([]);
   const lastFetchedWorkspaceId = useRef<string | null>(null);
   const inFlight = useRef(false);
@@ -18,7 +25,7 @@ export function useSkills({ activeWorkspace, onDebug }: UseSkillsOptions) {
   const isConnected = Boolean(activeWorkspace?.connected);
 
   const refreshSkills = useCallback(async () => {
-    if (!workspaceId || !isConnected) {
+    if (!enabled || !eligibility.current || !workspaceId || !isConnected) {
       return;
     }
     if (inFlight.current) {
@@ -34,6 +41,7 @@ export function useSkills({ activeWorkspace, onDebug }: UseSkillsOptions) {
     });
     try {
       const response = await getSkillsList(workspaceId);
+      if (!eligibility.current) return;
       onDebug?.({
         id: `${Date.now()}-server-skills-list`,
         timestamp: Date.now(),
@@ -56,6 +64,7 @@ export function useSkills({ activeWorkspace, onDebug }: UseSkillsOptions) {
       setSkills(data);
       lastFetchedWorkspaceId.current = workspaceId;
     } catch (error) {
+      if (!eligibility.current) return;
       onDebug?.({
         id: `${Date.now()}-client-skills-list-error`,
         timestamp: Date.now(),
@@ -66,9 +75,10 @@ export function useSkills({ activeWorkspace, onDebug }: UseSkillsOptions) {
     } finally {
       inFlight.current = false;
     }
-  }, [isConnected, onDebug, workspaceId]);
+  }, [enabled, isConnected, onDebug, workspaceId]);
 
   useEffect(() => {
+    if (!enabled) { setSkills([]); lastFetchedWorkspaceId.current = null; return; }
     if (!workspaceId || !isConnected) {
       return;
     }
@@ -76,10 +86,10 @@ export function useSkills({ activeWorkspace, onDebug }: UseSkillsOptions) {
       return;
     }
     refreshSkills();
-  }, [isConnected, refreshSkills, skills.length, workspaceId]);
+  }, [enabled, isConnected, refreshSkills, skills.length, workspaceId]);
 
   useEffect(() => {
-    if (!workspaceId || !isConnected) {
+    if (!enabled || !workspaceId || !isConnected) {
       return;
     }
 
@@ -100,7 +110,7 @@ export function useSkills({ activeWorkspace, onDebug }: UseSkillsOptions) {
       });
       void refreshSkills();
     });
-  }, [isConnected, onDebug, refreshSkills, workspaceId]);
+  }, [enabled, isConnected, onDebug, refreshSkills, workspaceId]);
 
   const skillOptions = useMemo(
     () => skills.filter((skill) => skill.name),
@@ -108,7 +118,7 @@ export function useSkills({ activeWorkspace, onDebug }: UseSkillsOptions) {
   );
 
   return {
-    skills: skillOptions,
+    skills: enabled ? skillOptions : [],
     refreshSkills,
   };
 }

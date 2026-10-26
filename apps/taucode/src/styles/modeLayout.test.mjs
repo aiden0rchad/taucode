@@ -18,18 +18,18 @@ const declarations = selector => Object.fromEntries(rules.filter(rule => rule.se
 
 afterEach(() => { cleanup(); clearMocks(); vi.unstubAllEnvs(); });
 
-it("keeps header actions natural-width and moves overflow to a narrow-screen popover", () => {
+it("keeps header actions natural-width and moves measured overflow to a popover", () => {
   expect(declarations(".main-header-actions")).toMatchObject({ "flex-shrink": "0", overflow: "visible" });
   expect(declarations(".workspace-header")).toMatchObject({ "min-width": "0", flex: "1" });
   expect(declarations(".workspace-title")).toMatchObject({ overflow: "hidden", "text-overflow": "ellipsis" });
   for (const rule of rules.filter(rule => rule.selector.includes("main-header-actions"))) {
     for (const decl of rule.nodes.filter(node => node.type === "decl")) {
       if (/^overflow/.test(decl.prop)) expect(decl.value).not.toMatch(/auto|scroll/);
-      if (rule.parent.type !== "atrule") expect(decl.prop).not.toBe("max-width");
+      if (!rule.selector.includes("has-overflow")) expect(decl.prop).not.toBe("max-width");
     }
   }
-  const popover = rules.find(rule => rule.selector === ".main-header-actions-content.is-open");
-  expect(popover.parent.params).toBe("(max-width: 700px)");
+  expect(declarations(".main-header-actions.has-overflow .main-header-actions-content").display).toBe("none");
+  expect(declarations(".main-header-actions.has-overflow .main-header-actions-content.is-open")).toMatchObject({ display: "flex", position: "absolute", "max-width": "calc(100vw - 32px)" });
 });
 
 it("contains nested sidebar rows without horizontal scrolling", () => {

@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager, State, WebviewWindow};
+use tauri::{AppHandle, Manager, State, Window};
 #[tauri::command]
 pub(crate) async fn computer_request_permissions(
     state: State<'_, AppState>,
@@ -16,7 +16,7 @@ pub(crate) async fn computer_request(
     params: Value,
     state: State<'_, AppState>,
     app: AppHandle,
-    window: WebviewWindow,
+    window: Window,
 ) -> Result<Value, String> {
     if params["action"] == "restart" {
         state.computer.stop();
@@ -33,9 +33,7 @@ pub(crate) async fn computer_request(
         .await;
     }
     if params["action"] == "approve" {
-        if window.label() != "main" {
-            return Err("Approve in the main app UI".into());
-        }
+        require_main_window(&window)?;
         state.computer.answer(
             params["id"].as_str().ok_or("Missing approval ID")?,
             params["accept"] == true,
@@ -61,6 +59,18 @@ pub(crate) async fn computer_request(
     let result=state.computer.request(app, params).await;
     if result.is_err(){taucode_diag_mcp::writer::record(||taucode_diag_mcp::core::event("error","computer","computer.request_failed","Computer request failed"));}
     result
+}
+fn require_main_window<R: tauri::Runtime>(window: &Window<R>) -> Result<(), String> {
+    if window.label() != "main" { return Err("Approve in the main app UI".into()); }
+    Ok(())
+}
+
+// The native computer service requires Wry/AppKit. Exercise its Window argument
+// and approval boundary through mock IPC without starting native control.
+#[cfg(test)]
+#[tauri::command]
+pub(crate) fn computer_window_probe(window: Window<tauri::test::MockRuntime>) -> Result<(), String> {
+    require_main_window(&window)
 }
 pub(crate) fn install(app: &AppHandle) -> Result<(), String> {
     let computer = app.state::<AppState>().computer.clone();

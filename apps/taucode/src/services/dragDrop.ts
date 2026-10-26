@@ -14,11 +14,13 @@ type Listener = (event: DragDropEvent) => void;
 
 type SubscriptionOptions = {
   onError?: (error: unknown) => void;
+  exclusive?: boolean;
 };
 
 let unlisten: (() => void) | null = null;
 let listenPromise: Promise<() => void> | null = null;
 const listeners = new Set<Listener>();
+const exclusiveListeners = new Set<Listener>();
 
 function start(options?: SubscriptionOptions) {
   if (unlisten || listenPromise) {
@@ -26,7 +28,7 @@ function start(options?: SubscriptionOptions) {
   }
   listenPromise = getCurrentWindow()
     .onDragDropEvent((event) => {
-      for (const listener of listeners) {
+      for (const listener of exclusiveListeners.size ? exclusiveListeners : listeners) {
         try {
           listener(event as DragDropEvent);
         } catch (error) {
@@ -66,9 +68,11 @@ export function subscribeWindowDragDrop(
   options?: SubscriptionOptions,
 ) {
   listeners.add(onEvent);
+  if (options?.exclusive) exclusiveListeners.add(onEvent);
   start(options);
   return () => {
     listeners.delete(onEvent);
+    exclusiveListeners.delete(onEvent);
     if (listeners.size === 0) {
       stop();
     }

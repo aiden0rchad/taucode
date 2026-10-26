@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { useFeatures } from "@settings/features";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Flame, RotateCcw, Zap } from "lucide-react";
@@ -74,6 +75,8 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
   const heat = effects ? (last > 0 ? position / last : 1) : 0;
   useReasoningAnimationSpeed(popover, effects && menu.isOpen && view === "slider" && !!level && !unavailable, heat);
   const noReasoning = capability?.supported === false || !!unavailable;
+  const providerName = models.find(model => model.id === selectedModelId)?.provider;
+  const modelTitle = providerName ? `${providerName} · ${modelName}` : modelName;
   const burning = effects && !unknown && position === last;
   const warm = effects && !unknown && !burning && Math.round(position) === last - 1;
   const sliderStyle = {
@@ -95,20 +98,20 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
     finally { setSelecting(false); }
   };
   return <div className="reasoning-control" ref={menu.containerRef}>
-    <button ref={trigger} type="button" className="ghost composer-chip reasoning-chip" style={sliderStyle} aria-label={`${modelName}${noReasoning ? "" : ` · ${chipLabel}`}${adjusted && !noReasoning ? " (adjusted for model)" : ""}`} aria-haspopup="dialog" aria-expanded={menu.isOpen} disabled={disabled} onClick={() => { if (!menu.isOpen) { returning.current = false; setOutgoing(null); setView(noReasoning ? "models" : "slider"); setModelError(""); } menu.toggle(); }} title={unavailable || (adjusted ? `${reasoningLabel(value!)} is unavailable; using ${chipLabel}` : "Model and reasoning")}>
+    <button ref={trigger} type="button" className="ghost composer-chip reasoning-chip" style={sliderStyle} aria-label={`${modelName}${noReasoning ? "" : ` · ${chipLabel}`}${adjusted && !noReasoning ? " (adjusted for model)" : ""}`} aria-haspopup="dialog" aria-expanded={menu.isOpen} disabled={disabled} onClick={() => { if (!menu.isOpen) { returning.current = false; setOutgoing(null); setView(noReasoning ? "models" : "slider"); setModelError(""); } menu.toggle(); }} title={unavailable || (adjusted ? `${reasoningLabel(value!)} is unavailable; using ${chipLabel}` : modelTitle)}>
       <span className="reasoning-chip-model">{modelName}</span>{!noReasoning && <span className="reasoning-chip-dot" aria-hidden />}
       {!noReasoning && <span className={`reasoning-chip-label${unknown ? " unknown" : ""}`} style={{ minWidth: `${Math.max(...labels.map(text => text.length))}ch` }}>{labels.map(text => <span className="reasoning-chip-sizer" aria-hidden="true" key={text}>{text}</span>)}<span>{chipLabel}</span></span>}<ChevronDown size={12} aria-hidden />
     </button>
     {menu.isOpen && <AnchoredPopover anchorRef={trigger} surfaceRef={popover} className={`reasoning-popover${effects ? "" : " effects-off"}${burning ? " burning" : warm ? " warm" : ""}${drag !== null ? " dragging" : ""}`} style={sliderStyle} role="dialog" aria-label={view === "models" ? "Select model" : "Model and reasoning"} onKeyDown={event => { if (event.key === "Escape" && view === "models") { event.preventDefault(); event.stopPropagation(); switchView("slider"); } }}>
       {(["slider", "models"] as const).filter(panel => panel === view || panel === outgoing).map(panel => <div key={panel} className={`reasoning-view${outgoing ? ` ${view === "models" ? "forward" : "back"} ${panel === outgoing ? "outgoing" : "incoming"}` : ""}`} aria-hidden={panel === outgoing || undefined} inert={panel === outgoing ? true : undefined}>
-      {panel === "models" ? <><div className="reasoning-model-heading"><button type="button" aria-label="Back to reasoning" onClick={() => switchView("slider")}><ChevronLeft size={16} aria-hidden /></button><strong>Select model</strong></div><ComposerModelList models={models} selectedId={selectedModelId} defaultId={defaultModelId} disabled={disabled || selecting} onSelect={selectModel} />{modelError && <p role="alert">{modelError}</p>}</> : <>
+      {panel === "models" ? <><div className="reasoning-model-heading"><IconButton type="button" aria-label="Back to reasoning" onClick={() => switchView("slider")}><ChevronLeft size={16} aria-hidden /></IconButton><strong>Select model</strong></div><ComposerModelList models={models} selectedId={selectedModelId} defaultId={defaultModelId} disabled={disabled || selecting} onSelect={selectModel} />{modelError && <p role="alert">{modelError}</p>}</> : <>
         <div className="reasoning-heading">
           <span className="reasoning-heading-icon" aria-hidden="true">{!noReasoning && (burning ? <Flame className="reasoning-flame" size={22} /> : <Zap size={22} />)}</span>
           <div className="reasoning-heading-center">
             <span className="reasoning-level">{noReasoning ? "Model" : label}</span>
             <button type="button" className="reasoning-model" title={modelName} disabled={!onSelectModel || disabled} onClick={() => switchView("models")}><span>{modelName}</span><ChevronRight size={12} aria-hidden /></button>
           </div>
-          <button type="button" className="reasoning-reset" disabled={unknown || noReasoning} title="Reset to model default" aria-label="Reset to model default" onClick={() => { setDrag(null); onChange(clampReasoning(capability, capability?.default)!); }}><RotateCcw size={16} aria-hidden /></button>
+          <IconButton type="button" className="reasoning-reset" disabled={unknown || noReasoning} title="Reset to model default" aria-label="Reset to model default" onClick={() => { setDrag(null); onChange(clampReasoning(capability, capability?.default)!); }}><RotateCcw size={16} aria-hidden /></IconButton>
         </div>
         {noReasoning ? <p className="reasoning-empty">{unavailable || "This model does not support reasoning."}</p> : unknown ? <div className="reasoning-empty"><p>Reasoning capabilities are unknown.</p><button type="button" onClick={onOpenSettings ?? (() => window.dispatchEvent(new Event("taucode:provider-settings")))}>Detect in Settings</button></div> : <div className="reasoning-slider">
           <div className="reasoning-rail" aria-hidden="true">

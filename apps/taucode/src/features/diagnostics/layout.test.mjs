@@ -9,6 +9,7 @@ import { createPreviewHandler } from "@/dev/uiPreview/handler";
 import { DiagnosticsSettings } from "./DiagnosticsSettings";
 const settingsCss = readFileSync("src/styles/settings.css", "utf8");
 const diagnosticsCss = readFileSync("src/features/diagnostics/diagnostics.css", "utf8");
+const iconCss = readFileSync("src/features/design-system/components/icon-button.css", "utf8");
 vi.mock("@services/tauri", () => ({ diagnosticsRequest: vi.fn() }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 function setup(dir) {
@@ -50,7 +51,7 @@ it.each(["x", "rolandleyco", "rolandleycoxx"])("preserves journal path whitespac
 it.each([false, true])("keeps custom layouts independent of the settings grid (generic CSS last: %s)", async genericLast => {
   expect(diagnosticsCss).toContain(".diagnostics-path");
   const style = document.createElement("style");
-  style.textContent = genericLast ? diagnosticsCss + settingsCss : settingsCss + diagnosticsCss;
+  style.textContent = iconCss + (genericLast ? diagnosticsCss + settingsCss : settingsCss + diagnosticsCss);
   document.head.append(style);
   try {
     setup();
@@ -61,8 +62,10 @@ it.each([false, true])("keeps custom layouts independent of the settings grid (g
     expect(getComputedStyle(path).display).toBe("flex");
     expect(getComputedStyle(page.querySelector(".diagnostics-stats")).display).toBe("flex");
     for (const button of path.querySelectorAll("button")) {
-      expect(getComputedStyle(button).width).toBe("28px");
-      expect(getComputedStyle(button).height).toBe("28px");
+      expect(button.dataset.iconButton).toBe("md");
+      expect(getComputedStyle(button).display).toBe("inline-grid");
+      expect(getComputedStyle(button).width).toBe("var(--icon-button-size)");
+      expect(getComputedStyle(button).height).toBe("var(--icon-button-size)");
     }
     expect(screen.getByText("Log an issue or idea").closest(".settings-group-actions")).toBeTruthy();
     const rows = page.querySelectorAll(".diagnostics-issue");

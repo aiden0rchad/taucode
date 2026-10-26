@@ -4,7 +4,7 @@ import { defaultAgentPolicy } from "../registry";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppSettings } from "@/types";
 import { getAppSettings, runCodexDoctor, updateAppSettings } from "@services/tauri";
-import { subscribeImportsChanged } from "@services/events";
+import { subscribeImportsChanged, subscribeSetupChanged } from "@services/events";
 import { clampUiScale, UI_SCALE_DEFAULT } from "@utils/uiScale";
 import { CHAT_SCROLLBACK_DEFAULT, normalizeChatHistoryScrollbackItems } from "@utils/chatScrollback";
 import {
@@ -23,6 +23,7 @@ import { normalizeOpenAppTargets } from "@app/utils/openApp";
 import { getDefaultInterruptShortcut, isMacPlatform } from "@utils/shortcuts";
 import { isMobilePlatform } from "@utils/platformPaths";
 import { DEFAULT_COMMIT_MESSAGE_PROMPT } from "@utils/commitMessagePrompt";
+import { DEFAULT_THEME_ID } from "@/features/themes/defaults";
 
 
 const allowedPersonality = new Set(["friendly", "pragmatic"]);
@@ -173,7 +174,7 @@ export function buildDefaultSettings(): AppSettings {
     lastComposerModelId: null,
     lastComposerReasoningEffort: null,
     uiScale: UI_SCALE_DEFAULT,
-    theme: "system",
+    theme: DEFAULT_THEME_ID,
     themeLight: "light",
     themeDark: "dark",
     themeAnimations: {},
@@ -295,6 +296,9 @@ export function useAppSettings() {
   const defaultSettings = useMemo(() => buildDefaultSettings(), []);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [isLoading, setIsLoading] = useState(true);
+  useEffect(() => subscribeSetupChanged(() => {
+    void getAppSettings().then(response => setSettings(normalizeAppSettings({ ...defaultSettings, ...response }))).catch(() => {});
+  }), [defaultSettings]);
   useEffect(() => subscribeImportsChanged(() => {
     void getAppSettings().then(response => setSettings(normalizeAppSettings({ ...defaultSettings, ...response }))).catch(() => {});
   }), [defaultSettings]);

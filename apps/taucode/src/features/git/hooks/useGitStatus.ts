@@ -63,6 +63,12 @@ export function useGitStatus(activeWorkspace: WorkspaceInfo | null) {
         ) {
           return;
         }
+        if (data === null) {
+          const nonGitStatus = { ...emptyStatus, error: "Not a git repository" };
+          setStatus(nonGitStatus);
+          cachedStatusRef.current.delete(workspaceId);
+          return;
+        }
         const cached = cachedStatusRef.current.get(workspaceId);
         const resolvedBranchName = resolveBranchName(data.branchName, cached);
         const nextStatus = {

@@ -1,0 +1,11 @@
+--- a/cli.py
++++ b/cli.py
+@@ -8,7 +8,7 @@
+     return sum(xs) / len(xs)
+ 
+ def truth(text):
+-    return bool(text)
++    return text.lower() in ('true','yes','1')
+ 
+ def extension(text):
+     return ""

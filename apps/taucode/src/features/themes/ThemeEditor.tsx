@@ -1,3 +1,4 @@
+import { SettingsIconButton } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { RotateCcw, Search } from 'lucide-react';
 import { ModalShell } from '@/features/design-system/components/modal/ModalShell';
@@ -93,7 +94,7 @@ export function ThemeEditor({ initial, restore, save, close }: { initial: ThemeM
             return <SettingsRow key={key} className="theme-token-row"><div className="theme-token-label"><label htmlFor={'token-'+key}>{label}</label><small title={descriptions[group]}>{descriptions[group]}</small></div><div className="theme-token-controls">
               {t.group !== 'Radii' && <Squircle className="theme-color-swatch squircle-clip" style={{'--radius-window':'6px','--theme-swatch-color':color} as CSSProperties}><input type="color" aria-label={label+' color'} value={swatch} onChange={e => token(key,e.target.value)} /></Squircle>}
               <SettingsTextField id={'token-'+key} className="theme-hex" value={draft.tokens[key] ?? ''} placeholder={base.tokens[key]} onChange={e => token(key,e.target.value)} spellCheck={false} />
-              {overridden && <SettingsButton className="theme-token-reset" aria-label={'Reset '+label} title={'Reset '+label} onClick={() => token(key,'')}><RotateCcw size={14} aria-hidden /></SettingsButton>}
+              {overridden && <SettingsIconButton className="theme-token-reset" aria-label={'Reset '+label} title={'Reset '+label} onClick={() => token(key,'')}><RotateCcw size={14} aria-hidden /></SettingsIconButton>}
             </div></SettingsRow>;
           })}</SettingsGroup>;
         })}

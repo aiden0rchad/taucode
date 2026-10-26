@@ -61,7 +61,7 @@ pub(crate) struct GitLogEntry {
     pub(crate) timestamp: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub(crate) struct GitLogResponse {
     pub(crate) total: usize,
     pub(crate) entries: Vec<GitLogEntry>,
@@ -280,6 +280,7 @@ pub(crate) struct WorkspaceInfo {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum WorkspaceKind {
+    Eval,
     Work,
     Main,
     Worktree,
@@ -384,6 +385,7 @@ pub(crate) struct RemoteBackendTarget {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct AppSettings {
+    #[serde(default, rename = "setupComplete")] pub setup_complete: bool,
     #[serde(default)] pub features: Features,
     #[serde(default)] pub diagnostics: taucode_diag_mcp::core::Options,
     #[serde(default)] pub engines: Vec<EngineDefinition>,
@@ -733,8 +735,9 @@ fn default_ui_scale() -> f64 {
 fn default_theme_light() -> String { "light".into() }
 fn default_theme_dark() -> String { "dark".into() }
 
+// Fresh installs start on Glass Dark; keep in sync with DEFAULT_THEME_ID in src/features/themes/defaults.ts.
 fn default_theme() -> String {
-    "system".to_string()
+    "glass-dark".to_string()
 }
 
 fn default_usage_show_remaining() -> bool {
@@ -1153,6 +1156,7 @@ fn default_codegraph_enabled() -> bool {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            setup_complete: false,
             features: Features::default(),
             diagnostics: Default::default(),
             engines: Vec::new(),
@@ -1363,7 +1367,7 @@ mod tests {
         assert!(settings.last_composer_model_id.is_none());
         assert!(settings.last_composer_reasoning_effort.is_none());
         assert!((settings.ui_scale - 1.0).abs() < f64::EPSILON);
-        assert_eq!(settings.theme, "system");
+        assert_eq!(settings.theme, "glass-dark");
         assert!(!settings.usage_show_remaining);
         assert!(settings.show_message_file_path);
         assert_eq!(settings.chat_history_scrollback_items, Some(200));
@@ -1769,15 +1773,22 @@ pub(crate) fn default_mcp_servers() -> Vec<McpServerEntry> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct BrowserSettings {
+    pub engine: BrowserEngine,
+    pub private_browsing: bool,
     pub binary: Option<String>,
     pub allowed_origins: Vec<String>,
     pub blocked_origins: Vec<String>,
     pub approval: crate::types::McpApproval,
     pub search_url: String,
 }
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum BrowserEngine { #[default] Native, Cdp }
 impl Default for BrowserSettings {
     fn default() -> Self {
         Self {
+            engine: BrowserEngine::Native,
+            private_browsing: false,
             binary: None,
             allowed_origins: vec![],
             blocked_origins: vec![],

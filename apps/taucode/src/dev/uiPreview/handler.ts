@@ -1,7 +1,9 @@
+import { createEvalFixture } from "./evals";
 import { createDiagnosticsFixture } from "./diagnostics";
 import { builtinIds, parseTheme, type ThemeFile, type ThemeManifest } from "@/features/themes/validate";
 import customTheme from "@/features/themes/fixtures/valid-custom.json";
 import { defaultFeatures, type Features } from '@settings/features';
+import type { EngineRuntimeStatus } from "@services/tauri";
 import type { BrowserState } from "@/features/browser/browser";
 import type { AppSettings, ImportLog, WorkTask, WorkspaceInfo } from "@/types";
 import { assistantMessage, createFixtures, diff, makeThread, userMessage, type PreviewThread } from "./fixtures";
@@ -13,6 +15,12 @@ const record = (value: unknown): Params => value && typeof value === "object" &&
 export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const state = createFixtures();
   const query = new URLSearchParams(search);
+  const setup = query.has("setup") && query.get("setup") !== "0";
+  const keys = new Map<string, boolean>();
+  const runtimes: EngineRuntimeStatus[] = ["pi", "omp", "codex", "claude-acp", "browser", "computer"].map(engine => ({ engine, state: setup && engine === "omp" ? "pending" : "ready", message: "Ready v1.4.0" }));
+  const installs = new Map<string, ReturnType<typeof setInterval>>();
+  const finishInstall = new Map<string, () => void>();
+  const evals = createEvalFixture(publish);
   const diagnostics = createDiagnosticsFixture(query.get("diagnostics") === "empty");
   const mode = query.get("mode");
   if (query.get("dictation") === "ready") { state.settings.dictationEnabled = true; state.settings.features = { ...state.settings.features, dictation: true }; }
@@ -28,7 +36,8 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const warned = new Set<string>();
   const logs: ImportLog[] = [];
   let sequence = 0;
-  const browser: BrowserState = { tabs: query.get("panel") === "browser" ? [{ id: "preview-page", title: "Example", url: "https://example.com/", loading: false }] : [], active: query.get("panel") === "browser" ? "preview-page" : "" };
+  const previewSnapshot = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700"><rect width="1000" height="700" fill="#f7f7f5"/><text x="60" y="100" font-family="system-ui" font-size="40" fill="#202020">Example Domain</text><text x="60" y="160" font-family="system-ui" font-size="20" fill="#555">Native browser preview</text></svg>')}`;
+  const browser: BrowserState = { backend: "native", tabs: query.get("panel") === "browser" ? [{ id: "preview-page", title: "Example", url: "https://example.com/", loading: false, ready: true, snapshot: previewSnapshot }] : [], active: query.get("panel") === "browser" ? "preview-page" : "" };
   const browserChannels = new Map<string, { channel: unknown; index: number }>();
   const broadcastBrowser = () => {
     for (const entry of browserChannels.values()) {
@@ -137,6 +146,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   function handle(command: string, args: Params): unknown {
     const params = record(args.params);
     switch (command) {
+      case "setup_status": return { permissions: { screen: true, accessibility: false }, codegraph: true };
       case "get_app_settings": return state.settings;
       case "update_app_settings": state.settings = { ...state.settings, ...record(args.settings) } as AppSettings; return state.settings;
       case "set_window_mode": if (["code", "chat", "work"].includes(String(args.mode))) state.settings.windowModes = { main: args.mode as "code" | "chat" | "work" }; return null;
@@ -186,7 +196,29 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "model_list": return page(state.settings.providers?.flatMap(p => p.models.map(m => ({ id: `${p.id}/${m.id}`, model: `${p.id}/${m.id}`, displayName: m.displayName, description: p.name, isDefault: m.id === "gpt-5", reasoning: m.reasoning, providerId: p.id, providerName: p.name, modelId: m.id, engines: ["pi", "codex", "claude"], supportedReasoningEfforts: m.reasoning?.levels.map(level => ({ reasoningEffort: level, description: level })) ?? [], defaultReasoningEffort: m.reasoning?.default ?? null }))) ?? []);
       case "get_config_model": return { model: "openai/gpt-5" };
       case "engine_test": return { engine: record(args.definition).id, state: "ready", version: "1.2.3", message: "Protocol handshake passed · v1.2.3 (preview)" };
-      case "engine_runtime": return ["pi", "omp", "codex", "claude-acp", "browser", "computer"].map(engine => ({ engine, state: "ready", message: engine === "omp" ? "Ready v18.12.6" : "Ready v1.4.0" }));
+      case "engine_runtime": {
+        const runtime = runtimes.find(r => r.engine === args.engine);
+        if (args.action === "cancel" && runtime) {
+          clearInterval(installs.get(runtime.engine)); installs.delete(runtime.engine);
+          Object.assign(runtime, { state: "pending", message: "Installation cancelled", progress: 0 });
+          finishInstall.get(runtime.engine)?.(); finishInstall.delete(runtime.engine);
+        }
+        if (args.action === "prepare" && runtime) return new Promise(resolve => {
+          const finish = () => resolve(structuredClone(runtimes));
+          finishInstall.set(runtime.engine, finish);
+          Object.assign(runtime, { state: "installing", progress: 0, message: "Preparing runtime…" });
+          installs.set(runtime.engine, setInterval(() => {
+            runtime.progress = Math.min(100, (runtime.progress ?? 0) + 10);
+            runtime.message = `Installing · ${runtime.progress}%`;
+            if (runtime.progress === 100) {
+              runtime.state = "ready"; runtime.message = "Ready v1.4.0";
+              clearInterval(installs.get(runtime.engine)); installs.delete(runtime.engine); finishInstall.delete(runtime.engine); finish();
+            }
+            publish("setup", "engine/runtime", { engine: runtime.engine });
+          }, 300));
+        });
+        return structuredClone(runtimes);
+      }
       case "get_git_status": {
         const files = args.workspaceId === "workspace-atlas" ? [{ path: "src/greeting.ts", status: "M", additions: 1, deletions: 1 }] : [];
         return { branchName: files.length ? "feature/welcome" : "", files, stagedFiles: [], unstagedFiles: files, totalAdditions: files.length, totalDeletions: files.length };
@@ -209,10 +241,11 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "connector_request": return params.action === "list" || params.action === "secrets" ? [] : { ok: true, tools: [] };
       case "computer_request": return { running: false, approval: null, steps: [], error: null, permissions: { screen: true, accessibility: true } };
       case "computer_request_permissions": return { screen: false, accessibility: false, unsupported: true };
+      case "browser_native_attach": case "browser_native_bounds": return null;
       case "browser_subscribe": { const subscription = id("browser"); browserChannels.set(subscription, { channel: args.channel, index: 0 }); broadcastBrowser(); return subscription; }
       case "browser_unsubscribe": browserChannels.delete(String(args.id)); return null;
       case "browser_request": {
-        if (params.action === "new") { browser.active = id("page"); browser.tabs.push({ id: browser.active, title: "New page", url: "about:blank", loading: false }); }
+        if (params.action === "new") { browser.active = id("page"); browser.tabs.push({ id: browser.active, title: "New page", url: "about:blank", loading: false, ready: true, snapshot: previewSnapshot }); }
         if (params.action === "activate") browser.active = String(params.id);
         if (params.action === "close") { browser.tabs = browser.tabs.filter(t => t.id !== params.id); if (browser.active === params.id) browser.active = browser.tabs[0]?.id ?? ""; }
         if (params.action === "navigate") { const tab = browser.tabs.find(t => t.id === browser.active); if (tab) { tab.url = String(params.url); tab.title = tab.url === "about:blank" ? "New page" : new URL(tab.url).hostname; } }
@@ -220,9 +253,21 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       }
       case "terminal_open": return { id: args.terminalId };
       case "terminal_write": case "terminal_resize": case "terminal_close": return null;
+      case "eval_request": return evals(String(args.action), params);
       case "diagnostics_request": return diagnostics(String(args.action), params);
-      case "provider_has_api_key": return false;
-      case "provider_test_and_fetch": return { ok: true, latencyMs: 12, models: state.settings.providers?.find(p => p.id === args.id)?.models ?? [] };
+      case "provider_set_api_key": keys.set(String(args.id), String(args.key).includes("bad")); return null;
+      case "provider_delete_api_key": keys.delete(String(args.id)); return null;
+      case "provider_has_api_key": return keys.has(String(args.id));
+      case "provider_test_and_fetch": {
+        const provider = state.settings.providers?.find(p => p.id === args.id);
+        if (!setup) return { ok: true, latencyMs: 12, models: provider?.models ?? [] };
+        return new Promise(resolve => setTimeout(() => {
+          if (keys.get(String(args.id))) { resolve({ ok: false, latencyMs: 900, models: [], error: "The API key was rejected. Check it and try again." }); return; }
+          const models = Array.from({ length: 23 }, (_, i) => ({ id: `model-${i + 1}`, displayName: `Model ${i + 1}`, enabled: true }));
+          if (provider) provider.models = models;
+          resolve({ ok: true, latencyMs: 900, models });
+        }, 900));
+      }
       case "local_usage_snapshot": return { updatedAt: Date.now(), days: [], topModels: [], totals: { last7DaysTokens: 0, last30DaysTokens: 0, averageDailyTokens: 0, cacheHitRatePercent: 0, peakDay: null, peakDayTokens: 0 } };
       case "import_request": {
         switch (args.action) {
@@ -257,11 +302,12 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "plugin:app|version": return "0.0.0-preview";
       case "plugin:app|name": return "taucode preview";
       case "plugin:notification|is_permission_granted": return false;
-      case "plugin:dialog|open": case "plugin:dialog|save": case "plugin:updater|check": return null;
+      case "plugin:dialog|open": return setup ? ["~/Projects/atlas"] : null;
+      case "plugin:dialog|save": case "plugin:updater|check": return null;
       case "connect_workspace": case "set_workspace_runtime_codex_args": case "set_thread_access_mode":
       case "thread_live_subscribe": case "thread_live_unsubscribe": case "turn_interrupt":
       case "menu_set_accelerators": case "set_tray_recent_threads": case "set_tray_session_usage":
-      case "work_output": case "provider_set_api_key": case "provider_delete_api_key":
+      case "work_output":
       case "plugin:window|set_title": case "plugin:window|set_theme": case "plugin:window|set_effects":
       case "plugin:webview|set_webview_zoom": return null;
       default: return unknown(command);
@@ -273,7 +319,10 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       if (command === "get_git_status" && record(payload).workspaceId === "workspace-notes") {
         return Promise.reject(new Error("could not find repository at '/preview/notes'; class=Repository (6); code=NotFound (-3)"));
       }
-      try { return structuredClone(handle(command, record(payload))); }
+      try {
+        const result = handle(command, record(payload));
+        return result instanceof Promise ? result.then(value => structuredClone(value)) : structuredClone(result);
+      }
       catch { return unknown(command); }
     },
   };

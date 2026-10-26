@@ -13,6 +13,7 @@
 }
 
 .debug-panel-resizer {
+  touch-action: none;
   height: 6px;
   cursor: row-resize;
   position: relative;

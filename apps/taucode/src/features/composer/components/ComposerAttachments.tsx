@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import Image from "lucide-react/dist/esm/icons/image";
 import X from "lucide-react/dist/esm/icons/x";
@@ -70,7 +71,7 @@ export function ComposerAttachments({
               </span>
             )}
             <span className="composer-attachment-name">{title}</span>
-            <button
+            <IconButton
               type="button"
               className="composer-attachment-remove"
               onClick={() => onRemoveAttachment?.(path)}
@@ -78,7 +79,7 @@ export function ComposerAttachments({
               disabled={disabled}
             >
               <X size={12} aria-hidden />
-            </button>
+            </IconButton>
           </div>
         );
       })}

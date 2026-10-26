@@ -1,90 +1,40 @@
-import { useCallback } from "react";
-import type { DebugEntry, WorkspaceInfo } from "../../../types";
-import { readAgentMd, writeAgentMd } from "../../../services/tauri";
-import { useFileEditor, type FileEditorResponse } from "../../shared/hooks/useFileEditor";
+import { useCallback, useEffect, useState } from "react";
+import type { DebugEntry, WorkspaceInfo } from "@/types";
+import { readAgentMd, writeAgentMd, type EditableInstructionFile, type InstructionFile } from "@services/tauri";
+import { useFileEditor } from "@/features/shared/hooks/useFileEditor";
 
-type UseWorkspaceAgentMdOptions = {
+function useInstructionFile(workspaceId: string | null, filename: EditableInstructionFile) {
+  const read = useCallback(() => workspaceId ? readAgentMd(workspaceId, filename) : Promise.resolve({ exists: false, content: "", truncated: false }), [workspaceId, filename]);
+  const write = useCallback(async (content: string) => { if (workspaceId) await writeAgentMd(workspaceId, content, filename); }, [workspaceId, filename]);
+  return useFileEditor({ key: workspaceId ? `${workspaceId}:${filename}` : null, read, write, readErrorTitle: `Couldn’t load ${filename}`, writeErrorTitle: `Couldn’t save ${filename}` });
+}
+
+export function useWorkspaceAgentMd({ activeWorkspace, filename, onDebug }: {
   activeWorkspace: WorkspaceInfo | null;
+  filename?: EditableInstructionFile;
   onDebug?: (entry: DebugEntry) => void;
-};
-
-export function useWorkspaceAgentMd({ activeWorkspace, onDebug }: UseWorkspaceAgentMdOptions) {
+}) {
   const workspaceId = activeWorkspace?.id ?? null;
-
-  const readWithDebug = useCallback(async (): Promise<FileEditorResponse> => {
-    if (!workspaceId) {
-      return { exists: false, content: "", truncated: false };
-    }
-    const requestWorkspaceId = workspaceId;
-    onDebug?.({
-      id: `${Date.now()}-client-agent-md-read`,
-      timestamp: Date.now(),
-      source: "client",
-      label: "agents.md/read",
-      payload: { workspaceId: requestWorkspaceId },
-    });
-    try {
-      const response = await readAgentMd(requestWorkspaceId);
-      onDebug?.({
-        id: `${Date.now()}-server-agent-md-read`,
-        timestamp: Date.now(),
-        source: "server",
-        label: "agents.md/read response",
-        payload: response,
-      });
-      return response;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      onDebug?.({
-        id: `${Date.now()}-client-agent-md-read-error`,
-        timestamp: Date.now(),
-        source: "error",
-        label: "agents.md/read error",
-        payload: message,
-      });
-      throw error;
-    }
-  }, [onDebug, workspaceId]);
-
-  const writeWithDebug = useCallback(async (content: string) => {
-    if (!workspaceId) {
-      return;
-    }
-    const requestWorkspaceId = workspaceId;
-    onDebug?.({
-      id: `${Date.now()}-client-agent-md-write`,
-      timestamp: Date.now(),
-      source: "client",
-      label: "agents.md/write",
-      payload: { workspaceId: requestWorkspaceId },
-    });
-    try {
-      await writeAgentMd(requestWorkspaceId, content);
-      onDebug?.({
-        id: `${Date.now()}-server-agent-md-write`,
-        timestamp: Date.now(),
-        source: "server",
-        label: "agents.md/write response",
-        payload: { ok: true },
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      onDebug?.({
-        id: `${Date.now()}-client-agent-md-write-error`,
-        timestamp: Date.now(),
-        source: "error",
-        label: "agents.md/write error",
-        payload: message,
-      });
-      throw error;
-    }
-  }, [onDebug, workspaceId]);
-
-  return useFileEditor({
-    key: workspaceId,
-    read: readWithDebug,
-    write: writeWithDebug,
-    readErrorTitle: "Couldn’t load AGENTS.md",
-    writeErrorTitle: "Couldn’t save AGENTS.md",
-  });
+  const agents = useInstructionFile(workspaceId, "AGENTS.md");
+  const claude = useInstructionFile(workspaceId, "CLAUDE.md");
+  const [selection, setSelection] = useState<{ workspaceId: string | null; filename: EditableInstructionFile }>();
+  const [detected, setDetected] = useState<InstructionFile[]>([]);
+  useEffect(() => {
+    setDetected([]);
+    if (!workspaceId) return;
+    let active = true;
+    const files = ["GEMINI.md", ".github/copilot-instructions.md"] as const;
+    void Promise.all(files.map(async file => (await readAgentMd(workspaceId, file)).exists ? file : null))
+      .then(found => { if (active) setDetected(found.filter((file): file is typeof files[number] => file !== null)); })
+      .catch(error => { if (active) onDebug?.({ id: `${Date.now()}-instructions-read`, timestamp: Date.now(), source: "error", label: "instructions/read error", payload: String(error) }); });
+    return () => { active = false; };
+  }, [workspaceId, onDebug]);
+  const selectedFile = filename ?? (selection?.workspaceId === workspaceId ? selection.filename : !agents.isLoading && !claude.isLoading && !agents.exists && claude.exists ? "CLAUDE.md" : "AGENTS.md");
+  return {
+    ...(selectedFile === "AGENTS.md" ? agents : claude),
+    selectedFile,
+    selectFile: (file: EditableInstructionFile) => setSelection({ workspaceId, filename: file }),
+    fileStatuses: { "AGENTS.md": agents.exists, "CLAUDE.md": claude.exists },
+    detected,
+  };
 }

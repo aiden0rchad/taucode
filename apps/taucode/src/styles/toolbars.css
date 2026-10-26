@@ -1,0 +1,36 @@
+/* Toolbar geometry is shared by Code, Chat and Work. Popovers have their own layout. */
+:is(.workspace-titlebar, .main-header, .sidebar-header, .sidebar-bottom-actions, .sidebar-new-row,
+    .composer-shell-toolbar, .composer-bar, .composer-meta, .composer-shell-left, .composer-shell-actions,
+    .side-panel-tabbar, .settings-group-title, .setup-footer) {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  box-sizing: border-box;
+}
+:is(.main-header, .sidebar-header, .sidebar-bottom-actions, .settings-group-title) { height: 32px; }
+.sidebar-new-row { height: 28px; }
+:is(.composer-shell-left, .composer-shell-actions, .composer-shell .composer-bar, .composer-shell .composer-meta) { height: 28px; }
+:is(.workspace-titlebar, .main-header, .sidebar-header, .sidebar-bottom-actions, .sidebar-new-row,
+    .composer-shell-toolbar, .side-panel-tabbar, .settings-group-title, .setup-footer)
+    button:not(.ds-icon-button):not(.ds-popover button):not([role="menuitem"]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 10px;
+  gap: 6px;
+  font-size: 13px;
+  margin-block: 0;
+  box-sizing: border-box;
+  transform: none;
+}
+:is(.sidebar-bottom-actions, .setup-footer) button:not(.ds-icon-button) { height: 32px; min-height: 32px; }
+.sidebar-bottom-actions .sidebar-labeled-button { justify-content: flex-start; gap: 6px; }
+.composer-shell .composer-chip { height: 28px; gap: 6px; font-size: 13px; }
+.composer-shell select, .chat-layout .composer-shell select { font-size: 13px; }
+.sidebar .mode-row > .thread-row { padding-right: 8px; }
+.sidebar .mode-row .thread-time { min-width: 24px; text-align: right; }
+.sidebar .thread-time { padding-top: 0; }
+.sidebar .mode-row:is(:hover, :focus-within, :has([aria-expanded="true"])) .thread-time { visibility: hidden; }
+.workspace-titlebar .window-caption-controls { align-items: center; }

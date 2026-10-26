@@ -59,7 +59,7 @@ export function SettingsConnectorsSection({ appSettings, onUpdateAppSettings, wo
     setDraft({ ...draft, transport: draft.transport.type === "stdio" ? { ...draft.transport, env: values } : { ...draft.transport, headers: values } });
   };
   const secretInput = (name: string) => <SettingsFieldRow  title={<>{name === "bearer" ? "Bearer token" : `${name} secret`}{saved[name] && <span>Saved in Keychain</span>}</>}><SettingsTextField aria-label={name === "bearer" ? "Bearer token" : `${name} secret`} type="password" autoComplete="new-password" value={secrets[name] ?? ""} placeholder={saved[name] ? "Saved in Keychain" : "Enter secret"} onChange={e => setSecrets({ ...secrets, [name]: e.target.value })} /></SettingsFieldRow>;
-  return <SettingsPage className="registry-settings" title="Connectors" subtitle="MCP tools for Pi and Codex. Changes apply on the next engine start."><SettingsGroup title="Preferences">
+  return <SettingsPage className="registry-settings" title="Connectors" subtitle="MCP tools for your agents. Changes apply on the next engine start."><SettingsGroup title="Preferences">
 
     <SettingsFieldRow  title={<>Scope</>}><SettingsSelect disabled={busy} value={local ? "workspace" : "app"} onChange={e => { setScope(e.target.value); setDraft(null); setEditing(null); setResult(null); }}><option value="app">All workspaces</option>{workspace && <option value="workspace">{workspace.name}</option>}</SettingsSelect></SettingsFieldRow>
     {error && <p role="alert">{error}</p>}

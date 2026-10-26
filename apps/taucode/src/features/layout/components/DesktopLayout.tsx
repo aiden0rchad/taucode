@@ -1,5 +1,5 @@
 import { SidebarResizeHandle } from "./SidebarResizeHandle";
-import { useEffect, useRef, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, type PointerEvent, type ReactNode } from "react";
 import { MainTopbar } from "../../app/components/MainTopbar";
 import { ChatPane } from "./ChatPane";
 
@@ -76,10 +76,10 @@ type DesktopLayoutProps = {
   terminalDockNode: ReactNode;
   debugPanelNode: ReactNode;
   hasActivePlan: boolean;
-  onSidebarResizeStart: (event: MouseEvent<HTMLDivElement>) => void;
-  onChatDiffSplitPositionResizeStart: (event: MouseEvent<HTMLDivElement>) => void;
-  onRightPanelResizeStart: (event: MouseEvent<HTMLDivElement>) => void;
-  onPlanPanelResizeStart: (event: MouseEvent<HTMLDivElement>) => void;
+  onSidebarResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
+  onChatDiffSplitPositionResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
+  onRightPanelResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
+  onPlanPanelResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
 };
 
 export function DesktopLayout({
@@ -137,7 +137,7 @@ export function DesktopLayout({
   return (
     <>
       {sidebarNode}
-      <SidebarResizeHandle onMouseDown={onSidebarResizeStart} />
+      <SidebarResizeHandle onPointerDown={onSidebarResizeStart} />
 
       <section className="main">
         {updateToastNode}
@@ -166,7 +166,7 @@ export function DesktopLayout({
                     role="separator"
                     aria-orientation="vertical"
                     aria-label="Resize chat/diff split"
-                    onMouseDown={onChatDiffSplitPositionResizeStart}
+                    onPointerDown={onChatDiffSplitPositionResizeStart}
                   />
                   <div
                     className={layerClassName({

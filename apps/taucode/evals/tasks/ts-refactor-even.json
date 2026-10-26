@@ -1,0 +1,17 @@
+{
+  "id": "ts-refactor-even",
+  "repo": "ts-lib",
+  "category": "refactor",
+  "tags": [],
+  "prompt": "Refactor even to a single reduce traversal, removing filter and map. Run node --test --test-name-pattern=\"^even$\" test/lib.test.js.",
+  "setup": [],
+  "check": {
+    "command": "node --test --test-name-pattern=\"^even$\" test/lib.test.js",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

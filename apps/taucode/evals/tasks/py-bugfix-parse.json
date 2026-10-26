@@ -1,0 +1,19 @@
+{
+  "id": "py-bugfix-parse",
+  "repo": "py-cli",
+  "category": "bugfix",
+  "tags": [
+    "smoke"
+  ],
+  "prompt": "Fix parse to trim comma-separated values and omit empty entries. Run python3 -m unittest test_cli.Tests.test_parse.",
+  "setup": [],
+  "check": {
+    "command": "python3 -m unittest test_cli.Tests.test_parse",
+    "expectExit": 0
+  },
+  "extraChecks": [],
+  "answerContains": [],
+  "requires": [],
+  "timeoutSec": 180,
+  "maxTurns": 3
+}

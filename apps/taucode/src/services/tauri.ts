@@ -215,7 +215,9 @@ export type DeleteAgentInput = {
 };
 
 type FileScope = "workspace" | "global";
-type FileKind = "agents" | "config";
+export type InstructionFile = "AGENTS.md" | "CLAUDE.md" | "GEMINI.md" | ".github/copilot-instructions.md";
+export type EditableInstructionFile = "AGENTS.md" | "CLAUDE.md";
+type FileKind = "agents" | "config" | InstructionFile;
 
 async function fileRead(
   scope: FileScope,
@@ -600,7 +602,7 @@ export async function getGitStatus(workspace_id: string): Promise<{
   unstagedFiles: GitFileStatus[];
   totalAdditions: number;
   totalDeletions: number;
-}> {
+} | null> {
   return invoke("get_git_status", { workspaceId: workspace_id });
 }
 
@@ -885,6 +887,13 @@ export function connectorRequest<T>(params: { action: "list" | "test" | "secrets
   return invoke<T>("connector_request", { params });
 }
 
+export function browserNativeBounds(tabId: string, rect: { x: number; y: number; w: number; h: number }, visible: boolean): Promise<void> {
+  return invoke("browser_native_bounds", { tabId, rect, visible });
+}
+export async function openBrowserUrl(url: string): Promise<void> {
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(url);
+}
 export function browserRequest<T = void>(params: Record<string, unknown>): Promise<T> {
   return invoke<T>("browser_request", { params });
 }
@@ -967,12 +976,12 @@ export async function readWorkspaceFile(
   });
 }
 
-export async function readAgentMd(workspaceId: string): Promise<AgentMdResponse> {
-  return fileRead("workspace", "agents", workspaceId);
+export async function readAgentMd(workspaceId: string, filename: InstructionFile = "AGENTS.md"): Promise<AgentMdResponse> {
+  return fileRead("workspace", filename === "AGENTS.md" ? "agents" : filename, workspaceId);
 }
 
-export async function writeAgentMd(workspaceId: string, content: string): Promise<void> {
-  return fileWrite("workspace", "agents", content, workspaceId);
+export async function writeAgentMd(workspaceId: string, content: string, filename: EditableInstructionFile = "AGENTS.md"): Promise<void> {
+  return fileWrite("workspace", filename === "AGENTS.md" ? "agents" : filename, content, workspaceId);
 }
 
 export async function listGitBranches(workspaceId: string) {
@@ -1286,3 +1295,12 @@ export async function pickEngineExecutable(): Promise<string | null> {
   const selected = await open({ directory: false, multiple: false, title: "Choose engine executable" });
   return typeof selected === "string" ? selected : null;
 }
+
+// These checks always describe this Mac, including when the engine backend is remote.
+export type SetupStatus = { permissions: { screen: boolean; accessibility: boolean; unsupported?: boolean }; codegraph: boolean };
+export const getSetupStatus = () => invoke<SetupStatus>("setup_status");
+export async function openSetupPrivacy(pane: "screen" | "accessibility") {
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(`x-apple.systempreferences:com.apple.preference.security?${pane === "screen" ? "Privacy_ScreenCapture" : "Privacy_Accessibility"}`);
+}
+export const evalRequest = <T = unknown>(action: string, params: object = {}) => invoke<T>("eval_request", { action, params });

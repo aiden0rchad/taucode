@@ -7,6 +7,8 @@ needed. The port is strict: an occupied port fails instead of selecting another.
 
 Direct screenshot URLs:
 
+- `/?setup=1` — Setup wizard at Welcome. `?setup=look|provider|engine|project|features|permissions|done` jumps to a step. Provider tests take 900ms and return 23 models (keys containing `bad` fail); oh-my-pi installs over 3s; the folder dialog returns `~/Projects/atlas`. Screen Recording is granted, Accessibility is not, and Codegraph is detected.
+
 - `/?mode=code&thread=home` — Code home dashboard.
 - `/?mode=code&thread=thread-empty` — new Code thread and starter pills.
 - `/?mode=chat&chat=new` or `/?mode=work&task=new` — empty states.

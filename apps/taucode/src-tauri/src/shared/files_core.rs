@@ -57,7 +57,23 @@ pub(crate) async fn file_write_core(
     workspace_id: Option<String>,
     content: String,
 ) -> Result<(), String> {
+    if matches!(kind, FileKind::Gemini | FileKind::Copilot) {
+        return Err("This instruction file is read-only".to_string());
+    }
     let policy = policy_for(scope, kind)?;
     let root = resolve_root_core(workspaces, scope, workspace_id.as_deref()).await?;
     write_with_policy(&root, policy, &content)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn detected_instruction_files_cannot_be_written() {
+        let workspaces = Mutex::new(HashMap::new());
+        for kind in [FileKind::Gemini, FileKind::Copilot] {
+            assert_eq!(file_write_core(&workspaces, FileScope::Workspace, kind, Some("w".into()), "overwrite".into()).await.unwrap_err(), "This instruction file is read-only");
+        }
+    }
 }

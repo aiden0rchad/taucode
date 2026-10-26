@@ -1,3 +1,6 @@
+import { SetupWizard } from "@/features/onboarding/SetupWizard";
+import type { SetupSection } from "@/features/onboarding/setupState";
+import { EvalsView } from "@/features/evals/EvalsView";
 import { FeedbackComposer, DiagnosticsCommands } from "@/features/diagnostics/FeedbackComposer";
 import { diagnosticContext, record } from "@/features/diagnostics/client";
 import { FeatureSettings, features, useFeatures } from "@settings/features";
@@ -6,9 +9,11 @@ import { SidebarEngine } from "@app/components/SidebarTree";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { AppMode, AppSettings } from "@/types";
 import { getAppSettings, updateAppSettings, setWindowMode } from "@services/tauri";
+import { notifySetupChanged } from "@services/events";
 import { matchesShortcut } from "@utils/shortcuts";
 import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import { useThemePreference } from "@/features/layout/hooks/useThemePreference";
+import { DEFAULT_THEME_ID } from "@/features/themes/defaults";
 import { WorkView } from "@/features/work/WorkView";
 import { ChatView } from "./ChatView";
 import "./chat.css";
@@ -25,9 +30,9 @@ export function ModeSwitcher() {
   </nav>;
 }
 
-export function useModeSettings(settings: AppSettings) {
+export function useModeSettings(settings: AppSettings | null) {
   const update = useContext(ModeContext)?.updateSettings;
-  useEffect(() => { update?.(settings); }, [settings, update]);
+  useEffect(() => { if (settings) update?.(settings); }, [settings, update]);
   return update;
 }
 
@@ -39,7 +44,7 @@ export function modeShortcut(event: KeyboardEvent, settings: AppSettings): AppMo
   return next === "code" || (next === "chat" ? enabled.chatMode : enabled.workMode) ? next : undefined;
 }
 
-export function ModeShell({ children, renderSettings }: { children: ReactNode; renderSettings?: (onClose: () => void) => ReactNode }) {
+export function ModeShell({ children, renderSettings }: { children: ReactNode; renderSettings?: (onClose: () => void, section?: SetupSection) => ReactNode }) {
   useSidebarDensity();
   const label = useWindowLabel();
   const [mode, setMode] = useState<AppMode>("code");
@@ -48,12 +53,19 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  useThemePreference(settings ?? { theme: "system" }, () => {
+  const [setupSection, setSetupSection] = useState<SetupSection>();
+  const [setupWorkspace, setSetupWorkspace] = useState<string>();
+  useEffect(() => {
+    if (mode === "code" && setupWorkspace) { notifySetupChanged(setupWorkspace); setSetupWorkspace(undefined); }
+  }, [mode, setupWorkspace]);
+  const [evalsFull, setEvalsFull] = useState<{runId?:string}|null>(null);
+  useEffect(() => { const open = (event:Event) => setEvalsFull({runId:(event as CustomEvent<{runId?:string}>).detail?.runId}); window.addEventListener("taucode:evals-full", open); return () => window.removeEventListener("taucode:evals-full", open); }, []);
+  useThemePreference(settings ?? { theme: DEFAULT_THEME_ID }, () => {
     if (!settings) return;
     const next = { ...settings, theme: "system" };
     setSettings(next);
     void updateAppSettings(next).catch(e => setError(String(e)));
-  });
+  }, loaded);
   useEffect(() => {
     const open = () => setSettingsOpen(true);
     window.addEventListener("taucode:provider-settings", open);
@@ -87,9 +99,13 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   if (!loaded) return null;
   return <FeatureSettings.Provider value={settings}>{settings?.features?.diagnostics && <><FeedbackComposer /><DiagnosticsCommands /></>}<ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings }}>
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
+    {evalsFull && settings && <main className="evals-full"><EvalsView full initialRunId={evalsFull.runId} appSettings={settings} onUpdateAppSettings={async next => { const saved = await updateAppSettings(next); setSettings(saved); return saved; }} onClose={() => setEvalsFull(null)} /></main>}
+    <div style={{ display: evalsFull ? "none" : "contents" }}>
     {mode === "code" && <SidebarEngine.Provider value={settings?.agentPolicy?.defaultEngine ?? "pi"}>{children}</SidebarEngine.Provider>}
     {mode === "chat" && settings && <ChatView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
     {mode === "work" && settings && <WorkView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
-    {settingsOpen && renderSettings?.(() => { setSettingsOpen(false); void getAppSettings().then(setSettings).catch(e => setError(String(e))); })}
+    </div>
+    {settingsOpen && renderSettings?.(() => { setSettingsOpen(false); setSetupSection(undefined); void getAppSettings().then(setSettings).catch(e => setError(String(e))); }, setupSection)}
+    <SetupWizard onSettings={setSettings} onFinish={async (next, workspaceId) => { await setWindowMode(next); setMode(next); setSetupWorkspace(workspaceId); setSettingsOpen(false); }} />
   </ModeContext.Provider></FeatureSettings.Provider>;
 }

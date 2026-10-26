@@ -19,13 +19,13 @@ name = "codex_monitor_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
+serde_json = "1"
 tauri-build = { version = "2.5.6", features = [] }
 
 [dependencies]
 taucode-diag-mcp = { path = "../../../crates/taucode-diag-mcp" }
-tauri = { version = "2.10.3", features = ["protocol-asset", "tray-icon", "image-png", "macos-private-api"] }
+tauri = { version = "2.10.3", features = ["protocol-asset", "tray-icon", "image-png", "macos-private-api", "unstable"] }
 tauri-plugin-notification = "2"
-tauri-plugin-liquid-glass = "0.1"
 tauri-plugin-opener = "2"
 tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
@@ -64,8 +64,12 @@ objc2-app-kit = { version = "0.3", features = ["NSAppearance", "NSResponder", "N
 objc2-foundation = { version = "0.3", features = ["NSString"] }
 objc2-av-foundation = { version = "0.3", features = ["AVCaptureDevice", "AVMediaFormat"] }
 block2 = "0.6"
+objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "WKWebView", "WKContentWorld", "WKFrameInfo", "WKSnapshotConfiguration", "WKWebsiteDataStore", "WKWebsiteDataRecord", "WKWebViewConfiguration", "WKNavigationDelegate", "WKNavigation", "block2"] }
 screencapturekit = "11.0.0"
 core-graphics = { version = "0.25.0", features = ["highsierra"] }
 
 [target."cfg(target_os = \"ios\")".dependencies]
 objc2 = "0.6"
+
+[dev-dependencies]
+tauri = { version = "2.10.3", features = ["test"] }

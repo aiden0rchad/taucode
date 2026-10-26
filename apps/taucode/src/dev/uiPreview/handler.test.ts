@@ -125,3 +125,37 @@ describe("UI preview IPC", () => {
     expect(select).toHaveBeenLastCalledWith("chat-1");
   });
 });
+
+it("simulates setup provider timing, failure, and a key-free 23-model response", async () => {
+  vi.useFakeTimers();
+  const { handler, state } = createPreviewHandler(undefined, "?setup=provider");
+  const id = state.settings.providers![0].id;
+  handler("provider_set_api_key", { id, key: "bad-private-key" });
+  expect(handler("provider_has_api_key", { id })).toBe(true);
+  const failure = handler("provider_test_and_fetch", { id });
+  await vi.advanceTimersByTimeAsync(900);
+  expect(await failure).toMatchObject({ ok: false, models: [] });
+  expect(JSON.stringify(await failure)).not.toContain("bad-private-key");
+  handler("provider_set_api_key", { id, key: "good-private-key" });
+  const success = handler("provider_test_and_fetch", { id });
+  await vi.advanceTimersByTimeAsync(900);
+  expect(await success).toMatchObject({ ok: true, latencyMs: 900 });
+  expect((await success as { models: unknown[] }).models).toHaveLength(23);
+  expect(JSON.stringify(state.settings)).not.toContain("private-key");
+  expect(handler("plugin:dialog|open", { directory: true })).toEqual(["~/Projects/atlas"]);
+});
+it("streams setup engine progress for three seconds and supports cancel", async () => {
+  vi.useFakeTimers();
+  const publish = vi.fn();
+  const { handler } = createPreviewHandler(publish, "?setup=engine");
+  const pending = handler("engine_runtime", { action: "prepare", engine: "omp" });
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(handler("engine_runtime", { action: "status" })).toContainEqual(expect.objectContaining({ engine: "omp", state: "installing", progress: 50 }));
+  expect(publish).toHaveBeenCalledWith("setup", "engine/runtime", { engine: "omp" });
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(await pending).toContainEqual(expect.objectContaining({ engine: "omp", state: "ready", progress: 100 }));
+  const cancelled = handler("engine_runtime", { action: "prepare", engine: "omp" });
+  handler("engine_runtime", { action: "cancel", engine: "omp" });
+  expect(await cancelled).toContainEqual(expect.objectContaining({ engine: "omp", state: "pending" }));
+  expect(vi.getTimerCount()).toBe(0);
+});

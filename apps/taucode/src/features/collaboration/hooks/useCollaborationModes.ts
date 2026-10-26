@@ -1,3 +1,5 @@
+import { useFeatureSettings } from "@settings/features";
+import { codexReady } from "@settings/registry";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CollaborationModeOption,
@@ -8,6 +10,7 @@ import { getCollaborationModes } from "../../../services/tauri";
 
 type UseCollaborationModesOptions = {
   activeWorkspace: WorkspaceInfo | null;
+  engine?: import("@/types").EngineKind;
   enabled: boolean;
   preferredModeId?: string | null;
   selectionKey?: string | null;
@@ -33,11 +36,16 @@ function pickWorkspaceDefaultModeId(modes: CollaborationModeOption[]): string | 
 
 export function useCollaborationModes({
   activeWorkspace,
-  enabled,
+  enabled: requested,
+  engine,
   preferredModeId = null,
   selectionKey = null,
   onDebug,
 }: UseCollaborationModesOptions) {
+  const settings = useFeatureSettings();
+  const enabled = requested && (engine ?? activeWorkspace?.settings.agentPolicy?.defaultEngine ?? settings?.agentPolicy?.defaultEngine ?? "pi") === "codex" && codexReady(settings);
+  const eligibility = useRef(enabled);
+  eligibility.current = enabled;
   const [modes, setModes] = useState<CollaborationModeOption[]>([]);
   const [selectedModeId, setSelectedModeId] = useState<string | null>(null);
   const lastFetchedWorkspaceId = useRef<string | null>(null);
@@ -85,7 +93,7 @@ export function useCollaborationModes({
   );
 
   const refreshModes = useCallback(async () => {
-    if (!workspaceId || !isConnected || !enabled) {
+    if (!workspaceId || !isConnected || !enabled || !eligibility.current) {
       return;
     }
     if (inFlight.current) {
@@ -101,6 +109,7 @@ export function useCollaborationModes({
     });
     try {
       const response = await getCollaborationModes(workspaceId);
+      if (!eligibility.current) return;
       onDebug?.({
         id: `${Date.now()}-server-collaboration-mode-list`,
         timestamp: Date.now(),
@@ -171,6 +180,7 @@ export function useCollaborationModes({
         return selection;
       });
     } catch (error) {
+      if (!eligibility.current) return;
       onDebug?.({
         id: `${Date.now()}-client-collaboration-mode-list-error`,
         timestamp: Date.now(),
@@ -242,8 +252,8 @@ export function useCollaborationModes({
   }, [enabled, isConnected, modes.length, refreshModes, workspaceId]);
 
   return {
-    collaborationModes: modes,
-    selectedCollaborationMode: selectedMode,
+    collaborationModes: enabled ? modes : [],
+    selectedCollaborationMode: enabled ? selectedMode : null,
     selectedCollaborationModeId: selectedModeId,
     setSelectedCollaborationModeId: setSelectedModeId,
     refreshCollaborationModes: refreshModes,

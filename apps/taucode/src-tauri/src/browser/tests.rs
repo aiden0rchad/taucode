@@ -165,6 +165,15 @@ async fn bridge_tracks_tabs_streams_and_navigates_without_sockets() {
     bridge.command(json!({"action":"resize","width":470.6,"height":599.4,"dpr":2})).await.unwrap();
     assert_eq!((state.borrow()["width"].clone(), state.borrow()["height"].clone()), (json!(471), json!(599)));
     assert!(bridge.command(json!({"action":"resize"})).await.is_err());
+    let mut casting = false;
+    for command in sent.lock().unwrap().iter() {
+        match command["method"].as_str() {
+            Some("Page.startScreencast") => { assert!(!casting, "start without stop"); casting = true; assert_eq!(command["params"]["quality"],90); },
+            Some("Page.stopScreencast") => casting = false,
+            _ => ()
+        }
+    }
+
     bridge
         .command(json!({"action":"activate","id":"two"}))
         .await

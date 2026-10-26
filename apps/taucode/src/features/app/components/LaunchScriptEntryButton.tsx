@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import type { LaunchScriptEntry, LaunchScriptIconId } from "../../../types";
 import { PopoverSurface } from "../../design-system/components/popover/PopoverPrimitives";
 import { useMenuController } from "../hooks/useMenuController";
@@ -50,7 +51,7 @@ export function LaunchScriptEntryButton({
   return (
     <div className="launch-script-menu" ref={popoverRef}>
       <div className="launch-script-buttons">
-        <button
+        <IconButton
           type="button"
           className="ghost main-header-action launch-script-run ds-tooltip-trigger"
           onClick={onRun}
@@ -65,7 +66,7 @@ export function LaunchScriptEntryButton({
           data-tooltip-placement="bottom"
         >
           <Icon size={14} aria-hidden />
-        </button>
+        </IconButton>
       </div>
       {editorOpen && (
         <PopoverSurface className="launch-script-popover" role="dialog">

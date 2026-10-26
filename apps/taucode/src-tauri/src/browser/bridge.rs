@@ -57,6 +57,7 @@ pub struct Bridge<T> {
     height: u32,
     dpr: f64,
     streaming: bool,
+    casting: bool,
     pub state: watch::Sender<Value>,
 }
 impl<T: Transport> Bridge<T> {
@@ -72,6 +73,7 @@ impl<T: Transport> Bridge<T> {
             height: 700,
             dpr: 1.,
             streaming: false,
+            casting: false,
             state,
         }
     }
@@ -159,11 +161,16 @@ impl<T: Transport> Bridge<T> {
     }
     async fn start_frames(&mut self) -> Result<(), String> {
         self.metrics().await?;
-        self.call("Page.startScreencast", json!({"format":"jpeg","quality":70,"everyNthFrame":1,"maxWidth":(self.width as f64*self.dpr).round() as u32,"maxHeight":(self.height as f64*self.dpr).round() as u32}), true).await?;
+        if self.casting {
+            self.call("Page.stopScreencast", json!({}), true).await?;
+            self.casting = false;
+        }
+        self.call("Page.startScreencast", json!({"format":"jpeg","quality":90,"everyNthFrame":1,"maxWidth":(self.width as f64*self.dpr).round() as u32,"maxHeight":(self.height as f64*self.dpr).round() as u32}), true).await?;
+        self.casting = true;
         let first = self
             .call(
                 "Page.captureScreenshot",
-                json!({"format":"jpeg","quality":70}),
+                json!({"format":"jpeg","quality":90}),
                 true,
             )
             .await?;
@@ -187,6 +194,7 @@ impl<T: Transport> Bridge<T> {
                     )
                     .await;
             }
+            self.casting = false;
             self.session.clear();
             let attached = self
                 .call(
@@ -246,6 +254,7 @@ impl<T: Transport> Bridge<T> {
                 self.tabs.remove(id);
                 if self.active == id {
                     self.active.clear();
+                    self.casting = false;
                     self.session.clear();
                     if let Some(id) = self.tabs.keys().next().cloned() {
                         self.activate(&id).await?;
@@ -326,6 +335,7 @@ impl<T: Transport> Bridge<T> {
                 if self.streaming && !self.session.is_empty() {
                     self.call("Page.stopScreencast", json!({}), true).await?;
                 }
+                self.casting = false;
                 self.streaming = false;
                 self.state.send_modify(|s| s["streaming"] = json!(false));
             }

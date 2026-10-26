@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { AppSettings } from '@/types';
 import { SettingsPage, SettingsGroup, SettingsRow, SettingsSelect, SettingsButton, SettingsTextArea, SettingsToggleRow, SettingsToggleSwitch } from '@/features/design-system/components/settings/SettingsPrimitives';
@@ -9,7 +10,7 @@ import { builtinIds, parseTheme, type ThemeManifest } from './validate';
 import { ThemeDialog, ThemeEditor } from './ThemeEditor';
 import { Plus, Upload, ClipboardPaste, FolderOpen, MoreHorizontal, Check, Copy, Pencil, Download, Clipboard, Trash2, AlertCircle } from 'lucide-react';
 import { AnchoredPopover } from '@/features/design-system/components/popover/AnchoredPopover';
-import { MenuTrigger, PopoverMenuItem } from '@/features/design-system/components/popover/PopoverPrimitives';
+import { PopoverMenuItem } from '@/features/design-system/components/popover/PopoverPrimitives';
 import { ThemePreview } from './ThemePreview';
 import './themes.css';
 
@@ -31,7 +32,7 @@ export function ThemeGallery({ settings, update }: { settings: AppSettings; upda
   const [editor,setEditor] = useState<ThemeManifest|null>(null), [paste,setPaste] = useState<string|null>(null), [error,setError] = useState('');
   const [remove,setRemove] = useState<ThemeManifest|null>(null), [conflict,setConflict] = useState<{ manifest: ThemeManifest; path?: string }|null>(null);
   const active = selectTheme(settings.theme,themes,systemDark,settings.themeLight,settings.themeDark);
-  const restore = () => applyTheme(active,settings.themeAnimations?.[active.id] !== false,settings.themeAnimations?.[`${active.id}:neonGlow`] !== false);
+  const restore = () => applyTheme(active,settings.themeAnimations?.[active.id] !== false,settings.themeAnimations?.[`${active.id}:neonGlow`] !== false,settings.theme === 'system');
   const run = async (fn: () => Promise<unknown>) => { setError(''); try { await fn(); } catch (e) { setError(String(e)); } };
   const unique = (id: string) => {
     for (let n=2;;n++) { const suffix = '-'+n, next = id.slice(0,40-suffix.length)+suffix; if (!themes.some(t => t.id === next)) return next; }
@@ -85,7 +86,7 @@ export function ThemeGallery({ settings, update }: { settings: AppSettings; upda
             <ThemePreview theme={preview} compact selected={settings.theme === t.id} />
             <span className="theme-card-name"><strong>{t.name}</strong>{custom && <span className="theme-custom-chip">Custom</span>}</span><small>{t.author || 'Unknown author'}</small>
           </button>
-          {t.id !== 'system' && <MenuTrigger isOpen={menu?.id === t.id} className="theme-card-menu ghost icon-button" aria-label={'Actions for '+t.name} onClick={event => { anchor.current = event.currentTarget; setMenu(menu?.id === t.id ? null : t); }}><MoreHorizontal size={18} aria-hidden /></MenuTrigger>}
+          {t.id !== 'system' && <IconButton aria-haspopup="menu" aria-expanded={menu?.id === t.id} className="theme-card-menu ghost" aria-label={'Actions for '+t.name} onClick={event => { anchor.current = event.currentTarget; setMenu(menu?.id === t.id ? null : t); }}><MoreHorizontal size={18} aria-hidden /></IconButton>}
         </article>;
       })}
       {files.filter(f => f.error).map(f => <article className="theme-card theme-error-card" key={f.file}><AlertCircle size={22} aria-hidden /><strong>{f.file}</strong><p role="alert">{f.error}</p><SettingsButton onClick={() => void run(() => themesRevealFile(f.file))}><FolderOpen size={16} aria-hidden />Reveal file</SettingsButton></article>)}

@@ -1,3 +1,4 @@
+import { SettingsIconButton } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, FileText, Pencil, Play, Plus, Puzzle, SlidersHorizontal, Sparkles, Terminal, Trash2, X } from "lucide-react";
 import type { AppSettings, EngineDefinition } from "@/types";
@@ -58,7 +59,7 @@ function EngineEditor({ engine, onClose, onSave, onTested }: { engine: EngineDef
       <SettingsRow className="engine-env-row"><div className="settings-toggle-title">Environment <span className="settings-toggle-subtitle">Non-secret values only</span></div><div className="engine-env">{env.map(([key, value], index) => <div className="engine-env-pair" key={index}>
         <SettingsTextField aria-label={`Environment key ${index + 1}`} aria-invalid={/(KEY|TOKEN|SECRET|PASSWORD)/i.test(key) || undefined} placeholder="VARIABLE" value={key} onChange={e => setEnv(env.map((pair, i) => i === index ? [e.target.value, pair[1]] : pair))} />
         <SettingsTextField aria-label={`Environment value ${index + 1}`} placeholder="Value" value={value} onChange={e => setEnv(env.map((pair, i) => i === index ? [pair[0], e.target.value] : pair))} />
-        <SettingsButton aria-label={`Remove environment variable ${index + 1}`} onClick={() => setEnv(env.filter((_, i) => i !== index))}><X size={14} aria-hidden /></SettingsButton>
+        <SettingsIconButton aria-label={`Remove environment variable ${index + 1}`} onClick={() => setEnv(env.filter((_, i) => i !== index))}><X size={14} aria-hidden /></SettingsIconButton>
       </div>)}<SettingsButton onClick={() => setEnv([...env, ["", ""]])}><Plus size={14} aria-hidden /> Add variable</SettingsButton>{secret && <p role="alert" className="engine-error">{secret[0]}: use a provider instead</p>}</div></SettingsRow>
       <SettingsFieldRow title="Config dir variable" subtitle="Optional; points to an isolated directory"><SettingsTextField value={draft.configDirEnv ?? ""} placeholder="PI_CODING_AGENT_DIR" onChange={e => setDraft({ ...draft, configDirEnv: e.target.value || undefined })} /></SettingsFieldRow>
     </SettingsGroup>
@@ -128,7 +129,7 @@ export function SettingsEnginesSection({ appSettings, onUpdateAppSettings, onOpe
             await save(engines, engine.id === policy.defaultEngine && engine.enabled ? ready.find(e => e.id !== engine.id)?.id ?? engines.find(e => e.enabled)!.id : policy.defaultEngine);
             if (engine.id === "omp" && !engine.enabled && status?.state !== "ready") await install(engine);
           })} />
-          <RowMenu portal label={engine.name} actions={menu}>{null}</RowMenu>
+          <RowMenu portal size="md" label={engine.name} actions={menu}>{null}</RowMenu>
         </div>
       </SettingsRow>;
     })}</SettingsGroup>

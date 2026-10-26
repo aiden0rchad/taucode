@@ -35,6 +35,16 @@ const makeStatus = (branchName: string, additions = 0, deletions = 0) => ({
 });
 
 describe("useGitStatus", () => {
+  it("accepts a non-repository response without logging an error", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(getGitStatus).mockResolvedValue(null);
+    const { result, unmount } = renderHook(() => useGitStatus(workspace));
+    await act(async () => {});
+    expect(result.current.status.files).toEqual([]);
+    expect(result.current.status.error).toBe("Not a git repository");
+    expect(log).not.toHaveBeenCalled();
+    unmount(); log.mockRestore();
+  });
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   });

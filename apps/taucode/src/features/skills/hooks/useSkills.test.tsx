@@ -120,3 +120,5 @@ describe("useSkills", () => {
     expect(getSkillsList).toHaveBeenCalledTimes(1);
   });
 });
+
+vi.mock("@settings/features", () => ({ useFeatureSettings: () => ({ agentPolicy: { defaultEngine: "codex" }, providers: [{ id: "test", name: "Test", kind: "openai", enabled: true, models: [{ id: "model", enabled: true }] }] }) }));

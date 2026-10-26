@@ -1,3 +1,4 @@
+import { useNativeOverlay } from "../../nativeOverlays";
 import { Squircle } from "@/features/design-system/components/squircle/Squircle";
 import type { MouseEventHandler, ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -24,9 +25,10 @@ export function ModalShell({
   ariaLabelledBy,
   ariaDescribedBy,
 }: ModalShellProps) {
+  const overlay = useNativeOverlay<HTMLDivElement>();
   const Card = squircle ? Squircle : "div";
   return createPortal(
-    <div
+    <div ref={overlay}
       className={joinClassNames("ds-modal", className)}
       role="dialog"
       aria-modal="true"

@@ -1,0 +1,11 @@
+--- a/src/lib.js
++++ b/src/lib.js
+@@ -3,7 +3,7 @@
+ export const unique = (xs) => xs;
+ export const clamp = (n,lo,hi) => Math.max(lo,Math.max(hi,n));
+ export const median = (xs) => xs[0];
+-export const slug = (s) => s.toLowerCase();
++export const slug = (s) => s.trim().toLowerCase().replace(/\s+/g,'-');
+ export const chunk = (xs,n) => [];
+ export const count = (xs) => {};
+ export const partition = (xs,fn) => [xs,[]];

@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { Ellipsis } from "lucide-react";
 import { useCallback } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
@@ -86,7 +87,7 @@ function QueueMenuButton({ item, onEditQueued, onDeleteQueued }: QueueMenuButton
 
   return (
     <div className="composer-queue-menu-wrap" ref={menu.containerRef}>
-      <button
+      <IconButton
         type="button"
         className={`composer-queue-menu${menu.isOpen ? " is-open" : ""}`}
         onClick={handleToggleMenu}
@@ -95,7 +96,7 @@ function QueueMenuButton({ item, onEditQueued, onDeleteQueued }: QueueMenuButton
         aria-expanded={menu.isOpen}
       >
         <Ellipsis aria-hidden />
-      </button>
+      </IconButton>
       {menu.isOpen && (
         <PopoverSurface className="composer-queue-item-popover" role="menu">
           <PopoverMenuItem onClick={handleEdit}>Edit</PopoverMenuItem>

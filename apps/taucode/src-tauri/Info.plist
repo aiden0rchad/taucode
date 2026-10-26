@@ -6,6 +6,8 @@
     <string>taucode</string>
     <key>CFBundleName</key>
     <string>taucode</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Allow approved computer-use actions to control selected apps.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Allow access to the microphone for dictation.</string>
   </dict>

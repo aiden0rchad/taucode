@@ -1,0 +1,26 @@
+--- a/hard/inventory/store.ts
++++ b/hard/inventory/store.ts
+@@ -1,5 +1,5 @@
+ export type Line = {sku:string; warehouse:string; quantity:number};
+-const key = (sku:string, warehouse:string) => `${sku}:${warehouse}`;
++const key = (sku:string, warehouse:string) => JSON.stringify([sku,warehouse]);
+ export class Store {
+   stock = new Map<string,number>();
+   get(sku:string,warehouse:string) { return this.stock.get(key(sku,warehouse)) ?? 0; }
+--- a/hard/inventory/reserve.ts
++++ b/hard/inventory/reserve.ts
+@@ -1,9 +1,12 @@
+ import {Store, type Line} from './store.ts';
+ export function reserve(store:Store, lines:Line[]):boolean {
++  const totals=new Map<string,Line>();
+   for(const line of lines) {
+     if(!Number.isInteger(line.quantity) || line.quantity<0) throw new RangeError('quantity');
+-    if(store.get(line.sku,line.warehouse)<line.quantity) return false;
++    const key=JSON.stringify([line.sku,line.warehouse]);
++    totals.set(key,{...line,quantity:(totals.get(key)?.quantity??0)+line.quantity});
+   }
+-  for(const line of lines) store.set(line.sku,line.warehouse,store.get(line.sku,line.warehouse)-line.quantity);
++  for(const line of totals.values()) if(store.get(line.sku,line.warehouse)<line.quantity) return false;
++  for(const line of totals.values()) store.set(line.sku,line.warehouse,store.get(line.sku,line.warehouse)-line.quantity);
+   return true;
+ }

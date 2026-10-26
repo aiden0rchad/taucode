@@ -37,9 +37,11 @@ export function installUiPreview(search = window.location.search) {
     return preview.handler(command, payload);
   });
   const tauri = window as unknown as {
-    __TAURI_INTERNALS__: { unregisterCallback: (id: number) => void };
+    __TAURI_INTERNALS__: { unregisterCallback: (id: number) => void; convertFileSrc?: (path: string, protocol?: string) => string };
     __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: (event: string, id: number) => void };
   };
+  // mockIPC leaves convertFileSrc undefined; the project home uses it for file previews.
+  tauri.__TAURI_INTERNALS__.convertFileSrc ??= (path, protocol = "asset") => `${protocol}://localhost/${encodeURIComponent(path)}`;
   tauri.__TAURI_EVENT_PLUGIN_INTERNALS__.unregisterListener = (_event, id) => {
     const listener = listeners.get(id);
     if (listener) tauri.__TAURI_INTERNALS__.unregisterCallback(listener.handler);
@@ -72,6 +74,9 @@ export function selectCode(
   const section = query.get("settings");
   const sections = SETTINGS_ROUTE_SECTION_IDS.filter(s => s !== "profile");
   if (section) openSettings(sections.find(s => s === section) ?? "display");
+  if (query.get("evals") === "layout") {
+    void import("./evals.layout").then(module => module.checkEvalsLayout()).catch(console.error);
+  }
   if (query.get("diagnostics") === "layout") {
     void import("./diagnostics.layout").then(module => module.checkDiagnosticsLayout()).catch(console.error);
   }

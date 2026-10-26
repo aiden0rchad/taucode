@@ -130,6 +130,14 @@ async fn proxy(
                                     continue;
                                 }
                             };
+                            if endpoint["native"] == true {
+                                let _ = browser.request(json!({"action":"activity","active":true})).await;
+                                let result = browser.request(json!({"action":"tool","name":v["params"]["name"],"arguments":v["params"]["arguments"]})).await;
+                                let _ = browser.request(json!({"action":"activity","active":false})).await;
+                                let result = result.unwrap_or_else(|error|json!({"isError":true,"content":[{"type":"text","text":error}]}));
+                                emit(&json!({"jsonrpc":"2.0","id":v["id"],"result":result}).to_string())?;
+                                continue;
+                            }
                             let current_port = endpoint["port"].as_u64().ok_or("Missing browser debugging port")? as u16;
                             if port != Some(current_port) {
                                 let mut init = initialize.clone().ok_or("Initialize MCP before calling browser tools")?;
@@ -247,7 +255,7 @@ pub(super) fn command(
     settings: &Settings,
 ) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(
-        std::env::var_os("TAUCODE_NODE").unwrap_or_else(|| "node".into()),
+        crate::shared::engine_runtime::node_path(),
     );
     command
         .args(arguments(cli, data, port, settings))

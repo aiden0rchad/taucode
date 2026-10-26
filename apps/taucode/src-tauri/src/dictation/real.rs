@@ -4,7 +4,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::oneshot;
 
@@ -279,11 +279,11 @@ fn ready_status(model_id: &str, path: &PathBuf) -> DictationModelStatus {
 }
 
 fn emit_status(app: &AppHandle, status: &DictationModelStatus) {
-    let _ = app.emit("dictation-download", status);
+    let _ = crate::event_sink::emit(&app, "dictation-download", status);
 }
 
 fn emit_event(app: &AppHandle, event: DictationEvent) {
-    let _ = app.emit("dictation-event", event);
+    let _ = crate::event_sink::emit(&app, "dictation-event", event);
 }
 
 async fn clear_processing_cancel(app: &AppHandle, cancel_flag: &Arc<AtomicBool>) -> bool {

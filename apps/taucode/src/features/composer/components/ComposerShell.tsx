@@ -1,7 +1,8 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { Squircle } from "@/features/design-system/components/squircle/Squircle";
 import { ReasoningControl, type ReasoningControlProps } from "./ReasoningControl";
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
-import { ArrowUp, Plus, Settings2, Square } from "lucide-react";
+import { ArrowUp, ChevronsUpDown, Plus, Settings2, Square } from "lucide-react";
 import { useMenuController } from "@app/hooks/useMenuController";
 import { AnchoredPopover } from "@/features/design-system/components/popover/AnchoredPopover";
 
@@ -26,7 +27,7 @@ export function ComposerShell({ children, menu, toolbar, controls, reasoning, ac
     <div className="composer-shell-toolbar">
       <div className="composer-shell-left">
       <div className="composer-add" ref={add.containerRef}>
-        <button ref={trigger} type="button" aria-haspopup="dialog" className="ghost icon-button" title="Add attachments and tools" aria-label="Add attachments and tools" aria-expanded={add.isOpen} onClick={add.toggle}><Plus aria-hidden /></button>
+        <IconButton ref={trigger} type="button" aria-haspopup="dialog" className="ghost" title="Add attachments and tools" aria-label="Add attachments and tools" aria-expanded={add.isOpen} onClick={add.toggle}><Plus aria-hidden /></IconButton>
         {add.isOpen && <AnchoredPopover anchorRef={trigger} surfaceRef={popover} role="dialog" aria-label="Attachments and tools" className="composer-add-menu" onClick={event => { if ((event.target as HTMLElement).closest("button")) { add.close(); trigger.current?.focus(); } }}>{menu}</AnchoredPopover>}
       </div>
       {toolbar}
@@ -40,9 +41,9 @@ export function ComposerSendButton({ running, disabled, disabledReason, onSend, 
   running?: boolean; disabled?: boolean; disabledReason: string; onSend: () => void; onStop?: () => void; label?: string; runningHint?: string;
 }) {
   const title = running ? `Stop${runningHint ? " · " + runningHint : ""}` : disabled ? disabledReason : `${label} · Enter to send, Shift+Enter for a new line`;
-  return <span title={title}><button type="button" className={`composer-action ${running ? "is-stop" : "is-send"}`} aria-label={running ? "Stop" : label} title={title} disabled={!running && disabled} onClick={running ? onStop : onSend}>{running ? <Square aria-hidden /> : <ArrowUp aria-hidden />}</button></span>;
+  return <span title={title}><IconButton type="button" className={`composer-action ${running ? "is-stop" : "is-send"}`} aria-label={running ? "Stop" : label} title={title} disabled={!running && disabled} onClick={running ? onStop : onSend}>{running ? <Square aria-hidden /> : <ArrowUp aria-hidden />}</IconButton></span>;
 }
 
 export function ComposerAccessControl({ value, onChange, disabled, title }: { value: "ask" | "read-only" | "full-access"; onChange?: (value: "ask" | "read-only" | "full-access") => void; disabled?: boolean; title?: string }) {
-  return <label className="composer-chip composer-access-chip" title={title ?? `Access: ${value}`}><Settings2 size={14} aria-hidden /><select aria-label="Access mode" value={value} disabled={disabled || !onChange} onChange={event => onChange?.(event.target.value as typeof value)}><option value="ask">Ask</option><option value="read-only">Read-only</option><option value="full-access">Full access</option></select></label>;
+  return <label className="composer-chip composer-access-chip" title={title ?? `Access: ${value}`}><Settings2 size={16} aria-hidden /><select aria-label="Access mode" value={value} disabled={disabled || !onChange} onChange={event => onChange?.(event.target.value as typeof value)}><option value="ask">Ask</option><option value="read-only">Read-only</option><option value="full-access">Full access</option></select><ChevronsUpDown className="composer-access-chevron" size={16} aria-hidden /></label>;
 }

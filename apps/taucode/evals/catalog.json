@@ -1,0 +1,559 @@
+{
+  "tasks": [
+    {
+      "id": "ts-bugfix-range",
+      "repo": "ts-lib",
+      "category": "bugfix",
+      "tags": [
+        "smoke"
+      ],
+      "prompt": "Fix range(n): it returns n+1 items. Run node --test --test-name-pattern=\"^range$\" test/lib.test.js.",
+      "setup": [],
+      "check": {
+        "command": "node --test --test-name-pattern=\"^range$\" test/lib.test.js",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "ts-bugfix-sum",
+      "repo": "ts-lib",
+      "category": "bugfix",
+      "tags": [],
+      "prompt": "Fix sum, including empty input. Run node --test --test-name-pattern=\"^sum$\" test/lib.test.js.",
+      "setup": [],
+      "check": {
+        "command": "node --test --test-name-pattern=\"^sum$\" test/lib.test.js",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "ts-bugfix-unique",
+      "repo": "ts-lib",
+      "category": "bugfix",
+      "tags": [],
+      "prompt": "Fix unique to remove duplicates preserving order. Run node --test --test-name-pattern=\"^unique$\" test/lib.test.js.",
+      "setup": [],
+      "check": {
+        "command": "node --test --test-name-pattern=\"^unique$\" test/lib.test.js",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "ts-bugfix-clamp",
+      "repo": "ts-lib",
+      "category": "bugfix",
+      "tags": [],
+      "prompt": "Fix clamp to enforce both bounds. Run node --test --test-name-pattern=\"^clamp$\" test/lib.test.js.",
+      "setup": [],
+      "check": {
+        "command": "node --test --test-name-pattern=\"^clamp$\" test/lib.test.js",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "ts-bugfix-median",
+      "repo": "ts-lib",
+      "category": "bugfix",
+      "tags": [],
+      "prompt": "Fix median of odd nonempty arrays without mutating input. Run node --test --test-name-pattern=\"^median$\" test/lib.test.js.",
+      "setup": [],
+      "check": {
+        "command": "node --test --test-name-pattern=\"^median$\" test/lib.test.js",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "ts-feature-slug",
+      "repo": "ts-lib",
+      "category": "feature",
+      "tags": [],
+      "prompt": "Implement slug: trim, lowercase, collapse whitespace to hyphens. Run node --test --test-name-pattern=\"^slug$\" test/lib.test.js.",
+      "setup": [],
+      "check": {
+        "command": "node --test --test-name-pattern=\"^slug$\" test/lib.test.js",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "ts-feature-chunk",
+      "repo": "ts-lib",
+      "category": "feature",
+      "tags": [
+        "smoke"
+      ],
+      "prompt": "Implement chunk(xs,n) for positive integer sizes, retaining partial chunks. Run node --test --test-name-pattern=\"^chunk$\" test/lib.test.js.",
+      "setup": [],
+      "check": {
+        "command": "node --test --test-name-pattern=\"^chunk$\" test/lib.test.js",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "ts-feature-count",
+      "repo": "ts-lib",
+      "category": "feature",
+      "tags": [],
+      "prompt": "Implement count, including __proto__ safely. Run node --test --test-name-pattern=\"^count$\" test/lib.test.js.",
+      "setup": [],
+      "check": {
+        "command": "node --test --test-name-pattern=\"^count$\" test/lib.test.js",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "ts-feature-partition",
+      "repo": "ts-lib",
+      "category": "feature",
+      "tags": [],
+      "prompt": "Implement partition(xs,fn), preserving order in both groups. Run node --test --test-name-pattern=\"^partition$\" test/lib.test.js.",
+      "setup": [],
+      "check": {
+        "command": "node --test --test-name-pattern=\"^partition$\" test/lib.test.js",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "ts-refactor-even",
+      "repo": "ts-lib",
+      "category": "refactor",
+      "tags": [],
+      "prompt": "Refactor even to a single reduce traversal, removing filter and map. Run node --test --test-name-pattern=\"^even$\" test/lib.test.js.",
+      "setup": [],
+      "check": {
+        "command": "node --test --test-name-pattern=\"^even$\" test/lib.test.js",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "py-bugfix-parse",
+      "repo": "py-cli",
+      "category": "bugfix",
+      "tags": [
+        "smoke"
+      ],
+      "prompt": "Fix parse to trim comma-separated values and omit empty entries. Run python3 -m unittest test_cli.Tests.test_parse.",
+      "setup": [],
+      "check": {
+        "command": "python3 -m unittest test_cli.Tests.test_parse",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "py-bugfix-average",
+      "repo": "py-cli",
+      "category": "bugfix",
+      "tags": [],
+      "prompt": "Fix average to return zero on empty input. Run python3 -m unittest test_cli.Tests.test_average.",
+      "setup": [],
+      "check": {
+        "command": "python3 -m unittest test_cli.Tests.test_average",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "py-bugfix-truth",
+      "repo": "py-cli",
+      "category": "bugfix",
+      "tags": [],
+      "prompt": "Fix truth: only true, yes and 1 (case insensitive) are true. Run python3 -m unittest test_cli.Tests.test_truth.",
+      "setup": [],
+      "check": {
+        "command": "python3 -m unittest test_cli.Tests.test_truth",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "py-feature-extension",
+      "repo": "py-cli",
+      "category": "feature",
+      "tags": [],
+      "prompt": "Implement extension, returning lowercase final extension or empty string. Run python3 -m unittest test_cli.Tests.test_extension.",
+      "setup": [],
+      "check": {
+        "command": "python3 -m unittest test_cli.Tests.test_extension",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "py-feature-frequency",
+      "repo": "py-cli",
+      "category": "feature",
+      "tags": [
+        "smoke"
+      ],
+      "prompt": "Implement frequency using the standard library. Run python3 -m unittest test_cli.Tests.test_frequency.",
+      "setup": [],
+      "check": {
+        "command": "python3 -m unittest test_cli.Tests.test_frequency",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "py-refactor-total",
+      "repo": "py-cli",
+      "category": "refactor",
+      "tags": [
+        "smoke"
+      ],
+      "prompt": "Refactor total to sum the iterable directly without a list comprehension. Run python3 -m unittest test_cli.Tests.test_total.",
+      "setup": [],
+      "check": {
+        "command": "python3 -m unittest test_cli.Tests.test_total",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "q-range",
+      "repo": "ts-lib",
+      "category": "question",
+      "tags": [],
+      "prompt": "Which file exports range, and what is its current length for n=3?",
+      "setup": [],
+      "check": {
+        "command": "true",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [
+        "src/lib.js",
+        "4"
+      ],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "q-clamp",
+      "repo": "ts-lib",
+      "category": "question",
+      "tags": [],
+      "prompt": "Which Math method does clamp currently call?",
+      "setup": [],
+      "check": {
+        "command": "true",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [
+        "Math.max"
+      ],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "q-tests",
+      "repo": "ts-lib",
+      "category": "question",
+      "tags": [],
+      "prompt": "Which built-in modules do the tests import?",
+      "setup": [],
+      "check": {
+        "command": "true",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [
+        "node:test",
+        "node:assert/strict"
+      ],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "q-python",
+      "repo": "py-cli",
+      "category": "question",
+      "tags": [
+        "smoke"
+      ],
+      "prompt": "Which standard library classes are imported by cli.py?",
+      "setup": [],
+      "check": {
+        "command": "true",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [
+        "Path",
+        "Counter"
+      ],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "q-entry",
+      "repo": "py-cli",
+      "category": "question",
+      "tags": [],
+      "prompt": "Which function does the CLI call with sys.argv[1]?",
+      "setup": [],
+      "check": {
+        "command": "true",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [
+        "parse"
+      ],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "q-frequency",
+      "repo": "py-cli",
+      "category": "question",
+      "tags": [],
+      "prompt": "What does frequency currently return?",
+      "setup": [],
+      "check": {
+        "command": "true",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [
+        "{}"
+      ],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "browser-inventory",
+      "repo": "web-page",
+      "category": "browser",
+      "tags": [],
+      "prompt": "Use the browser to open {{url}} and report the rendered Inventory number.",
+      "setup": [],
+      "check": {
+        "command": "true",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [
+        "217"
+      ],
+      "requires": [
+        "browser"
+      ],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "computer-inventory",
+      "repo": "web-page",
+      "category": "computerUse",
+      "tags": [],
+      "prompt": "Use computer use to open {{url}} and report the rendered Inventory number.",
+      "setup": [],
+      "check": {
+        "command": "true",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [
+        "217"
+      ],
+      "requires": [
+        "computerUse"
+      ],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "ts-bugfix-reservations",
+      "repo": "ts-lib",
+      "category": "bugfix",
+      "tags": [
+        "smoke",
+        "hard"
+      ],
+      "prompt": "Investigate the failing inventory tests in hard/inventory. Stock identity is the exact (SKU, warehouse) pair; either string may contain colons. Fix batch reservations so duplicate lines are aggregated and the entire batch is atomic on failure. Preserve the Store and reserve APIs and never mutate requests. Run node --test hard/inventory/check.test.ts.",
+      "setup": [],
+      "check": {
+        "command": "node --test hard/inventory/check.test.ts",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "ts-feature-discount",
+      "repo": "ts-lib",
+      "category": "feature",
+      "tags": [
+        "smoke",
+        "hard"
+      ],
+      "prompt": "Implement allocateDiscount(amounts, discountCents) in hard/invoice/money.ts. Return per-line integer discounts proportional to the amounts using largest remainders; ties go to earlier lines. Do not mutate inputs. Reject noninteger/negative amounts or discounts and discounts exceeding the total; an all-zero or empty order accepts only zero. Update both checkout and quote to use it so totals reconcile. Add a direct allocator test in hard/invoice/money.test.ts. Read the failing integration tests first. Run node --test hard/invoice/*.test.ts.",
+      "setup": [],
+      "check": {
+        "command": "node --test hard/invoice/*.test.ts",
+        "expectExit": 0
+      },
+      "extraChecks": [
+        {
+          "file": "hard/invoice/money.test.ts",
+          "contains": "allocateDiscount"
+        }
+      ],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "py-bugfix-stdin",
+      "repo": "py-cli",
+      "category": "bugfix",
+      "tags": [
+        "hard"
+      ],
+      "prompt": "Fix hard_cli argument/stream handling. With no paths, read stdin. A single - consumes stdin at its exact position among UTF-8 files; repeated - is a usage error. -- must allow a filename beginning with -. --limit N limits the concatenated lines and must be nonnegative. Emit one JSON array on stdout; file/usage errors exit 2 with stderr and no traceback or partial stdout. Empty stdin yields []. Preserve line text and ordering. Run the tests and inspect their subprocess failures. Run python3 -m unittest hard_cli.test_cli.",
+      "setup": [],
+      "check": {
+        "command": "python3 -m unittest hard_cli.test_cli",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    },
+    {
+      "id": "ts-refactor-records",
+      "repo": "ts-lib",
+      "category": "refactor",
+      "tags": [
+        "hard"
+      ],
+      "prompt": "Refactor hard/records/parser.ts around a new lazy generator parseLines(Iterable<string>). Keep the public parseRecords(text) and parseConfig(text) APIs, whitespace rules, last-key-wins behavior and exact SyntaxError line numbers stable. Both existing functions must delegate to parseLines. Do not consume a source until next() or read ahead; support a one-shot iterable. Preserve the existing API tests and add the new streaming behavior needed by streaming.test.ts. Run node --test hard/records/*.test.ts.",
+      "setup": [],
+      "check": {
+        "command": "node --test hard/records/*.test.ts",
+        "expectExit": 0
+      },
+      "extraChecks": [],
+      "answerContains": [],
+      "requires": [],
+      "timeoutSec": 180,
+      "maxTurns": 3
+    }
+  ],
+  "repos": {
+    "ts-lib": {
+      "hard/inventory/check.test.ts": "import {test} from 'node:test';\nimport assert from 'node:assert/strict';\nimport {Store} from './store.ts';\nimport {reserve} from './reserve.ts';\ntest('identity isolation across compound keys',()=>{\n  const s=new Store(); s.set('a:b','c',9); s.set('a','b:c',4); s.set('c','a:b',7);\n  assert.equal(reserve(s,[{sku:'a:b',warehouse:'c',quantity:3}]),true);\n  assert.equal(s.get('a:b','c'),6); assert.equal(s.get('a','b:c'),4); assert.equal(s.get('c','a:b'),7);\n});\ntest('duplicates cannot overdraw and failure is atomic',()=>{\n  const s=new Store(); s.set('x','w',5); s.set('y','w',10);\n  const rows=[{sku:'y',warehouse:'w',quantity:2},{sku:'x',warehouse:'w',quantity:3},{sku:'x',warehouse:'w',quantity:3}];\n  const copy=structuredClone(rows);\n  assert.equal(reserve(s,rows),false); assert.deepEqual(rows,copy);\n  assert.equal(s.get('x','w'),5); assert.equal(s.get('y','w'),10);\n  rows[2].quantity=2; assert.equal(reserve(s,rows),true); assert.equal(s.get('x','w'),0); assert.equal(s.get('y','w'),8);\n});\ntest('invalid later lines do not partially write; empty and zero batches work',()=>{\n  const s=new Store(); s.set('x','w',5);\n  for(const quantity of [-1,0.5,NaN,Infinity]) {\n    assert.throws(()=>reserve(s,[{sku:'x',warehouse:'w',quantity:2},{sku:'x',warehouse:'w',quantity}]),RangeError);\n    assert.equal(s.get('x','w'),5);\n  }\n  assert.equal(reserve(s,[]),true); assert.equal(reserve(s,[{sku:'absent',warehouse:'w',quantity:0}]),true);\n  assert.equal(reserve(s,[{sku:'absent',warehouse:'w',quantity:1}]),false);\n});\n",
+      "hard/inventory/reserve.ts": "import {Store, type Line} from './store.ts';\nexport function reserve(store:Store, lines:Line[]):boolean {\n  for(const line of lines) {\n    if(!Number.isInteger(line.quantity) || line.quantity<0) throw new RangeError('quantity');\n    if(store.get(line.sku,line.warehouse)<line.quantity) return false;\n  }\n  for(const line of lines) store.set(line.sku,line.warehouse,store.get(line.sku,line.warehouse)-line.quantity);\n  return true;\n}\n",
+      "hard/inventory/store.ts": "export type Line = {sku:string; warehouse:string; quantity:number};\nconst key = (sku:string, warehouse:string) => `${sku}:${warehouse}`;\nexport class Store {\n  stock = new Map<string,number>();\n  get(sku:string,warehouse:string) { return this.stock.get(key(sku,warehouse)) ?? 0; }\n  set(sku:string,warehouse:string,quantity:number) { this.stock.set(key(sku,warehouse),quantity); }\n}\n",
+      "hard/invoice/check.test.ts": "import {test} from 'node:test';\nimport assert from 'node:assert/strict';\nimport {checkout} from './checkout.ts';\nimport {quote} from './quote.ts';\nimport * as money from './money.ts';\ntest('both consumers reconcile proportional rounding and stable ties',()=>{\n  for(const [amounts,discount,want] of [[[101,101,101],2,[100,100,101]],[[100,300],101,[75,224]],[[0,5],3,[0,2]],[[3,7],10,[0,0]],[[],0,[]],[[0,0],0,[0,0]]] as [number[],number,number[]][]) {\n    const copy=[...amounts]; const lines=amounts.map((cents,i)=>({id:String(i),cents}));\n    assert.deepEqual(checkout(amounts,discount),want);\n    const q=quote(lines,discount); assert.deepEqual(q.items,lines.map((line,i)=>({...line,cents:want[i]})));\n    assert.equal(q.total,money.sum(amounts)-discount); assert.deepEqual(amounts,copy);\n  }\n});\ntest('public allocator and validation agree at both call sites',()=>{\n  assert.equal(typeof money.allocateDiscount,'function');\n  assert.deepEqual(money.allocateDiscount([1,1,1],1),[1,0,0]);\n  for(const [xs,d] of [[[1],2],[[-1],0],[[1.5],1],[[1],-1],[[1],0.5],[[0],1],[[NaN],0],[[1],Infinity]] as [number[],number][]) {\n    assert.throws(()=>money.allocateDiscount(xs,d),RangeError);\n    assert.throws(()=>checkout(xs,d),RangeError);\n    assert.throws(()=>quote(xs.map(cents=>({id:'a',cents})),d),RangeError);\n  }\n});\n",
+      "hard/invoice/checkout.ts": "export function checkout(amounts:number[],discount:number) {\n  return amounts.map(amount=>amount-discount);\n}\n",
+      "hard/invoice/money.ts": "export const sum = (xs:number[]) => xs.reduce((a,b)=>a+b,0);\n",
+      "hard/invoice/quote.ts": "import {sum} from './money.ts';\nexport function quote(lines:{id:string; cents:number}[],discount:number) {\n  const items=lines.map(line=>({...line,cents:line.cents-discount}));\n  return {items,total:sum(items.map(line=>line.cents))};\n}\n",
+      "hard/records/api.test.ts": "import {test} from 'node:test';\nimport assert from 'node:assert/strict';\nimport {parseRecords,parseConfig} from './parser.ts';\ntest('existing public API and errors remain stable',()=>{\n  const input=' # comment\\r\\n a = x=y \\r\\n\\n a=last\\n__proto__=safe\\n';\n  assert.deepEqual(parseRecords(input),[{key:'a',value:' x=y '},{key:'a',value:'last'},{key:'__proto__',value:'safe'}]);\n  assert.deepEqual(parseConfig(input),JSON.parse('{\"a\":\"last\",\"__proto__\":\"safe\"}'));\n  assert.deepEqual(parseRecords(''),[]);\n  for(const text of ['# ignore\\n\\ninvalid','x=y\\n# comment\\n =empty']) {\n    for(const parse of [parseRecords,parseConfig]) assert.throws(()=>parse(text),{name:'SyntaxError',message:'Invalid record at line 3'});\n  }\n});\n",
+      "hard/records/parser.ts": "export function parseRecords(text:string):{key:string;value:string}[] {\n  return text.split('\\n').flatMap((raw,i)=>{\n    const line=raw.replace(/\\r$/,'');\n    if(!line.trim()||line.trimStart().startsWith('#')) return [];\n    const at=line.indexOf('=');\n    if(at<1||!line.slice(0,at).trim()) throw new SyntaxError(`Invalid record at line ${i+1}`);\n    return [{key:line.slice(0,at).trim(),value:line.slice(at+1)}];\n  });\n}\nexport function parseConfig(text:string):Record<string,string> {\n  return Object.fromEntries(parseRecords(text).map(row=>[row.key,row.value]));\n}\n",
+      "hard/records/streaming.test.ts": "import {test} from 'node:test';\nimport assert from 'node:assert/strict';\nimport * as parser from './parser.ts';\ntest('lazy consumption, physical lines and one-shot iterators',()=>{\n  let consumed=0;\n  function* source() { for(const line of ['# skip','a=1','','broken','z=2']) {consumed++;yield line;} }\n  assert.equal(typeof parser.parseLines,'function');\n  const rows=parser.parseLines(source()); assert.equal(consumed,0);\n  assert.deepEqual(rows.next().value,{key:'a',value:'1'}); assert.equal(consumed,2);\n  assert.throws(()=>rows.next(),{name:'SyntaxError',message:'Invalid record at line 4'}); assert.equal(consumed,4);\n  assert.deepEqual([...parser.parseLines(['a=1','a=2'])],[{key:'a',value:'1'},{key:'a',value:'2'}]);\n  for(const fn of [parser.parseRecords,parser.parseConfig]) assert.match(fn.toString(),/parseLines/,'public APIs must use the shared parser');\n});\n",
+      "package.json": "{\"type\":\"module\"}\n",
+      "src/lib.js": "export const range = (n) => Array.from({length:n+1},(_,i)=>i);\nexport const sum = (xs) => xs.reduce((a,b)=>a+b,1);\nexport const unique = (xs) => xs;\nexport const clamp = (n,lo,hi) => Math.max(lo,Math.max(hi,n));\nexport const median = (xs) => xs[0];\nexport const slug = (s) => s.toLowerCase();\nexport const chunk = (xs,n) => [];\nexport const count = (xs) => {};\nexport const partition = (xs,fn) => [xs,[]];\nexport const even = (xs) => xs.filter(x=>x%2===0).map(x=>x*2);\n",
+      "test/lib.test.js": "import {test} from 'node:test';\nimport assert from 'node:assert/strict';\nimport * as lib from '../src/lib.js';\ntest('range',()=>{assert.deepEqual(lib.range(3),[0,1,2]); assert.deepEqual(lib.range(0),[])});\ntest('sum',()=>{assert.equal(lib.sum([]),0); assert.equal(lib.sum([2,3]),5)});\ntest('unique',()=>{assert.deepEqual(lib.unique([2,1,2]),[2,1])});\ntest('clamp',()=>{assert.equal(lib.clamp(4,0,9),4); assert.equal(lib.clamp(12,0,9),9)});\ntest('median',()=>{const xs=[9,1,5]; assert.equal(lib.median(xs),5); assert.deepEqual(xs,[9,1,5]); assert.equal(lib.median([7,3,1]),3)});\ntest('slug',()=>{assert.equal(lib.slug(' Hello  World '),'hello-world')});\ntest('chunk',()=>{assert.deepEqual(lib.chunk([1,2,3],2),[[1,2],[3]]); assert.deepEqual(lib.chunk([],2),[])});\ntest('count',()=>{assert.equal(lib.count(['a','b','a']).a,2); assert.equal(lib.count(['__proto__'])['__proto__'],1)});\ntest('partition',()=>{assert.deepEqual(lib.partition([1,2,3],x=>x>1),[[2,3],[1]])});\ntest('even',()=>{assert.deepEqual(lib.even([1,2,4]),[4,8]); assert.match(lib.even.toString(),/\\.reduce\\s*\\(/); assert.doesNotMatch(lib.even.toString(),/\\.(filter|map)\\s*\\(/)});\n"
+    },
+    "py-cli": {
+      "cli.py": "from pathlib import Path\nfrom collections import Counter\n\ndef parse(text):\n    return text.split(\",\")\n\ndef average(xs):\n    return sum(xs) / len(xs)\n\ndef truth(text):\n    return bool(text)\n\ndef extension(text):\n    return \"\"\n\ndef frequency(xs):\n    return {}\n\ndef total(xs):\n    return sum([x for x in xs])\n\nif __name__ == '__main__':\n    import sys\n    print(parse(sys.argv[1]))\n",
+      "hard_cli/__init__.py": "",
+      "hard_cli/cli.py": "import argparse\nimport json\nimport sys\nfrom .reader import read_inputs\ndef main():\n    parser=argparse.ArgumentParser()\n    parser.add_argument('--limit',type=int)\n    parser.add_argument('paths',nargs='*')\n    args=parser.parse_args()\n    rows=read_inputs(args.paths,sys.stdin)\n    print(json.dumps(rows[:args.limit]))\nif __name__ == '__main__':\n    main()\n",
+      "hard_cli/reader.py": "from pathlib import Path\ndef read_inputs(paths, stdin):\n    return [line for path in paths for line in Path(path).read_text(encoding='utf-8').splitlines()]\n",
+      "hard_cli/test_cli.py": "import json\nimport os\nfrom pathlib import Path\nimport subprocess\nimport sys\nimport tempfile\nimport unittest\nclass Tests(unittest.TestCase):\n    def run_cli(self,args,text='',cwd=None):\n        env={**os.environ,'PYTHONPATH':str(Path(__file__).resolve().parent.parent)}\n        return subprocess.run([sys.executable,'-m','hard_cli.cli',*args],input=text,text=True,capture_output=True,cwd=cwd,env=env,timeout=3)\n    def success(self,result,want):\n        self.assertEqual(result.returncode,0,result.stderr)\n        self.assertEqual(result.stderr,'')\n        self.assertEqual(json.loads(result.stdout),want)\n    def test_default_stdin_and_empty(self):\n        self.success(self.run_cli([],' a \\n\u03b2\\n'),[' a ','\u03b2'])\n        self.success(self.run_cli([],''),[])\n        self.success(self.run_cli(['--limit','0'],'x\\n'),[])\n    def test_stream_order_limit_and_dash_filename(self):\n        with tempfile.TemporaryDirectory() as d:\n            Path(d,'one').write_text('first\\n')\n            Path(d,'-last').write_text('last\\n')\n            self.success(self.run_cli(['--limit','3','--','one','-','-last'],'middle\\nextra\\n',d),['first','middle','extra'])\n            self.success(self.run_cli(['--','-last'],'ignored',d),['last'])\n            self.success(self.run_cli(['one','-'],'middle\\n',d),['first','middle'])\n    def test_errors_are_atomic_usage_errors(self):\n        for args in [['-','-'],['--limit','-1'],['--limit','no'],['--unknown'],['missing-file']]:\n            result=self.run_cli(args,'must not leak\\n')\n            self.assertEqual(result.returncode,2,result.stderr)\n            self.assertEqual(result.stdout,'')\n            self.assertIn('error:',result.stderr)\n            self.assertNotIn('Traceback',result.stderr)\n",
+      "test_cli.py": "import unittest\nimport ast\nimport inspect\nimport cli\n\nclass Tests(unittest.TestCase):\n    def test_parse(self):\n        self.assertEqual(cli.parse(' a,, b '),['a','b'])\n    def test_average(self):\n        self.assertEqual(cli.average([]),0); self.assertEqual(cli.average([2,4]),3)\n    def test_truth(self):\n        self.assertFalse(cli.truth('false')); self.assertTrue(cli.truth('YES'))\n    def test_extension(self):\n        self.assertEqual(cli.extension('a.TXT'),'.txt'); self.assertEqual(cli.extension('a'),'')\n    def test_frequency(self):\n        self.assertEqual(cli.frequency(['a','b','a']),{'a':2,'b':1})\n    def test_total(self):\n        self.assertEqual(cli.total([2,3]),5); self.assertNotIn(\"ListComp\", ast.dump(ast.parse(inspect.getsource(cli.total))))\n"
+    },
+    "web-page": {
+      "app.js": "document.querySelector('#value').textContent = 'Inventory: ' + (31 * 7);\n",
+      "index.html": "<!doctype html><html lang=\"en\"><title>Inventory</title><h1>Inventory</h1><p id=\"value\"></p><script src=\"app.js\"></script></html>\n"
+    }
+  }
+}

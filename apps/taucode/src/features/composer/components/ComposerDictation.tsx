@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { useFeatures } from "@settings/features";
 import { useEffect, useRef } from "react";
 import { Mic, Square, X } from "lucide-react";
@@ -16,7 +17,7 @@ type Props = {
 
 export function ComposerDictation(props: Props) {
   if (!useFeatures().dictation) return null;
-  if (!props.settings.dictationEnabled) return <button type="button" className="composer-action composer-action--mic" aria-label="Open dictation settings" title="Dictation disabled. Open settings" onClick={props.onOpenSettings}><Mic aria-hidden /></button>;
+  if (!props.settings.dictationEnabled) return <IconButton type="button" className="composer-action composer-action--mic" aria-label="Open dictation settings" title="Dictation disabled. Open settings" onClick={props.onOpenSettings}><Mic aria-hidden /></IconButton>;
   return <EnabledDictation {...props} />;
 }
 
@@ -46,7 +47,7 @@ function EnabledDictation({ settings, disabled, onTranscript, onBusyChange, onEr
     if (latest.current.dictationState !== "idle") void latest.current.cancelDictation().catch(() => {});
     onBusyChange(false);
   }, [onBusyChange]);
-  return <button type="button" className={`composer-action composer-action--mic${controls.isDictationBusy ? " is-active" : ""}`} aria-label={controls.micAriaLabel} title={controls.micTitle} disabled={controls.micDisabled} onClick={controls.handleMicClick}>
+  return <IconButton type="button" className={`composer-action composer-action--mic${controls.isDictationBusy ? " is-active" : ""}`} aria-label={controls.micAriaLabel} title={controls.micTitle} disabled={controls.micDisabled} onClick={controls.handleMicClick}>
     {controls.isDictationProcessing ? <X aria-hidden /> : controls.isDictating ? <Square aria-hidden /> : <Mic aria-hidden />}
-  </button>;
+  </IconButton>;
 }

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { assertRowAlignment } from "@/test/rowAlignment.mjs";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WorkspaceShell, type PanelTool } from "./SidePanel";
@@ -32,7 +33,7 @@ beforeEach(() => {
   });
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+afterEach(() => { assertRowAlignment(document.body); cleanup(); vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 it("opens the tool grid, keeps a shared title row, and persists tab selection, close and keyboard reorder per thread", async () => {
   const view = render(shell());
   const titlebar = screen.getByRole("button", { name: "Toggle side panel" }).closest("header")!;
@@ -84,6 +85,7 @@ it("opens Task by default and validates corrupt saved tab data", () => {
   expect(panelReducer(initial, { type: "reorder", id: "a", before: "b", after: true }).tabs.map(tab => tab.id)).toEqual(["b", "a"]);
 });
 it("resizes with the keyboard and retains mounted tools when the panel is hidden", () => {
+  vi.stubGlobal("innerWidth", 1600);
   render(shell()); fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
   fireEvent.keyDown(screen.getByRole("separator", { name: "Resize side panel" }), { key: "ArrowLeft" });
   expect(localStorage.getItem("codexmonitor.rightPanelWidth")).toBe("380");
@@ -93,6 +95,17 @@ it("resizes with the keyboard and retains mounted tools when the panel is hidden
   expect(session.isConnected).toBe(true);
   act(() => window.dispatchEvent(new Event("taucode:panel-toggle")));
   expect(screen.getByRole("tab", { name: "Terminal" })).toBeTruthy();
+});
+
+it.each([[1860, "ArrowLeft", 1100], [1360, "ArrowRight", 580]])("uses the dynamic keyboard limit at %ipx", (width, key, expected) => {
+  vi.stubGlobal("innerWidth", width);
+  localStorage.setItem("codexmonitor.rightPanelWidth", "900");
+  render(shell()); fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+  const handle = screen.getByRole("separator", { name: "Resize side panel" });
+  expect(handle.getAttribute("aria-valuemax")).toBe(String(width - 280 - 480));
+  for (let i = 0; i < (key === "ArrowLeft" ? 11 : 1); i++) fireEvent.keyDown(handle, { key });
+  expect(localStorage.getItem("codexmonitor.rightPanelWidth")).toBe(String(expected));
+  expect(handle.getAttribute("aria-valuenow")).toBe(String(expected));
 });
 
 it("supplies the terminal preview fixture without starting a real process", () => {
@@ -140,6 +153,55 @@ it("uses a dismissible overlay at 960px and returns to a column when enough spac
   expect(screen.getByRole("complementary", { name: "Side panel" }).classList.contains("is-overlay")).toBe(false);
   expect(screen.queryByRole("button", { name: "Dismiss side panel" })).toBeNull();
   vi.unstubAllGlobals();
+});
+
+it.each([235, 360, 900])("resizes a saved %ipx panel in overlay mode at 995px", savedWidth => {
+  vi.stubGlobal("innerWidth", 995);
+  vi.stubGlobal("innerHeight", 530);
+  localStorage.setItem("codexmonitor.sidebarWidth", "280");
+  localStorage.setItem("codexmonitor.rightPanelWidth", String(savedWidth));
+  const view = render(shell());
+  fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+  const panel = screen.getByRole("dialog", { name: "Side panel" });
+  const handle = screen.getByRole("separator", { name: "Resize side panel" });
+  const initialWidth = Math.max(320, savedWidth);
+  expect(handle.getAttribute("aria-valuenow")).toBe(String(initialWidth));
+  expect(handle.getAttribute("aria-valuemin")).toBe("320");
+  expect(handle.getAttribute("aria-valuemax")).toBe("915");
+  handle.setPointerCapture = vi.fn();
+  handle.hasPointerCapture = vi.fn(() => true);
+  handle.releasePointerCapture = vi.fn();
+  vi.spyOn(panel, "getBoundingClientRect").mockImplementation(() => ({ width: Number(handle.getAttribute("aria-valuenow")) }) as DOMRect);
+  const drag = (clientX: number) => {
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, isPrimary: true, clientX: 500 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX });
+    fireEvent.pointerUp(handle, { pointerId: 1 });
+  };
+  drag(380);
+  expect(handle.getAttribute("aria-valuenow")).toBe(String(Math.min(915, initialWidth + 120)));
+  expect(view.container.querySelector<HTMLElement>(".workspace-shell")?.style.getPropertyValue("--right-panel-width")).toBe(`${Math.min(915, initialWidth + 120)}px`);
+  drag(1500);
+  expect(handle.getAttribute("aria-valuenow")).toBe("320");
+  expect(panel.classList.contains("is-overlay")).toBe(true);
+});
+
+it("switches to overlay exactly when the docked space falls below 320px", () => {
+  vi.stubGlobal("innerWidth", 1080);
+  localStorage.setItem("codexmonitor.sidebarWidth", "280");
+  render(shell());
+  fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+  const handle = screen.getByRole("separator", { name: "Resize side panel" });
+  expect(screen.getByRole("complementary", { name: "Side panel" }).classList.contains("is-overlay")).toBe(false);
+  expect(handle.getAttribute("aria-valuenow")).toBe("320");
+  expect(handle.getAttribute("aria-valuemax")).toBe("320");
+  vi.stubGlobal("innerWidth", 1079); fireEvent(window, new Event("resize"));
+  expect(screen.getByRole("dialog", { name: "Side panel" }).classList.contains("is-overlay")).toBe(true);
+  expect(handle.getAttribute("aria-valuenow")).toBe("360");
+  expect(handle.getAttribute("aria-valuemax")).toBe("999");
+  vi.stubGlobal("innerWidth", 1080); fireEvent(window, new Event("resize"));
+  expect(screen.getByRole("complementary", { name: "Side panel" }).classList.contains("is-overlay")).toBe(false);
+  expect(handle.getAttribute("aria-valuenow")).toBe("320");
+  expect(localStorage.getItem("codexmonitor.rightPanelWidth")).toBe("360");
 });
 it("automatically collapses the sidebar below 760px and allows the title toggle to reopen it", () => {
   vi.stubGlobal("innerWidth", 740);

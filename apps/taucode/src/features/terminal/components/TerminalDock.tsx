@@ -1,4 +1,4 @@
-import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import type { TerminalTab } from "../hooks/useTerminalTabs";
 
 type TerminalDockProps = {
@@ -8,7 +8,7 @@ type TerminalDockProps = {
   onSelectTerminal: (terminalId: string) => void;
   onNewTerminal: () => void;
   onCloseTerminal: (terminalId: string) => void;
-  onResizeStart?: (event: ReactMouseEvent) => void;
+  onResizeStart?: (event: ReactPointerEvent) => void;
   terminalNode: ReactNode;
 };
 
@@ -34,7 +34,7 @@ export function TerminalDock({
           role="separator"
           aria-orientation="horizontal"
           aria-label="Resize terminal panel"
-          onMouseDown={onResizeStart}
+          onPointerDown={onResizeStart}
         />
       )}
       <div className="terminal-header">

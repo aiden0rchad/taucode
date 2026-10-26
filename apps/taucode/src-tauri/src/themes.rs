@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, fs, path::{Path, PathBuf}, sync::{Mutex, OnceLock}, time::{Duration, Instant, SystemTime}};
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 const BUILTINS: &[&str] = &["system", "light", "dark", "dim", "glass-dark", "glass-light", "matrix", "claude-light", "claude-dark", "cyberpunk-neon"];
@@ -236,8 +236,16 @@ fn reveal_path(dir: &Path, file: &str) -> Result<PathBuf,String> {
 pub(crate) fn themes_reveal_file(app: tauri::AppHandle, file: String) -> Result<(),String> {
     app.opener().reveal_item_in_dir(reveal_path(&folder(&app)?, &file)?).map_err(|e| e.to_string())
 }
+fn window_theme(appearance: Option<&str>) -> Result<Option<tauri::Theme>, String> {
+    match appearance {
+        None => Ok(None),
+        Some("dark") => Ok(Some(tauri::Theme::Dark)),
+        Some("light") => Ok(Some(tauri::Theme::Light)),
+        _ => Err("Invalid window appearance".into()),
+    }
+}
 #[tauri::command]
-pub(crate) fn window_set_material(window: tauri::WebviewWindow, material: Option<String>, appearance: Option<String>) -> Result<(),String> {
+pub(crate) fn window_set_material<R: tauri::Runtime>(window: tauri::Window<R>, material: Option<String>, appearance: Option<String>) -> Result<(),String> {
     use tauri::window::{Effect, EffectState, EffectsBuilder};
     let effect = match material.as_deref() {
         None | Some("none") => None,
@@ -246,23 +254,11 @@ pub(crate) fn window_set_material(window: tauri::WebviewWindow, material: Option
         Some("hudWindow") => Some(Effect::HudWindow),
         _ => return Err("Invalid window material".into()),
     };
-    let theme = if effect.is_some() {
-        Some(match appearance.as_deref() {
-            Some("dark") => tauri::Theme::Dark,
-            Some("light") => tauri::Theme::Light,
-            _ => return Err("Window material requires a light or dark appearance".into()),
-        })
-    } else { None };
+    let theme = window_theme(appearance.as_deref())?;
     window.set_theme(theme).map_err(|e| format!("Window appearance: {e}"))?;
     // macOS 26+: the system Liquid Glass view (what taucode used before M4l) is the one that
     // reliably shows the desktop behind the web view; older systems fall back to vibrancy.
-    use tauri_plugin_liquid_glass::{GlassMaterialVariant, LiquidGlassConfig, LiquidGlassExt};
-    let glass = window.app_handle().liquid_glass();
-    let liquid = effect.is_some() && glass.is_supported();
-    if glass.is_supported() {
-        glass.set_effect(&window, LiquidGlassConfig { enabled: liquid, corner_radius: 16.0, variant: GlassMaterialVariant::Regular, ..Default::default() })
-            .map_err(|e| format!("Liquid glass: {e}"))?;
-    }
+    let liquid = crate::window_material::set_glass(&window, effect.is_some())?;
     // Keep the blur live when the window loses focus; macOS otherwise swaps in an opaque fill.
     window.set_effects(effect.filter(|_| !liquid).map(|e| EffectsBuilder::new().effect(e).state(EffectState::Active).build()))
         .map_err(|e| format!("Window material: {e}"))?;
@@ -321,7 +317,7 @@ pub(crate) fn watch(app: &tauri::AppHandle) -> Result<(),String> {
                     });
                     if changed {
                         std::thread::sleep(Duration::from_millis(200));
-                        let _ = app.emit("themes-changed", ());
+                        let _ = crate::event_sink::emit(&app, "themes-changed", ());
                     }
                 }
                 Err(error) => eprintln!("Theme watcher: {error}"),
@@ -334,6 +330,14 @@ pub(crate) fn watch(app: &tauri::AppHandle) -> Result<(),String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn appearance_is_independent_of_material() {
+        assert_eq!(window_theme(Some("dark")).unwrap(), Some(tauri::Theme::Dark));
+        assert_eq!(window_theme(Some("light")).unwrap(), Some(tauri::Theme::Light));
+        assert_eq!(window_theme(None).unwrap(), None);
+        assert!(window_theme(Some("system")).is_err());
+        assert!(window_theme(Some("invalid")).is_err());
+    }
     #[test]
     fn shared_fixtures() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/features/themes/fixtures");
