@@ -1,3 +1,4 @@
+import { useNativeOverlay } from "../../nativeOverlays";
 import type { AriaRole, ComponentPropsWithoutRef, ReactNode } from "react";
 import { joinClassNames } from "../classNames";
 
@@ -34,8 +35,9 @@ type ToastCardProps = Omit<ComponentPropsWithoutRef<"div">, "children" | "role">
 };
 
 export function ToastCard({ children, className, role, ...props }: ToastCardProps) {
+  const overlay = useNativeOverlay<HTMLDivElement>();
   return (
-    <div className={joinClassNames("ds-toast-card", className)} role={role} {...props}>
+    <div ref={overlay} className={joinClassNames("ds-toast-card", className)} role={role} {...props}>
       {children}
     </div>
   );

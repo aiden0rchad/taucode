@@ -3,16 +3,17 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrowserPane } from "./BrowserPane";
 import { drawBrowserFrame, normalizeBrowserUrl } from "./browser";
-import { browserRequest, subscribeBrowser } from "@services/tauri";
+import { browserRequest, subscribeBrowser, browserNativeBounds } from "@services/tauri";
 import type { BrowserState } from "./browser";
 
-vi.mock("@services/tauri", () => ({ browserRequest: vi.fn(), subscribeBrowser: vi.fn() }));
+vi.mock("@services/tauri", () => ({ browserRequest: vi.fn(), subscribeBrowser: vi.fn(), browserNativeBounds: vi.fn(), openBrowserDownloads: vi.fn(), openBrowserUrl: vi.fn() }));
 const drawImage = vi.fn();
 let receive: (s: BrowserState) => void;
 const stop = vi.fn();
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(browserRequest).mockResolvedValue(undefined);
+  vi.mocked(browserNativeBounds).mockResolvedValue(undefined);
   vi.mocked(subscribeBrowser).mockImplementation(async fn => { receive = fn; return stop; });
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage, clearRect: vi.fn() } as unknown as CanvasRenderingContext2D);
 });
@@ -74,4 +75,17 @@ describe("Browser pane", () => {
     expect([canvas.width,canvas.height]).toEqual([900,600]);
     expect(drawImage).toHaveBeenCalledWith(source,0,0,900,600);
   });
+});
+
+it("uses the native slot, aligned toolbar sizes, and native takeover events", async () => {
+  const takeover = vi.fn();
+  render(<BrowserPane onClose={vi.fn()} onTakeOver={takeover} />);
+  await waitFor(() => expect(subscribeBrowser).toHaveBeenCalled());
+  act(() => receive({ ...state, backend: "native", takeover: 1, tabs: [{ ...state.tabs[0], ready: true, canGoBack: false, canGoForward: false }] }));
+  expect(screen.getByLabelText("Native browser page")).toBeTruthy();
+  expect(document.querySelector("canvas")).toBeNull();
+  expect(screen.getByRole("button", { name: "Back" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("progressbar", { name: "Page loading" })).toBeTruthy();
+  expect(document.querySelector(".browser-toolbar .browser-address")).toBeTruthy();
+  expect(takeover).toHaveBeenCalledOnce();
 });

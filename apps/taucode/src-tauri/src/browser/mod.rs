@@ -1,3 +1,7 @@
+pub mod backend;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub mod native;
+use backend::BrowserBackend;
 pub(crate) mod bridge;
 mod launcher;
 #[cfg(unix)]
@@ -87,10 +91,13 @@ async fn ensure_running<R: Managed, F: std::future::Future<Output = Result<R, St
     Ok(())
 }
 pub struct Browser {
+    pub native: std::sync::OnceLock<Arc<dyn BrowserBackend>>,
+    native_active: std::sync::atomic::AtomicBool,
     shutting_down: std::sync::atomic::AtomicBool,
     data: PathBuf,
     running: Mutex<Option<Running>>,
     pub state: watch::Sender<Value>,
+    pub native_state: watch::Sender<Value>,
     server: Mutex<Option<tokio::task::JoinHandle<()>>>,
     #[cfg(unix)]
     owner_lock: Mutex<Option<std::fs::File>>,
@@ -99,10 +106,13 @@ impl Browser {
     pub fn new(data: PathBuf) -> Arc<Self> {
         let (state, _) = watch::channel(json!({"tabs":[],"active":"","frame":null,"agent":false}));
         Arc::new(Self {
+            native: std::sync::OnceLock::new(),
+            native_active: std::sync::atomic::AtomicBool::new(false),
             shutting_down: std::sync::atomic::AtomicBool::new(false),
             data,
             running: Mutex::new(None),
             state,
+            native_state: watch::channel(json!({"backend":"native","tabs":[],"active":"","agent":false})).0,
             server: Mutex::new(None),
             #[cfg(unix)]
             owner_lock: Mutex::new(None),
@@ -173,12 +183,28 @@ impl Browser {
             server.abort();
             #[cfg(unix)]
             {
-                paths::cleanup(&self.data);
+                paths::cleanup(&self.endpoint_data());
                 self.owner_lock.lock().await.take();
             }
         }
     }
     pub async fn request(&self, p: Value) -> Result<Value, String> {
+        if self.native.get().is_some() { return self.local_request(p).await; }
+        #[cfg(windows)]
+        {
+            let host = self.data.join("native-host");
+            if tokio::net::windows::named_pipe::ClientOptions::new().open(pipe_name(&host)).is_ok() { return ipc(&host,p).await; }
+        }
+        #[cfg(unix)]
+        if self.native.get().is_none() {
+            let host = self.data.join("native-host");
+            if paths::recorded(&host).is_some() { return ipc(&host,p).await; }
+            #[cfg(target_os = "macos")]
+            if self.settings().is_ok_and(|s|s.engine == crate::types::BrowserEngine::Native) {
+                return Err("Open the taucode desktop app to use the Native browser, or select Headless Chromium in Settings → Browser".into());
+            }
+        }
+
         #[cfg(any(unix, windows))]
         if self.server.lock().await.is_none() {
             return ipc(&self.data, p).await;
@@ -186,6 +212,19 @@ impl Browser {
         self.local_request(p).await
     }
     async fn local_request(&self, p: Value) -> Result<Value, String> {
+        let native = self.native.get().filter(|_| self.settings().is_ok_and(|s|s.engine == crate::types::BrowserEngine::Native));
+        let selected = native.is_some();
+        if self.native_active.swap(selected, std::sync::atomic::Ordering::SeqCst) != selected {
+            if selected { self.stop().await; }
+            else if let Some(backend) = self.native.get() { backend.request(json!({"action":"reset"})).await?; }
+        }
+        if selected && !(cfg!(target_os = "windows") && p["action"] == "ensure") {
+            if !crate::shared::engine_registry::features(Some(&self.data)).browser { return Err("Enable Browser in Settings → Features".into()); }
+            let native = native.unwrap();
+            if p["action"] == "tool" { return backend::tool(native.as_ref(),p["name"].as_str().ok_or("Missing tool name")?,p["arguments"].clone()).await; }
+            return native.request(p).await;
+        }
+        self.state.send_if_modified(|s| { if s["backend"] == "cdp" { false } else { s["backend"] = json!("cdp"); true } });
         match p["action"].as_str() {
             Some("clear") => {
                 if p["confirmed"] != true {
@@ -237,16 +276,10 @@ impl Browser {
         if p["action"] == "ensure" {
             return Ok(json!({"port":running.process.port}));
         }
-        let (reply, receiver) = oneshot::channel();
-        running
-            .requests
-            .send((p, reply))
-            .await
-            .map_err(|_| "Browser disconnected")?;
-        tokio::time::timeout(Duration::from_secs(30), receiver)
-            .await
-            .map_err(|_| "Browser request timed out")?
-            .map_err(|_| "Browser disconnected")?
+        backend::CdpBackend(running.requests.clone()).request(p).await
+    }
+    fn endpoint_data(&self) -> PathBuf {
+        if self.native.get().is_some() { self.data.join("native-host") } else { self.data.clone() }
     }
     pub async fn serve(self: &Arc<Self>) -> Result<(), String> {
         #[cfg(unix)]
@@ -257,7 +290,8 @@ impl Browser {
             if server.is_some() {
                 return Ok(());
             }
-            let dir = self.data.join("browser");
+            let endpoint = self.endpoint_data();
+            let dir = endpoint.join("browser");
             std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
                 .map_err(|e| e.to_string())?;
@@ -276,7 +310,7 @@ impl Browser {
                 }
                 return Err(error.to_string());
             }
-            let listener = paths::bind(&self.data).await?;
+            let listener = paths::bind(&endpoint).await?;
             *self.owner_lock.lock().await = Some(lock);
             let browser = Arc::downgrade(self);
             *server = Some(tokio::spawn(async move {
@@ -298,7 +332,7 @@ impl Browser {
             if server.is_some() {
                 return Ok(());
             }
-            let name = pipe_name(&self.data);
+            let name = pipe_name(&self.endpoint_data());
             let mut pipe = match pipe::create(std::ffi::OsStr::new(&name), true) {
                 Ok(pipe) => pipe,
                 Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => return Ok(()),
@@ -428,7 +462,7 @@ async fn serve_client(
         return;
     }
     let result = match serde_json::from_str(&line) {
-        Ok(p) => browser.local_request(p).await,
+        Ok(p) => browser.request(p).await,
         Err(e) => Err(e.to_string()),
     };
     let response = match result {

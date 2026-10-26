@@ -1,3 +1,4 @@
+import { useNativeOverlay } from "../../nativeOverlays";
 import {
   forwardRef,
   type ComponentPropsWithoutRef,
@@ -13,7 +14,8 @@ type PopoverSurfaceProps = ComponentPropsWithoutRef<"div"> & {
 
 export const PopoverSurface = forwardRef<HTMLDivElement, PopoverSurfaceProps>(
   function PopoverSurface({ className, ...props }, ref) {
-    return <div ref={ref} className={joinClassNames("ds-popover", className)} {...props} />;
+    const overlay = useNativeOverlay(ref);
+    return <div ref={overlay} className={joinClassNames("ds-popover", className)} {...props} />;
   },
 );
 

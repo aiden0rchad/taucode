@@ -1773,15 +1773,22 @@ pub(crate) fn default_mcp_servers() -> Vec<McpServerEntry> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct BrowserSettings {
+    pub engine: BrowserEngine,
+    pub private_browsing: bool,
     pub binary: Option<String>,
     pub allowed_origins: Vec<String>,
     pub blocked_origins: Vec<String>,
     pub approval: crate::types::McpApproval,
     pub search_url: String,
 }
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum BrowserEngine { #[default] Native, Cdp }
 impl Default for BrowserSettings {
     fn default() -> Self {
         Self {
+            engine: BrowserEngine::Native,
+            private_browsing: false,
             binary: None,
             allowed_origins: vec![],
             blocked_origins: vec![],
