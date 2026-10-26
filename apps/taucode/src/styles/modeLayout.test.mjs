@@ -79,6 +79,7 @@ it("uses one sidebar width and shared resize handle across Code, Chat and Work",
   }
   expect(declarations(".chat-layout")["grid-template-columns"]).toContain("var(--sidebar-width");
   expect(declarations(".sidebar").padding).toBe("var(--sidebar-top-padding, 36px) var(--sidebar-padding) 20px");
+  expect(declarations(".sidebar")["--sidebar-padding"]).toBe("12px");
   expect(declarations(".sidebar-bottom-rail")["min-height"]).toBe("43px");
 });
 

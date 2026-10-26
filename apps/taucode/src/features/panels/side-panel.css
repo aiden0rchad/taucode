@@ -12,7 +12,7 @@
 .workspace-main > .app, .workspace-main > .chat-layout { height: 100%; --app-height: 100%; --sidebar-top-padding: 8px !important; }
 .workspace-main .sidebar .mode-switcher { margin-top: 0; }
 .workspace-main .main { grid-template-columns: minmax(0, 1fr); }
-.workspace-main .main-topbar { padding-left: 16px; padding-top: 6px; }
+.workspace-main .main-topbar { padding-left: 16px; padding-block: 5px; }
 .workspace-main .main-topbar .workspace-title { display: none; }
 .workspace-main .main-topbar .workspace-separator { display: none; }
 .workspace-main .main-header { min-width: 0; flex-wrap: nowrap; }

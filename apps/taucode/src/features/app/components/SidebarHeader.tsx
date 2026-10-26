@@ -4,7 +4,7 @@ import ArrowDownUp from "lucide-react/dist/esm/icons/arrow-down-up";
 import { ModeSwitcher } from "@/features/chat/ModeShell";
 import BetweenHorizontalStart from "lucide-react/dist/esm/icons/between-horizontal-start";
 import Calendar from "lucide-react/dist/esm/icons/calendar";
-import FolderPlus from "lucide-react/dist/esm/icons/folder-plus";
+import Plus from "lucide-react/dist/esm/icons/plus";
 import FolderTree from "lucide-react/dist/esm/icons/folder-tree";
 import ListFilter from "lucide-react/dist/esm/icons/list-filter";
 import ListTree from "lucide-react/dist/esm/icons/list-tree";
@@ -139,7 +139,7 @@ export function SidebarHeader({
             data-tooltip-placement="bottom"
             type="button"
           >
-            <FolderPlus aria-hidden />
+            <Plus aria-hidden />
           </IconButton>
           <button
             className="subtitle subtitle-button sidebar-title-button"

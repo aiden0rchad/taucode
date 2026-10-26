@@ -24,7 +24,7 @@ it.each(['squircle','round','chamfer'])('uses the %s path and updates on a theme
   vi.stubGlobal('CSS', { supports: () => false });
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 100, height: 60 } as DOMRect);
   const { container } = render(<Squircle style={{'--card-corners':kind} as CSSProperties} />);
-  const expected = kind === 'round' ? roundedRectPath(100,60,20,.5) : kind === 'chamfer' ? chamferPath(100,60,10,2,.5) : squirclePath(100,60,20,.6,.5);
+  const expected = kind === 'round' ? roundedRectPath(100,60,12,.5) : kind === 'chamfer' ? chamferPath(100,60,10,2,.5) : squirclePath(100,60,12,.6,.5);
   expect(container.querySelector('.squircle-stroke')?.getAttribute('d')).toBe(expected);
   const element = container.firstElementChild as HTMLElement;
   element.style.setProperty('--card-corners','chamfer');

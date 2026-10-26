@@ -2,7 +2,6 @@ import Plus from "lucide-react/dist/esm/icons/plus";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
 import { IconButton } from "@/features/design-system/components/IconButton";
 import { Squircle } from "@/features/design-system/components/squircle/Squircle";
-import { Folder, FolderOpen } from "lucide-react";
 import { ProjectEngine } from "./SidebarTree";
 import type { MouseEvent } from "react";
 
@@ -64,23 +63,22 @@ export function WorkspaceCard({
           }
         }}
       >
-        {isCollapsed ? <Folder size={14} aria-hidden /> : <FolderOpen size={14} aria-hidden />}
+        <IconButton size="sm"
+          className={`workspace-toggle ${isCollapsed ? "" : "expanded"}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleWorkspaceCollapse(workspace.id, !isCollapsed);
+          }}
+          data-tauri-drag-region="false"
+          aria-label={isCollapsed ? "Show agents" : "Hide agents"}
+          aria-expanded={!isCollapsed}
+        >
+          <ChevronRight className="workspace-toggle-icon" aria-hidden />
+        </IconButton>
         <div className="workspace-copy">
           <div className="workspace-name-row">
             <div className="workspace-title">
               <span className="workspace-name">{workspaceName ?? workspace.name}</span>
-              <IconButton size="sm"
-                className={`workspace-toggle ${isCollapsed ? "" : "expanded"}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onToggleWorkspaceCollapse(workspace.id, !isCollapsed);
-                }}
-                data-tauri-drag-region="false"
-                aria-label={isCollapsed ? "Show agents" : "Hide agents"}
-                aria-expanded={!isCollapsed}
-              >
-                <ChevronRight className="workspace-toggle-icon" aria-hidden />
-              </IconButton>
             </div>
           </div>
         </div>

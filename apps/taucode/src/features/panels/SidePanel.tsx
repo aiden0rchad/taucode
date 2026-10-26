@@ -28,8 +28,8 @@ export function PanelToolRequest({ id, requestKey }: { id: string; requestKey: u
   }, [requestKey, id, scope, openTool, closeTool]);
   return null;
 }
-export type WorkspaceShellProps = { children: ReactNode; scope: string; title: string; code?: boolean; tools?: PanelTool[]; searchUrl?: string; onInterrupt: () => void | Promise<void>; titleActions?: ReactNode; actions?: { label: string; disabled?: boolean; onClick: () => void }[]; onNavigate?: (scope: string) => void; reservedShortcuts?: string[] };
-export function WorkspaceShell({ children, scope, title, code, tools = [], searchUrl = defaultBrowserSettings.searchUrl, onInterrupt, titleActions, actions = [], onNavigate, reservedShortcuts = [] }: WorkspaceShellProps) {
+export type WorkspaceShellProps = { children: ReactNode; scope: string; title: string; tools?: PanelTool[]; searchUrl?: string; onInterrupt: () => void | Promise<void>; titleActions?: ReactNode; actions?: { label: string; disabled?: boolean; onClick: () => void }[]; onNavigate?: (scope: string) => void; reservedShortcuts?: string[] };
+export function WorkspaceShell({ children, scope, title, tools = [], searchUrl = defaultBrowserSettings.searchUrl, onInterrupt, titleActions, actions = [], onNavigate, reservedShortcuts = [] }: WorkspaceShellProps) {
   const features = useFeatures();
   tools = tools.filter(t => ({ git: features.git, agents: features.subagents, terminal: features.terminal, sidechat: features.sideChats } as Record<string, boolean>)[t.id] ?? true);
   const { state, update, browser, resize, layout, overlay, panelRef, mainRef, expanded, setExpanded, address, setAddress, error, busy, recent, pending, history, historyIndex, openTool, closeTool, active, openPage, close, navigate } = useSidePanelState({ scope, tools, searchUrl, onNavigate, reservedShortcuts });
@@ -37,7 +37,7 @@ export function WorkspaceShell({ children, scope, title, code, tools = [], searc
   return <PanelContext.Provider value={{ scope, openTool, closeTool }}><div className={`workspace-shell${layout.sidebarOverlay ? " sidebar-overlay" : ""}`} ref={resize.appRef} style={{ "--right-panel-width": `${resize.rightPanelWidth}px`, "--sidebar-width": `${layout.sidebarWidth}px`, "--layout-sidebar-column": `${layout.sidebarColumn}px` } as CSSProperties}>
     <header id="titlebar" className="workspace-titlebar" data-tauri-drag-region>
       <div className="titlebar-navigation" data-tauri-drag-region="false"><IconButton className="ghost" aria-label="Back" disabled={!onNavigate || historyIndex === 0} onClick={() => navigate(historyIndex - 1)}><ArrowLeft aria-hidden /></IconButton><IconButton className="ghost" aria-label="Forward" disabled={!onNavigate || historyIndex >= history.current.length - 1} onClick={() => navigate(historyIndex + 1)}><ArrowRight aria-hidden /></IconButton><SidebarCollapseButton /></div>
-      <div className="titlebar-title" data-tauri-drag-region>{code && <Folder aria-hidden />}<span data-tauri-drag-region title={title}>{title}</span></div>
+      <div className="titlebar-title" data-tauri-drag-region><span data-tauri-drag-region title={title}>{title}</span></div>
       {titleActions && <div className="titlebar-actions">{titleActions}</div>}
       {actions.length > 0 && <RowMenu label="thread" size="md" actions={actions}><span /></RowMenu>}
       <IconButton className="ghost" data-tauri-drag-region="false" aria-label="Toggle side panel" aria-expanded={state.open} onClick={() => update(s => ({ ...s, open: !s.open }))}><PanelRight aria-hidden /></IconButton>

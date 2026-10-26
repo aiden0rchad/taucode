@@ -20,7 +20,7 @@ export function ComposerShell({ children, menu, toolbar, controls, reasoning, ac
     const input = root.current?.querySelector("textarea");
     if (!input) return;
     input.style.height = "auto";
-    input.style.height = `${Math.min(Math.max(input.scrollHeight, 48), 260)}px`;
+    input.style.height = `${Math.min(Math.max(input.scrollHeight, 44), 260)}px`;
   });
   return <Squircle className={`composer-shell ${className}`} ref={root}>
     {children}

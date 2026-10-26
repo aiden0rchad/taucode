@@ -20,7 +20,7 @@ const tools: PanelTool[] = [
   { id: "agents", label: "Agents", content: <p>Agent tree</p> },
   { id: "prompts", label: "Prompts", content: <p>Saved prompts</p> },
 ];
-const shell = (scope = "code:one", items = tools) => <WorkspaceShell scope={scope} title="A thread" code tools={items} onInterrupt={() => {}}><p>Conversation</p></WorkspaceShell>;
+const shell = (scope = "code:one", items = tools) => <WorkspaceShell scope={scope} title="A thread" tools={items} onInterrupt={() => {}}><p>Conversation</p></WorkspaceShell>;
 beforeEach(() => {
   localStorage.clear(); vi.clearAllMocks(); host = { tabs: [], active: "" }; callbacks = new Set();
   vi.mocked(subscribeBrowser).mockImplementation(async callback => { callbacks.add(callback); callback(host); return () => { callbacks.delete(callback); }; });

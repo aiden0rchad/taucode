@@ -38,7 +38,7 @@ it("opens add controls, closes on selection and Escape, and grows the editor", (
   fireEvent.click(toggle);
   fireEvent.keyDown(document, { key: "Escape" });
   expect(screen.queryByText("Attach files")).toBeNull();
-  expect(screen.getByRole("textbox").style.height).toBe("48px");
+  expect(screen.getByRole("textbox").style.height).toBe("44px");
 });
 
 it("keeps the compact model chip's full accessible name and reasoning level", () => {
