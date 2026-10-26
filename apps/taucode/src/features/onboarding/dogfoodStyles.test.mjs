@@ -23,7 +23,7 @@ it("computes comfortable chat row padding and regular model text", () => {
   expect(getComputedStyle(document.querySelector(".thread-details")).fontWeight).toBe("400");
 });
 it("uses appearance palettes and retains accent overrides", () => {
-  for (const [id, values] of [["glass-dark", ["#0b0e1c", "#1e2a78", "#3b1d6e"]], ["glass-light", ["#f7f7fb", "#dfe3ff", "#ece0ff"]]]) {
+  for (const [id, values] of [["glass-dark", ["#0c0b16", "#1d1b4a", "#3e1c44"]], ["glass-light", ["#f7f7fb", "#dfe3ff", "#ece0ff"]]]) {
     const tokens = resolveTheme(builtins.find(theme => theme.id === id)).tokens;
     expect([tokens["--setup-base"], tokens["--setup-blob-1"], tokens["--setup-blob-2"]]).toEqual(values);
   }
