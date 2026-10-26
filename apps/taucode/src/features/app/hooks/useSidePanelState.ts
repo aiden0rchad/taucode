@@ -1,4 +1,5 @@
 import { useFeatures } from "@settings/features";
+import { registerNativeOverlay } from "@/features/design-system/nativeOverlays";
 import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { browserRequest, subscribeBrowser } from "@services/tauri";
@@ -21,9 +22,9 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
   const browser = useBrowserController(false);
   const [expanded, setExpanded] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
-  const resize = useResizablePanels(windowWidth, expanded);
+  const resize = useResizablePanels(windowWidth);
   const { sidebarWidth, sidebarCollapsed, setSidebarCollapsed } = useSidebarState();
-  const layout = workspaceLayout(windowWidth, sidebarWidth, sidebarCollapsed, expanded ? Math.min(windowWidth * .75, 1000) : resize.rightPanelWidth, state.open);
+  const layout = workspaceLayout(windowWidth, sidebarWidth, sidebarCollapsed, resize.rightPanelWidth, state.open && !expanded);
   const narrow = layout.sidebarOverlay;
   const collapseRef = useRef(setSidebarCollapsed); collapseRef.current = setSidebarCollapsed;
   useEffect(() => { if (narrow) collapseRef.current(true); }, [narrow]);
@@ -35,9 +36,14 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     window.addEventListener("resize", resizeWindow);
     return () => { observer?.disconnect(); window.removeEventListener("resize", resizeWindow); };
   }, [resize.appRef]);
-  const overlay = layout.panelOverlay;
+  const overlay = !expanded && layout.panelOverlay;
   const panelRef = useRef<HTMLElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!expanded || !state.open || !narrow || sidebarCollapsed) return;
+    const sidebar = mainRef.current?.querySelector<HTMLElement>(":scope > :is(.app.layout-desktop, .chat-layout) > .sidebar, :scope > .app.layout-tablet > .tablet-projects .sidebar");
+    if (sidebar) return registerNativeOverlay(sidebar);
+  }, [expanded, state.open, narrow, sidebarCollapsed, scope, windowWidth]);
   useEffect(() => {
     if (!overlay || !state.open) return;
     const previousFocus = document.activeElement as HTMLElement | null;
@@ -57,6 +63,19 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     window.addEventListener("keydown", key);
     return () => { main?.removeAttribute("inert"); window.removeEventListener("keydown", key); if (previousFocus?.isConnected) previousFocus.focus(); };
   }, [overlay, state.open, update]);
+  useEffect(() => {
+    if (!expanded || !state.open) return;
+    const covered = [...(mainRef.current?.querySelectorAll<HTMLElement>(":scope > :is(.app, .chat-layout) > :is(.main, .chat-main, .tablet-main), :scope > .app > .compact-shell") ?? [])];
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const restoreFocus = previousFocus && covered.some(element => element.contains(previousFocus));
+    const wasInert = covered.map(element => element.hasAttribute("inert"));
+    covered.forEach(element => element.setAttribute("inert", ""));
+    if (restoreFocus) panelRef.current?.focus();
+    return () => {
+      covered.forEach((element, index) => { if (!wasInert[index]) element.removeAttribute("inert"); });
+      if (restoreFocus && previousFocus.isConnected && panelRef.current?.contains(document.activeElement)) previousFocus.focus();
+    };
+  }, [expanded, state.open, scope, windowWidth]);
   const [address, setAddress] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);

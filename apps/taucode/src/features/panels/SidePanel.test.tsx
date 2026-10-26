@@ -4,11 +4,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WorkspaceShell, type PanelTool } from "./SidePanel";
 import { panelReducer, readPanel } from "./panelState";
-import { browserRequest, subscribeBrowser } from "@services/tauri";
+import { browserNativeBounds, browserRequest, subscribeBrowser } from "@services/tauri";
 import type { BrowserState } from "@/features/browser/browser";
 import { useSidebarToggles } from "@/features/layout/hooks/useSidebarToggles";
 
-vi.mock("@services/tauri", () => ({ browserRequest: vi.fn(), subscribeBrowser: vi.fn(), openBrowserDownloads: vi.fn() }));
+vi.mock("@services/tauri", () => ({ browserRequest: vi.fn(), subscribeBrowser: vi.fn(), openBrowserDownloads: vi.fn(), browserNativeBounds: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@services/events", () => ({ subscribeAppServerEvents: () => () => {} }));
 let host: BrowserState;
 let callbacks: Set<(state: BrowserState) => void>;
@@ -22,7 +22,7 @@ const tools: PanelTool[] = [
 ];
 const shell = (scope = "code:one", items = tools) => <WorkspaceShell scope={scope} title="A thread" tools={items} onInterrupt={() => {}}><p>Conversation</p></WorkspaceShell>;
 beforeEach(() => {
-  localStorage.clear(); vi.clearAllMocks(); host = { tabs: [], active: "" }; callbacks = new Set();
+  localStorage.clear(); vi.clearAllMocks(); vi.mocked(browserNativeBounds).mockResolvedValue(undefined); host = { tabs: [], active: "" }; callbacks = new Set();
   vi.mocked(subscribeBrowser).mockImplementation(async callback => { callbacks.add(callback); callback(host); return () => { callbacks.delete(callback); }; });
   vi.mocked(browserRequest).mockImplementation(async request => {
     if (request.action === "new") { const id = `page-${host.tabs.length + 1}`; host = { tabs: [...host.tabs, { id, title: "New page", url: "about:blank", loading: false }], active: id }; }
@@ -225,4 +225,120 @@ it("removes disabled panel tools and browser subscriptions live", async () => {
   vi.mocked(browserRequest).mockClear();
   fireEvent.keyDown(window, { key: "b", metaKey: true, shiftKey: true });
   expect(browserRequest).not.toHaveBeenCalled();
+});
+
+it("expands beside an interactive sidebar without losing the active tab, tool state or saved width", () => {
+  vi.stubGlobal("innerWidth", 1600);
+  localStorage.setItem("codexmonitor.rightPanelWidth", "540");
+  const view = render(<WorkspaceShell scope="code:one" title="A thread" tools={[...tools.filter(t => t.id !== "terminal"), { id: "terminal", label: "Terminal", content: <input aria-label="Terminal command" defaultValue="" /> }]} onInterrupt={() => {}}>
+    <div className="app"><aside className="sidebar"><button>Sidebar thread</button></aside><main className="main"><button>Conversation action</button></main></div>
+  </WorkspaceShell>);
+  fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+  fireEvent.click(screen.getByRole("button", { name: /Terminal/ }));
+  const panel = screen.getByRole("complementary", { name: "Side panel" });
+  const input = screen.getByRole("textbox", { name: "Terminal command" });
+  fireEvent.change(input, { target: { value: "npm run dev" } });
+  const conversation = screen.getByRole("button", { name: "Conversation action" }).closest("main")!;
+  const sidebar = screen.getByRole("button", { name: "Sidebar thread" });
+  const saved = readPanel("code:one");
+  fireEvent.click(screen.getByRole("button", { name: "Expand side panel" }));
+  expect(screen.getByRole("complementary", { name: "Side panel" })).toBe(panel);
+  expect(screen.queryByRole("dialog", { name: "Side panel" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Dismiss side panel" })).toBeNull();
+  expect(screen.queryByRole("separator", { name: "Resize side panel" })).toBeNull();
+  expect(conversation.hasAttribute("inert")).toBe(true);
+  expect(sidebar.closest("[inert]")).toBeNull();
+  sidebar.focus(); expect(document.activeElement).toBe(sidebar);
+  fireEvent.keyDown(sidebar, { key: "Escape" });
+  expect(screen.getByRole("button", { name: "Contract side panel" })).toBeTruthy();
+  const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+  screen.getByRole("button", { name: "Contract side panel" }).dispatchEvent(tab);
+  expect(tab.defaultPrevented).toBe(false);
+  expect(screen.getByRole("tab", { name: "Terminal", selected: true })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Terminal command" })).toBe(input);
+  expect(readPanel("code:one")).toEqual(saved);
+  expect(localStorage.getItem("codexmonitor.rightPanelWidth")).toBe("540");
+  fireEvent.click(screen.getByRole("button", { name: "Contract side panel" }));
+  expect(conversation.hasAttribute("inert")).toBe(false);
+  expect(screen.getByRole("separator", { name: "Resize side panel" }).getAttribute("aria-valuenow")).toBe("540");
+  expect((input as HTMLInputElement).value).toBe("npm run dev");
+  expect(view.container.querySelector(".panel-expanded")).toBeNull();
+});
+
+it("updates the expanded sidebar boundary through collapse, resize and narrow windows without changing its normal width", () => {
+  vi.stubGlobal("innerWidth", 1600);
+  localStorage.setItem("codexmonitor.sidebarWidth", "320");
+  localStorage.setItem("codexmonitor.rightPanelWidth", "520");
+  const view = render(shell());
+  fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+  fireEvent.click(screen.getByRole("button", { name: /Terminal/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Expand side panel" }));
+  const column = () => view.container.querySelector<HTMLElement>(".workspace-shell")!.style.getPropertyValue("--layout-sidebar-column");
+  expect(column()).toBe("320px");
+  fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" })); expect(column()).toBe("0px");
+  fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" })); expect(column()).toBe("320px");
+  act(() => { localStorage.setItem("codexmonitor.sidebarWidth", "420"); window.dispatchEvent(new Event("taucode:sidebar")); });
+  expect(column()).toBe("420px");
+  vi.stubGlobal("innerWidth", 360); fireEvent(window, new Event("resize"));
+  expect(column()).toBe("0px");
+  fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+  expect(column()).toBe("0px");
+  expect(localStorage.getItem("codexmonitor.sidebarCollapsed")).toBe("false");
+  expect(screen.getByRole("complementary", { name: "Side panel" }).getAttribute("aria-modal")).toBeNull();
+  vi.stubGlobal("innerWidth", 1600); fireEvent(window, new Event("resize"));
+  expect(column()).toBe("420px");
+  expect(localStorage.getItem("codexmonitor.rightPanelWidth")).toBe("520");
+  fireEvent.click(screen.getByRole("button", { name: "Contract side panel" }));
+  expect(screen.getByRole("button", { name: "Expand side panel" })).toBeTruthy();
+  expect(screen.getByRole("separator", { name: "Resize side panel" }).getAttribute("aria-valuenow")).toBe("520");
+  expect(screen.getByRole("tab", { name: "Terminal", selected: true })).toBeTruthy();
+});
+
+it("keeps the active native browser mounted and reports new bounds when expanding and contracting", async () => {
+  vi.stubGlobal("innerWidth", 1600);
+  host = { backend: "native", active: "page-1", tabs: [{ id: "page-1", title: "Example", url: "https://example.com/", loading: false, ready: true }] };
+  localStorage.setItem("taucode.panel.code:one", JSON.stringify({ open: true, active: "browser", tabs: [{ id: "browser", kind: "browser", title: "Example", url: "https://example.com/", target: "page-1" }] }));
+  let rect = { x: 1240, y: 100, width: 360, height: 600 } as DOMRect;
+  const frames = new Map<number, FrameRequestCallback>(); let next = 0;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.set(++next, callback); return next; });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) { return this.classList.contains("browser-native-slot") ? rect : { x: 0, y: 0, width: 0, height: 0 } as DOMRect; });
+  const frame = async () => act(async () => { const batch = [...frames.values()]; frames.clear(); batch.forEach(callback => callback(0)); });
+  render(shell());
+  const slot = await screen.findByLabelText("Native browser page");
+  await frame();
+  expect(browserNativeBounds).toHaveBeenLastCalledWith("page-1", { x: 1240, y: 100, w: 360, h: 600 }, true);
+  const initialRequests = vi.mocked(browserRequest).mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Expand side panel" }));
+  rect = { x: 280, y: 100, width: 1320, height: 600 } as DOMRect; await frame();
+  expect(screen.getByLabelText("Native browser page")).toBe(slot);
+  expect(browserNativeBounds).toHaveBeenLastCalledWith("page-1", { x: 280, y: 100, w: 1320, h: 600 }, true);
+  fireEvent.click(screen.getByRole("button", { name: "Contract side panel" }));
+  rect = { x: 1240, y: 100, width: 360, height: 600 } as DOMRect; await frame();
+  expect(screen.getByLabelText("Native browser page")).toBe(slot);
+  expect(browserNativeBounds).toHaveBeenLastCalledWith("page-1", { x: 1240, y: 100, w: 360, h: 600 }, true);
+  expect(vi.mocked(browserNativeBounds).mock.calls.every(([, , visible]) => visible)).toBe(true);
+  expect(vi.mocked(browserRequest).mock.calls.slice(initialRequests)).toEqual([]);
+  expect(host.active).toBe("page-1");
+});
+
+it("excludes phone Projects and bottom navigation from focus until contraction while leaving title controls usable", () => {
+  vi.stubGlobal("innerWidth", 360);
+  render(<WorkspaceShell scope="code:phone" title="Phone thread" tools={tools} onInterrupt={() => {}}>
+    <div className="app layout-phone"><div className="compact-shell"><div className="compact-panel"><aside className="sidebar"><button>Project thread</button></aside></div><nav><button>Projects</button></nav></div></div>
+  </WorkspaceShell>);
+  fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+  fireEvent.click(screen.getByRole("button", { name: /Terminal/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Expand side panel" }));
+  const projects = screen.getByRole("button", { name: "Projects" });
+  const project = screen.getByRole("button", { name: "Project thread" });
+  expect(projects.closest("[inert]")).toBe(project.closest(".compact-shell"));
+  expect(screen.getByRole("button", { name: "Toggle side panel" }).closest("[inert]")).toBeNull();
+  expect(screen.getByRole("button", { name: "Contract side panel" }).closest("[inert]")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Contract side panel" }));
+  // Normal narrow mode remains a dismissible overlay until closed.
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss side panel" }));
+  expect(projects.closest("[inert]")).toBeNull();
+  expect(project.closest("[inert]")).toBeNull();
+  expect(screen.getByRole("tab", { name: "Terminal", hidden: true }).isConnected).toBe(true);
 });
