@@ -36,6 +36,12 @@ beforeEach(() => {
   });
 });
 afterEach(() => { assertRowAlignment(document.body); cleanup(); vi.clearAllMocks(); });
+it("exposes the Chat layout and rows used by the WebKit audit", async () => {
+  render(<ChatView settings={settings} />);
+  const row = await screen.findByRole("button", { name: "My conversation" });
+  expect(document.querySelector(".chat-layout:not(.work-layout) .chat-list .thread-row")).toBe(row);
+  expect(document.querySelector(".app")).toBeNull();
+});
 async function open() {
   fireEvent.click(await screen.findByRole("button", { name: "My conversation" }));
   await screen.findByText("Original answer");

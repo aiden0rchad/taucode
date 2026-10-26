@@ -67,7 +67,7 @@
 .mode-row-menu-trigger { position: absolute; right: 8px; top: 0; bottom: 0; margin-block: auto; opacity: 0; }
 .mode-row:hover .mode-row-menu-trigger, .mode-row:focus-within .mode-row-menu-trigger, .mode-row-menu-trigger[aria-expanded="true"] { opacity: 1; }
 .mode-row-menu { position: absolute; right: 0; top: 30px; z-index: var(--z-popover); min-width: 140px; padding: 4px; }
-.mode-new { align-self: flex-start; width: auto; min-height: 32px; }
+.mode-new { align-self: center; width: auto; min-height: 28px; }
 .mode-section-actions { display: flex; align-items: center; gap: 6px; }
 .mode-section-menu { position: relative; }
 .mode-section-menu summary { display: flex; cursor: pointer; padding: 4px; color: var(--text-muted); }

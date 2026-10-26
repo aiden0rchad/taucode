@@ -21,7 +21,8 @@ try {
       const url = new URL(base);
       url.search = new URLSearchParams({ mode: 'code', ...params }).toString();
       await page.goto(url.href);
-      await page.locator(params.mode === 'work' ? '.work-layout' : '.app').waitFor();
+      const root = { code: '.app', chat: '.chat-layout:not(.work-layout)', work: '.work-layout' }[params.mode ?? 'code'];
+      await page.locator(root).waitFor();
       if (params.theme) await page.waitForFunction(id => document.documentElement.dataset.themeId === id, params.theme);
       await page.evaluate(() => document.fonts.ready);
       await page.mouse.move(0, 0);
@@ -54,6 +55,7 @@ try {
       ['Work task', { mode: 'work', task: 'task-needs-input' }],
     ]) await check(`${label} row alignment`, async () => {
       await open({ ...params, theme: 'glass-dark' });
+      if (params.mode === 'chat') await page.locator('.chat-layout:not(.work-layout) .chat-list .thread-row').first().waitFor();
       if (params.thread === 'home') await page.locator('.sidebar .workspace-row').first().click();
       if (params.task !== 'task-needs-input') await page.locator('.composer-shell-toolbar').first().waitFor();
       const toggle = page.getByRole('button', { name: 'Toggle side panel', exact: true });
@@ -128,8 +130,11 @@ try {
           }, { sidebarWidth, density });
           const geometry = await page.locator('.work-layout .sidebar').evaluate(sidebar => {
             const rect = element => element.getBoundingClientRect().toJSON();
+            const body = sidebar.querySelector('.sidebar-body');
+            const css = getComputedStyle(body), bounds = body.getBoundingClientRect();
             return {
               sidebar: rect(sidebar),
+              body: { left: bounds.x + parseFloat(css.borderLeftWidth) + parseFloat(css.paddingLeft), width: body.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight) },
               cards: [...sidebar.querySelectorAll('.work-space')].map(card => ({
                 card: rect(card),
                 rows: [...card.querySelectorAll('.work-task-row')].map(row => ({
@@ -144,6 +149,7 @@ try {
           assert(Math.abs(geometry.sidebar.width - sidebarWidth) <= 1, `Sidebar width: ${details}`);
           assert(geometry.cards.flatMap(card => card.rows).length > 0, 'Missing Work task rows');
           for (const { card, rows } of geometry.cards) {
+            assert(card.x > geometry.sidebar.x && Math.abs(card.x - geometry.body.left) <= 1 && Math.abs(card.width - geometry.body.width) <= 1, `Work card must fill the inset sidebar body: ${details}`);
             for (const [i, { row, content, metaVisible, ellipsis }] of rows.entries()) {
               assert(row.height > 0 && row.height <= 34 && Math.abs(row.height - (density === 'compact' ? 28 : 32)) <= 1, `Work row height: ${details}`);
               assert(row.x >= card.x && row.right <= card.right + 1 && row.y >= card.y && row.bottom <= card.bottom + 1, `Work row outside card: ${details}`);
@@ -152,6 +158,9 @@ try {
               assert((metaVisible === null || metaVisible === 'visible') && ellipsis === 'ellipsis', `Work metadata/title: ${details}`);
             }
           }
+          // At narrow widths the side panel opens as an overlay whose scrim would swallow the hover.
+          const scrim = page.locator('.side-panel-scrim');
+          if (await scrim.count()) await scrim.first().click();
           await page.locator('.work-task-row:has(.thread-time)').first().hover();
           assert(await page.locator('.work-task-row .thread-time').first().evaluate(element => getComputedStyle(element).visibility === 'hidden'), 'Work metadata must share the action slot on hover');
           const action = page.locator('.mode-row:has(.work-task-row:has(.thread-time)) .mode-row-menu-trigger').first();

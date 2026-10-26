@@ -9,7 +9,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const rect = (element: Element, y: number, width: number, height: number) =>
   vi.spyOn(element, "getBoundingClientRect").mockReturnValue(new DOMRect(0, y, width, height));
 
-it.each(["workspace-titlebar", "main-header", "sidebar-header", "sidebar-bottom-actions", "composer-shell-toolbar", "side-panel-tabbar", "settings-group-title", "setup-footer"])("audits %s centers and reports offending rects", className => {
+it.each(["workspace-titlebar", "main-header", "sidebar-header", "sidebar-new-row", "sidebar-bottom-actions", "composer-shell-toolbar", "side-panel-tabbar", "settings-group-title", "setup-footer"])("audits %s centers and reports offending rects", className => {
   const { container } = render(<div className={className}><span>Title</span><IconButton aria-label="Add"><Plus /></IconButton></div>);
   rect(container.firstElementChild!, 0, 200, 32);
   rect(container.querySelector("span")!, 8, 100, 16);

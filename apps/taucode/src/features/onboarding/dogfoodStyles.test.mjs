@@ -16,7 +16,7 @@ it("computes comfortable chat row padding and regular model text", () => {
   const style = document.createElement("style"); style.dataset.test = "true";
   // Load the shared density rules after Chat styles to catch specificity regressions.
   style.textContent = css("features/chat/chat.css") + css("styles/visual-refresh.css"); document.head.append(style);
-  document.body.innerHTML = '<div class="sidebar chat-sidebar"><div class="chat-list"><div class="mode-row"><button class="thread-row has-secondary-line active"><span class="thread-content"><span class="thread-name">Title</span><span class="thread-details">Model</span></span><span class="thread-time">1m</span></button></div></div></div>';
+  document.body.innerHTML = '<div class="chat-layout"><div class="sidebar chat-sidebar"><div class="chat-list"><div class="mode-row"><button class="thread-row has-secondary-line active"><span class="thread-content"><span class="thread-name">Title</span><span class="thread-details">Model</span></span><span class="thread-time">1m</span></button></div></div></div></div>';
   const row = getComputedStyle(document.querySelector(".thread-row"));
   expect([row.paddingTop, row.paddingRight, row.paddingBottom, row.paddingLeft]).toEqual(["6px", "10px", "6px", "10px"]);
   expect(row.height).toBe("44px");

@@ -7,7 +7,8 @@
   flex-wrap: nowrap;
   box-sizing: border-box;
 }
-:is(.main-header, .sidebar-header, .sidebar-bottom-actions, .sidebar-new-row, .settings-group-title) { height: 32px; }
+:is(.main-header, .sidebar-header, .sidebar-bottom-actions, .settings-group-title) { height: 32px; }
+.sidebar-new-row { height: 28px; }
 :is(.composer-shell-left, .composer-shell-actions, .composer-shell .composer-bar, .composer-shell .composer-meta) { height: 28px; }
 :is(.workspace-titlebar, .main-header, .sidebar-header, .sidebar-bottom-actions, .sidebar-new-row,
     .composer-shell-toolbar, .side-panel-tabbar, .settings-group-title, .setup-footer)
