@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { assertRowAlignment } from "@/test/rowAlignment.mjs";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
@@ -8,7 +9,7 @@ vi.mock("@/features/messages/hooks/useFileLinkOpener", () => ({ useFileLinkOpene
 vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: (path: string) => path }));
 vi.mock("@services/dragDrop", () => ({ subscribeWindowDragDrop: () => () => {} }));
 vi.mock("@/features/composer/hooks/useComposerImages", () => ({ useComposerImages: () => ({ activeImages: [], attachImages: vi.fn(), pickImages: vi.fn(), removeImage: vi.fn(), clearActiveImages: vi.fn() }) }));
-afterEach(cleanup);
+afterEach(() => { assertRowAlignment(document.body); cleanup(); });
 const props = {
   workspace: { id: "w", name: "Project", path: "/project", connected: true, settings: { sidebarCollapsed: false } },
   runs: [], recentThreadInstances: [], recentThreadsUpdatedAt: null, prompt: "", runMode: "local", engine: "pi",

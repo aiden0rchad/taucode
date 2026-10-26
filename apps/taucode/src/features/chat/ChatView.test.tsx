@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { assertRowAlignment } from "@/test/rowAlignment.mjs";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppServerEvent, AppSettings } from "@/types";
@@ -34,7 +35,7 @@ beforeEach(() => {
     return {};
   });
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { assertRowAlignment(document.body); cleanup(); vi.clearAllMocks(); });
 async function open() {
   fireEvent.click(await screen.findByRole("button", { name: "My conversation" }));
   await screen.findByText("Original answer");

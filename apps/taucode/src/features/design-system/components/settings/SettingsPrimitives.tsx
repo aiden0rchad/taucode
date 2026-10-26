@@ -7,6 +7,12 @@ const Disabled = createContext(false);
 const ControlId = createContext<string | undefined>(undefined);
 const ToggleLabel = createContext<string | undefined>(undefined);
 import { joinClassNames } from "../classNames";
+import { IconButton, type IconButtonProps } from "../IconButton";
+
+export function SettingsIconButton({ disabled, ...props }: IconButtonProps) {
+  const inherited = useContext(Disabled);
+  return <IconButton {...props} disabled={disabled || inherited} />;
+}
 
 type SettingsSectionProps = {
   title: ReactNode;

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { assertRowAlignment } from "@/test/rowAlignment.mjs";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WorkspaceShell, type PanelTool } from "./SidePanel";
@@ -32,7 +33,7 @@ beforeEach(() => {
   });
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+afterEach(() => { assertRowAlignment(document.body); cleanup(); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 it("opens the tool grid, keeps a shared title row, and persists tab selection, close and keyboard reorder per thread", async () => {
   const view = render(shell());
   const titlebar = screen.getByRole("button", { name: "Toggle side panel" }).closest("header")!;

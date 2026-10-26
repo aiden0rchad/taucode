@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import type { LaunchScriptIconId } from "../utils/launchScriptIcons";
 import {
   LAUNCH_SCRIPT_ICON_OPTIONS,
@@ -16,7 +17,7 @@ export function LaunchScriptIconPicker({ value, onChange }: LaunchScriptIconPick
         const Icon = getLaunchScriptIcon(option.id);
         const selected = option.id === value;
         return (
-          <button
+          <IconButton
             key={option.id}
             type="button"
             className={`launch-script-icon-option${selected ? " is-selected" : ""}`}
@@ -26,7 +27,7 @@ export function LaunchScriptIconPicker({ value, onChange }: LaunchScriptIconPick
             data-tauri-drag-region="false"
           >
             <Icon size={14} aria-hidden />
-          </button>
+          </IconButton>
         );
       })}
     </div>

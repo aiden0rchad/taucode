@@ -84,7 +84,7 @@
 .setup-permissions{display:grid;gap:16px}
 .setup-permission{display:grid;grid-template-columns:1fr auto;align-items:center;gap:16px;padding:20px;border:1px solid var(--border-subtle);border-radius:14px;background:var(--surface-card)}
 .setup-permission .settings-button{grid-column:1 / -1;justify-self:start}
-.setup-footer{display:flex;align-items:center;gap:12px;padding:24px 0;flex:none;border-top:1px solid var(--border-subtle)}
+.setup-footer{display:flex;align-items:center;height:81px;box-sizing:border-box;gap:12px;padding:24px 0;flex:none;border-top:1px solid var(--border-subtle)}
 .setup-wizard .settings-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:auto}
 .setup-wizard .setup-dropzone{width:100%}
 .setup-wizard .setup-primary{margin-left:auto;min-height:42px;padding:10px 20px}

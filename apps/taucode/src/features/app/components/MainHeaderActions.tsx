@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { memo } from "react";
 import AlignLeft from "lucide-react/dist/esm/icons/align-left";
 import Columns2 from "lucide-react/dist/esm/icons/columns-2";
@@ -21,7 +22,7 @@ export const MainHeaderActions = memo(function MainHeaderActions({
     <>
       {centerMode === "diff" && (
         <div className="diff-view-toggle" role="group" aria-label="Diff view">
-          <button
+          <IconButton aria-label="Dual-panel diff"
             type="button"
             className={`diff-view-toggle-button${
               gitDiffViewStyle === "split" ? " is-active" : ""
@@ -34,8 +35,8 @@ export const MainHeaderActions = memo(function MainHeaderActions({
             data-tauri-drag-region="false"
           >
             <Columns2 size={14} aria-hidden />
-          </button>
-          <button
+          </IconButton>
+          <IconButton aria-label="Single-column diff"
             type="button"
             className={`diff-view-toggle-button${
               gitDiffViewStyle === "unified" ? " is-active" : ""
@@ -48,7 +49,7 @@ export const MainHeaderActions = memo(function MainHeaderActions({
             data-tauri-drag-region="false"
           >
             <AlignLeft size={14} aria-hidden />
-          </button>
+          </IconButton>
         </div>
       )}
 

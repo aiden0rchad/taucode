@@ -1,3 +1,5 @@
+import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import { IconButton } from "@/features/design-system/components/IconButton";
 
 type WorkspaceGroupProps = {
   toggleId: string | null;
@@ -48,7 +50,7 @@ export function WorkspaceGroup({
         >
           <div className="workspace-group-label">{name}</div>
           {isToggleable && (
-            <button
+            <IconButton size="sm"
               className={`group-toggle ${isCollapsed ? "" : "expanded"}`}
               onClick={(event) => {
                 event.stopPropagation();
@@ -61,8 +63,8 @@ export function WorkspaceGroup({
               aria-expanded={!isCollapsed}
               type="button"
             >
-              <span className="group-toggle-icon">›</span>
-            </button>
+              <ChevronRight className="group-toggle-icon" aria-hidden />
+            </IconButton>
           )}
         </div>
       )}

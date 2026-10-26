@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { EvalsView } from "@/features/evals/EvalsView";
 import { DiagnosticsSettings } from "@/features/diagnostics/DiagnosticsSettings";
 import { DiagnosticBoundary } from "@/features/diagnostics/DiagnosticBoundary";
@@ -169,14 +170,14 @@ export function SettingsView({
         <div className="settings-title" id="settings-modal-title">
           Settings
         </div>
-        <button
+        <IconButton
           type="button"
-          className="ghost icon-button settings-close"
+          className="ghost settings-close"
           onClick={onClose}
           aria-label="Close settings"
         >
           <X aria-hidden />
-        </button>
+        </IconButton>
       </div>
       <div className={settingsBodyClassName}>
         {(!useMobileMasterDetail || !showMobileDetail) && (

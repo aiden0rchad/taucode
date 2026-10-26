@@ -1,3 +1,4 @@
+import { SettingsIconButton } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { SettingsFieldRow, SettingsTextField, SettingsButton, SettingsSelect, SettingsPage, SettingsGroup } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { CodegraphProjectSettings } from "./CodegraphProjectSettings";
 import type { WorkspaceSettings } from "@/types";
@@ -151,9 +152,9 @@ export function SettingsProjectsSection({
                   </div>
                 </div>
                 <div className="settings-group-actions">
-                  <SettingsButton
+                  <SettingsIconButton
                     type="button"
-                    className="ghost icon-button"
+                    className="ghost"
                     onClick={() => {
                       void onMoveWorkspaceGroup(group.id, "up");
                     }}
@@ -161,10 +162,10 @@ export function SettingsProjectsSection({
                     aria-label="Move group up"
                   >
                     <ChevronUp aria-hidden />
-                  </SettingsButton>
-                  <SettingsButton
+                  </SettingsIconButton>
+                  <SettingsIconButton
                     type="button"
-                    className="ghost icon-button"
+                    className="ghost"
                     onClick={() => {
                       void onMoveWorkspaceGroup(group.id, "down");
                     }}
@@ -172,17 +173,17 @@ export function SettingsProjectsSection({
                     aria-label="Move group down"
                   >
                     <ChevronDown aria-hidden />
-                  </SettingsButton>
-                  <SettingsButton
+                  </SettingsIconButton>
+                  <SettingsIconButton
                     type="button"
-                    className="ghost icon-button"
+                    className="ghost"
                     onClick={() => {
                       void onDeleteGroup(group);
                     }}
                     aria-label="Delete group"
                   >
                     <Trash2 aria-hidden />
-                  </SettingsButton>
+                  </SettingsIconButton>
                 </div>
               </div>
             ))}
@@ -232,32 +233,32 @@ export function SettingsProjectsSection({
                     </SettingsSelect>
                   </SettingsFieldRow>
                   <div className="settings-project-actions">
-                    <SettingsButton
+                    <SettingsIconButton
                       type="button"
-                      className="ghost icon-button"
+                      className="ghost"
                       onClick={() => onMoveWorkspace(workspace.id, "up")}
                       disabled={index === 0}
                       aria-label="Move project up"
                     >
                       <ChevronUp aria-hidden />
-                    </SettingsButton>
-                    <SettingsButton
+                    </SettingsIconButton>
+                    <SettingsIconButton
                       type="button"
-                      className="ghost icon-button"
+                      className="ghost"
                       onClick={() => onMoveWorkspace(workspace.id, "down")}
                       disabled={index === group.workspaces.length - 1}
                       aria-label="Move project down"
                     >
                       <ChevronDown aria-hidden />
-                    </SettingsButton>
-                    <SettingsButton
+                    </SettingsIconButton>
+                    <SettingsIconButton
                       type="button"
-                      className="ghost icon-button"
+                      className="ghost"
                       onClick={() => onDeleteWorkspace(workspace.id)}
                       aria-label="Delete project"
                     >
                       <Trash2 aria-hidden />
-                    </SettingsButton>
+                    </SettingsIconButton>
                   </div>
                 </details>
               );

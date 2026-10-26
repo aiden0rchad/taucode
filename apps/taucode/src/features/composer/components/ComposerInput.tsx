@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { useFeatures } from "@settings/features";
 import { useCallback, useRef } from "react";
 import type {
@@ -214,7 +215,7 @@ export function ComposerInput({
         onDrop={handleDrop}
       >
         <ComposerShell toolbar={toolbar} controls={controls} menu={<><button type="button" disabled={disabled || !onAddAttachment} title={!onAddAttachment ? "Image attachment is unavailable" : "Attach images"} onClick={onAddAttachment}>Attach images</button>{addMenu}{onToggleExpand && <button type="button" disabled={disabled} onClick={onToggleExpand}>{isExpanded ? "Collapse input" : "Expand input"}</button>}</>} actions={          <div className="composer-input-actions">
-            {features.dictation && <button
+            {features.dictation && <IconButton
               className={`composer-action composer-action--mic${
                 isDictationBusy ? " is-active" : ""
               }${isDictationProcessing ? " is-processing is-stop" : ""}${
@@ -232,7 +233,7 @@ export function ComposerInput({
               ) : (
                 <Mic aria-hidden />
               )}
-            </button>}
+            </IconButton>}
             <ComposerSendButton runningHint={`Enter to ${sendLabel.toLowerCase()} a follow-up; Shift+Enter for a new line`} running={canStop} disabled={disabled || isDictationBusy || !canSend} disabledReason={disabled ? "Review in progress" : isDictationBusy ? "Finish dictation first" : "Write a message or add an attachment"} onSend={onSend} onStop={onStop} label={sendLabel} />
           </div>}>
         {isDragOver && <div className="composer-drop-overlay">Drop images to attach</div>}

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { assertRowAlignment } from "@/test/rowAlignment.mjs";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
@@ -9,6 +10,7 @@ afterEach(() => {
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
   }
+  assertRowAlignment(document.body);
   cleanup();
 });
 

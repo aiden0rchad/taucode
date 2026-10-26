@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { assertRowAlignment } from '../src/test/rowAlignment.mjs';
 
 const require = createRequire(new URL('../engines/browser/package.json', import.meta.url));
 const { webkit } = require('playwright');
@@ -23,6 +24,7 @@ try {
       await page.locator(params.mode === 'work' ? '.work-layout' : '.app').waitFor();
       if (params.theme) await page.waitForFunction(id => document.documentElement.dataset.themeId === id, params.theme);
       await page.evaluate(() => document.fonts.ready);
+      await page.mouse.move(0, 0);
     };
     const centered = async (name, selector) => {
       const card = page.locator(selector);
@@ -44,6 +46,23 @@ try {
         console.error(failures.at(-1));
       }
     };
+    for (const [label, params] of [
+      ['Code thread', { mode: 'code' }],
+      ['Code project home', { mode: 'code', thread: 'home' }],
+      ['Chat', { mode: 'chat' }],
+      ['Work composer', { mode: 'work', task: 'new' }],
+      ['Work task', { mode: 'work', task: 'task-needs-input' }],
+    ]) await check(`${label} row alignment`, async () => {
+      await open({ ...params, theme: 'glass-dark' });
+      if (params.thread === 'home') await page.locator('.sidebar .workspace-row').first().click();
+      if (params.task !== 'task-needs-input') await page.locator('.composer-shell-toolbar').first().waitFor();
+      const toggle = page.getByRole('button', { name: 'Toggle side panel', exact: true });
+      if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+      const result = await page.locator('body').evaluate(assertRowAlignment);
+      assert(result.rows > 0 && result.icons > 0 && result.unmeasuredRows === 0 && result.unmeasuredIcons === 0, `Missing geometry: ${JSON.stringify(result)}`);
+      assert(await page.locator('.workspace-titlebar, .main-header').getByRole('button', { name: 'Browser', exact: true }).count() === 0, 'Redundant Browser header button');
+      console.log(`PASS ${label} row alignment ${width}x${height}: ${JSON.stringify(result)}`);
+    });
     await check('Settings', async () => {
       await open({ settings: 'appearance', theme: 'dark' });
       const rect = await centered('Settings', '.settings-window');
@@ -134,7 +153,10 @@ try {
             }
           }
           await page.locator('.work-task-row:has(.thread-time)').first().hover();
-          assert(await page.locator('.work-task-row .thread-time').first().evaluate(element => getComputedStyle(element).visibility === 'visible'), 'Work metadata hidden on hover');
+          assert(await page.locator('.work-task-row .thread-time').first().evaluate(element => getComputedStyle(element).visibility === 'hidden'), 'Work metadata must share the action slot on hover');
+          const action = page.locator('.mode-row:has(.work-task-row:has(.thread-time)) .mode-row-menu-trigger').first();
+          assert(await action.evaluate(element => getComputedStyle(element).opacity === '1'), 'Work row menu missing on hover');
+          await page.locator('.work-layout').evaluate(assertRowAlignment);
           await page.screenshot({ path: resolve(out, `work-${theme}-${sidebarWidth}-${density}-${width}x${height}.png`), animations: 'disabled' });
           console.log(`PASS Work ${theme} ${sidebarWidth}px ${density} ${width}x${height}`);
         });

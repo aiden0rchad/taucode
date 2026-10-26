@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import type { MouseEventHandler } from "react";
 import { PanelLeft } from "lucide-react";
 import { useSidebarState } from "../hooks/useSidebarState";
@@ -11,5 +12,5 @@ export function SidebarResizeHandle({ onMouseDown }: { onMouseDown?: MouseEventH
 }
 export function SidebarCollapseButton() {
   const { sidebarCollapsed, setSidebarCollapsed } = useSidebarState();
-  return <button data-tauri-drag-region="false" className="ghost icon-button mode-sidebar-toggle" aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => setSidebarCollapsed(!sidebarCollapsed)}><PanelLeft size={16} aria-hidden /></button>;
+  return <IconButton data-tauri-drag-region="false" className="ghost mode-sidebar-toggle" aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => setSidebarCollapsed(!sidebarCollapsed)}><PanelLeft size={16} aria-hidden /></IconButton>;
 }

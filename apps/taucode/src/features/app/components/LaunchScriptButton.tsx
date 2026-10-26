@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import Play from "lucide-react/dist/esm/icons/play";
 import type { LaunchScriptIconId } from "../../../types";
 import { PopoverSurface } from "../../design-system/components/popover/PopoverPrimitives";
@@ -67,7 +68,7 @@ export function LaunchScriptButton({
   return (
     <div className="launch-script-menu" ref={popoverRef}>
       <div className="launch-script-buttons">
-        <button
+        <IconButton
           type="button"
           className="ghost main-header-action launch-script-run ds-tooltip-trigger"
           onClick={onRun}
@@ -82,7 +83,7 @@ export function LaunchScriptButton({
           data-tooltip-placement="bottom"
         >
           <Play size={14} aria-hidden />
-        </button>
+        </IconButton>
       </div>
       {editorOpen && (
         <PopoverSurface className="launch-script-popover" role="dialog">

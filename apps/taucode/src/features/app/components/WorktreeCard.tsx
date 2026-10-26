@@ -1,3 +1,5 @@
+import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import { IconButton } from "@/features/design-system/components/IconButton";
 import type { MouseEvent } from "react";
 
 import type { WorkspaceInfo } from "../../../types";
@@ -70,7 +72,7 @@ export function WorktreeCard({
             </div>
           ) : (
             <>
-              <button
+              <IconButton size="sm"
                 className={`worktree-toggle ${worktreeCollapsed ? "" : "expanded"}`}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -80,8 +82,8 @@ export function WorktreeCard({
                 aria-label={worktreeCollapsed ? "Show agents" : "Hide agents"}
                 aria-expanded={!worktreeCollapsed}
               >
-                <span className="worktree-toggle-icon">›</span>
-              </button>
+                <ChevronRight className="worktree-toggle-icon" aria-hidden />
+              </IconButton>
               {!worktree.connected && (
                 <span
                   className="connect"

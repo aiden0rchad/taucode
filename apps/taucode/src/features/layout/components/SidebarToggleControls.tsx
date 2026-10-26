@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import PanelLeftClose from "lucide-react/dist/esm/icons/panel-left-close";
 import PanelLeftOpen from "lucide-react/dist/esm/icons/panel-left-open";
 import PanelRightClose from "lucide-react/dist/esm/icons/panel-right-close";
@@ -22,7 +23,7 @@ export function SidebarCollapseButton({
     return null;
   }
   return (
-    <button
+    <IconButton
       type="button"
       className="ghost main-header-action ds-tooltip-trigger"
       onClick={onCollapseSidebar}
@@ -33,7 +34,7 @@ export function SidebarCollapseButton({
       data-tooltip-placement="bottom"
     >
       <PanelLeftClose size={14} aria-hidden />
-    </button>
+    </IconButton>
   );
 }
 
@@ -46,7 +47,7 @@ export function RightPanelCollapseButton({
     return null;
   }
   return (
-    <button
+    <IconButton
       type="button"
       className="ghost main-header-action ds-tooltip-trigger"
       onClick={onCollapseRightPanel}
@@ -57,7 +58,7 @@ export function RightPanelCollapseButton({
       data-tooltip-placement="bottom"
     >
       <PanelRightClose size={14} aria-hidden />
-    </button>
+    </IconButton>
   );
 }
 
@@ -70,7 +71,7 @@ export function RightPanelExpandButton({
     return null;
   }
   return (
-    <button
+    <IconButton
       type="button"
       className="ghost main-header-action ds-tooltip-trigger"
       onClick={onExpandRightPanel}
@@ -81,7 +82,7 @@ export function RightPanelExpandButton({
       data-tooltip-placement="bottom"
     >
       <PanelRightOpen size={14} aria-hidden />
-    </button>
+    </IconButton>
   );
 }
 
@@ -97,7 +98,7 @@ export function TitlebarExpandControls({
     <div className="titlebar-controls">
       {sidebarCollapsed && (
         <div className="titlebar-toggle titlebar-toggle-left">
-          <button
+          <IconButton
             type="button"
             className="ghost main-header-action ds-tooltip-trigger"
             onClick={onExpandSidebar}
@@ -108,7 +109,7 @@ export function TitlebarExpandControls({
             data-tooltip-placement="bottom"
           >
             <PanelLeftOpen size={14} aria-hidden />
-          </button>
+          </IconButton>
         </div>
       )}
     </div>

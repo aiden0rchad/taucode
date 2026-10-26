@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { NewConversationRow } from "@/features/chat/NewConversationRow";
 import ArrowDownUp from "lucide-react/dist/esm/icons/arrow-down-up";
 import { ModeSwitcher } from "@/features/chat/ModeShell";
@@ -11,11 +12,7 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import Search from "lucide-react/dist/esm/icons/search";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ThreadListOrganizeMode, ThreadListSortKey } from "../../../types";
-import {
-  MenuTrigger,
-  PopoverMenuItem,
-  PopoverSurface,
-} from "../../design-system/components/popover/PopoverPrimitives";
+import { PopoverMenuItem, PopoverSurface } from "../../design-system/components/popover/PopoverPrimitives";
 import { useMenuController } from "../hooks/useMenuController";
 
 type SidebarHeaderProps = {
@@ -132,7 +129,7 @@ export function SidebarHeader({
     <div className="sidebar-header">
       <div className="sidebar-header-title">
         <div className="sidebar-title-group">
-          <button
+          <IconButton
             className="sidebar-title-add ds-tooltip-trigger"
             onClick={onAddWorkspace}
             data-tauri-drag-region="false"
@@ -143,7 +140,7 @@ export function SidebarHeader({
             type="button"
           >
             <FolderPlus aria-hidden />
-          </button>
+          </IconButton>
           <button
             className="subtitle subtitle-button sidebar-title-button"
             onClick={onSelectHome}
@@ -156,9 +153,9 @@ export function SidebarHeader({
       </div>
       <div className="sidebar-header-actions">
         <div className="sidebar-sort-menu" ref={sortMenuRef}>
-          <MenuTrigger
-            isOpen={sortMenuOpen}
-            activeClassName="is-active"
+          <IconButton aria-haspopup="menu"
+            aria-expanded={sortMenuOpen}
+
             className="ghost sidebar-sort-toggle ds-tooltip-trigger"
             onClick={sortMenu.toggle}
             data-tauri-drag-region="false"
@@ -169,7 +166,7 @@ export function SidebarHeader({
             data-tooltip-placement="bottom"
           >
             <ListFilter aria-hidden />
-          </MenuTrigger>
+          </IconButton>
           {sortMenuOpen && (
             <PopoverSurface
               className="sidebar-sort-dropdown"
@@ -242,7 +239,7 @@ export function SidebarHeader({
             </PopoverSurface>
           )}
         </div>
-        <button
+        <IconButton
           className="ghost sidebar-refresh-toggle ds-tooltip-trigger"
           onClick={onRefreshAllThreads}
           data-tauri-drag-region="false"
@@ -259,8 +256,8 @@ export function SidebarHeader({
             className={refreshInProgress ? "sidebar-refresh-icon spinning" : "sidebar-refresh-icon"}
             aria-hidden
           />
-        </button>
-        {!onNewThread && (<button
+        </IconButton>
+        {!onNewThread && (<IconButton
           className={`ghost sidebar-search-toggle ds-tooltip-trigger${isSearchOpen ? " is-active" : ""}`}
           onClick={onToggleSearch}
           data-tauri-drag-region="false"
@@ -272,7 +269,7 @@ export function SidebarHeader({
           type="button"
         >
           <Search aria-hidden />
-        </button>)}
+        </IconButton>)}
       </div>
     </div></>
   );

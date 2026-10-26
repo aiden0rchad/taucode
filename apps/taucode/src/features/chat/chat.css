@@ -64,7 +64,7 @@
 .chat-list .thread-row.is-nested { width: calc(100% - 2px); }
 .work-space .thread-row { --thread-indent: 12px; }
 .mode-row { position: relative; margin-bottom: 5px; }
-.mode-row-menu-trigger { position: absolute; right: 5px; top: 8px; padding: 4px; opacity: 0; }
+.mode-row-menu-trigger { position: absolute; right: 8px; top: 0; bottom: 0; margin-block: auto; opacity: 0; }
 .mode-row:hover .mode-row-menu-trigger, .mode-row:focus-within .mode-row-menu-trigger, .mode-row-menu-trigger[aria-expanded="true"] { opacity: 1; }
 .mode-row-menu { position: absolute; right: 0; top: 30px; z-index: var(--z-popover); min-width: 140px; padding: 4px; }
 .mode-new { align-self: flex-start; width: auto; min-height: 32px; }
@@ -76,7 +76,7 @@
 .chat-main .main-topbar { flex-shrink: 0; }
 .chat-main .workspace-title { font-weight: 600; }
 .mode-settings-host { position: fixed; inset: 0; z-index: var(--z-modal); font-family: var(--ui-font-family); }
-@media (hover: none) { .mode-row-menu-trigger { opacity: 1; } }
+@media (hover: none) { .mode-row-menu-trigger { opacity: 1; } .sidebar .mode-row .thread-time { visibility: hidden; } }
 
 .chat-layout.sidebar-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
 .chat-layout.sidebar-collapsed .chat-sidebar, .chat-layout.sidebar-collapsed .sidebar-resizer { visibility: hidden; }

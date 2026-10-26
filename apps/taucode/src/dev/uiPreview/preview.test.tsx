@@ -91,7 +91,7 @@ it.each([
   expect(error).not.toHaveBeenCalled();
 }, 15000);
 
-it.each(["code", "chat", "work"])("toggles the browser from the %s header", async mode => {
+it.each(["code", "chat", "work"])("opens pages from the %s side panel without a redundant header Browser action", async mode => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   vi.stubEnv("MODE", "uipreview");
   window.history.replaceState(null, "", `/?mode=${mode}&thread=thread-rich`);
@@ -100,11 +100,18 @@ it.each(["code", "chat", "work"])("toggles the browser from the %s header", asyn
   if (mode === "code") await screen.findByText(/Update the greeting, run the tests/);
   if (mode === "chat") await screen.findByText(/A starting point/);
   if (mode === "work") await screen.findByRole("tab", { name: "Task" });
-  fireEvent.click(await screen.findByRole("button", { name: "Actions for thread" }));
-  fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+  expect(document.querySelector(".workspace-titlebar .lucide-globe, .main-header .lucide-globe")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Browser" })).toBeNull();
+  if (mode !== "code") expect(screen.queryByRole("button", { name: "Header actions" })).toBeNull();
+  const toggle = screen.getByRole("button", { name: "Toggle side panel" });
+  if (toggle.getAttribute("aria-expanded") !== "true") fireEvent.click(toggle);
+  fireEvent.click(screen.getByRole("button", { name: "New panel tab" }));
+  fireEvent.click(screen.getByRole("button", { name: /New page/ }));
   expect(await screen.findByRole("region", { name: "Browser" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
   expect(screen.queryByRole("region", { name: "Browser" })).toBeNull();
+  fireEvent.keyDown(window, { key: "b", metaKey: true, shiftKey: true });
+  expect(await screen.findByRole("region", { name: "Browser" })).toBeTruthy();
 });
 
 it("keeps Work title actions and returns overflow focus on Escape at narrow widths", async () => {

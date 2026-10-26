@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { useEffect } from "react";
 import { Search, SquarePen } from "lucide-react";
 import { formatShortcut, matchesShortcut } from "@utils/shortcuts";
@@ -15,6 +16,6 @@ export function NewConversationRow({ label, onNew, onSearch, shortcut, handleSho
   }, [disabled, handleShortcut, onNew, shortcut]);
   return <div className="sidebar-new-row">
     <button type="button" className="ghost sidebar-labeled-button mode-new" aria-label={label} title={disabled ? "Please wait for the current operation" : label} disabled={disabled} onClick={onNew}><SquarePen aria-hidden />{label}{shortcut && <kbd>{formatShortcut(shortcut)}</kbd>}</button>
-    <button type="button" className="ghost icon-button" aria-label={searchLabel} title={searchLabel} aria-expanded={searchExpanded} onClick={onSearch}><Search aria-hidden /></button>
+    <IconButton type="button" className="ghost" aria-label={searchLabel} title={searchLabel} aria-expanded={searchExpanded} onClick={onSearch}><Search aria-hidden /></IconButton>
   </div>;
 }

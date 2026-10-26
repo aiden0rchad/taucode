@@ -1631,7 +1631,8 @@
 .sidebar-bottom-actions {
   display: flex;
   flex-direction: row;
-  align-items: stretch;
+  align-items: center;
+  height: 32px;
   gap: 6px;
   width: 100%;
 }
@@ -1681,7 +1682,7 @@
 }
 
 .sidebar-labeled-button span:last-child {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1;
 }
@@ -1712,7 +1713,7 @@
 }
 
 .sidebar-utility-button {
-  height: 34px;
+  height: 32px;
   justify-content: flex-start;
   flex: 1;
 }

@@ -1,3 +1,4 @@
+import { SettingsIconButton } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useEngines } from "@settings/engines";
 import { SettingsPage, SettingsButton, SettingsTextField, SettingsSelect, SettingsNumberStepper, SettingsTextArea, SettingsGroup, SettingsFieldRow, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { Pencil, RefreshCw, Trash2 } from "lucide-react";
@@ -49,16 +50,16 @@ export function SettingsProvidersSection({ appSettings, onUpdateAppSettings }: P
       <SettingsToggleRow title={<span className="provider-title"><span className="provider-badge" aria-hidden>{p.name.slice(0, 1).toUpperCase()}</span>{p.name}</span>} subtitle={<><span className="provider-endpoint">{p.kind} · {p.baseUrl || "Default endpoint"}</span><span className="provider-status" role={testErrors[p.id] ? "alert" : "status"}>{testErrors[p.id] || `${p.models.length} models · ${p.modelsFetchedAt ? `tested ${Date.now() / 1000 - p.modelsFetchedAt < 60 ? "just now" : formatRelativeTimeShort(p.modelsFetchedAt * 1000) + " ago"}` : "not tested yet"}`}</span></>}>
         <div className="settings-row-controls">
           <SettingsToggleSwitch aria-label={`Enable ${p.name}`} pressed={p.enabled} disabled={busy} onClick={() => void run(() => onUpdateAppSettings({ ...appSettings, providers: providers.map(v => v.id === p.id ? { ...v, enabled: !p.enabled } : v) }))} />
-          <SettingsButton className="ghost icon-button" type="button" aria-label={`Test & fetch ${p.name}`} title="Test & fetch models" disabled={busy} onClick={() => void run(async () => {
+          <SettingsIconButton className="ghost" type="button" aria-label={`Test & fetch ${p.name}`} title="Test & fetch models" disabled={busy} onClick={() => void run(async () => {
             setTestErrors(previous => ({ ...previous, [p.id]: "" }));
             try {
               const result = await providerTestAndFetch(p.id);
               if (!result.ok) throw new Error(result.error);
               await onUpdateAppSettings({ ...appSettings, providers: providers.map(v => v.id === p.id ? { ...v, models: result.models, modelsFetchedAt: Math.floor(Date.now() / 1000) } : v) });
             } catch (error) { setTestErrors(previous => ({ ...previous, [p.id]: String(error) })); }
-          })}><RefreshCw aria-hidden /></SettingsButton>
-          <SettingsButton className="ghost icon-button" type="button" aria-label={`Edit ${p.name}`} title={`Edit ${p.name}`} disabled={busy} onClick={() => { setDraft(structuredClone(p)); setEditing(p.id); setStatus(""); }}><Pencil aria-hidden /></SettingsButton>
-          <SettingsButton className="ghost icon-button" type="button" aria-label={`Delete ${p.name}`} title={`Delete ${p.name}`} disabled={busy} onClick={() => setDeleting(p.id)}><Trash2 aria-hidden /></SettingsButton>
+          })}><RefreshCw aria-hidden /></SettingsIconButton>
+          <SettingsIconButton className="ghost" type="button" aria-label={`Edit ${p.name}`} title={`Edit ${p.name}`} disabled={busy} onClick={() => { setDraft(structuredClone(p)); setEditing(p.id); setStatus(""); }}><Pencil aria-hidden /></SettingsIconButton>
+          <SettingsIconButton className="ghost" type="button" aria-label={`Delete ${p.name}`} title={`Delete ${p.name}`} disabled={busy} onClick={() => setDeleting(p.id)}><Trash2 aria-hidden /></SettingsIconButton>
         </div>
       </SettingsToggleRow>
       {deleting === p.id && <div className="provider-delete-confirm" role="alertdialog" aria-label={`Delete ${p.name}?`}><p>Remove {p.name} and its model configuration?</p><SettingsButton type="button" disabled={busy} onClick={() => void run(async () => { await onUpdateAppSettings({ ...appSettings, providers: providers.filter(v => v.id !== p.id) }); if (editing === p.id) setDraft(null); setDeleting(null); })}>Delete provider</SettingsButton><SettingsButton type="button" onClick={() => setDeleting(null)}>Cancel</SettingsButton></div>}

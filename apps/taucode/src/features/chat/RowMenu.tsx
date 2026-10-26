@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import MoreHorizontal from "lucide-react/dist/esm/icons/ellipsis";
@@ -6,7 +7,7 @@ import { PopoverMenuItem, PopoverSurface } from "@/features/design-system/compon
 
 type Action = { label: string; icon?: ReactNode; disabled?: boolean; onClick: () => void };
 
-export function RowMenu({ label, actions, children, portal = false }: { label: string; actions: Action[]; children: ReactNode; portal?: boolean }) {
+export function RowMenu({ label, actions, children, portal = false, size = "sm" }: { label: string; actions: Action[]; children: ReactNode; portal?: boolean; size?: "sm" | "md" }) {
   const surface = useRef<HTMLDivElement>(null);
   const menu = useMenuController({ popoverRef: surface });
   const trigger = useRef<HTMLButtonElement>(null);
@@ -29,7 +30,7 @@ export function RowMenu({ label, actions, children, portal = false }: { label: s
     }
   }}>
     {children}
-    <button data-tauri-drag-region="false" ref={trigger} type="button" className="ghost mode-row-menu-trigger" aria-label={`Actions for ${label}`} aria-haspopup="menu" aria-expanded={menu.isOpen} onClick={menu.toggle}><MoreHorizontal size={14} aria-hidden /></button>
+    <IconButton size={size} data-tauri-drag-region="false" ref={trigger} type="button" className="ghost mode-row-menu-trigger" aria-label={`Actions for ${label}`} aria-haspopup="menu" aria-expanded={menu.isOpen} onClick={menu.toggle}><MoreHorizontal size={14} aria-hidden /></IconButton>
     {portal && popover ? createPortal(popover, document.body) : popover}
   </div>;
 }

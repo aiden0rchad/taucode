@@ -1,4 +1,7 @@
 :root {
+  --icon-button-24: 24px;
+  --icon-button-28: 28px;
+  --icon-button-32: 32px;
   --ds-surface-overlay: var(--surface-context-core);
   --ds-surface-card: var(--surface-card-strong);
   --ds-surface-muted: var(--surface-card-muted);

@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import X from "lucide-react/dist/esm/icons/x";
 
 type SidebarSearchBarProps = {
@@ -27,7 +28,7 @@ export function SidebarSearchBar({
         />
       )}
       {isSearchOpen && searchQuery.length > 0 && (
-        <button
+        <IconButton
           type="button"
           className="sidebar-search-clear"
           onClick={onClearSearch}
@@ -35,7 +36,7 @@ export function SidebarSearchBar({
           data-tauri-drag-region="false"
         >
           <X size={12} aria-hidden />
-        </button>
+        </IconButton>
       )}
     </div>
   );

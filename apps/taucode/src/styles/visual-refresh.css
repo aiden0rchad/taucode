@@ -93,7 +93,7 @@ button.icon-button:hover, .main-header-action:hover { background: var(--surface-
 .composer-shell textarea, .chat-layout .composer-shell textarea { display: block; width: 100%; min-height: 48px; max-height: 260px; resize: none; border: 0; border-radius: var(--radius-composer); outline: none; box-shadow: none; background: transparent; color: var(--text-primary); font-size: 14.5px; line-height: 1.65; padding: 14px 16px 8px; margin: 0; }
 .composer-shell .work-brief { margin: 0; }
 .composer-shell .composer-input-row { display: block; }
-.composer-shell-toolbar { display: flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 8px 8px; }
+.composer-shell-toolbar { display: flex; align-items: center; gap: 4px; height: 44px; padding: 8px; box-sizing: border-box; }
 .composer-shell-left, .composer-shell-actions, .composer-shell .composer-input-actions { display: flex; position: static; align-items: center; gap: 4px; min-width: 0; }
 .composer-shell-left { flex: 0 1 auto; }
 .composer-shell-actions { margin-left: auto; flex-shrink: 0; }
@@ -106,6 +106,8 @@ button.icon-button:hover, .main-header-action:hover { background: var(--surface-
 .composer-shell .composer-bar { flex: 1; }
 .composer-shell .composer-select-wrap { padding: 0 4px; border: 0; background: transparent; height: 28px; }
 .composer-shell .composer-access-chip { order: -1; }
+.composer-shell .composer-access-chip select { appearance: none; }
+.composer-access-chip svg { width: 16px; height: 16px; stroke-width: 1.75; flex-shrink: 0; }
 .composer-shell .composer-select-wrap--model { margin-left: auto; }
 .composer-shell-actions .composer-model-chip { margin: 0; }
 .composer-shell .composer-context { display: none; }
@@ -116,9 +118,9 @@ button.icon-button:hover, .main-header-action:hover { background: var(--surface-
 .composer-model-chip select { appearance: none; }
 .provider-dot { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-card-strong); color: var(--text-primary); font-size: 11px; flex-shrink: 0; }
 .composer-shell .composer-action { width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-chip); background: transparent; color: var(--text-primary); box-shadow: none; }
-.composer-shell .composer-action.is-send, .composer-shell .composer-action.is-stop { width: 32px; height: 32px; border-radius: 50%; background: var(--border-accent); color: var(--surface-app); }
+.composer-shell .composer-action.is-send, .composer-shell .composer-action.is-stop { width: 28px; height: 28px; border-radius: 50%; background: var(--border-accent); color: var(--surface-app); }
 .composer-shell .composer-action:disabled { background: var(--surface-card-strong); color: var(--text-subtle); opacity: .4; }
-.composer-shell .composer-action.is-stop svg { fill: currentColor; width: 12px; height: 12px; }
+.composer-shell .composer-action.is-stop svg { fill: currentColor; width: 16px; height: 16px; }
 .composer-shell .chat-attachments, .composer-shell .composer-attachments { margin: 0; padding: 12px 16px 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .composer-shell .chat-attachments:empty { display: none; }
 .composer-shell .chat-attachments li, .composer-shell .composer-attachment { border: 1px solid var(--border-subtle); background: var(--surface-card); border-radius: var(--radius-chip); padding: 4px; max-width: 240px; font-size: 12px; }
@@ -172,7 +174,7 @@ progress.plan-progress::-webkit-progress-value { background: var(--border-accent
 .home-usage-card, .home-usage-chart-card, .home-latest-card { border-radius: var(--radius-card); border: 1px solid var(--border-subtle); background: var(--surface-card); box-shadow: none; }
 .home-usage-value, .home-usage-card, .composer-context, .working-timer { font-variant-numeric: tabular-nums; }
 @media (max-width: 760px) {
-  .composer-shell-toolbar { flex-wrap: wrap; }
+  .composer-shell-toolbar { flex-wrap: nowrap; }
   .composer-shell-left { flex-wrap: wrap; }
   .composer-shell .composer-bar { flex-basis: calc(100% - 40px); }
   .composer-shell select, .chat-layout .composer-shell select { max-width: 140px; }
@@ -244,14 +246,19 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 :root[data-theme="light"] .sidebar .thread-row.active { --thread-selected-background: #d0d4dd; }
 
 .composer-shell { container: composer / inline-size; }
-.composer-shell-toolbar { flex-wrap: wrap; }
-.composer-shell-left { flex-shrink: 0; flex-wrap: wrap; max-width: 100%; }
+.composer-shell-toolbar { flex-wrap: nowrap; }
+.composer-shell-left { flex-shrink: 0; flex-wrap: nowrap; max-width: 100%; }
 .composer-add { flex: 0 0 auto; }
-.composer-shell-actions { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+.composer-shell-actions { min-width: 0; max-width: 100%; flex-wrap: nowrap; }
 .composer-shell-actions .reasoning-control { flex: 0 1 auto; min-width: 0; }
 .composer-shell .reasoning-chip { max-width: 100%; }
 .reasoning-chip-dot { display: none; width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--reasoning-color); }
 @container composer (max-width: 420px) {
+  .composer-shell .composer-access-chevron { display: none; }
+  .composer-shell .work-fields { flex-wrap: nowrap; }
+  .composer-shell .work-fields label { position: relative; flex: 0 0 28px; width: 28px; height: 28px; padding: 6px; }
+  .composer-shell .work-fields label select { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+  .composer-shell .work-fields label > svg { width: 16px; height: 16px; }
   .composer-shell .composer-access-chip { position: relative; flex: 0 0 28px; width: 28px; height: 28px; padding: 7px; }
   .composer-shell .composer-access-chip select { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
   .composer-access-chip:focus-within { outline: 2px solid var(--border-accent); outline-offset: 2px; border-radius: 4px; }
@@ -287,12 +294,12 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 .thread-engine-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border-accent); }
 .thread-engine-dot.engine-pi { background: var(--status-warning); }
 .thread-engine-dot.engine-claude { background: var(--status-error); }
-.thread-menu-trigger { position: absolute; right: 0; width: 22px; height: 22px; padding: 3px; opacity: 0; }
+.thread-menu-trigger { position: absolute; right: 0; top: 50%; translate: 0 -50%; opacity: 0; }
 .thread-row:hover .thread-menu-trigger, .thread-row:focus-within .thread-menu-trigger { opacity: 1; }
 .thread-row:hover .thread-time, .thread-row:focus-within .thread-time,
 .mode-row:hover .thread-time, .mode-row:focus-within .thread-time { visibility: hidden; }
-.thread-tree-toggle { position: absolute; inset: -3px; border: 0; background: var(--surface-sidebar); color: var(--text-muted); padding: 0; opacity: 0; z-index: var(--z-sticky); }
-.thread-tree-toggle[aria-expanded="true"] { transform: rotate(90deg); }
+.thread-tree-toggle { position: absolute; inset: -5px; border: 0; background: var(--surface-sidebar); color: var(--text-muted); padding: 0; opacity: 0; z-index: var(--z-sticky); }
+.thread-tree-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
 .thread-row:hover .thread-tree-toggle, .thread-row:focus-within .thread-tree-toggle { opacity: 1; }
 .sidebar .thread-list, .sidebar .thread-bucket, .sidebar .pinned-section { gap: 2px; }
 .sidebar .thread-list-nested { margin-left: 0; }
@@ -337,7 +344,7 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 .sidebar .sidebar-tree-node .thread-row:hover:not(.active)::before { background: var(--surface-hover); }
 .sidebar .sidebar-tree-node > .thread-row, .sidebar .sidebar-tree-node > .mode-row .thread-row { padding-left: 8px; }
 .sidebar .mode-row { margin: 0 0 2px; }
-.sidebar .mode-row-menu-trigger { top: calc(var(--sidebar-row-height) / 2 - 11px); right: 4px; width: 22px; height: 22px; padding: 3px; }
+.sidebar .mode-row-menu-trigger { right: 8px; }
 .sidebar .work-space > .workspace-row .work-space-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0; color: inherit; font-size: 13px; }
 .sidebar .work-space-toggle > svg { width: 14px; height: 14px; margin: 0; transform: none; }
 .sidebar .work-space-toggle .work-space-chevron { opacity: 0; margin-left: auto; }

@@ -1,3 +1,4 @@
+import { SettingsIconButton } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { SettingsRow, SettingsTextField, SettingsSelect, SettingsButton, SettingsSection } from "@/features/design-system/components/settings/SettingsPrimitives";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
@@ -175,35 +176,35 @@ export function SettingsOpenAppsSection({
                 <SettingsButton className="settings-open-app-default" aria-pressed={target.id === openAppSelectedId}
                   onClick={() => onSelectOpenAppDefault(target.id)} disabled={!isComplete}>Default</SettingsButton>
                 <div className="settings-open-app-order">
-                  <SettingsButton
+                  <SettingsIconButton
                     type="button"
-                    className="ghost icon-button"
+                    className="ghost"
                     onClick={() => onMoveOpenApp(index, "up")}
                     disabled={index === 0}
                     aria-label="Move up"
                   >
                     <ChevronUp aria-hidden />
-                  </SettingsButton>
-                  <SettingsButton
+                  </SettingsIconButton>
+                  <SettingsIconButton
                     type="button"
-                    className="ghost icon-button"
+                    className="ghost"
                     onClick={() => onMoveOpenApp(index, "down")}
                     disabled={index === openAppDrafts.length - 1}
                     aria-label="Move down"
                   >
                     <ChevronDown aria-hidden />
-                  </SettingsButton>
+                  </SettingsIconButton>
                 </div>
-                <SettingsButton
+                <SettingsIconButton
                   type="button"
-                  className="ghost icon-button"
+                  className="ghost"
                   onClick={() => onDeleteOpenApp(index)}
                   disabled={openAppDrafts.length <= 1}
                   aria-label="Remove app"
                   title="Remove app"
                 >
                   <Trash2 aria-hidden />
-                </SettingsButton>
+                </SettingsIconButton>
               </div>
             </SettingsRow>
           );

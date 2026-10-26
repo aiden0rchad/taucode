@@ -1,3 +1,5 @@
+import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { formatModelRef } from "@settings/registry";
 import { useFeatureSettings, useFeatures } from "@settings/features";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -200,7 +202,7 @@ export function MainHeader({
           {engine && <span className="engine-badge">{engine}</span>}
           {model && <span className="thread-header-model" title={formatModelRef(settings, model).title}>{engine && " · "}{formatModelRef(settings, model).name}</span>}
           <span className="workspace-separator" aria-hidden>
-            ›
+            <ChevronRight size={14} aria-hidden />
           </span>
           {disableBranchMenu ? (
             <div className="workspace-branch-static-row" ref={infoRef}>
@@ -257,9 +259,9 @@ export function MainHeader({
                           data-tauri-drag-region="false"
                           disabled={worktreeRename.isSubmitting}
                         />
-                        <button
+                        <IconButton
                           type="button"
-                          className="icon-button worktree-info-confirm"
+                          className="worktree-info-confirm"
                           ref={renameConfirmRef}
                           onClick={() => worktreeRename.onCommit()}
                           disabled={
@@ -269,7 +271,7 @@ export function MainHeader({
                           title="Confirm rename"
                         >
                           <Check aria-hidden />
-                        </button>
+                        </IconButton>
                       </div>
                       {worktreeRename.error && (
                         <div className="worktree-info-error">{worktreeRename.error}</div>
@@ -311,7 +313,7 @@ export function MainHeader({
                       <code className="worktree-info-code">
                         {cdCommand}
                       </code>
-                      <button
+                      <IconButton
                         type="button"
                         className="worktree-info-copy"
                         onClick={async () => {
@@ -322,7 +324,7 @@ export function MainHeader({
                         title="Copy command"
                       >
                         <Copy aria-hidden />
-                      </button>
+                      </IconButton>
                     </div>
                     <span className="worktree-info-subtle">
                       Open this worktree in your terminal.
@@ -354,7 +356,7 @@ export function MainHeader({
               >
                 <span className="workspace-branch">{branchName}</span>
                 <span className="workspace-branch-caret" aria-hidden>
-                  ›
+                  <ChevronRight size={14} aria-hidden />
                 </span>
               </MenuTrigger>
               {menuOpen && (
@@ -548,7 +550,7 @@ export function MainHeader({
           />
         ) : null}
         {showTerminalButton && (
-          <button
+          <IconButton
             type="button"
             className={`ghost main-header-action ds-tooltip-trigger${isTerminalOpen ? " is-active" : ""}`}
             onClick={onToggleTerminal}
@@ -559,9 +561,9 @@ export function MainHeader({
             data-tooltip-placement="bottom"
           >
             <Terminal size={14} aria-hidden />
-          </button>
+          </IconButton>
         )}
-        <button
+        <IconButton
           type="button"
           className={`ghost main-header-action ds-tooltip-trigger${copyFeedback ? " is-copied" : ""}`}
           onClick={handleCopyClick}
@@ -576,7 +578,7 @@ export function MainHeader({
             <Copy className="main-header-icon-copy" size={14} />
             <Check className="main-header-icon-check" size={14} />
           </span>
-        </button>
+        </IconButton>
         {extraActionsNode}
       </HeaderActions>
     </header>

@@ -1,11 +1,9 @@
+import { SettingsIconButton } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { SettingsButton, SettingsTextField, SettingsTextArea, SettingsSelect, SettingsPage, SettingsGroup, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
 import { useEffect, useMemo, useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { ModelOption } from "@/types";
-import {
-  MagicSparkleIcon,
-  MagicSparkleLoaderIcon,
-} from "@/features/shared/components/MagicSparkleIcon";
+import { Sparkles, LoaderCircle } from "lucide-react";
 import type { SettingsAgentsSectionProps } from "@settings/hooks/useSettingsAgentsSection";
 import { fileManagerName, openInFileManagerLabel } from "@utils/platformPaths";
 
@@ -475,7 +473,7 @@ export function SettingsAgentsSection({
           <label className="settings-label" htmlFor="settings-agent-create-name">
             Name
           </label>
-          <SettingsButton
+          <SettingsIconButton
             type="button"
             className="ghost settings-icon-button settings-agents-generate-button"
             onClick={() => {
@@ -503,11 +501,11 @@ export function SettingsAgentsSection({
             aria-label="Generate fields for new agent"
           >
             {createDescriptionGenerating ? (
-              <MagicSparkleLoaderIcon className="settings-agents-generate-loader" />
+              <LoaderCircle aria-hidden className="settings-agents-generate-loader" />
             ) : (
-              <MagicSparkleIcon />
+              <Sparkles aria-hidden />
             )}
-          </SettingsButton>
+          </SettingsIconButton>
         </div>
         <SettingsTextField
           id="settings-agent-create-name"
@@ -703,7 +701,7 @@ export function SettingsAgentsSection({
                   >
                     Name
                   </label>
-                  <SettingsButton
+                  <SettingsIconButton
                     type="button"
                     className="ghost settings-icon-button settings-agents-generate-button"
                     onClick={() => {
@@ -733,11 +731,11 @@ export function SettingsAgentsSection({
                     aria-label={`Generate fields for ${agent.name}`}
                   >
                     {editDescriptionGenerating ? (
-                      <MagicSparkleLoaderIcon className="settings-agents-generate-loader" />
+                      <LoaderCircle aria-hidden className="settings-agents-generate-loader" />
                     ) : (
-                      <MagicSparkleIcon />
+                      <Sparkles aria-hidden />
                     )}
-                  </SettingsButton>
+                  </SettingsIconButton>
                 </div>
                 <SettingsTextField
                   id={`settings-agent-edit-name-${agent.name}`}

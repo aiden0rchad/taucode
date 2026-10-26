@@ -1,3 +1,4 @@
+import { IconButton } from "@/features/design-system/components/IconButton";
 import { createPortal } from "react-dom";
 import type { MouseEvent, MutableRefObject } from "react";
 import Plus from "lucide-react/dist/esm/icons/plus";
@@ -59,7 +60,7 @@ export function SidebarThreadsOnlySection({
     <div className="workspace-group">
       <div className="sidebar-section-header workspace-group-header-all-threads">
         <div className="sidebar-section-title">Recent conversations</div>
-        <button
+        <IconButton size="sm"
           className="ghost all-threads-add"
           onClick={onToggleAddMenu}
           data-tauri-drag-region="false"
@@ -69,7 +70,7 @@ export function SidebarThreadsOnlySection({
           disabled={projectOptionsForNewThread.length === 0}
         >
           <Plus aria-hidden />
-        </button>
+        </IconButton>
       </div>
       {threadBuckets.map((bucket) => (
         <div key={bucket.id} className="thread-bucket">
