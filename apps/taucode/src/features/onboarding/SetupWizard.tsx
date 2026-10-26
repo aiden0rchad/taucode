@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { ArrowRight, Check, FolderOpen, LoaderCircle } from "lucide-react";
 import type { AppMode, AppSettings, WorkspaceInfo, WorkspaceSettings } from "@/types";
 import { engineRuntime, getAppSettings, getSetupStatus, listWorkspaces, openSetupPrivacy, pickWorkspacePaths, updateAppSettings, updateWorkspaceSettings, type EngineRuntimeStatus, type SetupStatus } from "@services/tauri";
@@ -17,6 +17,7 @@ import { ThemePreview } from "@/features/themes/ThemePreview";
 import { useSetupProvider } from "./ProviderSetup";
 import { emptyProgress, previewStep, readProgress, SETUP_PROGRESS, SETUP_SEEN, steps, type SetupProgress, type SetupStep } from "./setupState";
 import "@/features/themes/themes.css";
+import { SetupStatusChip } from "./SetupStatusChip";
 import "./onboarding.css";
 
 const titles: Record<SetupStep, string> = { welcome: "Welcome to taucode", look: "Pick a look.", provider: "Connect a model provider.", engine: "Choose your engine.", project: "Open your first project.", features: "Turn on what you want.", permissions: "Let taucode see and operate apps.", done: "You're all set." };
@@ -34,6 +35,8 @@ export function SetupWizard({ onSettings, onFinish }: { onSettings: (settings: A
   const [progress, setProgress] = useState<SetupProgress>(() => preview ? { ...emptyProgress(), step: preview } : readProgress());
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [status, setStatus] = useState<SetupStatus>();
+  const [statusError, setStatusError] = useState(false);
+  const [runtimeError, setRuntimeError] = useState(false);
   const [runtimes, setRuntimes] = useState<EngineRuntimeStatus[]>([]);
   const [theme, setTheme] = useState("system");
   const [engine, setEngine] = useState("pi");
@@ -57,9 +60,27 @@ export function SetupWizard({ onSettings, onFinish }: { onSettings: (settings: A
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const body = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+  const scrollArea = useRef<HTMLElement>(null);
+  const [scrollEdges, setScrollEdges] = useState({ top: false, bottom: false });
+  const updateScrollEdges = useCallback(() => {
+    const area = scrollArea.current;
+    if (!area) return;
+    const top = area.scrollTop > 1;
+    const bottom = area.scrollTop + area.clientHeight < area.scrollHeight - 1;
+    setScrollEdges(previous => previous.top === top && previous.bottom === bottom ? previous : { top, bottom });
+  }, []);
   const { files } = useThemes();
   const themes = [...builtins, ...files.flatMap(f => f.manifest ? [f.manifest] : [])];
   const step = progress.step;
+  useLayoutEffect(() => {
+    const area = scrollArea.current;
+    if (!open || !area) return;
+    updateScrollEdges();
+    const observer = new ResizeObserver(updateScrollEdges);
+    observer.observe(area);
+    for (const child of area.children) observer.observe(child);
+    return () => observer.disconnect();
+  }, [open, step, updateScrollEdges]);
   const visibleSteps = steps.filter(s => s !== "permissions" || enabled.computerUse);
   const rail = visibleSteps.filter(s => s !== "welcome" && s !== "done");
   const workspace = workspaces.find(w => w.id === workspaceId);
@@ -72,7 +93,7 @@ export function SetupWizard({ onSettings, onFinish }: { onSettings: (settings: A
   const provider = useSetupProvider(settings, save, open);
 
   const refreshStatus = useCallback(() => {
-    void getSetupStatus().then(setStatus).catch(() => setError("Could not check system status. Try reopening setup."));
+    void getSetupStatus().then(value => { setStatus(value); setStatusError(false); }).catch(() => { setStatusError(true); setError("Could not check system status. Try reopening setup."); });
   }, []);
   useEffect(() => {
     const show = () => {
@@ -88,10 +109,12 @@ export function SetupWizard({ onSettings, onFinish }: { onSettings: (settings: A
     if (!open) return;
     let active = true;
     const previous = document.activeElement as HTMLElement | null;
-    void Promise.all([getAppSettings(), listWorkspaces(), engineRuntime("status")]).then(([s, ws, rs]) => {
+    setRuntimeError(false);
+    void engineRuntime("status").then(rows => { if (active) setRuntimes(rows); }).catch(() => { if (active) setRuntimeError(true); });
+    void Promise.all([getAppSettings(), listWorkspaces()]).then(([s, ws]) => {
       if (!active) return;
       if (s.setupComplete && !modal && !preview) { setOpen(false); return; }
-      setSettings(s); setTheme(s.theme); setEngine(s.agentPolicy?.defaultEngine ?? "pi"); setEnabled(features(s)); setRuntimes(rs); setWorkspaces(ws);
+      setSettings(s); setTheme(s.theme); setEngine(s.agentPolicy?.defaultEngine ?? "pi"); setEnabled(features(s)); setWorkspaces(ws);
       const selected = ws[0];
       if (selected) { setWorkspaceId(selected.id); setPath(selected.path); setCodegraph(selected.settings.codegraphEnabled ?? s.codegraphEnabled); }
       workspaceSettingsRef.current = new Map(ws.map(w => [w.id, w.settings]));
@@ -167,7 +190,7 @@ export function SetupWizard({ onSettings, onFinish }: { onSettings: (settings: A
     const selected = selectTheme(id, themes, window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false, settings?.themeLight, settings?.themeDark);
     applyTheme(selected, settings?.themeAnimations?.[selected.id] !== false, settings?.themeAnimations?.[`${selected.id}:neonGlow`] !== false, id === "system");
   };
-  const valid = !!settings && (step === "provider" ? provider.valid : step === "project" ? !!path : step === "permissions" ? !!status?.permissions.screen && !!status.permissions.accessibility : step === "engine" ? !!runtime && (runtime.state === "ready" || engine !== "codex" && runtime.state !== "unavailable") : true);
+  const valid = step === "permissions" || !!settings && (step === "provider" ? provider.valid : step === "project" ? !!path : step === "engine" ? !!runtime && (runtime.state === "ready" || engine !== "codex" && runtime.state !== "unavailable") : true);
   const submit = async () => {
     if (busy || exiting || !valid) return;
     setBusy(true); setError(""); cancelled.current = false;
@@ -209,7 +232,7 @@ export function SetupWizard({ onSettings, onFinish }: { onSettings: (settings: A
         window.dispatchEvent(new Event("taucode:setup-finished"));
         dismiss(); return;
       }
-      next();
+      next(step === "permissions" && (statusError || !status?.permissions.screen || !status.permissions.accessibility) ? "skipped" : "completed");
     } catch (e) { if (!cancelled.current) setError(String(e)); }
     finally { setBusy(false); setInstalling(false); }
   };
@@ -236,10 +259,10 @@ export function SetupWizard({ onSettings, onFinish }: { onSettings: (settings: A
   }}>
     <div className="setup-ambient" aria-hidden="true"><i /><i /></div>
     <header className="setup-topbar"><span className="setup-wordmark">taucode<span> / setup</span></span><SettingsButton className="ghost" disabled={busy || exiting} onClick={later}>Set up later</SettingsButton></header>
-    <div className="setup-column">
+    <div className={`setup-column${step === "look" ? " setup-column-wide" : ""}`}>
       <ol className="setup-rail" aria-label="Setup progress">{rail.map(s => <li key={s} data-complete={progress.completed.includes(s)} aria-current={step === s ? "step" : undefined}><span className="setup-dot">{progress.completed.includes(s) && <Check size={10} />}</span><span>{s[0].toUpperCase() + s.slice(1)}</span></li>)}</ol>
       <form className="setup-form" onSubmit={e => { e.preventDefault(); void submit(); }}>
-        <section key={step} className={`setup-step setup-${direction} ${exiting ? "setup-exit" : "setup-enter"}`} aria-labelledby="setup-title">
+        <section key={step} ref={scrollArea} onScroll={updateScrollEdges} className={`setup-step setup-${direction} ${exiting ? "setup-exit" : "setup-enter"}${scrollEdges.top ? " setup-scroll-top" : ""}${scrollEdges.bottom ? " setup-scroll-bottom" : ""}`} aria-labelledby="setup-title">
           {step === "welcome" && <div className="setup-welcome-mark" aria-hidden="true">τ</div>}
           {step === "done" && <div className="setup-success" aria-hidden="true"><Check size={32} /></div>}
           <h1 id="setup-title" aria-label={titles[step]} ref={heading} tabIndex={-1}>{titles[step].split(" ").map((word, i) => <span key={i} style={{ "--word": i } as CSSProperties}>{word} </span>)}</h1>
@@ -250,12 +273,14 @@ export function SetupWizard({ onSettings, onFinish }: { onSettings: (settings: A
             {step === "engine" && <div className="setup-cards" data-card-grid>{engineRegistry(settings).filter(e => e.builtIn).map(e => {
               const state = runtimes.find(r => r.engine === runtimeId(e.id));
               const unavailable = !state || state.state === "unavailable" || e.id === "codex" && state.state !== "ready";
-              return <button type="button" key={e.id} disabled={unavailable} className="setup-card" aria-label={e.name} aria-pressed={engine === e.id} onClick={() => setEngine(e.id)}><span className="setup-engine-icon" aria-hidden>{e.id === "pi" || e.id === "omp" ? "π" : e.id === "claude" ? "✳" : ">_"}</span><strong>{e.name}</strong><small>{e.id === "pi" ? "Recommended · lightweight" : e.id === "omp" ? "More built-in tools · ~1.1 GB download" : e.id === "claude" ? "Claude's coding runtime" : "OpenAI's coding runtime"}</small><span className="setup-chip">{state?.state === "ready" ? "Ready" : unavailable ? "Not available" : "Will install"}</span></button>;
+              const checking = !runtimeError && (!state || ["installing", "preparing"].includes(state.state));
+              const chipState = runtimeError || state?.state === "error" ? "error" : checking ? "checking" : state?.state === "ready" ? "ready" : unavailable ? "optional" : "needs-setup";
+              return <button type="button" key={e.id} disabled={unavailable} className="setup-card" aria-label={e.name} aria-pressed={engine === e.id} onClick={() => setEngine(e.id)}><span className="setup-engine-icon" aria-hidden>{e.id === "pi" || e.id === "omp" ? "π" : e.id === "claude" ? "✳" : ">_"}</span><strong>{e.name}</strong><small>{e.id === "pi" ? "Recommended · lightweight" : e.id === "omp" ? "More built-in tools · ~1.1 GB download" : e.id === "claude" ? "Claude's coding runtime" : "OpenAI's coding runtime"}</small><SetupStatusChip state={chipState}>{chipState === "error" ? "Error" : checking ? state ? "Installing…" : "Checking…" : state?.state === "ready" ? "Ready" : unavailable ? "Not available" : "Will install"}</SetupStatusChip></button>;
             })}</div>}
             {step === "project" && <><SettingsButton className="setup-dropzone" aria-label="Choose a folder…" onClick={() => void pickWorkspacePaths().then(paths => { if (paths[0]) { setPath(paths[0]); setWorkspaceId(workspaces.find(w => w.path === paths[0])?.id ?? null); } }).catch(() => setError("Could not open the folder dialog."))}><FolderOpen size={30} /><strong>{path ? path.split(/[\\/]/).pop() : "Choose a folder…"}</strong><span>{path || "or drop a folder here"}</span></SettingsButton>{!!path && status?.codegraph && <div className="setup-toggle-row"><span><strong>Code intelligence (codegraph)</strong><small>Understand the connections in your code.</small></span><SettingsToggleSwitch aria-label="Code intelligence (codegraph)" pressed={codegraph} onClick={() => setCodegraph(!codegraph)} /></div>}</>}
             {step === "features" && featureGroups.map(group => <div className="setup-feature-group" key={group.title}><h2>{group.title}</h2>{group.items.map(([key, name, description]) => <div className="setup-toggle-row" key={key}><span><strong>{name}</strong><small>{description}</small></span><SettingsToggleSwitch aria-label={name} pressed={enabled[key]} onClick={() => setEnabled({ ...enabled, [key]: !enabled[key] })} /></div>)}</div>)}
-            {step === "permissions" && <div className="setup-permissions">{(["screen", "accessibility"] as const).map(pane => <div className="setup-permission" role="group" aria-label={pane === "screen" ? "Screen Recording" : "Accessibility"} key={pane}><strong>{pane === "screen" ? "Screen Recording" : "Accessibility"}</strong><span role="status" className="setup-chip">{status?.permissions[pane] ? "Granted" : "Not granted"}</span><SettingsButton disabled={!status || status.permissions.unsupported} onClick={() => void openSetupPrivacy(pane).catch(() => setError("Could not open System Settings."))}>Open System Settings</SettingsButton></div>)}<p className="setup-hint">You choose what to grant in System Settings. You can skip this for now.</p></div>}
-            {step === "done" && <ol className="setup-recap">{rail.map((s, i) => <li key={s} data-complete={progress.completed.includes(s)} style={{ "--word": i } as CSSProperties}><span className="setup-dot">{progress.completed.includes(s) ? <Check size={14} /> : "–"}</span><strong>{s[0].toUpperCase() + s.slice(1)}</strong><small>{progress.completed.includes(s) ? "Ready" : "Set up later"}</small></li>)}</ol>}
+            {step === "permissions" && <div className="setup-permissions">{(["screen", "accessibility"] as const).map(pane => <div className="setup-permission" role="group" aria-label={pane === "screen" ? "Screen Recording" : "Accessibility"} key={pane}><strong>{pane === "screen" ? "Screen Recording" : "Accessibility"}</strong><SetupStatusChip state={statusError ? "error" : !status ? "checking" : status.permissions.unsupported ? "optional" : status.permissions[pane] ? "granted" : "not-granted"}>{statusError ? "Error" : !status ? "Checking…" : status.permissions.unsupported ? "Optional" : status.permissions[pane] ? "Granted" : "Not granted"}</SetupStatusChip><SettingsButton disabled={!status || status.permissions.unsupported} onClick={() => void openSetupPrivacy(pane).catch(() => setError("Could not open System Settings."))}>Open System Settings</SettingsButton></div>)}<p className="setup-hint">You choose what to grant in System Settings. You can skip this for now.</p></div>}
+            {step === "done" && <ol className="setup-recap">{rail.map((s, i) => <li key={s} data-complete={progress.completed.includes(s)} style={{ "--recap-delay": `${i * 90}ms` } as CSSProperties}><span className="setup-dot">{progress.completed.includes(s) ? <Check size={14} /> : "–"}</span><strong>{s[0].toUpperCase() + s.slice(1)}</strong><small>{progress.completed.includes(s) ? "Ready" : "Set up later"}</small></li>)}</ol>}
           </fieldset>
         </section>
         {installing && <div className="setup-install" role="status"><span>{runtime?.message || "Installing…"}</span><progress aria-label="Engine install progress" max={100} value={runtime?.progress} /><SettingsButton onClick={() => { cancelled.current = true; void engineRuntime("cancel", runtimeId(engine)).catch(() => { cancelled.current = false; setError("Could not cancel installation."); }); }}>Cancel</SettingsButton></div>}

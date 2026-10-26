@@ -5,6 +5,8 @@ import { providerHasApiKey, providerSetApiKey, providerTestAndFetch } from "@ser
 import { defaultAgentPolicy } from "@settings/registry";
 import { SettingsButton, SettingsTextField } from "@/features/design-system/components/settings/SettingsPrimitives";
 
+import { SetupStatusChip } from "./SetupStatusChip";
+
 type Save = (change: (settings: AppSettings) => AppSettings) => Promise<AppSettings>;
 const choices = [
   { kind: "openai", name: "OpenAI", description: "GPT models for everyday work", Icon: Sparkles },
@@ -71,16 +73,16 @@ export function useSetupProvider(settings: AppSettings | null, save: Save, open:
   };
   const fields = <>
     {!!settings?.providers?.length && !adding && <>
-      <div className="setup-cards" data-card-grid>{settings.providers.map(p => <button type="button" className="setup-card" aria-label={p.name} aria-pressed={draft?.id === p.id} key={p.id} onClick={() => choose(p)}><KeyRound size={20} /><strong>{p.name}</strong><small>Already configured · Use this</small></button>)}</div>
+      <div className="setup-cards setup-provider-grid" data-card-grid>{settings.providers.map(p => <button type="button" className="setup-card" aria-label={p.name} aria-pressed={draft?.id === p.id} key={p.id} onClick={() => choose(p)}><KeyRound size={20} /><strong>{p.name}</strong><small>Already configured · Use this</small></button>)}</div>
       <SettingsButton className="ghost" onClick={() => { setAdding(true); setDraft(null); setConnected(false); setKey(""); }}>Add another</SettingsButton>
     </>}
-    {(!settings?.providers?.length || adding) && <div className="setup-cards" data-card-grid>{choices.map(({ kind, name, description, Icon }) => <button type="button" className="setup-card" aria-label={name} aria-pressed={draft?.kind === kind} key={kind} onClick={() => choose({ id: `setup-${crypto.randomUUID().slice(0, 12)}`, kind, name, enabled: true, models: [], auth: { type: kind === "ollama" ? "none" : "apiKey" }, baseUrl: kind === "ollama" ? "http://localhost:11434/v1" : kind === "openai-compatible" ? "http://localhost:8000/v1" : null, apiStyle: kind === "openai-compatible" ? "chat-completions" : null })}><Icon size={20} /><strong>{name}</strong><small>{description}</small></button>)}</div>}
+    {(!settings?.providers?.length || adding) && <div className="setup-cards setup-provider-grid" data-card-grid>{choices.map(({ kind, name, description, Icon }) => <button type="button" className="setup-card" aria-label={name} aria-pressed={draft?.kind === kind} key={kind} onClick={() => choose({ id: `setup-${crypto.randomUUID().slice(0, 12)}`, kind, name, enabled: true, models: [], auth: { type: kind === "ollama" ? "none" : "apiKey" }, baseUrl: kind === "ollama" ? "http://localhost:11434/v1" : kind === "openai-compatible" ? "http://localhost:8000/v1" : null, apiStyle: kind === "openai-compatible" ? "chat-completions" : null })}><Icon size={20} /><strong>{name}</strong><small>{description}</small></button>)}</div>}
     {draft && !connected && <div className="setup-reveal" key={draft.id}><div className="setup-fields">
       <label>Name<SettingsTextField required value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
       {["ollama", "lmstudio", "openai-compatible"].includes(draft.kind) && <label>Base URL<SettingsTextField type="url" required value={draft.baseUrl ?? ""} onChange={e => setDraft({ ...draft, baseUrl: e.target.value })} /></label>}
       {draft.auth.type === "apiKey" && <label>API key<SettingsTextField type="password" autoComplete="new-password" placeholder={hasKey ? "Saved in Keychain" : "Enter your API key"} value={key} onChange={e => setKey(e.target.value)} /></label>}
     </div></div>}
-    {connected && draft && <div className="setup-models"><p role="status" className="setup-connected">✓ Connected · {draft.models.length} models</p><label>Default model<SettingsTextField type="search" placeholder="Search models…" value={search} onChange={e => setSearch(e.target.value)} /></label><div className="setup-model-list" role="group" aria-label="Default model" data-card-grid>{draft.models.filter(m => m.enabled && `${m.displayName ?? ""} ${m.id}`.toLowerCase().includes(search.toLowerCase())).map(m => <button className="setup-model" type="button" key={m.id} aria-pressed={model === m.id} onClick={() => setModel(m.id)}>{m.displayName || m.id}{model === m.id && <span aria-hidden>✓</span>}</button>)}</div>{!draft.models.some(m => m.enabled) && <p>No models returned. Add a model in Settings → Providers, or skip for now.</p>}</div>}
+    {connected && draft && <div className="setup-models"><p className="setup-connected"><SetupStatusChip state="connected">✓ Connected · {draft.models.length} models</SetupStatusChip></p><label>Default model<SettingsTextField type="search" placeholder="Search models…" value={search} onChange={e => setSearch(e.target.value)} /></label><div className="setup-model-list" role="group" aria-label="Default model" data-card-grid>{draft.models.filter(m => m.enabled && `${m.displayName ?? ""} ${m.id}`.toLowerCase().includes(search.toLowerCase())).map(m => <button className="setup-model" type="button" key={m.id} aria-pressed={model === m.id} onClick={() => setModel(m.id)}>{m.displayName || m.id}{model === m.id && <span aria-hidden>✓</span>}</button>)}</div>{!draft.models.some(m => m.enabled) && <p>No models returned. Add a model in Settings → Providers, or skip for now.</p>}</div>}
     <p className="setup-hint">You'll need a provider before your first conversation.</p>
   </>;
   return { fields, submit, connected, valid: !!draft && (connected ? !!model : !!draft.name.trim() && (draft.auth.type !== "apiKey" || !!key || hasKey)), clearKey: () => setKey("") };

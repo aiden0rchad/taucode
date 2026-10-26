@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { SetupStatusChip } from "./SetupStatusChip";
 import { SetupWizard } from "./SetupWizard";
 import { previewStep, SETUP_PROGRESS, SETUP_SEEN, steps, type SetupStep } from "./setupState";
 import * as api from "@services/tauri";
@@ -130,7 +131,7 @@ it("saves feature defaults and omits Permissions when computer use is off", asyn
 it("rechecks permission status on focus and opens only the requested pane", async () => {
   await start("permissions");
   expect(api.openSetupPrivacy).not.toHaveBeenCalled();
-  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false);
   expect((screen.getByRole("button", { name: "Skip for now" }) as HTMLButtonElement).disabled).toBe(false);
   const screenRow = within(screen.getByRole("group", { name: "Screen Recording" }));
   expect(screenRow.getByRole("status").textContent).toBe("Granted");
@@ -159,3 +160,70 @@ it("moves card focus with arrows", async () => {
 });
 it.each(steps)("routes preview %s", step => { expect(previewStep(`?setup=${step}`)).toBe(step); });
 it("only accepts valid preview flags", () => { expect(previewStep("?setup=1")).toBe("welcome"); expect(previewStep("?setup=0")).toBeUndefined(); expect(previewStep("?setup=oops")).toBeUndefined(); });
+
+it.each([
+  ["granted", "success"], ["ready", "success"], ["connected", "success"],
+  ["not-granted", "warning"], ["needs-setup", "warning"], ["checking", "muted"],
+  ["error", "error"], ["optional", "muted"], ["off", "muted"],
+] as const)("maps %s status to %s styling", (state, tone) => {
+  render(<SetupStatusChip state={state}>{state}</SetupStatusChip>);
+  const chip = screen.getByRole("status");
+  expect(chip.classList.contains(`setup-chip-${tone}`)).toBe(true);
+  expect(!!chip.querySelector(".setup-spinner")).toBe(state === "checking");
+});
+it.each([false, true])("continues optional permissions and records granted=%s accurately", async granted => {
+  vi.mocked(api.getSetupStatus).mockResolvedValue({ codegraph: true, permissions: { screen: true, accessibility: granted } });
+  await start("permissions"); await click("Continue"); await heading("You're all set.");
+  const progress = JSON.parse(localStorage.getItem(SETUP_PROGRESS)!);
+  expect(progress[granted ? "completed" : "skipped"]).toContain("permissions");
+  const row = [...document.querySelectorAll(".setup-recap li")].find(li => li.textContent?.includes("Permissions"))!;
+  expect(row.textContent).toContain(granted ? "Ready" : "Set up later");
+  expect(!!row.querySelector(".setup-dot svg")).toBe(granted);
+  expect(api.openSetupPrivacy).not.toHaveBeenCalled();
+});
+it("styles actual engine chips for ready, pending, unavailable, and errors", async () => {
+  vi.mocked(api.engineRuntime).mockResolvedValue([...ready, { engine: "codex", state: "unavailable", message: "Unavailable" }, { engine: "claude-acp", state: "error", message: "Failed" }]);
+  await start("engine");
+  for (const [name, tone, label] of [["pi", "success", "Ready"], ["oh-my-pi", "warning", "Will install"], ["Codex", "muted", "Not available"], ["Claude Code (ACP)", "error", "Error"]]) {
+    const chip = within(screen.getByRole("button", { name })).getByRole("status");
+    expect(chip.classList.contains(`setup-chip-${tone}`)).toBe(true);
+    expect(chip.textContent).toBe(label);
+  }
+});
+it("shows a spinner while permissions are checking and red on failure, without blocking Continue", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(api.getSetupStatus).mockImplementation(() => new Promise((_resolve, fail) => { reject = fail; }));
+  await start("permissions");
+  expect(screen.getAllByRole("status").every(chip => chip.querySelector(".setup-spinner"))).toBe(true);
+  await act(async () => reject(new Error("Unavailable")));
+  expect(screen.getAllByRole("status").every(chip => chip.classList.contains("setup-chip-error"))).toBe(true);
+  await click("Continue"); await heading("You're all set.");
+  expect(JSON.parse(localStorage.getItem(SETUP_PROGRESS)!).skipped).toContain("permissions");
+});
+it("toggles scroll fades at the top, middle, and bottom and resets on a fitting step", async () => {
+  await start("look");
+  const area = document.querySelector<HTMLElement>(".setup-step")!;
+  Object.defineProperties(area, { clientHeight: { configurable: true, value: 300 }, scrollHeight: { configurable: true, value: 700 } });
+  fireEvent.scroll(area);
+  expect(area.classList.contains("setup-scroll-bottom")).toBe(true);
+  expect(area.classList.contains("setup-scroll-top")).toBe(false);
+  area.scrollTop = 100; fireEvent.scroll(area);
+  expect(area.classList.contains("setup-scroll-bottom")).toBe(true);
+  expect(area.classList.contains("setup-scroll-top")).toBe(true);
+  area.scrollTop = 400; fireEvent.scroll(area);
+  expect(area.classList.contains("setup-scroll-bottom")).toBe(false);
+  expect(area.classList.contains("setup-scroll-top")).toBe(true);
+  await click("Skip for now"); await heading("Connect a model provider.");
+  expect(document.querySelector(".setup-scroll-top,.setup-scroll-bottom")).toBeNull();
+});
+it("staggers every recap row at 90ms intervals and checks only completed steps", async () => {
+  localStorage.setItem(SETUP_PROGRESS, JSON.stringify({ step: "done", completed: ["look", "engine"], skipped: ["provider", "project", "features", "permissions"] }));
+  render(<SetupWizard onSettings={vi.fn()} onFinish={finish} />); await act(async () => {});
+  const rows = [...document.querySelectorAll<HTMLElement>(".setup-recap li")];
+  expect(rows.map(row => row.style.getPropertyValue("--recap-delay"))).toEqual(["0ms", "90ms", "180ms", "270ms", "360ms", "450ms"]);
+  for (const row of rows) {
+    const complete = row.dataset.complete === "true";
+    expect(!!row.querySelector(".setup-dot svg")).toBe(complete);
+    expect(row.textContent).toContain(complete ? "Ready" : "Set up later");
+  }
+});
