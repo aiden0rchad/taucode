@@ -286,7 +286,7 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 .sidebar .thread-kind svg, .sidebar .workspace-row > svg { width: 14px; height: 14px; }
 .sidebar .thread-status, .sidebar .thread-row.has-secondary-line .thread-status { align-self: center; margin: 0 3px; width: 8px; height: 8px; box-shadow: none; flex-shrink: 0; }
 .sidebar .thread-kind .thread-status { margin: 0; }
-.sidebar .thread-status.ready { visibility: visible; background: transparent; border: 1px solid var(--text-muted); box-sizing: border-box; }
+.sidebar .thread-status.ready { visibility: inherit; background: transparent; border: 1px solid var(--text-muted); box-sizing: border-box; }
 .sidebar .thread-status.processing { animation: pulse 1.2s ease-in-out infinite; }
 .sidebar .thread-status.reviewing { background: var(--status-warning); animation: none; }
 .sidebar .thread-meta { position: relative; display: flex; align-items: center; gap: 4px; margin: 0; align-self: center; }
