@@ -9,7 +9,47 @@
   const hint = "Try the Headless Chromium backend (Settings → Browser)";
   const role = el => el.getAttribute("role") || ({ A: "link", BUTTON: "button", SELECT: "combobox", TEXTAREA: "textbox", NAV: "navigation", MAIN: "main", HEADER: "banner", FOOTER: "contentinfo", FORM: "form", H1: "heading", H2: "heading", H3: "heading" }[el.tagName]) || (el.tagName === "INPUT" ? ({ checkbox: "checkbox", radio: "radio", range: "slider", button: "button", submit: "button" }[el.type] || "textbox") : el.isContentEditable ? "textbox" : "generic");
   const name = el => (el.getAttribute("aria-label") || (el.getAttribute("aria-labelledby") || "").split(/\s+/).map(id => document.getElementById(id)?.textContent || "").join(" ").trim() || [...(el.labels || [])].map(l => l.textContent).join(" ") || el.getAttribute("alt") || el.getAttribute("placeholder") || el.textContent || "").trim().slice(0, 1000);
-  const target = ref => { const el = nodes.get(ref); if (!el?.isConnected) throw new Error(`Stale or unknown ref ${ref}; take another snapshot. ${hint}`); return el; };
+  const target = ref => {
+    if (typeof ref !== "string" || !ref.trim()) throw new Error("Missing target");
+    let el = nodes.get(ref);
+    if (!el && !/^e\d+$/.test(ref)) {
+      let matches;
+      try { matches = document.querySelectorAll(ref); } catch { throw new Error("Invalid selector; use a snapshot ref or unique CSS selector"); }
+      if (matches.length !== 1) throw new Error(`Target selector matched ${matches.length} elements; expected one`);
+      el = matches[0];
+    }
+    if (!el?.isConnected) throw new Error(`Stale or unknown ref ${ref}; take another snapshot. ${hint}`);
+    return el;
+  };
+  const editable = el => {
+    if (el.matches(":disabled") || el.closest('[inert],[aria-disabled="true"]')) throw new Error("Element is disabled");
+    if (el.readOnly) throw new Error("Element is read-only");
+  };
+  function textField(el, text) {
+    editable(el);
+    if (typeof text !== "string" || text.length > 200000) throw new Error("Invalid text");
+    if (!el.isContentEditable && !(el instanceof HTMLTextAreaElement) && !(el instanceof HTMLInputElement && !["checkbox", "radio", "file", "button", "submit", "reset", "hidden", "image", "range", "color"].includes(el.type))) throw new Error("Expected an editable text field");
+  }
+  function type(el, text) {
+    textField(el, text); el.focus();
+    if (el.isContentEditable) {
+      const range = document.createRange(); range.selectNodeContents(el);
+      const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+      if (!document.execCommand("insertText", false, text)) throw new Error("Text insertion failed");
+    } else {
+      const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, "value").set.call(el, text);
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+  function select(el, values) {
+    editable(el);
+    if (!(el instanceof HTMLSelectElement) || !Array.isArray(values) || values.some(v => typeof v !== "string") || (!el.multiple && values.length !== 1)) throw new Error("Expected a select and valid values");
+    for (const value of values) if (![...el.options].some(o => o.value === value && !o.disabled && !o.parentElement.disabled)) throw new Error("Unknown option or option is disabled");
+    for (const option of el.options) option.selected = values.includes(option.value);
+    el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true }));
+  }
   function press(el, key) {
     const parts = key.split("+");
     const last = parts.pop();
@@ -43,6 +83,7 @@
   }
   globalThis.__tauBrowser = p => {
     try {
+      if (p.expectedUrl && location.href !== p.expectedUrl) throw new Error("Page navigated before action; retry on the current page");
       let result = null;
       if (p.op === "meta") {
         result = { title: document.title, url: location.href, favicon: document.querySelector('link[rel~="icon"]')?.href || null, userInput };
@@ -60,34 +101,54 @@
           items.push(item); nodes.set(ref, el);
         }
         result = { nodes: items, truncated };
+      } else if (p.op === "mark" || p.op === "unmark") {
+        if (!/^data-taucode-evaluate-[a-f0-9-]{36}$/.test(p.marker)) throw new Error("Invalid evaluation marker");
+        if (p.op === "mark") target(p.ref).setAttribute(p.marker, "");
+        else document.querySelectorAll(`[${p.marker}]`).forEach(el => el.removeAttribute(p.marker));
+      } else if (p.op === "fill") {
+        if (!Array.isArray(p.fields) || p.fields.length > 1000) throw new Error("Invalid fields");
+        const fields = p.fields.map(field => {
+          const el = target(field.target ?? field.ref); editable(el);
+          if (typeof field.value !== "string" || field.value.length > 200000) throw new Error("Invalid field value");
+          let value = field.value;
+          if (field.type === "textbox") textField(el, value);
+          else if (field.type === "checkbox" || field.type === "radio") {
+            if (!(el instanceof HTMLInputElement) || el.type !== field.type || !["true", "false"].includes(value) || (field.type === "radio" && value !== "true")) throw new Error("Expected a checkbox/radio and boolean value (radio must be true)");
+          } else if (field.type === "combobox") {
+            if (!(el instanceof HTMLSelectElement) || el.multiple) throw new Error("Expected a single select");
+            const options = [...el.options].filter(o => o.label === value || o.value === value);
+            if (options.length !== 1 || options[0].disabled || options[0].parentElement.disabled) throw new Error("Unknown, ambiguous or disabled option");
+            value = options[0].value;
+          } else if (field.type === "slider") {
+            if (!(el instanceof HTMLInputElement) || el.type !== "range" || !value.trim() || !Number.isFinite(Number(value))) throw new Error("Expected a slider and numeric value");
+          } else throw new Error("Unsupported field type");
+          return { el, kind: field.type, value };
+        });
+        for (const { el, kind, value } of fields) {
+          editable(el); if (!el.isConnected) throw new Error("Field was removed; take another snapshot");
+          if (kind === "textbox") type(el, value);
+          else if (kind === "combobox") select(el, [value]);
+          else if (kind === "slider") {
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, value);
+            el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true }));
+          } else if (el.checked !== (value === "true")) el.click();
+        }
+        result = { performed: true, note: `Synthetic input is not isTrusted. If the site ignored it, ${hint}` };
       } else if (p.op === "wait") {
         result = (!p.ref || nodes.get(p.ref)?.isConnected === true) && (!p.text || document.body?.innerText.includes(p.text)) && (!p.textGone || !document.body?.innerText.includes(p.textGone));
       } else {
         const el = p.ref ? target(p.ref) : document.activeElement || document.body;
-        if (el.disabled) throw new Error(`Element is disabled. ${hint}`);
+        if (el.matches(":disabled") || el.closest('[inert],[aria-disabled="true"]')) throw new Error("Element is disabled");
         if (p.op === "click") {
           el.scrollIntoView({ block: "center" }); el.focus();
           for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) el.dispatchEvent(new (type.startsWith("pointer") ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, button: 0 }));
           el.click();
         } else if (p.op === "type") {
-          if (typeof p.text !== "string" || p.text.length > 200000) throw new Error("Invalid text");
-          el.focus();
-          if (el.isContentEditable) { document.execCommand("selectAll"); document.execCommand("insertText", false, p.text); }
-          else {
-            if (el.readOnly) throw new Error("Element is read-only");
-            const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-            Object.getOwnPropertyDescriptor(proto, "value").set.call(el, p.text);
-            el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: p.text }));
-            el.dispatchEvent(new Event("change", { bubbles: true }));
-          }
+          type(el, p.text);
           if (p.submit) press(el, "Enter");
         } else if (p.op === "press") press(el, p.key);
-        else if (p.op === "select") {
-          if (!(el instanceof HTMLSelectElement) || !Array.isArray(p.values)) throw new Error("Expected a select and values");
-          for (const value of p.values) if (![...el.options].some(o => o.value === value)) throw new Error("Unknown option");
-          for (const option of el.options) option.selected = p.values.includes(option.value);
-          el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true }));
-        } else if (p.op === "scroll") (p.ref ? el : window).scrollBy(Number(p.x) || 0, Number(p.y) || 0);
+        else if (p.op === "select") select(el, p.values);
+        else if (p.op === "scroll") (p.ref ? el : window).scrollBy(Number(p.x) || 0, Number(p.y) || 0);
         else throw new Error(`Unsupported native operation. ${hint}`);
         result = { performed: true, note: `Synthetic input is not isTrusted. If the site ignored it, ${hint}` };
       }

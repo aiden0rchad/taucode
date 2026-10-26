@@ -12,7 +12,7 @@ thread_local! {
     static WORLD: objc2::rc::Retained<WKContentWorld> = unsafe { WKContentWorld::worldWithName(&NSString::from_str("taucode.browser.private"), objc2::MainThreadMarker::new().expect("WebKit main thread")) };
 }
 
-pub async fn evaluate(view: &Webview, script: String) -> Result<Value, String> {
+async fn evaluate(view: &Webview, script: String, page: bool) -> Result<Value, String> {
     if objc2_foundation::NSProcessInfo::processInfo()
         .operatingSystemVersion()
         .majorVersion
@@ -30,7 +30,12 @@ pub async fn evaluate(view: &Webview, script: String) -> Result<Value, String> {
             } else if value.is_null() {
                 Ok(Value::Null)
             } else if let Some(string) = (&*value).downcast_ref::<NSString>() {
-                serde_json::from_str(&string.to_string()).map_err(|e| e.to_string())
+                let string = string.to_string();
+                if string.len() > 200000 {
+                    Err("Native result exceeds 200 KB".into())
+                } else {
+                    serde_json::from_str(&string).map_err(|e| e.to_string())
+                }
             } else {
                 Err("Unexpected native bridge response".into())
             };
@@ -38,14 +43,26 @@ pub async fn evaluate(view: &Webview, script: String) -> Result<Value, String> {
                 let _ = tx.send(result);
             }
         });
-        WORLD.with(|world| {
-            wk.evaluateJavaScript_inFrame_inContentWorld_completionHandler(
+        if page {
+            wk.callAsyncJavaScript_arguments_inFrame_inContentWorld_completionHandler(
                 &NSString::from_str(&script),
                 None,
-                world,
+                None,
+                &WKContentWorld::pageWorld(
+                    objc2::MainThreadMarker::new().expect("WebKit main thread"),
+                ),
                 Some(&callback),
-            )
-        });
+            );
+        } else {
+            WORLD.with(|world| {
+                wk.evaluateJavaScript_inFrame_inContentWorld_completionHandler(
+                    &NSString::from_str(&script),
+                    None,
+                    world,
+                    Some(&callback),
+                )
+            });
+        }
     })
     .map_err(|e| e.to_string())?;
     tokio::time::timeout(std::time::Duration::from_secs(10), rx)
@@ -61,12 +78,56 @@ pub async fn script(view: &Webview, params: Value) -> Result<Value, String> {
             "{}\nglobalThis.__tauBrowser({params})",
             include_str!("bridge.js")
         ),
+        false,
     )
     .await?;
     if let Some(error) = result["error"].as_str() {
         Err(error.into())
     } else {
         Ok(result["result"].clone())
+    }
+}
+
+pub async fn evaluate_page(view: &Webview, params: Value, url: &str) -> Result<Value, String> {
+    let function = params["function"]
+        .as_str()
+        .filter(|s| !s.trim().is_empty() && s.len() <= 200000)
+        .ok_or("Invalid JavaScript function")?;
+    // A transient, unpredictable marker carries an isolated-world ref into the
+    // page world without exposing the bridge or retaining page globals there.
+    let marker = params["ref"]
+        .as_str()
+        .map(|_| format!("data-taucode-evaluate-{}", uuid::Uuid::new_v4()));
+    if let Some(marker) = &marker {
+        script(
+            view,
+            json!({"op":"mark","ref":params["ref"],"marker":marker,"expectedUrl":url}),
+        )
+        .await?;
+    }
+    let result = evaluate(
+        view,
+        format!(
+            "return await ({} )(() => ({}\n), {}, {});",
+            include_str!("evaluate.js"),
+            function,
+            json!(url),
+            json!(marker)
+        ),
+        true,
+    )
+    .await;
+    // Syntax errors, navigation or rejected WebKit execution must clear markers too.
+    if let Some(marker) = marker {
+        let _ = script(view, json!({"op":"unmark","marker":marker})).await;
+    }
+    let result = result?;
+    if let Some(error) = result["error"].as_str() {
+        Err(error.into())
+    } else if result.get("result").is_some() {
+        Ok(result["result"].clone())
+    } else {
+        Err("Unexpected native evaluation response".into())
     }
 }
 

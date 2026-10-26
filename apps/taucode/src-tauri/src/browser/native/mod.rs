@@ -517,8 +517,16 @@ impl NativeBackend {
                 return macos::control(&view, action.into()).await;
             }
             #[cfg(target_os = "macos")]
-            "script" => {
-                return macos::script(&view, p).await;
+            "script" | "evaluate" => {
+                let url = view.url().map_err(|e| e.to_string())?;
+                if !automation_allowed(&url, &settings) {
+                    return Err("Browser origin blocked by policy".into());
+                }
+                return if action == "evaluate" { macos::evaluate_page(&view, p, url.as_str()).await }
+                else {
+                    let mut p = p; p["expectedUrl"] = json!(url.as_str());
+                    macos::script(&view, p).await
+                };
             }
             #[cfg(target_os = "macos")]
             "screenshot" => {
@@ -610,6 +618,33 @@ fn allowed_origin(url: &reqwest::Url, settings: &super::Settings) -> bool {
     };
     !settings.blocked_origins.iter().any(matches)
         && (settings.allowed_origins.is_empty() || settings.allowed_origins.iter().any(matches))
+}
+
+fn automation_allowed(url: &reqwest::Url, settings: &super::Settings) -> bool {
+    let origin = if url.scheme() == "blob" {
+        let Ok(origin) = reqwest::Url::parse(url.path()) else { return false; };
+        origin
+    } else { url.clone() };
+    navigation(url.as_str(), origin.as_str()) == Navigation::Allow && allowed_origin(&origin, settings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn automation_rechecks_current_origin_including_blob_pages() {
+        let mut settings = super::super::Settings::default();
+        settings.allowed_origins = vec!["https://allowed.example".into()];
+        for url in ["https://allowed.example/page", "blob:https://allowed.example/uuid", "about:blank", "data:image/png;base64,eA=="] {
+            assert!(automation_allowed(&url.parse().unwrap(), &settings), "{url}");
+        }
+        for url in ["https://blocked.example", "blob:https://blocked.example/uuid", "file:///etc/hosts", "tauri://localhost", "http://tauri.localhost", "javascript:alert(1)"] {
+            assert!(!automation_allowed(&url.parse().unwrap(), &settings), "{url}");
+        }
+        settings.blocked_origins = vec!["https://allowed.example".into()];
+        assert!(!automation_allowed(&"https://allowed.example/page".parse().unwrap(), &settings));
+        assert!(!automation_allowed(&"blob:https://allowed.example/uuid".parse().unwrap(), &settings));
+    }
 }
 
 fn close_view(view: Webview) -> Result<(), String> {
