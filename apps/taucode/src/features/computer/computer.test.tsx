@@ -164,4 +164,21 @@ describe("computer use", () => {
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ computer: expect.objectContaining({ groundingMode: "ui-tars", groundingWidth: 1000, groundingHeight: 1000 }) })));
     fireEvent.click(screen.getByText("Open System Settings — Accessibility")); expect(computerRequest).toHaveBeenCalledWith({ action: "permissions", pane: "accessibility" });
   });
+  it("backs off approval polling while idle or failing", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(computerRequest).mockRejectedValue(new Error("down"));
+      render(<ComputerApprovals />);
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(vi.mocked(computerRequest).mock.calls.length).toBeLessThanOrEqual(4);
+      cleanup(); vi.mocked(computerRequest).mockReset().mockResolvedValue({ steps: [], running: false });
+      render(<ComputerApprovals />);
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(vi.mocked(computerRequest).mock.calls.length).toBeLessThanOrEqual(6);
+      cleanup(); vi.mocked(computerRequest).mockReset().mockResolvedValue({ steps: [], running: true });
+      render(<ComputerApprovals />);
+      await act(() => vi.advanceTimersByTimeAsync(2_000));
+      expect(vi.mocked(computerRequest).mock.calls.length).toBeGreaterThanOrEqual(4);
+    } finally { vi.useRealTimers(); }
+  });
 });

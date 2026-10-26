@@ -10,12 +10,18 @@ export function ComputerApprovals() {
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
+    // Fast only while a run is active; idle and failing polls back off so errors cannot flood.
+    let delay = 500;
     const poll = async () => {
       try {
         const next = await computerRequest<ComputerRun>({ action: "status" });
-        if (active) setApproval(next.approval);
-      } catch (e) { if (active) setError(String(e)); }
-      if (active) timer = setTimeout(() => void poll(), 500);
+        if (active) { setApproval(next.approval); setError(""); }
+        delay = next.running ? 500 : 2000;
+      } catch (e) {
+        if (active) setError(String(e));
+        delay = Math.min(delay * 2, 30_000);
+      }
+      if (active) timer = setTimeout(() => void poll(), delay);
     };
     void poll();
     return () => { active = false; clearTimeout(timer); };
