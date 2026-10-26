@@ -19,6 +19,25 @@ fn create_temp_repo() -> (PathBuf, Repository) {
     (root, repo)
 }
 
+#[tokio::test]
+async fn non_repository_reads_return_calm_empty_results() {
+    let root = std::env::temp_dir().join(format!("taucode-non-repo-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&root).unwrap();
+    let workspace = WorkspaceEntry {
+        id: "w".into(), name: "w".into(), path: root.to_string_lossy().into_owned(),
+        kind: WorkspaceKind::Main, parent_id: None, worktree: None, settings: WorkspaceSettings::default(),
+    };
+    let workspaces = Mutex::new(HashMap::from([("w".into(), workspace)]));
+    let settings = Mutex::new(AppSettings::default());
+    assert!(super::get_git_status_core(&workspaces, "w".into()).await.unwrap().is_null());
+    assert!(super::get_git_diffs_core(&workspaces, &settings, "w".into()).await.unwrap().is_empty());
+    assert!(super::get_git_commit_diff_core(&workspaces, &settings, "w".into(), "invalid-sha".into()).await.unwrap().is_empty());
+    assert!(super::get_git_log_core(&workspaces, "w".into(), None).await.unwrap().entries.is_empty());
+    assert!(super::get_git_remote_core(&workspaces, "w".into()).await.unwrap().is_none());
+    assert!(super::collect_workspace_diff_core(&root).unwrap().is_empty());
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn collect_workspace_diff_prefers_staged_changes() {
     let (root, repo) = create_temp_repo();

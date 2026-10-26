@@ -7,6 +7,14 @@ use ignore::WalkBuilder;
 use crate::types::{GitLogEntry, WorkspaceEntry};
 use crate::utils::normalize_git_path;
 
+pub(crate) fn open_optional_repo(path: &Path) -> Result<Option<Repository>, String> {
+    match Repository::open(path) {
+        Ok(repo) => Ok(Some(repo)),
+        Err(error) if error.code() == git2::ErrorCode::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 pub(crate) fn image_mime_type(path: &str) -> Option<&'static str> {
     let ext = Path::new(path)
         .extension()

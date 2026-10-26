@@ -19,6 +19,7 @@ export const builtins: ThemeManifest[] = [
     '--text-subtle': appearance === 'dark' ? '#c4c6ce' : '#555863',
   }, { extends: appearance, window: { translucent: true, material: 'sidebar' }, shape: { corners: 'squircle' }, border: { gradient: appearance === 'dark' ? ['rgba(255,255,255,0.30)', 'rgba(255,255,255,0.06)', 'rgba(255,255,255,0.14)'] : ['rgba(255,255,255,0.95)', 'rgba(0,0,0,0.06)', 'rgba(255,255,255,0.7)'], angle: 160, highlight: true } })),
   base('cyberpunk-neon', 'dark', {
+    '--setup-base': '#0b0714', '--setup-blob-1': 'var(--text-accent)', '--setup-blob-2': 'var(--status-success)',
     '--scrollbar-thumb': 'rgba(255,43,214,0.5)', '--scrollbar-thumb-hover': 'rgba(0,229,255,0.5)',
     '--surface-app': '#0b0714', '--surface-messages': '#0b0714',
     '--surface-sidebar': '#0e0a1c', '--surface-sidebar-opaque': '#0e0a1c', '--surface-topbar': '#0e0a1c',
@@ -33,6 +34,7 @@ export const builtins: ThemeManifest[] = [
     '--surface-command': '#0f0a1f', '--surface-diff-card': '#0f0a1f', '--shadow-accent': 'rgba(255, 43, 214, 0.45)',
   }, { extends: 'dark', effects: { neonGlow: true }, shape: { corners: 'chamfer', chamfer: 10 }, border: { gradient: ['#ff2bd6', '#a855f7', '#00e5ff'], angle: 135 } }),
   base('matrix', 'dark', {
+    '--setup-base': '#030803', '--setup-blob-1': 'var(--text-accent)', '--setup-blob-2': 'var(--status-success)',
     '--scrollbar-thumb': 'rgba(0,255,65,0.22)', '--scrollbar-thumb-hover': 'rgba(0,255,65,0.32)',
     ...Object.fromEntries(Object.keys(themeTokens).filter(k => k.startsWith('--surface-') && !/text|border|status/.test(k)).map(k => [k, '#030803'])),
     '--text-primary': '#d1ffdb', '--text-stronger': '#b8ffc9', '--text-strong': '#e4ffeb', '--text-muted': '#a0d5ad', '--text-subtle': '#8fca9b',

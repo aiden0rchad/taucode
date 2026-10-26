@@ -1,0 +1,41 @@
+// @vitest-environment jsdom
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { WorkspaceInfo } from "@/types";
+import { readAgentMd, writeAgentMd } from "@services/tauri";
+import { useWorkspaceAgentMd } from "./useWorkspaceAgentMd";
+vi.mock("@services/tauri", () => ({ readAgentMd: vi.fn(), writeAgentMd: vi.fn(async () => {}) }));
+const workspace = { id: "w", settings: {} } as WorkspaceInfo;
+beforeEach(() => vi.mocked(readAgentMd).mockImplementation(async (_id, file) => ({ exists: file === "CLAUDE.md" || file === "GEMINI.md", content: file === "CLAUDE.md" ? "Claude instructions" : "", truncated: false })));
+afterEach(() => { cleanup(); vi.clearAllMocks(); });
+it("defaults to CLAUDE, detects read-only files, and preserves drafts between tabs", async () => {
+  const { result } = renderHook(() => useWorkspaceAgentMd({ activeWorkspace: workspace }));
+  await waitFor(() => expect(result.current.selectedFile).toBe("CLAUDE.md"));
+  expect(result.current.content).toBe("Claude instructions");
+  expect(result.current.fileStatuses).toEqual({ "AGENTS.md": false, "CLAUDE.md": true });
+  expect(result.current.detected).toEqual(["GEMINI.md"]);
+  act(() => result.current.setContent("Edited Claude"));
+  act(() => result.current.selectFile("AGENTS.md"));
+  act(() => result.current.setContent("New agents"));
+  await act(async () => { await result.current.save(); });
+  expect(writeAgentMd).toHaveBeenCalledWith("w", "New agents", "AGENTS.md");
+  expect(result.current.fileStatuses["AGENTS.md"]).toBe(true);
+  act(() => result.current.selectFile("CLAUDE.md"));
+  expect(result.current.content).toBe("Edited Claude");
+  await act(async () => { await result.current.save(); });
+  expect(writeAgentMd).toHaveBeenCalledWith("w", "Edited Claude", "CLAUDE.md");
+});
+it("prefers AGENTS when both exist and creates a missing CLAUDE file", async () => {
+  vi.mocked(readAgentMd).mockResolvedValue({ exists: true, content: "Existing", truncated: false });
+  const { result, unmount } = renderHook(() => useWorkspaceAgentMd({ activeWorkspace: workspace }));
+  await waitFor(() => expect(result.current.content).toBe("Existing"));
+  expect(result.current.selectedFile).toBe("AGENTS.md");
+  unmount();
+  vi.mocked(readAgentMd).mockResolvedValue({ exists: false, content: "", truncated: false });
+  const next = renderHook(() => useWorkspaceAgentMd({ activeWorkspace: workspace, filename: "CLAUDE.md" }));
+  await waitFor(() => expect(next.result.current.isLoading).toBe(false));
+  act(() => next.result.current.setContent("New Claude"));
+  await act(async () => { await next.result.current.save(); });
+  expect(writeAgentMd).toHaveBeenCalledWith("w", "New Claude", "CLAUDE.md");
+  expect(next.result.current.exists).toBe(true);
+});

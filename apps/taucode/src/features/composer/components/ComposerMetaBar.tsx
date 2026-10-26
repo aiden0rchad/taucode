@@ -1,3 +1,4 @@
+import { formatModelRef } from "@settings/registry";
 import { useEngines, resolveEngine } from "@settings/engines";
 import { useFeatureSettings } from "@settings/features";
 import { ReasoningControl } from "./ReasoningControl";
@@ -17,11 +18,12 @@ type ComposerMetaBarProps = {
 };
 
 export function ComposerMetaBar({ disabled, engine = "codex", models, selectedModelId, defaultModelId, onSelectModel, selectedEffort, onSelectEffort }: ComposerMetaBarProps) {
+  const settings = useFeatureSettings();
   const protocol = useEngines().find(e => e.id === engine)?.protocol;
   const modelEngine = protocol === "pi-rpc" || (protocol === "acp" && engine !== "claude") ? "pi" : engine;
   const selected = models.find(model => model.id === selectedModelId);
   return <ReasoningControl
-    modelName={selected?.displayName || selected?.model || "Select model"}
+    modelName={settings ? formatModelRef(settings, selectedModelId).name : selected?.displayName || selected?.model || "Select model"}
     models={models.map(model => ({ id: model.id, name: model.displayName || model.model, provider: model.providerName || model.providerId, disabled: !!model.engines && !model.engines.includes(modelEngine), disabledReason: model.engines && !model.engines.includes(modelEngine) ? "Unavailable for " + engine : undefined }))}
     selectedModelId={selectedModelId} defaultModelId={defaultModelId} onSelectModel={onSelectModel}
     capability={engine === "claude" ? selected?.acpReasoning : selected?.reasoning}

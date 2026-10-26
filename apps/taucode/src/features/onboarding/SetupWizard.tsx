@@ -258,7 +258,7 @@ export function SetupWizard({ onSettings, onFinish }: { onSettings: (settings: A
     if (event.key === "Enter" && event.target === heading.current) { event.preventDefault(); void submit(); }
   }}>
     <div className="setup-ambient" aria-hidden="true"><i /><i /></div>
-    <header className="setup-topbar"><span className="setup-wordmark">taucode<span> / setup</span></span><SettingsButton className="ghost" disabled={busy || exiting} onClick={later}>Set up later</SettingsButton></header>
+    <header className="setup-topbar" data-tauri-drag-region={!modal || undefined}><span className="setup-wordmark" data-tauri-drag-region={!modal || undefined}>taucode<span> / setup</span></span><SettingsButton className="ghost" disabled={busy || exiting} onClick={later}>Set up later</SettingsButton></header>
     <div className={`setup-column${step === "look" ? " setup-column-wide" : ""}`}>
       <ol className="setup-rail" aria-label="Setup progress">{rail.map(s => <li key={s} data-complete={progress.completed.includes(s)} aria-current={step === s ? "step" : undefined}><span className="setup-dot">{progress.completed.includes(s) && <Check size={10} />}</span><span>{s[0].toUpperCase() + s.slice(1)}</span></li>)}</ol>
       <form className="setup-form" onSubmit={e => { e.preventDefault(); void submit(); }}>

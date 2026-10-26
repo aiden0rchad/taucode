@@ -1,4 +1,8 @@
 :root {
+  /* Setup wizard: subtle "twilight plum" — indigo top-left, plum bottom-right. */
+  --setup-base: #0c0b16;
+  --setup-blob-1: #1d1b4a;
+  --setup-blob-2: #3e1c44;
   --scrollbar-thumb: color-mix(in srgb, var(--text-primary) 18%, rgba(0,0,0,0));
   --scrollbar-thumb-hover: color-mix(in srgb, var(--text-primary) 32%, rgba(0,0,0,0));
   --surface-app: #141416;

@@ -63,6 +63,18 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "--setup-base": {
+          "$ref": "#/$defs/color",
+          "description": "setup base"
+        },
+        "--setup-blob-1": {
+          "$ref": "#/$defs/color",
+          "description": "setup blob 1"
+        },
+        "--setup-blob-2": {
+          "$ref": "#/$defs/color",
+          "description": "setup blob 2"
+        },
         "--scrollbar-thumb": {
           "$ref": "#/$defs/color",
           "description": "scrollbar thumb"

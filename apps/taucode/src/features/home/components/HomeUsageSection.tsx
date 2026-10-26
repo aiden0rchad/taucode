@@ -1,3 +1,5 @@
+import { useFeatureSettings } from "@settings/features";
+import { formatModelRef } from "@settings/registry";
 import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
@@ -50,6 +52,7 @@ export function HomeUsageSection({
   usageWorkspaceId,
   usageWorkspaceOptions,
 }: HomeUsageSectionProps) {
+  const settings = useFeatureSettings();
   const [chartWeekOffset, setChartWeekOffset] = useState(0);
   const {
     updatedLabel,
@@ -266,9 +269,9 @@ export function HomeUsageSection({
                   <span
                     className="home-usage-model-chip"
                     key={model.model}
-                    title={`${model.model}: ${formatCount(model.tokens)} tokens`}
+                    title={`${formatModelRef(settings, model.model).title}: ${formatCount(model.tokens)} tokens`}
                   >
-                    {model.model}
+                    {formatModelRef(settings, model.model).name}
                     <span className="home-usage-model-share">
                       {model.sharePercent.toFixed(1)}%
                     </span>

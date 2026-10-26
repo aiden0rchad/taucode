@@ -1,3 +1,5 @@
+import { useFeatureSettings } from "@settings/features";
+import { formatModelRef } from "@settings/registry";
 import { Bot, GitFork, Ellipsis } from "lucide-react";
 import { useContext } from "react";
 import { SidebarEngine, SidebarProjects } from "./SidebarTree";
@@ -92,6 +94,7 @@ export function ThreadRow({
   onToggleSubagents,
   showPinnedLabel = true,
 }: ThreadRowProps) {
+  const settings = useFeatureSettings();
   const inheritedEngine = useContext(SidebarEngine);
   const defaultEngine = useContext(SidebarProjects).find(workspace => workspace.id === workspaceId)?.settings.agentPolicy?.defaultEngine ?? inheritedEngine;
   const runningAgents = useRunningAgents(thread.id);
@@ -100,8 +103,8 @@ export function ThreadRow({
   const modelBadge =
     thread.modelId && thread.modelId.trim().length > 0
       ? thread.effort && thread.effort.trim().length > 0
-        ? `${thread.modelId} · ${thread.effort}`
-        : thread.modelId
+        ? `${formatModelRef(settings, thread.modelId).name} · ${thread.effort}`
+        : formatModelRef(settings, thread.modelId).name
       : null;
   const indentStyle =
     depth > 0
@@ -211,7 +214,7 @@ export function ThreadRow({
               <span className={`thread-state-chip ${statusClass}`}>{statusLabel}</span>
             )}
             {contextLabel && (
-              <span className="thread-context-label" title={contextLabel}>
+              <span className="thread-context-label" title={thread.modelId ? formatModelRef(settings, thread.modelId).title : contextLabel}>
                 {contextLabel}
               </span>
             )}

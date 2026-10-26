@@ -74,6 +74,8 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
   const heat = effects ? (last > 0 ? position / last : 1) : 0;
   useReasoningAnimationSpeed(popover, effects && menu.isOpen && view === "slider" && !!level && !unavailable, heat);
   const noReasoning = capability?.supported === false || !!unavailable;
+  const providerName = models.find(model => model.id === selectedModelId)?.provider;
+  const modelTitle = providerName ? `${providerName} · ${modelName}` : modelName;
   const burning = effects && !unknown && position === last;
   const warm = effects && !unknown && !burning && Math.round(position) === last - 1;
   const sliderStyle = {
@@ -95,7 +97,7 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
     finally { setSelecting(false); }
   };
   return <div className="reasoning-control" ref={menu.containerRef}>
-    <button ref={trigger} type="button" className="ghost composer-chip reasoning-chip" style={sliderStyle} aria-label={`${modelName}${noReasoning ? "" : ` · ${chipLabel}`}${adjusted && !noReasoning ? " (adjusted for model)" : ""}`} aria-haspopup="dialog" aria-expanded={menu.isOpen} disabled={disabled} onClick={() => { if (!menu.isOpen) { returning.current = false; setOutgoing(null); setView(noReasoning ? "models" : "slider"); setModelError(""); } menu.toggle(); }} title={unavailable || (adjusted ? `${reasoningLabel(value!)} is unavailable; using ${chipLabel}` : "Model and reasoning")}>
+    <button ref={trigger} type="button" className="ghost composer-chip reasoning-chip" style={sliderStyle} aria-label={`${modelName}${noReasoning ? "" : ` · ${chipLabel}`}${adjusted && !noReasoning ? " (adjusted for model)" : ""}`} aria-haspopup="dialog" aria-expanded={menu.isOpen} disabled={disabled} onClick={() => { if (!menu.isOpen) { returning.current = false; setOutgoing(null); setView(noReasoning ? "models" : "slider"); setModelError(""); } menu.toggle(); }} title={unavailable || (adjusted ? `${reasoningLabel(value!)} is unavailable; using ${chipLabel}` : modelTitle)}>
       <span className="reasoning-chip-model">{modelName}</span>{!noReasoning && <span className="reasoning-chip-dot" aria-hidden />}
       {!noReasoning && <span className={`reasoning-chip-label${unknown ? " unknown" : ""}`} style={{ minWidth: `${Math.max(...labels.map(text => text.length))}ch` }}>{labels.map(text => <span className="reasoning-chip-sizer" aria-hidden="true" key={text}>{text}</span>)}<span>{chipLabel}</span></span>}<ChevronDown size={12} aria-hidden />
     </button>

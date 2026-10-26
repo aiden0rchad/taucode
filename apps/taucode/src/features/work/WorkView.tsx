@@ -1,3 +1,4 @@
+import { formatModelRef } from "@settings/registry";
 import { useSidebarScrollFade } from '@app/hooks/useSidebarScrollFade';
 import { DigitalRain } from "@/features/themes/DigitalRain";
 import { useFeatures } from "@settings/features";
@@ -123,7 +124,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     const timestamp = entry.updatedAt ?? entry.createdAt;
     const attention = entry.status === "needs-input" || entry.status === "failed";
     const title = [
-      entry.title, work.state.spaces.find(space => space.id === entry.spaceId)?.name, entry.model, status,
+      entry.title, work.state.spaces.find(space => space.id === entry.spaceId)?.name, formatModelRef(settings, entry.model).title, status,
       ...(["createdAt", "updatedAt"] as const).flatMap(key => entry[key] == null ? [] : [`${key === "createdAt" ? "Created" : "Updated"}: ${new Date(entry[key] * 1000).toLocaleString()}`]),
     ].filter(Boolean).join(" · ");
     return <RowMenu key={entry.id} label={entry.title} actions={[
@@ -143,7 +144,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           </section>
         </aside>) : null;
   return <WorkspaceShell titleActions={<>
-        <span className="thread-header-model" title={`pi · ${task?.model ?? model}`}>pi · {task?.model ?? model}</span>
+        <span className="thread-header-model" title={formatModelRef(settings, task?.model ?? model).title}>pi · {formatModelRef(settings, task?.model ?? model).name}</span>
         {task && <div className="work-actions"><span className={`thread-state-chip ${task.status === "running" ? "processing" : task.status === "needs-input" ? "reviewing" : "ready"}`} role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && <button className="ghost main-header-action" aria-label="Stop task" title="Stop task" disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop</button>}
           {task.threadId && !task.importId && <RewindAction workspaceId={task.spaceId} threadId={task.threadId} running={active} />}
         </div>}
@@ -199,7 +200,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
 
         </div>
         <form className="work-composer" aria-label="New task" onSubmit={e => { e.preventDefault(); void create(true); }} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }} onDrop={e => { e.preventDefault(); setDragOver(false); }}>
-          <ComposerShell reasoning={{ modelName: models.find(m => m.key === model)?.displayName || models.find(m => m.key === model)?.id, models: models.map(m => ({ id: m.key, name: m.displayName || m.id, provider: m.provider })), selectedModelId: model, defaultModelId: settings.agentPolicy?.defaultModel ? settings.agentPolicy.defaultModel.providerId + "/" + settings.agentPolicy.defaultModel.modelId : undefined, onSelectModel: setModel, capability, value: reasoning.requested, onChange: reasoning.onChange, disabled: busy, onOpenSettings }} toolbar={<div className="work-fields"><ComposerAccessControl value={access} onChange={setAccess} disabled={busy} /><label className="composer-chip"><Folder aria-hidden /><select aria-label="Space" value={selectedSpace} disabled={busy} onChange={e => { setSpaceId(e.target.value); setAttachments([]); }}><option value="" disabled>Choose a space</option>{writableSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+          <ComposerShell reasoning={{ modelName: formatModelRef(settings, model).name, models: models.map(m => ({ id: m.key, name: m.displayName || m.id, provider: m.provider })), selectedModelId: model, defaultModelId: settings.agentPolicy?.defaultModel ? settings.agentPolicy.defaultModel.providerId + "/" + settings.agentPolicy.defaultModel.modelId : undefined, onSelectModel: setModel, capability, value: reasoning.requested, onChange: reasoning.onChange, disabled: busy, onOpenSettings }} toolbar={<div className="work-fields"><ComposerAccessControl value={access} onChange={setAccess} disabled={busy} /><label className="composer-chip"><Folder aria-hidden /><select aria-label="Space" value={selectedSpace} disabled={busy} onChange={e => { setSpaceId(e.target.value); setAttachments([]); }}><option value="" disabled>Choose a space</option>{writableSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
 
 
           </div>} menu={<><button className="ghost icon-button" type="button" aria-label="Queue task" title={!selectedSpace ? "Choose a space first" : !brief.trim() ? "Describe the task to queue" : "Queue task"} disabled={busy || dictating || !brief.trim() || !selectedSpace || !model} onClick={() => { void create(false); }}>Queue task</button><button type="button" disabled={busy || !selectedSpace} title={!selectedSpace ? "Choose a space first" : "Attach files to this space"} onClick={() => { void run(async () => { const paths = await pickWorkAttachments(); if (paths.length) await attach(paths); }); }}>Attach files to space</button></>} actions={<><ComposerDictation settings={settings} disabled={busy} onBusyChange={setDictating} onTranscript={text => setBrief(current => current + (current && !/\s$/.test(current) ? " " : "") + text)} onError={work.setError} onOpenSettings={onOpenSettings} /><ComposerSendButton label="Run now" disabled={busy || dictating || !brief.trim() || !selectedSpace || !model} disabledReason={dictating ? "Finish dictation first" : busy ? "Please wait" : !selectedSpace ? "Choose a space first" : !model ? "Choose a model in Settings" : "Describe the result you want"} onSend={() => { void create(true); }} /></>}>

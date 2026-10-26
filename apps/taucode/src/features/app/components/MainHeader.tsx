@@ -1,4 +1,5 @@
-import { useFeatures } from "@settings/features";
+import { formatModelRef } from "@settings/registry";
+import { useFeatureSettings, useFeatures } from "@settings/features";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Check from "lucide-react/dist/esm/icons/check";
 import { HeaderActions } from "./HeaderActions";
@@ -112,6 +113,7 @@ export function MainHeader({
   launchScriptsState,
   worktreeRename,
 }: MainHeaderProps) {
+  const settings = useFeatureSettings();
   const features = useFeatures();
   if (!features.git) { branchName = ""; disableBranchMenu = false; }
   const [branchQuery, setBranchQuery] = useState("");
@@ -196,7 +198,7 @@ export function MainHeader({
       <div className="workspace-header">
         <div className="workspace-title-line">
           {engine && <span className="engine-badge">{engine}</span>}
-          {model && <span className="thread-header-model" title={model}>{model}</span>}
+          {model && <span className="thread-header-model" title={formatModelRef(settings, model).title}>{engine && " · "}{formatModelRef(settings, model).name}</span>}
           <span className="workspace-separator" aria-hidden>
             ›
           </span>

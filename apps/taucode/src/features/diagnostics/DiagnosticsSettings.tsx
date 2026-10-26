@@ -1,3 +1,4 @@
+import { formatModelRef } from "@settings/registry";
 import "./diagnostics.css";
 import { useEffect, useState } from "react";
 import { Check, Copy, FolderOpen, Inbox, Terminal, Bot, Repeat, MessageSquarePlus, X } from "lucide-react";
@@ -75,7 +76,7 @@ export function DiagnosticsSettings({ appSettings, onUpdateAppSettings }: { appS
       {selected && <section className="diagnostics-detail" aria-label="Issue details">
         <div className="diagnostics-detail-heading"><h3>{selected.issue.title}</h3><SettingsButton className="diagnostics-icon-button" aria-label="Close details" onClick={() => setSelected(undefined)}><X size={16} /></SettingsButton></div>
         <div className="diagnostics-identifiers"><code>{selected.issue.code}</code>{copyButton(selected.issue.code, "issue code")}<code>{selected.issue.fingerprint}</code>{copyButton(selected.issue.fingerprint, "fingerprint")}</div>
-        <dl className="diagnostics-facts"><div><dt>First seen</dt><dd>{new Date(selected.issue.firstSeen).toLocaleString()}</dd></div><div><dt>Last seen</dt><dd>{new Date(selected.issue.lastSeen).toLocaleString()}</dd></div><div><dt>Engines</dt><dd>{selected.issue.engines.join(", ") || "None recorded"}</dd></div><div><dt>Models</dt><dd>{selected.issue.models.join(", ") || "None recorded"}</dd></div></dl>
+        <dl className="diagnostics-facts"><div><dt>First seen</dt><dd>{new Date(selected.issue.firstSeen).toLocaleString()}</dd></div><div><dt>Last seen</dt><dd>{new Date(selected.issue.lastSeen).toLocaleString()}</dd></div><div><dt>Engines</dt><dd>{selected.issue.engines.join(", ") || "None recorded"}</dd></div><div><dt>Models</dt><dd>{selected.issue.models.map(model => formatModelRef(appSettings, model).title).join(", ") || "None recorded"}</dd></div></dl>
         <h4>Evidence sample</h4><pre className="diagnostics-evidence">{selected.issue.lastEvent.message}{selected.issue.lastEvent.detail && Object.keys(selected.issue.lastEvent.detail).length > 0 ? "\n" + JSON.stringify(selected.issue.lastEvent.detail, null, 2) : ""}</pre>
         <h4>Recent events</h4><ul className="diagnostics-events">{selected.events.map((event, index) => <li key={index}><time title={event.ts}>{relativeTime(event.ts)}</time><code>{event.code}</code><span>{event.message}</span></li>)}</ul>
         <h4>Agent notes</h4>{selected.issue.notes.length ? selected.issue.notes.map((text, index) => <p className="diagnostics-note" key={index}>{text}</p>) : <p>No notes yet.</p>}

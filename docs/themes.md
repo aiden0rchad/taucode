@@ -91,6 +91,9 @@ Generated from the Dark theme's themeable color and radius properties. Layout di
 <!-- tokens:start -->
 | Token | Group | Label |
 | --- | --- | --- |
+| `--setup-base` | Setup | setup base |
+| `--setup-blob-1` | Setup | setup blob 1 |
+| `--setup-blob-2` | Setup | setup blob 2 |
 | `--scrollbar-thumb` | Scrollbars | scrollbar thumb |
 | `--scrollbar-thumb-hover` | Scrollbars | scrollbar thumb hover |
 | `--surface-app` | Surfaces | surface app |

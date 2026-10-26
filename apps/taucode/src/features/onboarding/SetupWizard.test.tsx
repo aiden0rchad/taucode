@@ -81,7 +81,7 @@ it("stores keys only through Keychain, clears the field, tests, and saves a sear
   await start("provider"); await click("OpenAI");
   fireEvent.change(screen.getByLabelText("API key"), { target: { value: "private-test-key" } });
   await click("Test & continue");
-  expect(api.providerSetApiKey).toHaveBeenCalledWith(expect.any(String), "private-test-key");
+  expect(api.providerSetApiKey).toHaveBeenCalledWith("openai", "private-test-key");
   expect(document.body.innerHTML).not.toContain("private-test-key");
   expect(JSON.stringify(vi.mocked(api.updateAppSettings).mock.calls)).not.toContain("private-test-key");
   expect(JSON.stringify([...logs.mock.calls, ...errors.mock.calls])).not.toContain("private-test-key");
@@ -97,6 +97,23 @@ it("keeps failed provider tests on the step with a cleared key", async () => {
   vi.mocked(api.providerTestAndFetch).mockResolvedValueOnce({ ok: false, latencyMs: 900, models: [], error: "Key rejected" });
   await click("Test & continue"); expect(screen.getByRole("alert").textContent).toContain("Key rejected");
   expect((screen.getByLabelText("API key") as HTMLInputElement).value).toBe(""); await heading("Connect a model provider.");
+});
+it("derives a unique provider slug from the edited name", async () => {
+  settings.providers = [{ id: "litellm", name: "Existing proxy", kind: "openai-compatible", enabled: true, auth: { type: "none" }, models: [] }];
+  await start("provider"); await click("Add another"); await click("OpenAI-compatible");
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "LiteLLM" } });
+  fireEvent.change(screen.getByLabelText("API key"), { target: { value: "test-key" } });
+  await click("Test & continue");
+  expect(api.providerSetApiKey).toHaveBeenCalledWith("litellm-2", "test-key");
+  expect(settings.providers!.map(provider => provider.id)).toEqual(["litellm", "litellm-2"]);
+  expect(settings.providers![0].name).toBe("Existing proxy");
+});
+it("makes only the takeover topbar a drag region", async () => {
+  await start();
+  expect(document.querySelector(".setup-topbar")?.getAttribute("data-tauri-drag-region")).toBe("true");
+  fireEvent(window, new Event("taucode:run-setup"));
+  await waitFor(() => expect(document.querySelector(".setup-modal-card")).toBeTruthy());
+  expect(document.querySelector(".setup-topbar")?.hasAttribute("data-tauri-drag-region")).toBe(false);
 });
 it("enables an engine after prepare and supports cancellation without advancing", async () => {
   await start("engine"); await click("oh-my-pi");

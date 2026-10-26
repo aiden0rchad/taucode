@@ -1,4 +1,6 @@
-import { useFeatures } from "@settings/features";
+import { useFileLinkOpener } from "@/features/messages/hooks/useFileLinkOpener";
+import type { EditableInstructionFile, InstructionFile } from "@services/tauri";
+import { useFeatureSettings, useFeatures } from "@settings/features";
 import {
   useEffect,
   useMemo,
@@ -58,10 +60,10 @@ type WorkspaceHomeProps = {
   collaborationModes: { id: string; label: string }[];
   selectedCollaborationModeId: string | null;
   onSelectCollaborationMode: (id: string | null) => void;
-  reasoningOptions: string[];
+  engine?: import("@/types").EngineKind;
   selectedEffort: string | null;
   onSelectEffort: (effort: string) => void;
-  reasoningSupported: boolean;
+
   error: string | null;
   isSubmitting: boolean;
   activeWorkspaceId: string | null;
@@ -87,6 +89,10 @@ type WorkspaceHomeProps = {
   onDictationTranscriptHandled: (id: string) => void;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
   onFileAutocompleteActiveChange?: (active: boolean) => void;
+  agentMdFilename: EditableInstructionFile;
+  agentMdStatuses: Record<EditableInstructionFile, boolean>;
+  agentMdDetected: InstructionFile[];
+  onAgentMdSelect: (file: EditableInstructionFile) => void;
   agentMdContent: string;
   agentMdExists: boolean;
   agentMdTruncated: boolean;
@@ -121,10 +127,10 @@ export function WorkspaceHome({
   collaborationModes,
   selectedCollaborationModeId,
   onSelectCollaborationMode,
-  reasoningOptions,
+  engine,
   selectedEffort,
   onSelectEffort,
-  reasoningSupported,
+
   error,
   isSubmitting,
   activeWorkspaceId,
@@ -150,6 +156,7 @@ export function WorkspaceHome({
   onDictationTranscriptHandled,
   textareaRef: textareaRefProp,
   onFileAutocompleteActiveChange,
+  agentMdFilename, agentMdStatuses, agentMdDetected, onAgentMdSelect,
   agentMdContent,
   agentMdExists,
   agentMdTruncated,
@@ -161,6 +168,8 @@ export function WorkspaceHome({
   onAgentMdRefresh,
   onAgentMdSave,
 }: WorkspaceHomeProps) {
+  const settings = useFeatureSettings();
+  const { openFileLink } = useFileLinkOpener(workspace.path, settings?.openAppTargets ?? [], settings?.selectedOpenAppId ?? "");
   if (!useFeatures().git) showGitInitBanner = false;
   const [showIcon, setShowIcon] = useState(true);
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
@@ -346,7 +355,7 @@ export function WorkspaceHome({
   }
   const agentMdMeta = agentMdMetaParts.join(" · ");
   const agentMdSaveLabel = agentMdExists ? "Save" : "Create";
-  const agentMdSaveDisabled = agentMdLoading || agentMdSaving || !agentMdDirty;
+  const agentMdSaveDisabled = agentMdLoading || agentMdSaving || agentMdTruncated || (agentMdExists && !agentMdDirty);
   const agentMdRefreshDisabled = agentMdLoading || agentMdSaving;
 
   return (
@@ -376,6 +385,7 @@ export function WorkspaceHome({
       <div className="workspace-home-composer">
         <div className="composer">
           <ComposerInput
+            engine={engine ?? workspace.settings.agentPolicy?.defaultEngine ?? settings?.agentPolicy?.defaultEngine ?? "pi"}
             text={prompt}
             disabled={isSubmitting}
             sendLabel="Send"
@@ -432,21 +442,24 @@ export function WorkspaceHome({
         collaborationModes={collaborationModes}
         selectedCollaborationModeId={selectedCollaborationModeId}
         onSelectCollaborationMode={onSelectCollaborationMode}
-        reasoningOptions={reasoningOptions}
+        engine={engine}
         selectedEffort={selectedEffort}
         onSelectEffort={onSelectEffort}
-        reasoningSupported={reasoningSupported}
         isSubmitting={isSubmitting}
       />
 
       <div className="workspace-home-agent">
+        <div className="workspace-home-instruction-tabs" role="group" aria-label="Instruction files">
+          {(["AGENTS.md", "CLAUDE.md"] as const).map(file => <button type="button" className="ghost" key={file} aria-pressed={agentMdFilename === file} onClick={() => onAgentMdSelect(file)}>{file} · {agentMdStatuses[file] ? "Found" : "Not found"}</button>)}
+        </div>
+        {!!agentMdDetected.length && <div className="workspace-home-also-found">Also found: {agentMdDetected.map(file => <button type="button" className="ghost composer-chip" key={file} onClick={() => { void openFileLink({ path: file, line: null, column: null }); }}>{file}</button>)}</div>}
         {agentMdTruncated && (
           <div className="workspace-home-agent-warning">
             Showing the first part of a large file.
           </div>
         )}
         <FileEditorCard
-          title="AGENTS.md"
+          title={agentMdFilename}
           meta={agentMdMeta}
           error={agentMdError}
           value={agentMdContent}

@@ -306,6 +306,8 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
 
   useEffect(() => { void refreshModels(); }, [appSettings.providers, refreshModels]);
 
+  const threadEngines = useRef<Record<string, import("@/types").ThreadSummary[]>>({});
+  const activeEngine = threadEngines.current[activeWorkspaceId ?? ""]?.find(thread => thread.id === activeThreadIdRef.current)?.engine ?? selectedEngine ?? activeWorkspace?.settings.agentPolicy?.defaultEngine ?? appSettings.agentPolicy?.defaultEngine ?? "pi";
   const {
     collaborationModes,
     selectedCollaborationMode,
@@ -313,6 +315,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     setSelectedCollaborationModeId,
   } = useCollaborationModes({
     activeWorkspace,
+    engine: activeEngine,
     enabled: appSettings.collaborationModesEnabled,
     preferredModeId: preferredCollabModeId,
     selectionKey: threadCodexSelectionKey,
@@ -405,7 +408,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     reasoningSupported,
     onFocusComposer: () => composerInputRef.current?.focus(),
   });
-  const { skills } = useSkills({ activeWorkspace, onDebug: addDebugEntry });
+  const { skills } = useSkills({ activeWorkspace, engine: activeEngine, onDebug: addDebugEntry });
   const {
     prompts,
     createPrompt,
@@ -1490,10 +1493,9 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
           collaborationModes,
           selectedCollaborationModeId,
           onSelectCollaborationMode: setSelectedCollaborationModeId,
-          reasoningOptions,
+          engine: selectedEngine ?? activeWorkspace.settings.agentPolicy?.defaultEngine ?? appSettings.agentPolicy?.defaultEngine ?? "pi",
           selectedEffort,
           onSelectEffort: setSelectedEffort,
-          reasoningSupported,
           error: workspaceRunError,
           isSubmitting: workspaceRunSubmitting,
           activeWorkspaceId,
@@ -1519,6 +1521,10 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
           dictationTranscript,
           onDictationTranscriptHandled: clearDictationTranscript,
           textareaRef: workspaceHomeTextareaRef,
+          agentMdFilename: agentMdState.selectedFile,
+          agentMdStatuses: agentMdState.fileStatuses,
+          agentMdDetected: agentMdState.detected,
+          onAgentMdSelect: agentMdState.selectFile,
           agentMdContent,
           agentMdExists,
           agentMdTruncated,
@@ -1738,6 +1744,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     handleDebugClick,
   });
 
+  threadEngines.current = threadsByWorkspace;
   const parentEngine = threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.engine ?? selectedEngine ?? activeWorkspace?.settings.agentPolicy?.defaultEngine ?? appSettings.agentPolicy?.defaultEngine ?? "pi";
   const sideChats = useSideChats({
     workspace: activeWorkspace, threadId: activeThreadId,

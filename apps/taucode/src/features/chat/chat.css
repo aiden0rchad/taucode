@@ -61,10 +61,7 @@
 
 .chat-list section > h2, .chat-list section > h3 { margin: 18px 0 8px; }
 .chat-sidebar .sidebar-section-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-list .thread-row { width: 100%; min-width: 0; padding-right: 32px; }
 .chat-list .thread-row.is-nested { width: calc(100% - 2px); }
-.chat-list .thread-details { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
-.chat-list .thread-details { color: var(--text-faint); font-size: 11px; }
 .work-space .thread-row { --thread-indent: 12px; }
 .mode-row { position: relative; margin-bottom: 5px; }
 .mode-row-menu-trigger { position: absolute; right: 5px; top: 8px; padding: 4px; opacity: 0; }

@@ -1,3 +1,4 @@
+import { ComposerMetaBar } from "@/features/composer/components/ComposerMetaBar";
 import { useCallback } from "react";
 import type { ModelOption, WorkspaceInfo } from "../../../types";
 import type { WorkspaceRunMode } from "../hooks/useWorkspaceHome";
@@ -30,10 +31,10 @@ type WorkspaceHomeRunControlsProps = {
   collaborationModes: { id: string; label: string }[];
   selectedCollaborationModeId: string | null;
   onSelectCollaborationMode: (id: string | null) => void;
-  reasoningOptions: string[];
+  engine?: import("@/types").EngineKind;
   selectedEffort: string | null;
   onSelectEffort: (effort: string) => void;
-  reasoningSupported: boolean;
+
   isSubmitting: boolean;
 };
 
@@ -50,10 +51,10 @@ export function WorkspaceHomeRunControls({
   collaborationModes,
   selectedCollaborationModeId,
   onSelectCollaborationMode,
-  reasoningOptions,
+  engine,
   selectedEffort,
   onSelectEffort,
-  reasoningSupported,
+
   isSubmitting,
 }: WorkspaceHomeRunControlsProps) {
   const runModeMenu = useMenuController();
@@ -71,10 +72,6 @@ export function WorkspaceHomeRunControls({
     close: closeModels,
   } = modelsMenu;
 
-  const selectedModel = selectedModelId
-    ? models.find((model) => model.id === selectedModelId) ?? null
-    : null;
-  const selectedModelLabel = resolveModelLabel(selectedModel);
   const modelSummary = buildModelSummary(models, modelSelections);
   const showRunMode = (workspaceKind ?? "main") !== "worktree";
   const runModeLabel = runMode === "local" ? "Local" : "Worktree";
@@ -144,7 +141,7 @@ export function WorkspaceHomeRunControls({
         </SplitActionMenu>
       )}
 
-      <SplitActionMenu
+      {runMode === "worktree" && <SplitActionMenu
         containerRef={modelsRef}
         className="open-app-menu workspace-home-control"
         buttonGroupClassName="open-app-button"
@@ -157,7 +154,7 @@ export function WorkspaceHomeRunControls({
             data-tauri-drag-region="false"
           >
             <span className="open-app-label">
-              {runMode === "local" ? selectedModelLabel : modelSummary}
+              {modelSummary}
             </span>
           </button>
         }
@@ -175,10 +172,7 @@ export function WorkspaceHomeRunControls({
           </div>
         )}
         {models.map((model) => {
-          const isSelected =
-            runMode === "local"
-              ? model.id === selectedModelId
-              : Boolean(modelSelections[model.id]);
+          const isSelected = Boolean(modelSelections[model.id]);
           const count = modelSelections[model.id] ?? 1;
           return (
             <div
@@ -188,11 +182,6 @@ export function WorkspaceHomeRunControls({
               <PopoverMenuItem
                 className="open-app-option workspace-home-model-toggle"
                 onClick={() => {
-                  if (runMode === "local") {
-                    onSelectModel(model.id);
-                    closeModels();
-                    return;
-                  }
                   onToggleModel(model.id);
                 }}
                 icon={<Cpu className="workspace-home-mode-icon" aria-hidden />}
@@ -228,7 +217,7 @@ export function WorkspaceHomeRunControls({
             </div>
           );
         })}
-      </SplitActionMenu>
+      </SplitActionMenu>}
       {collaborationModes.length > 0 && (
         <div className="composer-select-wrap workspace-home-control">
           <div className="open-app-button">
@@ -258,52 +247,7 @@ export function WorkspaceHomeRunControls({
           </div>
         </div>
       )}
-      <div className="composer-select-wrap workspace-home-control">
-        <div className="open-app-button">
-          <span className="composer-icon" aria-hidden>
-            <svg viewBox="0 0 24 24" fill="none">
-              <path
-                d="M8.5 4.5a3.5 3.5 0 0 0-3.46 4.03A4 4 0 0 0 6 16.5h2"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-              <path
-                d="M15.5 4.5a3.5 3.5 0 0 1 3.46 4.03A4 4 0 0 1 18 16.5h-2"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-              <path
-                d="M9 12h6"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-              <path
-                d="M12 12v6"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-            </svg>
-          </span>
-          <select
-            className="composer-select composer-select--effort"
-            aria-label="Thinking mode"
-            value={selectedEffort ?? ""}
-            onChange={(event) => onSelectEffort(event.target.value)}
-            disabled={isSubmitting || !reasoningSupported}
-          >
-            {reasoningOptions.length === 0 && <option value="">Default</option>}
-            {reasoningOptions.map((effortOption) => (
-              <option key={effortOption} value={effortOption}>
-                {effortOption}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <ComposerMetaBar engine={engine} models={models} selectedModelId={selectedModelId} onSelectModel={onSelectModel} selectedEffort={selectedEffort} onSelectEffort={onSelectEffort} disabled={isSubmitting} />
     </div>
   );
 }

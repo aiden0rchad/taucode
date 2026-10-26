@@ -43,6 +43,21 @@ mod tests {
 
     use super::{read_with_policy, write_with_policy};
 
+    #[test]
+    fn workspace_claude_is_created_and_read_without_changing_agents() {
+        let root = temp_dir("workspace-claude");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("AGENTS.md"), "keep agents").unwrap();
+        let policy = policy_for(FileScope::Workspace, FileKind::Claude).unwrap();
+        assert!(!read_with_policy(&root, policy).unwrap().exists);
+        write_with_policy(&root, policy, "Claude instructions").unwrap();
+        let response = read_with_policy(&root, policy).unwrap();
+        assert!(response.exists);
+        assert_eq!(response.content, "Claude instructions");
+        assert_eq!(fs::read_to_string(root.join("AGENTS.md")).unwrap(), "keep agents");
+        fs::remove_dir_all(root).unwrap();
+    }
+
     fn temp_dir(prefix: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("codex-monitor-{prefix}-{}", Uuid::new_v4()));
         if dir.exists() {

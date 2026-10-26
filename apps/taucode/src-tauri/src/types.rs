@@ -61,7 +61,7 @@ pub(crate) struct GitLogEntry {
     pub(crate) timestamp: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub(crate) struct GitLogResponse {
     pub(crate) total: usize,
     pub(crate) entries: Vec<GitLogEntry>,

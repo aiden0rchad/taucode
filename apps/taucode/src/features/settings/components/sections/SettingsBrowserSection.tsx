@@ -15,7 +15,7 @@ export function SettingsBrowserSection({ appSettings, onUpdateAppSettings, onMan
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const run = async (action: () => Promise<void>) => { setBusy(true); setError(""); setMessage(""); try { await action(); } catch (e) { setError(String(e)); } finally { setBusy(false); } };
-  return <SettingsPage className="registry-settings" title="Browser" subtitle="A shared browser for you, Pi and Codex."><SettingsRuntimeSetup engine="browser" onManage={onManageEngines} />
+  return <SettingsPage className="registry-settings" title="Browser" subtitle="A shared browser for you and your agents."><SettingsRuntimeSetup engine="browser" onManage={onManageEngines} />
 
     <form onSubmit={e => { e.preventDefault(); void run(async () => {
       const url = new URL(draft.searchUrl.split("{query}").join("test"));

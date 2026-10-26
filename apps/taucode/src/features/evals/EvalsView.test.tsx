@@ -1,6 +1,8 @@
+import { FeatureSettings } from "@settings/features";
+import { formatModelRef } from "@settings/registry";
 // @vitest-environment jsdom
 import {afterEach,beforeEach,expect,it,vi} from "vitest";
-import {act,cleanup,fireEvent,render,screen,waitFor,within} from "@testing-library/react";
+import {act,cleanup,fireEvent,render as renderUi,screen,waitFor,within} from "@testing-library/react";
 import {EvalsView} from "./EvalsView";
 import {planCount,roleSettings,metric,type EvalResult} from "./evals";
 import {createFixtures} from "@/dev/uiPreview/fixtures";
@@ -12,6 +14,7 @@ let progress:(event:{runId:string;status:string})=>void;
 vi.mock("@services/tauri",()=>({evalRequest:vi.fn(),engineRuntime:vi.fn()}));
 vi.mock("@services/events",()=>({subscribeEvalProgress:vi.fn(fn=>{progress=fn;return()=>{};})}));
 const settings=createFixtures().settings;
+const render = (ui: import("react").ReactNode) => renderUi(<FeatureSettings.Provider value={settings}>{ui}</FeatureSettings.Provider>);
 let fixture:ReturnType<typeof createEvalFixture>;
 beforeEach(()=>{vi.mocked(engineRuntime).mockResolvedValue([{engine:"pi",state:"pending",message:"Ready to set up on first use"}]);fixture=createEvalFixture((_w,_m,p)=>progress?.(p as {runId:string;status:string}));vi.mocked(evalRequest).mockImplementation(async(a,p)=>fixture(a,p as Record<string,unknown>) as never);});
 afterEach(()=>{cleanup();vi.clearAllMocks();});
@@ -37,7 +40,7 @@ it("shows A/B deltas, sortable highlighted comparisons and read-only transcripts
  fireEvent.click(screen.getByRole("button",{name:"Tokens (eff.)"}));
  expect(screen.getByRole("button",{name:"Tokens (eff.)"}).closest("th")?.getAttribute("aria-sort")).toBe("ascending");
  expect(document.querySelector(".evals-best")).toBeTruthy();
- fireEvent.click(screen.getByRole("button",{name:/pi \/ openai\/gpt-5/}));
+ fireEvent.click(screen.getByRole("button",{name:/pi \/ OpenAI · GPT-5/}));
  fireEvent.click(screen.getAllByRole("button",{name:"Open transcript (read-only)"})[0]);
  expect(screen.getByLabelText("Read-only transcript").textContent).toContain("Implemented the task");
 });
@@ -46,7 +49,7 @@ it("confirms role writes and preserves other policy fields",async()=>{
  render(<EvalsView appSettings={settings} onUpdateAppSettings={update} />);
  fireEvent.click(await screen.findByRole("button",{name:/10\/21\/2026.*completed/}));
  await screen.findByText("Run · completed");
- fireEvent.click(screen.getByRole("button",{name:/pi \/ openai\/gpt-5/}));
+ fireEvent.click(screen.getByRole("button",{name:/pi \/ OpenAI · GPT-5/}));
  fireEvent.click(screen.getByRole("button",{name:"Set as default for role"}));
  expect(update).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("button",{name:"Confirm default"}));
@@ -87,7 +90,7 @@ it.each([1024,1440])("uses chips, searchable models and untruncated labels at %i
  const dialog=screen.getByRole("dialog",{name:"Choose models"});
  fireEvent.change(within(dialog).getByRole("textbox",{name:"Search models"}),{target:{value:"gpt-5-mini"}});
  const options=within(dialog).getAllByRole("option");
- expect(options.every(option=>option.textContent?.includes("gpt-5-mini"))).toBe(true);
+ expect(options.every(option=>option.textContent?.includes("GPT-5 mini"))).toBe(true);
  fireEvent.click(options[0]);
  expect(options[0].getAttribute("aria-selected")).toBe("true");
  fireEvent.keyDown(dialog,{key:"Escape"});
@@ -113,7 +116,7 @@ it("renders one Settings summary card per configuration and opens that run",asyn
  const cards=await screen.findByLabelText("Configuration summaries");
  const result=fixture("run",{runId:"eval-b"}) as EvalResult;
  expect(within(cards).getAllByRole("article")).toHaveLength(result.summary.length);
- for(const row of result.summary) expect(within(cards).getByRole("article",{name:`${row.engine} / ${row.model} · cg:off`})).toBeTruthy();
+ for(const row of result.summary) expect(within(cards).getByRole("article",{name:`${row.engine} / ${formatModelRef(settings,row.model).name} · cg:off`})).toBeTruthy();
  expect(within(cards).getByText("50.0%")).toBeTruthy();
  expect(within(cards).getByText("unknown")).toBeTruthy();
  expect(screen.getByText("App preview · pi 1.4.0 · omp 18.12.6")).toBeTruthy();

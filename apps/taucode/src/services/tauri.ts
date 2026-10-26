@@ -215,7 +215,9 @@ export type DeleteAgentInput = {
 };
 
 type FileScope = "workspace" | "global";
-type FileKind = "agents" | "config";
+export type InstructionFile = "AGENTS.md" | "CLAUDE.md" | "GEMINI.md" | ".github/copilot-instructions.md";
+export type EditableInstructionFile = "AGENTS.md" | "CLAUDE.md";
+type FileKind = "agents" | "config" | InstructionFile;
 
 async function fileRead(
   scope: FileScope,
@@ -600,7 +602,7 @@ export async function getGitStatus(workspace_id: string): Promise<{
   unstagedFiles: GitFileStatus[];
   totalAdditions: number;
   totalDeletions: number;
-}> {
+} | null> {
   return invoke("get_git_status", { workspaceId: workspace_id });
 }
 
@@ -967,12 +969,12 @@ export async function readWorkspaceFile(
   });
 }
 
-export async function readAgentMd(workspaceId: string): Promise<AgentMdResponse> {
-  return fileRead("workspace", "agents", workspaceId);
+export async function readAgentMd(workspaceId: string, filename: InstructionFile = "AGENTS.md"): Promise<AgentMdResponse> {
+  return fileRead("workspace", filename === "AGENTS.md" ? "agents" : filename, workspaceId);
 }
 
-export async function writeAgentMd(workspaceId: string, content: string): Promise<void> {
-  return fileWrite("workspace", "agents", content, workspaceId);
+export async function writeAgentMd(workspaceId: string, content: string, filename: EditableInstructionFile = "AGENTS.md"): Promise<void> {
+  return fileWrite("workspace", filename === "AGENTS.md" ? "agents" : filename, content, workspaceId);
 }
 
 export async function listGitBranches(workspaceId: string) {

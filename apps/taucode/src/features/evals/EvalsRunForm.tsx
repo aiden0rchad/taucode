@@ -1,3 +1,5 @@
+import { useFeatureSettings } from "@settings/features";
+import { formatModelRef } from "@settings/registry";
 import {useEffect,useId,useLayoutEffect,useRef,useState,type CSSProperties} from "react";
 import {createPortal} from "react-dom";
 import {Check,Minus,Plus,Search,X} from "lucide-react";
@@ -9,6 +11,7 @@ import type {EvalPlan,EvalTask} from "./evals";
 
 type Model={id:string;name:string};
 function ModelPicker({models,selected,onChange}:{models:Model[];selected:string[];onChange:(ids:string[])=>void}) {
+ const settings = useFeatureSettings();
  const [open,setOpen]=useState(false);
  const [query,setQuery]=useState("");
  const [position,setPosition]=useState<CSSProperties>({});
@@ -30,11 +33,11 @@ function ModelPicker({models,selected,onChange}:{models:Model[];selected:string[
   document.addEventListener("pointerdown",dismiss);return()=>document.removeEventListener("pointerdown",dismiss);
  },[open]);
  return <div className="evals-models">
-  <div className="evals-chips" aria-label="Selected models">{selected.map(id=><SettingsButton key={id} className="evals-chip" aria-label={`Remove model ${id}`} onClick={()=>toggle(id)}><span>{models.find(m=>m.id===id)?.name??id}</span><X size={14} aria-hidden /></SettingsButton>)}</div>
+  <div className="evals-chips" aria-label="Selected models">{selected.map(id=><SettingsButton key={id} className="evals-chip" aria-label={`Remove model ${models.find(m=>m.id===id)?.name??formatModelRef(settings,id).name}`} onClick={()=>toggle(id)}><span>{models.find(m=>m.id===id)?.name??formatModelRef(settings,id).name}</span><X size={14} aria-hidden /></SettingsButton>)}</div>
   <div ref={trigger}><SettingsButton aria-haspopup="dialog" aria-expanded={open} aria-controls={open?id:undefined} onClick={()=>{setQuery("");setOpen(!open);}}><Search size={14} aria-hidden /> Choose models</SettingsButton></div>
   {open&&createPortal(<PopoverSurface ref={panel} id={id} role="dialog" aria-label="Choose models" className="settings-page evals-model-popover" style={position} onKeyDown={e=>{if(e.key==="Escape"){e.preventDefault();e.stopPropagation();setOpen(false);trigger.current?.querySelector("button")?.focus();}}}>
     <div className="evals-model-search"><SettingsTextField aria-label="Search models" placeholder="Search provider or model" value={query} onChange={e=>setQuery(e.target.value)} /><SettingsButton aria-label="Close model picker" onClick={()=>{setOpen(false);trigger.current?.querySelector("button")?.focus();}}><X size={14} aria-hidden /></SettingsButton></div>
-    <div className="evals-model-options" role="listbox" aria-label="Models" aria-multiselectable="true">{filtered.map(m=><SettingsButton role="option" aria-selected={selected.includes(m.id)} key={m.id} onClick={()=>toggle(m.id)}><span><strong>{m.name}</strong><small>{m.id}</small></span><Check size={16} aria-hidden style={{visibility:selected.includes(m.id)?"visible":"hidden"}} /></SettingsButton>)}{!filtered.length&&<p>No matching models</p>}</div>
+    <div className="evals-model-options" role="listbox" aria-label="Models" aria-multiselectable="true">{filtered.map(m=><SettingsButton role="option" aria-selected={selected.includes(m.id)} key={m.id} onClick={()=>toggle(m.id)}><span><strong>{m.name}</strong></span><Check size={16} aria-hidden style={{visibility:selected.includes(m.id)?"visible":"hidden"}} /></SettingsButton>)}{!filtered.length&&<p>No matching models</p>}</div>
   </PopoverSurface>,document.body)}
  </div>;
 }

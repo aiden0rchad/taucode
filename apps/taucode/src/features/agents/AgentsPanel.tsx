@@ -1,3 +1,5 @@
+import { useFeatureSettings } from "@settings/features";
+import { formatModelRef } from "@settings/registry";
 import { ArrowLeft } from "lucide-react";
 import { useContext, useEffect, useState } from "react";
 import type { AgentNode, ConversationItem } from "@/types";
@@ -27,6 +29,7 @@ export function transcriptItems(messages: Record<string, unknown>[]): Conversati
 }
 
 export function AgentsPanel({ onSelect }: { onSelect: (tab: PanelTabId) => void }) {
+  const settings = useFeatureSettings();
   const { workspaceId, threadId, itemsByThread, policy, details } = useContext(AgentsContext);
   const groups = agentGroups(itemsByThread[threadId ?? ""] ?? [], itemsByThread, new Set([threadId ?? ""]), details);
   const [selected, setSelected] = useState<AgentNode | null>(null);
@@ -58,7 +61,7 @@ export function AgentsPanel({ onSelect }: { onSelect: (tab: PanelTabId) => void 
   const renderNode = (node: AgentNode) => <li key={node.id}>
     <button className="agent-node" onClick={() => setSelected(node)}>
       <span className={`agent-status ${node.status}`} aria-label={node.status} />
-      <span><strong>{node.agent || "Agent"}</strong> <small>{node.model}</small>
+      <span><strong>{node.agent || "Agent"}</strong> <small title={formatModelRef(settings, node.model).title}>{node.model ? formatModelRef(settings, node.model).name : ""}</small>
         <span className="agent-detail">{node.status} · {node.startedAt ? `${Math.max(0, Math.floor(((node.endedAt ?? now) - node.startedAt) / 1000))}s` : "elapsed unavailable"}</span>
         <span className="agent-detail">{node.usage ? `${(node.usage.input ?? 0) + (node.usage.output ?? 0) + (node.usage.cacheRead ?? 0) + (node.usage.cacheWrite ?? 0)} tokens · ${node.usage.cost == null ? "cost unavailable" : `$${node.usage.cost.toFixed(4)}`}` : "Usage unavailable"}</span>
         {node.task && <span className="agent-detail">{node.task}</span>}
@@ -79,7 +82,7 @@ export function AgentsPanel({ onSelect }: { onSelect: (tab: PanelTabId) => void 
         {transcript && <Messages items={transcript.items} threadId={selected.id} isThinking={false} openTargets={[]} selectedOpenAppId="" />}
       </> : groups.length ? groups.map(g => <section key={g.id}><h3>{g.label}</h3><ul>{g.nodes.map(renderNode)}</ul></section>) : <>
         <p>No subagents in this thread yet</p>
-        {policy && <p className="agent-detail">{policy.enabled ? "Enabled" : "Disabled"} · {policy.maxConcurrent} concurrent · {policy.maxPerTurn} per turn · depth {policy.maxDepth}<br />Allowed models: {policy.allowedModels.map(m => `${m.providerId}/${m.modelId}`).join(", ") || "All enabled models"}</p>}
+        {policy && <p className="agent-detail">{policy.enabled ? "Enabled" : "Disabled"} · {policy.maxConcurrent} concurrent · {policy.maxPerTurn} per turn · depth {policy.maxDepth}<br />Allowed models: {policy.allowedModels.map(m => formatModelRef(settings, m).title).join(", ") || "All enabled models"}</p>}
       </>}
     </div>
   </PanelShell>;

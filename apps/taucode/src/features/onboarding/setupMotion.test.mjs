@@ -41,7 +41,7 @@ it.each(['dark', 'light', 'glass-dark', 'claude-dark', 'cyberpunk-neon'])('paint
   const theme = resolveTheme(builtins.find(theme => theme.id === themeId));
   // jsdom does not resolve custom properties. Substitute the actual theme token,
   // then check the production stylesheet's cascade on the mounted wizard.
-  const css = readFileSync('src/features/onboarding/onboarding.css', 'utf8').replaceAll('var(--surface-sidebar-opaque)', theme.tokens['--surface-sidebar-opaque']);
+  const css = readFileSync('src/features/onboarding/onboarding.css', 'utf8').replaceAll('var(--setup-base)', theme.tokens['--setup-base']);
   const style = document.createElement('style');
   style.textContent = readFileSync('src/styles/ds-modal.css', 'utf8') + css;
   document.head.append(style);

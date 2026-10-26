@@ -1,5 +1,8 @@
 {
   "dark": {
+    "--setup-base": "#0b0e1c",
+    "--setup-blob-1": "#1e2a78",
+    "--setup-blob-2": "#3b1d6e",
     "--scrollbar-thumb": "color-mix(in srgb, var(--text-primary) 18%, rgba(0,0,0,0))",
     "--scrollbar-thumb-hover": "color-mix(in srgb, var(--text-primary) 32%, rgba(0,0,0,0))",
     "--surface-app": "#141416",
@@ -73,6 +76,9 @@
     "--surface-border-muted": "#202020"
   },
   "light": {
+    "--setup-base": "#f7f7fb",
+    "--setup-blob-1": "#dfe3ff",
+    "--setup-blob-2": "#ece0ff",
     "--surface-app": "#f7f7f8",
     "--text-primary": "#1a1d24",
     "--text-strong": "#0e1118",

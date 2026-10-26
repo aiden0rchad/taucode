@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Cloud, Cpu, KeyRound, Network, Sparkles, Waypoints } from "lucide-react";
 import type { AppSettings, ProviderEntry, ProviderKind } from "@/types";
 import { providerHasApiKey, providerSetApiKey, providerTestAndFetch } from "@services/tauri";
-import { defaultAgentPolicy } from "@settings/registry";
+import { defaultAgentPolicy, providerSlug } from "@settings/registry";
 import { SettingsButton, SettingsTextField } from "@/features/design-system/components/settings/SettingsPrimitives";
 
 import { SetupStatusChip } from "./SetupStatusChip";
@@ -31,7 +31,7 @@ export function useSetupProvider(settings: AppSettings | null, save: Save, open:
   useEffect(() => {
     let active = true;
     setKey(""); setHasKey(false);
-    if (draft?.auth.type === "apiKey") void providerHasApiKey(draft.id).then(value => { if (active) setHasKey(value); }).catch(() => {});
+    if (draft?.id && draft.auth.type === "apiKey") void providerHasApiKey(draft.id).then(value => { if (active) setHasKey(value); }).catch(() => {});
     return () => { active = false; };
   }, [draft?.id, draft?.auth.type]);
   useEffect(() => {
@@ -54,8 +54,12 @@ export function useSetupProvider(settings: AppSettings | null, save: Save, open:
       if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Use an HTTP or HTTPS URL without credentials.");
     }
     if (draft.auth.type === "apiKey" && !key && !hasKey) throw new Error("Enter an API key.");
-    const provider = { ...draft, name: draft.name.trim(), enabled: true };
-    await save(s => ({ ...s, providers: [...(s.providers ?? []).filter(p => p.id !== provider.id), provider] }));
+    let provider = { ...draft, name: draft.name.trim(), enabled: true };
+    await save(s => {
+      if (!draft.id) provider = { ...provider, id: providerSlug(provider.name, s.providers ?? []) };
+      return { ...s, providers: [...(s.providers ?? []).filter(p => p.id !== provider.id), provider] };
+    });
+    setDraft(provider);
     if (key) {
       // Credentials never enter settings, progress storage, or error messages.
       try { await providerSetApiKey(provider.id, key); setHasKey(true); }
@@ -76,7 +80,7 @@ export function useSetupProvider(settings: AppSettings | null, save: Save, open:
       <div className="setup-cards setup-provider-grid" data-card-grid>{settings.providers.map(p => <button type="button" className="setup-card" aria-label={p.name} aria-pressed={draft?.id === p.id} key={p.id} onClick={() => choose(p)}><KeyRound size={20} /><strong>{p.name}</strong><small>Already configured · Use this</small></button>)}</div>
       <SettingsButton className="ghost" onClick={() => { setAdding(true); setDraft(null); setConnected(false); setKey(""); }}>Add another</SettingsButton>
     </>}
-    {(!settings?.providers?.length || adding) && <div className="setup-cards setup-provider-grid" data-card-grid>{choices.map(({ kind, name, description, Icon }) => <button type="button" className="setup-card" aria-label={name} aria-pressed={draft?.kind === kind} key={kind} onClick={() => choose({ id: `setup-${crypto.randomUUID().slice(0, 12)}`, kind, name, enabled: true, models: [], auth: { type: kind === "ollama" ? "none" : "apiKey" }, baseUrl: kind === "ollama" ? "http://localhost:11434/v1" : kind === "openai-compatible" ? "http://localhost:8000/v1" : null, apiStyle: kind === "openai-compatible" ? "chat-completions" : null })}><Icon size={20} /><strong>{name}</strong><small>{description}</small></button>)}</div>}
+    {(!settings?.providers?.length || adding) && <div className="setup-cards setup-provider-grid" data-card-grid>{choices.map(({ kind, name, description, Icon }) => <button type="button" className="setup-card" aria-label={name} aria-pressed={draft?.kind === kind} key={kind} onClick={() => choose({ id: "", kind, name, enabled: true, models: [], auth: { type: kind === "ollama" ? "none" : "apiKey" }, baseUrl: kind === "ollama" ? "http://localhost:11434/v1" : kind === "openai-compatible" ? "http://localhost:8000/v1" : null, apiStyle: kind === "openai-compatible" ? "chat-completions" : null })}><Icon size={20} /><strong>{name}</strong><small>{description}</small></button>)}</div>}
     {draft && !connected && <div className="setup-reveal" key={draft.id}><div className="setup-fields">
       <label>Name<SettingsTextField required value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
       {["ollama", "lmstudio", "openai-compatible"].includes(draft.kind) && <label>Base URL<SettingsTextField type="url" required value={draft.baseUrl ?? ""} onChange={e => setDraft({ ...draft, baseUrl: e.target.value })} /></label>}
