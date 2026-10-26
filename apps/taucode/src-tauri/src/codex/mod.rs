@@ -2,7 +2,7 @@ use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 
 pub(crate) mod args;
 pub(crate) mod config;
@@ -19,7 +19,7 @@ use crate::state::AppState;
 use crate::types::WorkspaceEntry;
 
 fn emit_thread_live_event(app: &AppHandle, workspace_id: &str, method: &str, params: Value) {
-    let _ = app.emit(
+    let _ = crate::event_sink::emit(&app,
         "app-server-event",
         AppServerEvent {
             workspace_id: workspace_id.to_string(),
@@ -889,7 +889,7 @@ pub(crate) async fn generate_commit_message(
         &commit_message_prompt,
         commit_message_model_id.as_deref(),
         |workspace_id, thread_id| {
-            let _ = app.emit(
+            let _ = crate::event_sink::emit(&app,
                 "app-server-event",
                 AppServerEvent {
                     workspace_id: workspace_id.to_string(),
@@ -930,7 +930,7 @@ pub(crate) async fn generate_run_metadata(
         workspace_id,
         &prompt,
         |workspace_id, thread_id| {
-            let _ = app.emit(
+            let _ = crate::event_sink::emit(&app,
                 "app-server-event",
                 AppServerEvent {
                     workspace_id: workspace_id.to_string(),
@@ -972,7 +972,7 @@ pub(crate) async fn generate_agent_description(
         workspace_id,
         &description,
         |workspace_id, thread_id| {
-            let _ = app.emit(
+            let _ = crate::event_sink::emit(&app,
                 "app-server-event",
                 AppServerEvent {
                     workspace_id: workspace_id.to_string(),

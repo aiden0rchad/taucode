@@ -196,6 +196,12 @@ impl NativeBackend {
                 LogicalSize::new(800., 600.),
             )
             .map_err(|e| e.to_string())?;
+        if let Some(main) = self.app.get_webview("main") {
+            // add_child changes the original webview's sizing semantics. Keep the
+            // UI full-window; browser bounds remain controlled by place().
+            let _ = main.set_auto_resize(true);
+            if let Ok(size) = window.inner_size() { let _ = main.set_size(size); }
+        }
         view.hide().map_err(|e| e.to_string())?;
         #[cfg(target_os = "macos")]
         navigation_events::install(&view, id.to_string(), self.state.clone())?;

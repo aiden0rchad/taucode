@@ -327,7 +327,7 @@ pub(crate) fn handle_menu_event<R: tauri::Runtime>(
 ) {
     match event.id().as_ref() {
         "about" | "help_about" => {
-            if let Some(window) = app.get_webview_window("about") {
+            if let Some(window) = app.get_window("about") {
                 let _ = window.show();
                 let _ = window.set_focus();
                 return;
@@ -346,7 +346,7 @@ pub(crate) fn handle_menu_event<R: tauri::Runtime>(
         "file_add_workspace_from_url" => emit_menu_event(app, "menu-add-workspace-from-url"),
         "file_open_settings" => emit_menu_event(app, "menu-open-settings"),
         "file_close_window" | "window_close" => {
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.get_window("main") {
                 let _ = window.close();
             }
         }
@@ -354,7 +354,7 @@ pub(crate) fn handle_menu_event<R: tauri::Runtime>(
             app.exit(0);
         }
         "view_fullscreen" => {
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.get_window("main") {
                 let is_fullscreen = window.is_fullscreen().unwrap_or(false);
                 let _ = window.set_fullscreen(!is_fullscreen);
             }
@@ -372,12 +372,12 @@ pub(crate) fn handle_menu_event<R: tauri::Runtime>(
         "composer_cycle_reasoning" => emit_menu_event(app, "menu-composer-cycle-reasoning"),
         "composer_cycle_collaboration" => emit_menu_event(app, "menu-composer-cycle-collaboration"),
         "window_minimize" => {
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.get_window("main") {
                 let _ = window.minimize();
             }
         }
         "window_maximize" => {
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.get_window("main") {
                 let _ = window.maximize();
             }
         }
@@ -386,11 +386,9 @@ pub(crate) fn handle_menu_event<R: tauri::Runtime>(
 }
 
 fn emit_menu_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, event: &str) {
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_window("main") {
         let _ = window.show();
         let _ = window.set_focus();
-        let _ = window.emit(event, ());
-    } else {
-        let _ = app.emit(event, ());
     }
+    let _ = app.emit_to(tauri::EventTarget::webview("main"), event, ());
 }

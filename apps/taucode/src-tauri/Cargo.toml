@@ -26,7 +26,6 @@ tauri-build = { version = "2.5.6", features = [] }
 taucode-diag-mcp = { path = "../../../crates/taucode-diag-mcp" }
 tauri = { version = "2.10.3", features = ["protocol-asset", "tray-icon", "image-png", "macos-private-api", "unstable"] }
 tauri-plugin-notification = "2"
-tauri-plugin-liquid-glass = "0.1"
 tauri-plugin-opener = "2"
 tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
@@ -71,3 +70,6 @@ core-graphics = { version = "0.25.0", features = ["highsierra"] }
 
 [target."cfg(target_os = \"ios\")".dependencies]
 objc2 = "0.6"
+
+[dev-dependencies]
+tauri = { version = "2.10.3", features = ["test"] }

@@ -48,6 +48,9 @@ mod tray;
 mod types;
 mod utils;
 mod window;
+mod window_material;
+#[cfg(test)]
+mod multiwebview_tests;
 mod themes;
 mod workspaces;
 
@@ -120,8 +123,18 @@ pub fn run() {
                 .build(),
         )
         .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::Destroyed) {
+                window_material::cleanup(window);
+            }
             if window.label() != "main" {
                 return;
+            }
+            if matches!(event, WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. }) {
+                let _ = window::resize_main(window);
+            }
+            #[cfg(target_os = "macos")]
+            if matches!(event, WindowEvent::Destroyed) {
+                window::remove_main_focus(window);
             }
             #[cfg(target_os = "macos")]
             if let WindowEvent::CloseRequested { api, .. } = event {
@@ -130,6 +143,10 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            if let Some(main) = app.get_webview("main") {
+                window::install_main_focus(&main)?;
+            }
             if let Err(error) = themes::watch(app.handle()) { eprintln!("Theme watcher unavailable: {error}"); }
             let _ = shared::engine_runtime::RESOURCES.set(app.path().resource_dir()?);
             let state = state::AppState::load(&app.handle());
@@ -162,7 +179,7 @@ pub fn run() {
             }
             #[cfg(target_os = "windows")]
             {
-                if let Some(main_window) = app.get_webview_window("main") {
+                if let Some(main_window) = app.get_window("main") {
                     let _ = main_window.set_decorations(false);
                     // Keep menu accelerators wired while suppressing a visible native menu bar.
                     let _ = main_window.hide_menu();
@@ -197,7 +214,7 @@ pub fn run() {
             }
             #[cfg(target_os = "ios")]
             {
-                if let Some(main_webview) = app.get_webview_window("main") {
+                if let Some(main_webview) = app.get_webview("main") {
                     let _ = window::configure_ios_webview_edge_to_edge(&main_webview);
                 }
             }
@@ -208,7 +225,6 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
 
     let app = builder
-        .plugin(tauri_plugin_liquid_glass::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
@@ -386,6 +402,10 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
+            #[cfg(desktop)]
+            if let Err(error) = window::save_main_state(app_handle) {
+                eprintln!("Cannot save main window state: {error}");
+            }
             taucode_diag_mcp::writer::stop();
             let state = app_handle.state::<state::AppState>();
             state.computer.stop();
@@ -409,7 +429,7 @@ pub fn run() {
 
         #[cfg(target_os = "macos")]
         if let RunEvent::Reopen { .. } = event {
-            if let Some(window) = app_handle.get_webview_window("main") {
+            if let Some(window) = app_handle.get_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
             }

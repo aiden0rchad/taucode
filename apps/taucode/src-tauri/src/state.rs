@@ -56,6 +56,10 @@ impl AppState {
             .app_data_dir()
             .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| ".".into()));
         crate::codex::home::set_app_data_dir(&data_dir);
+        Self::from_data_dir(app, data_dir)
+    }
+
+    pub(crate) fn from_data_dir<R: tauri::Runtime>(app: &AppHandle<R>, data_dir: PathBuf) -> Self {
         let storage_path = data_dir.join("workspaces.json");
         let settings_path = data_dir.join("settings.json");
         let workspaces = read_workspaces(&storage_path).unwrap_or_default();

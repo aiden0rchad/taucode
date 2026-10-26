@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, fs, path::{Path, PathBuf}, sync::{Mutex, OnceLock}, time::{Duration, Instant, SystemTime}};
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 const BUILTINS: &[&str] = &["system", "light", "dark", "dim", "glass-dark", "glass-light", "matrix", "claude-light", "claude-dark", "cyberpunk-neon"];
@@ -245,7 +245,7 @@ fn window_theme(appearance: Option<&str>) -> Result<Option<tauri::Theme>, String
     }
 }
 #[tauri::command]
-pub(crate) fn window_set_material(window: tauri::WebviewWindow, material: Option<String>, appearance: Option<String>) -> Result<(),String> {
+pub(crate) fn window_set_material<R: tauri::Runtime>(window: tauri::Window<R>, material: Option<String>, appearance: Option<String>) -> Result<(),String> {
     use tauri::window::{Effect, EffectState, EffectsBuilder};
     let effect = match material.as_deref() {
         None | Some("none") => None,
@@ -258,13 +258,7 @@ pub(crate) fn window_set_material(window: tauri::WebviewWindow, material: Option
     window.set_theme(theme).map_err(|e| format!("Window appearance: {e}"))?;
     // macOS 26+: the system Liquid Glass view (what taucode used before M4l) is the one that
     // reliably shows the desktop behind the web view; older systems fall back to vibrancy.
-    use tauri_plugin_liquid_glass::{GlassMaterialVariant, LiquidGlassConfig, LiquidGlassExt};
-    let glass = window.app_handle().liquid_glass();
-    let liquid = effect.is_some() && glass.is_supported();
-    if glass.is_supported() {
-        glass.set_effect(&window, LiquidGlassConfig { enabled: liquid, corner_radius: 16.0, variant: GlassMaterialVariant::Regular, ..Default::default() })
-            .map_err(|e| format!("Liquid glass: {e}"))?;
-    }
+    let liquid = crate::window_material::set_glass(&window, effect.is_some())?;
     // Keep the blur live when the window loses focus; macOS otherwise swaps in an opaque fill.
     window.set_effects(effect.filter(|_| !liquid).map(|e| EffectsBuilder::new().effect(e).state(EffectState::Active).build()))
         .map_err(|e| format!("Window material: {e}"))?;
@@ -323,7 +317,7 @@ pub(crate) fn watch(app: &tauri::AppHandle) -> Result<(),String> {
                     });
                     if changed {
                         std::thread::sleep(Duration::from_millis(200));
-                        let _ = app.emit("themes-changed", ());
+                        let _ = crate::event_sink::emit(&app, "themes-changed", ());
                     }
                 }
                 Err(error) => eprintln!("Theme watcher: {error}"),
