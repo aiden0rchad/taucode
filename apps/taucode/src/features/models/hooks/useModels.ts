@@ -55,6 +55,7 @@ export function useModels({
   const hasUserSelectedEffort = useRef(false);
   const lastWorkspaceId = useRef<string | null>(null);
   const lastSelectionKey = useRef<string | null>(null);
+  const selectionRevision = useRef(0);
 
   const workspaceId = activeWorkspace?.id ?? null;
   const isConnected = Boolean(activeWorkspace?.connected);
@@ -64,6 +65,7 @@ export function useModels({
       return;
     }
     lastSelectionKey.current = selectionKey;
+    selectionRevision.current++;
     hasUserSelectedModel.current = false;
     hasUserSelectedEffort.current = false;
   }, [selectionKey]);
@@ -90,12 +92,14 @@ export function useModels({
   }, [selectedEffort]);
 
   const setSelectedModelId = useCallback((next: string | null) => {
+    selectionRevision.current++;
     hasUserSelectedModel.current = true;
     if (selectedEffort) hasUserSelectedEffort.current = true;
     setSelectedModelIdState(next);
   }, [selectedEffort]);
 
   const setSelectedEffort = useCallback((next: string | null) => {
+    selectionRevision.current++;
     hasUserSelectedEffort.current = true;
     setSelectedEffortState(next);
     if (next && selectedModelId) localStorage.setItem(modelEffortKey(selectedModelId), next);
@@ -156,6 +160,7 @@ export function useModels({
       return;
     }
     inFlight.current = true;
+    const revision = selectionRevision.current;
     onDebug?.({
       id: `${Date.now()}-client-model-list`,
       timestamp: Date.now(),
@@ -210,6 +215,8 @@ export function useModels({
       const data = dataFromServer;
       setModels(data);
       lastFetchedWorkspaceId.current = workspaceId;
+      // Refresh data, but let the current selection effect reconcile a newer draft/user choice.
+      if (revision !== selectionRevision.current) return;
       const defaultModel = pickDefaultModel(data, configModelFromConfig);
       const existingSelection = findModelByIdOrModel(data, selectedModelId);
       if (selectedModelId && !existingSelection) {
@@ -306,6 +313,7 @@ export function useModels({
     configModel,
     models,
     preferredModelId,
+    selectionKey,
     selectedEffort,
     selectedModelId,
     resolveEffort,

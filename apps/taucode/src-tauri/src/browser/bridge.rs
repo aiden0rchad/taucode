@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, VecDeque},
     future::Future,
+    path::PathBuf,
     time::Duration,
 };
 use tokio::sync::{mpsc, oneshot, watch};
@@ -59,9 +60,11 @@ pub struct Bridge<T> {
     streaming: bool,
     casting: bool,
     pub state: watch::Sender<Value>,
+    settings_path: PathBuf,
 }
 impl<T: Transport> Bridge<T> {
-    pub fn new(peer: T, state: watch::Sender<Value>) -> Self {
+    pub fn new(peer: T, state: watch::Sender<Value>, settings_path: PathBuf) -> Self {
+        state.send_modify(|s| { s["backend"] = json!("cdp"); s["capabilities"] = json!({"screenshot":true,"evaluate":true}); });
         Self {
             peer,
             next: 0,
@@ -75,6 +78,7 @@ impl<T: Transport> Bridge<T> {
             streaming: false,
             casting: false,
             state,
+            settings_path,
         }
     }
     async fn call(&mut self, method: &str, params: Value, page: bool) -> Result<Value, String> {
@@ -300,6 +304,20 @@ impl<T: Transport> Bridge<T> {
         }
         Ok(())
     }
+    async fn guarded_page(&mut self, params: &Value) -> Result<(String, String, String), String> {
+        super::policy::check_target(params, &self.active, None)?;
+        let result = self.call("Page.getFrameTree", json!({}), true).await?;
+        let frame = &result["frameTree"]["frame"];
+        let id = frame["id"].as_str().ok_or("Missing active page frame")?.to_string();
+        let url = format!("{}{}", frame["url"].as_str().ok_or("Missing active page URL")?, frame["urlFragment"].as_str().unwrap_or(""));
+        let loader = frame["loaderId"].as_str().ok_or("Missing active page loader")?.to_string();
+        let parsed = reqwest::Url::parse(&url).map_err(|_| "Invalid active page URL")?;
+        if !super::policy::automation_allowed(&parsed, &crate::storage::read_settings(&self.settings_path)?.browser) {
+            return Err("Browser origin blocked by policy".into());
+        }
+        super::policy::check_target(params, &self.active, Some(&url))?;
+        Ok((id, url, loader))
+    }
     pub async fn command(&mut self, p: Value) -> Result<Value, String> {
         match p["action"].as_str().ok_or("Missing browser action")? {
             "attach" | "resize" => {
@@ -445,6 +463,30 @@ impl<T: Transport> Bridge<T> {
             }
             "stop" => {
                 self.call("Page.stopLoading", json!({}), true).await?;
+            }
+            "screenshot" => {
+                let page = self.guarded_page(&p).await?;
+                let result = self.call("Page.captureScreenshot", json!({"format":"png","captureBeyondViewport":false}), true).await?;
+                if self.guarded_page(&p).await? != page {
+                    return Err("Page changed during capture; retry on the current page".into());
+                }
+                return result["data"].as_str().map(|data| json!(data)).ok_or("Missing browser screenshot".into());
+            }
+            "evaluate" => {
+                let function = p["function"].as_str().filter(|value| !value.trim().is_empty() && value.len() <= 200000).ok_or("Invalid JavaScript function")?;
+                if !p["ref"].is_null() || !p["target"].is_null() {
+                    return Err("Targeted evaluation is unavailable; use the connector's element tools".into());
+                }
+                let (_, url, _) = self.guarded_page(&p).await?;
+                // Reuse the page-world JSON/size/DOM-node checks and execution-time URL guard.
+                let expression = format!("({})(() => ({}\n), {}, null)", include_str!("native/evaluate.js"), function, json!(url));
+                let result = self.call("Runtime.evaluate", json!({"expression":expression,"awaitPromise":true,"returnByValue":true,"timeout":10000}), true).await?;
+                if !result["exceptionDetails"].is_null() { return Err("Page evaluation failed".into()); }
+                let serialized = result["result"]["value"].as_str().ok_or("Unexpected page evaluation response")?;
+                if serialized.len() > 200000 { return Err("Evaluation result exceeds 200 KB".into()); }
+                let value: Value = serde_json::from_str(serialized).map_err(|_| "Invalid page evaluation response")?;
+                if let Some(error) = value["error"].as_str() { return Err(error.into()); }
+                return value.get("result").cloned().ok_or("Unexpected page evaluation response".into());
             }
             "mouse" | "key" | "text" => {
                 let (method, params) = input(&p)?;

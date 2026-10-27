@@ -24,7 +24,7 @@ export function Squircle({ as = "div", children, className = "", ref, style, ...
       const value = (key: string) => css.getPropertyValue(key).trim();
       const radiusValue = value('--radius-window');
       const parsedRadius = parseFloat(radiusValue);
-      const radius = (Number.isFinite(parsedRadius) ? parsedRadius : 20) * (radiusValue.endsWith('rem') ? parseFloat(getComputedStyle(document.documentElement).fontSize) || 16 : 1);
+      const radius = (Number.isFinite(parsedRadius) ? parsedRadius : 12) * (radiusValue.endsWith('rem') ? parseFloat(getComputedStyle(document.documentElement).fontSize) || 16 : 1);
       const kind = value('--card-corners') || 'squircle', stops = Number(value('--card-border-stops'));
       const highlight = value('--card-border-highlight') === '1';
       return { radius, cut: parseFloat(value('--card-chamfer')) || 10, kind, stops, angle: Number(value('--card-border-angle') || 135), highlight, glow: value('--card-neon-glow') === '1', neon: value('--card-neon-fill') === '1', light: value('--card-light-edge') === '1', native: supported && kind === 'squircle' && !stops && !highlight };

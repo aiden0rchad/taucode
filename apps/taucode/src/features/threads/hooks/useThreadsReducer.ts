@@ -63,6 +63,7 @@ export type ThreadAction =
     }
   | { type: "markReviewing"; threadId: string; isReviewing: boolean }
   | { type: "markUnread"; threadId: string; hasUnread: boolean }
+  | { type: "removeItem"; threadId: string; itemId: string }
   | { type: "addAssistantMessage"; threadId: string; text: string }
   | { type: "setThreadName"; workspaceId: string; threadId: string; name: string }
   | {
@@ -150,6 +151,7 @@ export type ThreadAction =
     }
   | { type: "addApproval"; approval: ApprovalRequest }
   | { type: "removeApproval"; requestId: number | string; workspaceId: string }
+  | { type: "removeThreadApprovals"; workspaceId: string; threadId: string; turnId?: string }
   | { type: "addUserInputRequest"; request: RequestUserInputRequest }
   | {
       type: "removeUserInputRequest";

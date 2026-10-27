@@ -384,7 +384,19 @@ pub(crate) struct RemoteBackendTarget {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CodeEnvironment {
+    pub id: String,
+    pub name: String,
+    pub workspace_ids: Vec<String>,
+    pub engine: EngineKind,
+    pub model_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct AppSettings {
+    #[serde(default, rename = "codeEnvironments")]
+    pub code_environments: Vec<CodeEnvironment>,
     #[serde(default, rename = "setupComplete")] pub setup_complete: bool,
     #[serde(default)] pub features: Features,
     #[serde(default)] pub diagnostics: taucode_diag_mcp::core::Options,
@@ -1157,6 +1169,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             setup_complete: false,
+            code_environments: Vec::new(),
             features: Features::default(),
             diagnostics: Default::default(),
             engines: Vec::new(),
@@ -1258,8 +1271,16 @@ mod tests {
     };
 
     #[test]
+    fn code_environments_round_trip_metadata_and_workspace_references() {
+        let value = serde_json::json!({"codeEnvironments":[{"id":"saved","name":"Project","workspaceIds":["w1","w2"],"engine":"omp","modelId":"provider/model"}]});
+        let settings: AppSettings = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(settings).unwrap()["codeEnvironments"], value["codeEnvironments"]);
+    }
+
+    #[test]
     fn app_settings_defaults_from_empty_json() {
         let settings: AppSettings = serde_json::from_str("{}").expect("settings deserialize");
+        assert!(settings.code_environments.is_empty());
         assert!(settings.codex_bin.is_none());
         let expected_backend_mode = if cfg!(target_os = "ios") {
             BackendMode::Remote

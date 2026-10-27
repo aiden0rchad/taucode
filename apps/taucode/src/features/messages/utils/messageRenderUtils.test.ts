@@ -64,4 +64,51 @@ describe("messageRenderUtils", () => {
     expect(summary.value).toBe("Robie [explorer]");
     expect(summary.output).toContain("Robie [explorer]: completed");
   });
+
+  it.each([
+    { name: "nickname", nickname: " Scout ", role: "reviewer", expected: "Scout" },
+    { name: "role", role: " reviewer ", expected: "reviewer" },
+    { name: "no metadata", expected: "Sub-agent" },
+  ])("labels one synthetic receiver using $name", ({ expected, nickname, role }) => {
+    const summary = buildToolSummary(makeToolItem({
+      toolType: "collabToolCall",
+      title: "Collab: spawnAgent",
+      collabReceiver: { threadId: "tool-1:agent:0", nickname, role },
+    }), "");
+    expect(summary.value).toBe(expected);
+  });
+
+  it("labels multiple synthetic receivers from the matching agent tree node", () => {
+    const summary = buildToolSummary(makeToolItem({
+      toolType: "collabToolCall",
+      title: "Collab: spawnAgent",
+      status: "failed",
+      collabReceivers: [{ threadId: "tool-1:agent:0" }, { threadId: "tool-1:agent:1" }],
+      agentsTree: [
+        { id: "tool-1:agent:1", agent: "writer", status: "failed", children: [] },
+        { id: "tool-1:agent:0", agent: "scout", status: "failed", children: [] },
+      ],
+    }), "");
+    expect(summary.value).toBe("scout +1");
+    expect(summary.label).toBe("spawn failed");
+  });
+
+  it.each([
+    { role: undefined, expected: "thread-child" },
+    { role: "reviewer", expected: "thread-child [reviewer]" },
+  ])("preserves real receiver identifiers ($expected)", ({ role, expected }) => {
+    const summary = buildToolSummary(makeToolItem({
+      toolType: "collabToolCall",
+      title: "Collab: spawnAgent",
+      collabReceivers: [{ threadId: "thread-child", role }],
+    }), "");
+    expect(summary.value).toBe(expected);
+    expect(summary.label).toBe("spawned");
+  });
+
+  it("keeps the in-progress spawn label", () => {
+    expect(buildToolSummary(makeToolItem({
+      toolType: "collabToolCall", title: "Collab: spawnAgent", status: "inProgress",
+    }), "").label).toBe("spawning");
+  });
 });

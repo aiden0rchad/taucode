@@ -109,6 +109,9 @@ function summarizeCollabLabel(title: string, status?: string) {
     return tone === "processing" ? "closing" : "closed";
   }
   if (tool.includes("spawn")) {
+    if (tone === "failed") {
+      return "spawn failed";
+    }
     return tone === "processing" ? "spawning" : "spawned";
   }
   if (tool.includes("send") || tool.includes("interaction")) {
@@ -129,10 +132,18 @@ function summarizeCollabReceiver(
   if (receivers.length === 0) {
     return item.title || "";
   }
+  const label = (receiver: (typeof receivers)[number]) => {
+    if (receiver.threadId.startsWith(`${item.id}:agent:`)) {
+      return receiver.nickname?.trim() || receiver.role?.trim()
+        || item.agentsTree?.find((node) => node.id === receiver.threadId)?.agent?.trim()
+        || "Sub-agent";
+    }
+    return formatCollabAgentLabel(receiver);
+  };
   if (receivers.length === 1) {
-    return formatCollabAgentLabel(receivers[0]);
+    return label(receivers[0]);
   }
-  return `${formatCollabAgentLabel(receivers[0])} +${receivers.length - 1}`;
+  return `${label(receivers[0])} +${receivers.length - 1}`;
 }
 
 export function toolNameFromTitle(title: string) {

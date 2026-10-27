@@ -245,6 +245,7 @@ export function ComposerInput({
         <div className="composer-input-row">
           <textarea
             aria-label="Message"
+            rows={1}
             ref={textareaRef}
             placeholder={
               disabled

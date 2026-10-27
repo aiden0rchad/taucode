@@ -54,8 +54,8 @@ the selected backend. On Unix the desktop host has a separate `native-host`
 endpoint, so a daemon or MCP process cannot accidentally claim its native pane.
 The launcher preserves Playwright's existing tool names and schemas.
 
-Native navigation, tabs, screenshots, snapshots, clicks, typing, key presses,
-selection and waits use the same view the user sees. DOM actions run in the
+Native navigation, tabs, screenshots, snapshots, clicks, typing, form filling,
+key presses, selection, waits and JavaScript evaluation use the same view the user sees. DOM actions run in the
 retained `taucode.browser.private` WKContentWorld. Page JavaScript cannot access
 or replace the bridge or its WeakMap refs. Snapshots contain roles, names, values
 (except passwords), refs and bounds, capped at 1,000 nodes and 200 KB. Stale refs
@@ -63,8 +63,22 @@ require a fresh snapshot. Screenshots use WebKit's PNG snapshot API.
 
 Native DOM input is synthetic and **is not `isTrusted`**. Sites can ignore it;
 results and errors advise **“Try the Headless Chromium backend (Settings →
-Browser)”**. CDP-only tools, including arbitrary evaluation, console and network
-inspection, remain available through that backend. Native snapshots currently
+Browser)”**. Native actions accept the advertised `target` string (snapshot ref or unique CSS
+selector); legacy `ref` arguments also work. `browser_fill_form` accepts
+`fields: [{target, name, type, value}]` with textbox, checkbox, radio, combobox and
+slider types. Checkbox values are `"true"`/`"false"`; radio uses `"true"`; combobox
+values match option text or value. Fields are validated before mutation.
+
+`browser_evaluate` accepts `{function: "async () => ...", target?: "e4"}` and
+awaits promises in the page's JavaScript world. Its optional target is passed as
+the function's first argument, using a temporary random DOM marker removed before
+the function runs. Page code cannot access the isolated automation bridge.
+Navigation and current origin preferences are checked before execution; a page
+change before execution fails for retry. Results must be JSON data, capped at
+200 KB; undefined becomes null. DOM nodes, cyclic data, BigInt, rejected promises
+and oversized results return errors. Native evaluation returns inline results;
+its `filename` option requires Headless Chromium. Console and network inspection
+also require that backend. Native snapshots currently
 inspect the main document, not cross-origin iframe contents.
 
 The agent activity frame and Take over button sit outside the native rectangle.

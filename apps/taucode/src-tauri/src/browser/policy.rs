@@ -192,3 +192,40 @@ mod tests {
         }
     }
 }
+
+pub(super) fn allowed_origin(url: &reqwest::Url, settings: &super::Settings) -> bool {
+    if !matches!(url.scheme(), "http" | "https") {
+        return true;
+    }
+    let origin = url.origin().ascii_serialization();
+    let matches = |pattern: &String| {
+        pattern == "*"
+            || pattern == &origin
+            || pattern.strip_prefix("*.").is_some_and(|host| {
+                url.host_str()
+                    .is_some_and(|h| h == host || h.ends_with(&format!(".{host}")))
+            })
+    };
+    !settings.blocked_origins.iter().any(matches)
+        && (settings.allowed_origins.is_empty() || settings.allowed_origins.iter().any(matches))
+}
+
+pub(super) fn automation_allowed(url: &reqwest::Url, settings: &super::Settings) -> bool {
+    let origin = if url.scheme() == "blob" {
+        let Ok(origin) = reqwest::Url::parse(url.path()) else { return false; };
+        origin
+    } else { url.clone() };
+    navigation(url.as_str(), origin.as_str()) == Navigation::Allow && allowed_origin(&origin, settings)
+}
+
+pub(super) fn check_target(params: &serde_json::Value, tab: &str, url: Option<&str>) -> Result<(), String> {
+    for (key, actual) in [("tabId", Some(tab)), ("expectedUrl", url)] {
+        if let (Some(expected), Some(actual)) = (params.get(key).filter(|value| !value.is_null()), actual) {
+            if expected.as_str() != Some(actual) {
+                return Err("Browser page changed; retry on the current page".into());
+            }
+        }
+    }
+    Ok(())
+}
+

@@ -6,6 +6,7 @@ import { listThreadHistory, resumeThread } from "@services/tauri";
 import type { ThreadTurnsListResponse } from "@protocol/v2/ThreadTurnsListResponse";
 import { useThreadActions } from "./useThreadActions";
 import { initialState, threadReducer } from "./useThreadsReducer";
+import type { ConversationItem } from "@/types";
 
 vi.mock("@services/tauri", () => ({ listThreadHistory: vi.fn(), resumeThread: vi.fn() }));
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
@@ -28,6 +29,18 @@ function page(ids: string[], nextCursor: string | null): ThreadTurnsListResponse
 }
 
 describe("history pagination", () => {
+  it("reconciles recent snapshot echoes once and leaves older repeated prompts separate", () => {
+    const old: ConversationItem = { id: "old", kind: "message", role: "user", text: "Again" };
+    const pending = { ...old, id: "optimistic-user-first" };
+    const second = { ...old, id: "optimistic-user-second" };
+    const echo = { ...old, id: "canonical-first" };
+    const items = [old, pending, second];
+    const state = { ...initialState, itemsByThread: { thread: items } };
+    const action = { type: "prependThreadHistory" as const, threadId: "thread", snapshot: items, items: [old, echo], recent: true };
+    expect(threadReducer(state, action).itemsByThread.thread.map(item => item.id)).toEqual(["old", "canonical-first", "optimistic-user-second"]);
+    expect(threadReducer(state, { ...action, items: [{ ...old, id: "older" }], recent: false }).itemsByThread.thread.map(item => item.id)).toEqual(["older", "old", "optimistic-user-first", "optimistic-user-second"]);
+  });
+
   it("refreshes unchanged items, preserves expanded history, and replaces it after rollback", async () => {
     vi.mocked(resumeThread).mockResolvedValue({ result: { thread: { id: "thread", turns: page(["recent"], null).data, historyCursor: "older" } } });
     const { result } = renderHook(useHistory);

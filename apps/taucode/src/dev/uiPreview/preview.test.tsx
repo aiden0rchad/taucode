@@ -12,6 +12,12 @@ vi.mock("@pierre/diffs/react", async () => ({
   WorkerPoolContextProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
+// Code exposes both a named dock pane and the Browser's own region.
+function visibleBrowser() {
+  const pane = document.querySelector<HTMLElement>('.dock-pane[data-dock-pane="browser"]');
+  return (pane ? within(pane) : screen).getByRole("region", { name: "Browser" });
+}
+
 beforeEach(() => { localStorage.clear(); vi.stubGlobal("innerWidth", 1440); });
 afterEach(async () => { cleanup(); localStorage.removeItem("taucode.browser.open"); await new Promise(resolve => setTimeout(resolve, 50)); clearMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
@@ -22,7 +28,7 @@ it("hosts side chat only in the panel, with shared messages and composer, and op
   render(<App />);
   await screen.findByRole("textbox", { name: "Side chat message" });
   const pane = document.querySelector(".side-chat-pane")!;
-  expect(pane.closest(".tabbed-side-panel")).toBeTruthy();
+  expect(pane.closest('.dock-pane[data-dock-pane="sidechat"]')).toBeTruthy();
   expect(document.querySelector(".side-chat-split")).toBeNull();
   expect(document.querySelector(".main-header button[title='Side chat (⌘⇧K)']")).toBeNull();
   expect(pane.querySelector(".side-chat-messages .messages-inner")).toBeTruthy();
@@ -34,7 +40,7 @@ it("hosts side chat only in the panel, with shared messages and composer, and op
   expect(screen.getByRole("menuitem", { name: "Archive" })).toBeTruthy();
   fireEvent.click(screen.getByRole("menuitem", { name: "Open in split view" }));
   await waitFor(() => expect(document.querySelector(".side-chat-split .side-chat-pane")).toBeTruthy());
-  expect(document.querySelector(".tabbed-side-panel .side-chat-pane")).toBeNull();
+  expect(document.querySelector('.dock-pane[data-dock-pane="sidechat"] .side-chat-pane')).toBeNull();
 }, 15000);
 
 it.each([
@@ -62,8 +68,15 @@ it.each([
   if (query.includes("mode=")) {
     expect(screen.getByRole("navigation", { name: "App mode" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open settings" }).closest(".sidebar-bottom-rail")).toBeTruthy();
-    const toggle = screen.getByRole("button", { name: "Toggle side panel" });
-    expect(toggle.closest(".workspace-titlebar")).toBeTruthy();
+    if (query.includes("mode=code")) {
+      const views = screen.getByRole("toolbar", { name: "Workspace views" });
+      expect(views.closest(".workspace-titlebar")).toBeTruthy();
+      expect(within(views).getByRole("button", { name: "Toggle session rail" })).toBeTruthy();
+      expect(document.querySelector('.dock-pane[data-dock-pane="session"]')).toBeTruthy();
+    } else {
+      const toggle = screen.getByRole("button", { name: "Toggle side panel" });
+      expect(toggle.closest(".workspace-titlebar")).toBeTruthy();
+    }
     expect(document.querySelector(".browser-toggle")).toBeNull();
     if (query.includes("mode=code")) {
       expect(screen.getByPlaceholderText("Ask taucode to do something…").closest(".squircle")).toBeTruthy();
@@ -91,7 +104,7 @@ it.each([
   expect(error).not.toHaveBeenCalled();
 }, 15000);
 
-it.each(["code", "chat", "work"])("opens pages from the %s side panel without a redundant header Browser action", async mode => {
+it.each(["code", "chat", "work"])("opens and restores Browser through the %s workspace controls", async mode => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   vi.stubEnv("MODE", "uipreview");
   window.history.replaceState(null, "", `/?mode=${mode}&thread=thread-rich`);
@@ -100,18 +113,31 @@ it.each(["code", "chat", "work"])("opens pages from the %s side panel without a 
   if (mode === "code") await screen.findByText(/Update the greeting, run the tests/);
   if (mode === "chat") await screen.findByText(/A starting point/);
   if (mode === "work") await screen.findByRole("tab", { name: "Task" });
-  expect(document.querySelector(".workspace-titlebar .lucide-globe, .main-header .lucide-globe")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Browser" })).toBeNull();
-  if (mode !== "code") expect(screen.queryByRole("button", { name: "Header actions" })).toBeNull();
-  const toggle = screen.getByRole("button", { name: "Toggle side panel" });
-  if (toggle.getAttribute("aria-expanded") !== "true") fireEvent.click(toggle);
-  fireEvent.click(screen.getByRole("button", { name: "New panel tab" }));
-  fireEvent.click(screen.getByRole("button", { name: /New page/ }));
-  expect(await screen.findByRole("region", { name: "Browser" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
-  expect(screen.queryByRole("region", { name: "Browser" })).toBeNull();
+  if (mode === "code") {
+    const views = screen.getByRole("toolbar", { name: "Workspace views" });
+    const toggle = within(views).getByRole("button", { name: "Toggle Browser" });
+    expect(document.querySelectorAll(".workspace-titlebar .lucide-globe")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Toggle side panel" })).toBeNull();
+    fireEvent.click(toggle);
+    expect(await waitFor(visibleBrowser)).toBeTruthy();
+    expect(document.querySelector('.dock-pane[data-dock-pane="browser"]')?.hasAttribute("hidden")).toBe(false);
+    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("region", { name: "Browser" })).toBeNull();
+  } else {
+    expect(document.querySelector(".workspace-titlebar .lucide-globe, .main-header .lucide-globe")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Browser" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Header actions" })).toBeNull();
+    const toggle = screen.getByRole("button", { name: "Toggle side panel" });
+    if (toggle.getAttribute("aria-expanded") !== "true") fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: "New panel tab" }));
+    fireEvent.click(screen.getByRole("button", { name: /New page/ }));
+    expect(await waitFor(visibleBrowser)).toBeTruthy();
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("region", { name: "Browser" })).toBeNull();
+  }
   fireEvent.keyDown(window, { key: "b", metaKey: true, shiftKey: true });
-  expect(await screen.findByRole("region", { name: "Browser" })).toBeTruthy();
+  expect(await waitFor(visibleBrowser)).toBeTruthy();
 });
 
 it("keeps Work title actions and returns overflow focus on Escape at narrow widths", async () => {
@@ -152,8 +178,7 @@ it("shows one non-Git state without a branch chip or error toast", async () => {
   render(<App />);
   await screen.findByRole("textbox", { name: "Message" });
   await waitFor(() => expect(document.querySelector(".titlebar-title")?.textContent).not.toBe("taucode"));
-  fireEvent.click(await screen.findByRole("button", { name: "Toggle side panel" }));
-  fireEvent.click(await screen.findByRole("button", { name: /Changes/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "Toggle Changes" }));
   expect(await screen.findByText("This workspace is not a Git repository.")).toBeTruthy();
   expect(screen.getAllByRole("button", { name: "Initialize Git" })).toHaveLength(1);
   expect(document.querySelector(".workspace-branch-menu")).toBeNull();
@@ -262,15 +287,23 @@ it.each(["chat", "work"])("keeps %s actions in the title row without a secondary
     expect(screen.getByRole("menuitem", { name: "Export" })).toBeTruthy();
   }
 });
-it("uses desktop chrome and a panel sheet at 960px", async () => {
+it("uses desktop Code chrome and a focused dock pane at 960px", async () => {
   vi.stubGlobal("innerWidth", 960); vi.stubEnv("MODE", "uipreview");
   window.history.replaceState(null, "", "/?mode=code&thread=thread-rich&panel=new");
   installUiPreview(); render(<App />);
   await screen.findByText(/Update the greeting, run the tests/);
   expect(document.querySelector(".tablet-nav")).toBeNull();
   expect(document.querySelector(".app.layout-desktop")).toBeTruthy();
-  expect(screen.getByRole("dialog", { name: "Side panel" }).classList.contains("is-overlay")).toBe(true);
-  expect(screen.getByRole("button", { name: "Dismiss side panel" })).toBeTruthy();
+  expect(document.querySelector(".dock-workspace.is-compact")).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: "Side panel" })).toBeNull();
+  const input = screen.getByPlaceholderText("Ask taucode to do something…");
+  fireEvent.change(input, { target: { value: "Keep this draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Toggle session rail" }));
+  expect(document.querySelector('.dock-pane[data-dock-pane="session"]')?.hasAttribute("hidden")).toBe(false);
+  expect(input.closest(".main")?.hasAttribute("inert")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Show conversation" }));
+  expect(input.closest(".main")?.hasAttribute("inert")).toBe(false);
+  expect((input as HTMLTextAreaElement).value).toBe("Keep this draft");
 });
 
 it.each(["code", "chat", "work"].flatMap(mode => [760, 960, 1180, 1440].map(width => ({ mode, width }))))("keeps the $mode conversation beside its sidebar in a $width px shell", async ({ mode, width }) => {
@@ -278,7 +311,14 @@ it.each(["code", "chat", "work"].flatMap(mode => [760, 960, 1180, 1440].map(widt
   // The container deliberately differs from innerWidth (1440).
   const rect = HTMLElement.prototype.getBoundingClientRect;
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-    return this.classList.contains("workspace-shell") ? { width, height: 700, top: 0, left: 0, right: width, bottom: 700, x: 0, y: 0, toJSON: () => ({}) } : rect.call(this);
+    if (this.classList.contains("workspace-shell")) return { width, height: 700, top: 0, left: 0, right: width, bottom: 700, x: 0, y: 0, toJSON: () => ({}) };
+    if (this.classList.contains("dock-stage")) {
+      const shell = this.closest<HTMLElement>(".workspace-shell")!;
+      const rail = shell.querySelector(".app.layout-tablet") ? 72 : 0;
+      const left = parseFloat(shell.style.getPropertyValue("--layout-sidebar-column")) + rail;
+      return { width: width - left, height: 700, top: 0, left, right: width, bottom: 700, x: left, y: 0, toJSON: () => ({}) };
+    }
+    return rect.call(this);
   });
   const query = mode === "code" ? "mode=code&thread=thread-rich" : mode === "chat" ? "mode=chat&chat=chat-1" : "mode=work&task=new";
   window.history.replaceState(null, "", "/?" + query);
@@ -292,6 +332,29 @@ it.each(["code", "chat", "work"].flatMap(mode => [760, 960, 1180, 1440].map(widt
   expect(input.closest(".composer-shell")).toBeTruthy();
   const sidebar = conversation.parentElement!.querySelector(":scope > .sidebar")!;
   expect(sidebar).toBeTruthy();
+  if (mode === "code") {
+    const compact = width - parseFloat(shell.style.getPropertyValue("--layout-sidebar-column")) < 760;
+    expect(shell.classList.contains("is-compact")).toBe(compact);
+    expect(shell.style.getPropertyValue("--right-panel-width")).toBe("0px");
+    expect(parseFloat(shell.style.getPropertyValue("--dock-conversation-width"))).toBeGreaterThan(0);
+    fireEvent.change(input, { target: { value: "Keep this draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Toggle Browser" }));
+    await waitFor(visibleBrowser);
+    const browserPane = shell.querySelector<HTMLElement>('.dock-pane[data-dock-pane="browser"]')!;
+    expect(browserPane.hidden).toBe(false);
+    expect(Number(browserPane.style.getPropertyValue("--dock-box-width"))).toBeGreaterThan(0);
+    expect(screen.queryByRole("dialog", { name: "Side panel" })).toBeNull();
+    expect(conversation.hasAttribute("inert")).toBe(compact);
+    if (compact) {
+      expect(browserPane.style.getPropertyValue("--dock-box-width")).toBe("1");
+      fireEvent.click(screen.getByRole("button", { name: "Show conversation" }));
+      expect(conversation.hasAttribute("inert")).toBe(false);
+      expect(browserPane.hidden).toBe(true);
+    }
+    expect(conversation.contains(input)).toBe(true);
+    expect((input as HTMLTextAreaElement).value).toBe("Keep this draft");
+    return;
+  }
   for (const panelOpen of [false, true]) {
     if (panelOpen) fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
     const sidebarWidth = parseFloat(shell.style.getPropertyValue("--sidebar-width"));

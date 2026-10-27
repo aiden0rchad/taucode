@@ -60,15 +60,30 @@ impl BrowserBackend for CdpBackend {
     }
 }
 
+fn reference(args: &Value) -> Result<&str, String> {
+    args.get("target")
+        .or_else(|| args.get("ref"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| "Missing target (snapshot ref or unique selector)".into())
+}
+
 pub async fn tool(backend: &dyn BrowserBackend, name: &str, args: Value) -> Result<Value, String> {
     let result = match name {
         "browser_navigate" => backend.navigate(args["url"].as_str().ok_or("Missing URL")?).await?,
         "browser_navigate_back" => backend.request(json!({"action":"back"})).await?,
         "browser_snapshot" => backend.snapshot().await?,
-        "browser_click" => backend.click(args["ref"].as_str().ok_or("Missing ref")?).await?,
-        "browser_type" => backend.type_text(args["ref"].as_str().ok_or("Missing ref")?, args["text"].as_str().ok_or("Missing text")?, args["submit"] == true).await?,
+        "browser_click" => backend.click(reference(&args)?).await?,
+        "browser_type" => backend.type_text(reference(&args)?, args["text"].as_str().ok_or("Missing text")?, args["submit"] == true).await?,
         "browser_press_key" => backend.press(args["key"].as_str().ok_or("Missing key")?).await?,
-        "browser_select_option" => backend.select(args["ref"].as_str().ok_or("Missing ref")?, args["values"].clone()).await?,
+        "browser_select_option" => backend.select(reference(&args)?, args["values"].clone()).await?,
+        "browser_fill_form" => backend.request(json!({"action":"script","op":"fill","fields":args["fields"]})).await?,
+        "browser_evaluate" => {
+            let function = args["function"].as_str().filter(|s| !s.trim().is_empty() && s.len() <= 200000).ok_or("Invalid JavaScript function")?;
+            if !args["filename"].is_null() { return Err("Native evaluation returns results inline; filename is unsupported".into()); }
+            let target = if args.get("target").or_else(|| args.get("ref")).is_some() { Some(reference(&args)?) } else { None };
+            backend.request(json!({"action":"evaluate","function":function,"ref":target})).await?
+        },
         "browser_scroll" => backend.scroll(args).await?,
         "browser_wait_for" => backend.wait_for(args).await?,
         "browser_tabs" => backend.tabs(json!({"action":"tabs","params":args})).await?,
@@ -108,6 +123,74 @@ mod tests {
         assert!(tool(&Fake, "browser_evaluate", json!({}))
             .await
             .unwrap_err()
-            .contains("Headless Chromium"));
+            .contains("Invalid JavaScript function"));
+    }
+    async fn dispatched(name: &str, args: Value) -> Value {
+        let result = tool(&Fake, name, args).await.unwrap();
+        serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap()
+    }
+    #[tokio::test]
+    async fn advertised_targets_and_legacy_refs_reach_native_actions() {
+        for target in [
+            json!({"target":"e6"}),
+            json!({"ref":"e6"}),
+            json!({"target":"#login"}),
+        ] {
+            let expected = reference(&target).unwrap().to_string();
+            assert_eq!(
+                dispatched("browser_click", target).await,
+                json!({"action":"script","op":"click","ref":expected})
+            );
+        }
+        assert_eq!(
+            dispatched("browser_type", json!({"target":"e4","text":"demo"})).await,
+            json!({"action":"script","op":"type","ref":"e4","text":"demo","submit":false})
+        );
+        assert_eq!(
+            dispatched(
+                "browser_select_option",
+                json!({"target":"select","values":["shade"]})
+            )
+            .await,
+            json!({"action":"script","op":"select","ref":"select","values":["shade"]})
+        );
+        for invalid in [json!({}), json!({"target":""}), json!({"target":42})] {
+            assert!(tool(&Fake, "browser_click", invalid)
+                .await
+                .unwrap_err()
+                .contains("Missing target"));
+        }
+    }
+    #[tokio::test]
+    async fn advertised_form_and_evaluation_requests_reach_native_backend() {
+        let fields = json!([
+            {"target":"e4","name":"Username","type":"textbox","value":"demo"},
+            {"target":"e5","name":"Password","type":"textbox","value":"demo123"}
+        ]);
+        assert_eq!(
+            dispatched("browser_fill_form", json!({"fields":fields})).await,
+            json!({"action":"script","op":"fill","fields":fields})
+        );
+        let function = "async () => document.title";
+        assert_eq!(
+            dispatched("browser_evaluate", json!({"function":function})).await,
+            json!({"action":"evaluate","function":function,"ref":null})
+        );
+        assert_eq!(
+            dispatched(
+                "browser_evaluate",
+                json!({"function":"el => el.id","target":"e4"})
+            )
+            .await,
+            json!({"action":"evaluate","function":"el => el.id","ref":"e4"})
+        );
+        assert!(tool(
+            &Fake,
+            "browser_evaluate",
+            json!({"function":function,"filename":"output.json"})
+        )
+        .await
+        .unwrap_err()
+        .contains("filename is unsupported"));
     }
 }

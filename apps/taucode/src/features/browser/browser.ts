@@ -2,6 +2,7 @@ import type { BrowserSettings } from "@/types";
 
 export const defaultBrowserSettings: BrowserSettings = { engine: "native", privateBrowsing: false, binary: null, allowedOrigins: [], blockedOrigins: [], approval: "ask", searchUrl: "https://www.google.com/search?q={query}" };
 export type BrowserState = {
+  capabilities?: { screenshot: boolean; evaluate: boolean };
   tabs: { id: string; title: string; url: string; favicon?: string | null; loading: boolean; ready?: boolean; snapshot?: string; progress?: number; canGoBack?: boolean; canGoForward?: boolean; error?: string }[];
   active: string; frame?: string | null; frameTarget?: string; width?: number; height?: number; dpr?: number;
   backend?: "native" | "cdp"; takeover?: number; externalRequest?: string; newWindow?: string; downloadRequest?: string;

@@ -8,8 +8,9 @@ const tokens = css => Object.fromEntries([...css.matchAll(/(--[\w-]+):\s*(#[\da-
 const dark = tokens(read("themes.dark"));
 it("defines the window radius and shared group card treatments", () => {
   const css = read("visual-refresh");
-  expect(css).toContain("--radius-window: 20px;");
-  expect(css).toContain("--squircle-border: var(--tree-line);");
+  expect(css).toContain("--radius-window: 12px;");
+  expect(css).toMatch(/\.sidebar \.project-group-card \{[^}]*--radius-window: 8px;/);
+  expect(css).toContain("--squircle-border: color-mix(in srgb, var(--tree-line) 60%, transparent);");
   expect(css).toContain(".sidebar .project-group-card.is-selected { --squircle-border: var(--tree-line-active); }");
   expect(css).toContain(".sidebar .workspace-group-content { gap: 6px; }");
 });

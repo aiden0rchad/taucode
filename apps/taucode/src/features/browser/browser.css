@@ -10,7 +10,8 @@
  .browser-toolbar { height: 36px; min-height: 36px; flex: 0 0 36px; }
 .browser-toolbar .ghost { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; width: var(--icon-button-28, 28px); height: var(--icon-button-28, 28px); min-width: 28px; min-height: 28px; padding: 0; flex: 0 0 28px; }
 .browser-toolbar svg { width: 16px; height: 16px; }
-.browser-toolbar .mode-row { display: flex; align-items: center; height: 28px; padding: 0; min-height: 0; flex: 0 0 28px; }
+.browser-toolbar .mode-row { display: flex; align-items: center; height: 28px; margin: 0; padding: 0; min-height: 0; flex: 0 0 28px; }
+.browser-toolbar .mode-row .mode-row-menu-trigger { margin: 0; }
 .browser-address { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; height: 30px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--ds-border-subtle); border-radius: 8px; background: var(--surface-card); }
 .browser-address svg { flex-shrink: 0; color: var(--text-muted); }
 .browser-address input { width: 100%; height: 100%; min-width: 0; padding: 0; border: 0; outline-offset: 2px; background: transparent; color: var(--text-strong); }
@@ -28,3 +29,18 @@
 .browser-surface canvas { display: block; width: 100%; height: 100%; }
 .browser-keyboard { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; padding: 0; border: 0; }
 .browser-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-muted); font-size: 13px; pointer-events: none; }
+.browser-surface[data-viewport="phone"] { width: min(390px, 100%); align-self: center; }
+.browser-annotations { position: absolute; inset: 0; z-index: var(--z-panel); background: var(--surface-panel, var(--surface-card)); }
+.browser-annotation-image { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; user-select: none; }
+.browser-annotation-controls { position: absolute; bottom: 12px; left: 8px; right: 8px; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
+.browser-annotation-toolbar, .browser-annotation-label, .browser-annotation-error { pointer-events: auto; box-sizing: border-box; max-width: 100%; color: var(--text-strong); background: var(--surface-popover, var(--surface-card)); border: 1px solid var(--ds-border-subtle); border-radius: 8px; box-shadow: 0 4px 16px #0002; }
+.browser-annotation-toolbar { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 2px; padding: 5px; }
+.browser-annotation-toolbar .ghost { display: grid; place-items: center; width: 28px; height: 28px; min-width: 28px; padding: 0; }
+.browser-annotation-toolbar svg { width: 15px; height: 15px; }
+.browser-annotation-toolbar [aria-pressed="true"] { background: var(--surface-active, var(--surface-hover)); color: var(--text-accent); }
+.browser-annotation-toolbar input[type="color"] { width: 26px; height: 26px; padding: 2px; background: transparent; border: 0; cursor: pointer; }
+.browser-annotation-toolbar select { max-width: 76px; height: 28px; padding: 2px 4px; font-size: 11px; background: transparent; color: var(--text-strong); border: 0; }
+.browser-annotation-add { min-height: 28px; padding: 3px 8px; font-size: 11px; white-space: nowrap; }
+.browser-annotation-label { width: 280px; padding: 8px; font-size: 12px; }
+.browser-annotation-error { padding: 8px; font-size: 12px; overflow-wrap: anywhere; }
+.browser-annotation-hint { padding: 3px 6px; font-size: 11px; text-align: center; color: var(--text-muted); background: var(--surface-card); border-radius: 4px; }

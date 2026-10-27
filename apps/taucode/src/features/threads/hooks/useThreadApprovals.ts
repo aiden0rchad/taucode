@@ -37,18 +37,29 @@ export function useThreadApprovals({ dispatch, onDebug }: UseThreadApprovalsOpti
 
   const handleApprovalDecision = useCallback(
     async (request: ApprovalRequest, decision: "accept" | "acceptForSession" | "decline") => {
-      await respondToServerRequest(
-        request.workspace_id,
-        request.request_id,
-        decision,
-      );
-      dispatch({
-        type: "removeApproval",
-        requestId: request.request_id,
-        workspaceId: request.workspace_id,
-      });
+      try {
+        await respondToServerRequest(
+          request.workspace_id,
+          request.request_id,
+          decision,
+        );
+      } catch (error) {
+        onDebug?.({
+          id: `${Date.now()}-client-approval-response-error`,
+          timestamp: Date.now(),
+          source: "error",
+          label: "approval response error",
+          payload: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        dispatch({
+          type: "removeApproval",
+          requestId: request.request_id,
+          workspaceId: request.workspace_id,
+        });
+      }
     },
-    [dispatch],
+    [dispatch, onDebug],
   );
 
   const handleApprovalRemember = useCallback(
@@ -67,18 +78,9 @@ export function useThreadApprovals({ dispatch, onDebug }: UseThreadApprovalsOpti
 
       rememberApprovalPrefix(request.workspace_id, command);
 
-      await respondToServerRequest(
-        request.workspace_id,
-        request.request_id,
-        "accept",
-      );
-      dispatch({
-        type: "removeApproval",
-        requestId: request.request_id,
-        workspaceId: request.workspace_id,
-      });
+      await handleApprovalDecision(request, "accept");
     },
-    [dispatch, onDebug, rememberApprovalPrefix],
+    [handleApprovalDecision, onDebug, rememberApprovalPrefix],
   );
 
   return {

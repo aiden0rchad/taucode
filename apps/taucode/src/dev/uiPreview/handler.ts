@@ -4,6 +4,7 @@ import { builtinIds, parseTheme, type ThemeFile, type ThemeManifest } from "@/fe
 import customTheme from "@/features/themes/fixtures/valid-custom.json";
 import { defaultFeatures, type Features } from '@settings/features';
 import type { EngineRuntimeStatus } from "@services/tauri";
+import type { ManagedTask } from "@/features/tasks/useManagedTasks";
 import type { BrowserState } from "@/features/browser/browser";
 import type { AppSettings, ImportLog, WorkTask, WorkspaceInfo } from "@/types";
 import { assistantMessage, createFixtures, diff, makeThread, userMessage, type PreviewThread } from "./fixtures";
@@ -35,9 +36,10 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   let themeFiles: ThemeFile[] = [{ file: customTheme.id+".taucode-theme.json", manifest: customTheme as ThemeManifest }, { file: "invalid-token.taucode-theme.json", error: "Unknown token: --arbitrary" }];
   const warned = new Set<string>();
   const logs: ImportLog[] = [];
+  const managedTasks = new Map<string, ManagedTask[]>();
   let sequence = 0;
   const previewSnapshot = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700"><rect width="1000" height="700" fill="#f7f7f5"/><text x="60" y="100" font-family="system-ui" font-size="40" fill="#202020">Example Domain</text><text x="60" y="160" font-family="system-ui" font-size="20" fill="#555">Native browser preview</text></svg>')}`;
-  const browser: BrowserState = { backend: "native", tabs: query.get("panel") === "browser" ? [{ id: "preview-page", title: "Example", url: "https://example.com/", loading: false, ready: true, snapshot: previewSnapshot }] : [], active: query.get("panel") === "browser" ? "preview-page" : "" };
+  const browser: BrowserState = { backend: "native", capabilities: { screenshot: true, evaluate: true }, tabs: query.get("panel") === "browser" ? [{ id: "preview-page", title: "Example", url: "https://example.com/", loading: false, ready: true, snapshot: previewSnapshot }] : [], active: query.get("panel") === "browser" ? "preview-page" : "" };
   const browserChannels = new Map<string, { channel: unknown; index: number }>();
   const broadcastBrowser = () => {
     for (const entry of browserChannels.values()) {
@@ -191,6 +193,50 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "send_user_message": return send(findThread(args.threadId), String(args.text ?? ""));
       case "chat_request": return chat(String(args.action), params);
       case "work_request": return work(String(args.action), params);
+      case "managed_tasks_request": return (async () => {
+        const workspaceId = String(args.workspaceId ?? "");
+        const threadId = String(args.threadId ?? "");
+        const workspace = state.workspaces.find(entry => entry.id === workspaceId);
+        const thread = findThread(threadId);
+        if (!workspace || !thread || thread.workspaceId !== workspaceId) throw new Error("Session belongs to another workspace");
+        const key = JSON.stringify([workspaceId, threadId]);
+        const fixtureTask = (command: string, label: string, status: ManagedTask["status"] = "running"): ManagedTask => ({
+          id: id("managed-task"), workspaceId, threadId, command, label, cwd: workspace.path,
+          pid: null, status, startedAt: Date.now() - 12000, endedAt: status === "running" ? null : Date.now() - 2000,
+          exitCode: status === "running" ? null : 0, output: "Preview task. No process was started.\n", outputTruncated: false, urls: [],
+        });
+        if (!managedTasks.has(key)) {
+          const dev = fixtureTask("npm run dev", "Dev server");
+          dev.output += "Local: http://localhost:5173/\n";
+          dev.urls = ["http://localhost:5173/"];
+          const tests = fixtureTask("npm test", "Tests", "completed");
+          tests.output += "12 tests passed.\n";
+          managedTasks.set(key, [dev, tests]);
+        }
+        let tasks = managedTasks.get(key)!;
+        const action = String(args.action);
+        if (action === "start" || action === "restart") {
+          if (!(state.settings.features?.terminal ?? defaultFeatures.terminal)) throw new Error("Enable Terminal in Settings → Features");
+          const previous = action === "restart" ? tasks.find(task => task.id === params.id) : undefined;
+          if (action === "restart" && !previous) throw new Error("Task not found in this session");
+          if (previous?.status === "running") throw new Error("Stop the task before restarting it");
+          const command = previous?.command ?? String(params.command ?? "");
+          const label = previous?.label ?? String(params.label ?? "");
+          if (!command.trim() || command.length > 32768 || command.includes("\0")) throw new Error("Enter a valid command");
+          if (label.length > 256) throw new Error("Task name is too long");
+          const task = fixtureTask(command, label.trim() || command.split("\n")[0].slice(0, 100));
+          task.startedAt = Date.now();
+          tasks.unshift(task);
+        } else if (action === "stop") {
+          const task = tasks.find(task => task.id === params.id);
+          if (!task) throw new Error("Task not found in this session");
+          if (task.status === "running") { task.status = "stopped"; task.endedAt = Date.now(); task.exitCode = null; }
+        } else if (action === "clearFinished") {
+          tasks = tasks.filter(task => task.status === "running");
+          managedTasks.set(key, tasks);
+        } else if (action !== "list") throw new Error("Unknown managed task action");
+        return structuredClone(tasks);
+      })();
       case "checkpoint_request": return checkpoint(params);
       case "get_subagent_transcript": return { messages: [assistantMessage("review-result", "All tests pass. No issues found.")], truncated: false };
       case "model_list": return page(state.settings.providers?.flatMap(p => p.models.map(m => ({ id: `${p.id}/${m.id}`, model: `${p.id}/${m.id}`, displayName: m.displayName, description: p.name, isDefault: m.id === "gpt-5", reasoning: m.reasoning, providerId: p.id, providerName: p.name, modelId: m.id, engines: ["pi", "codex", "claude"], supportedReasoningEfforts: m.reasoning?.levels.map(level => ({ reasoningEffort: level, description: level })) ?? [], defaultReasoningEffort: m.reasoning?.default ?? null }))) ?? []);
@@ -245,6 +291,13 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "browser_subscribe": { const subscription = id("browser"); browserChannels.set(subscription, { channel: args.channel, index: 0 }); broadcastBrowser(); return subscription; }
       case "browser_unsubscribe": browserChannels.delete(String(args.id)); return null;
       case "browser_request": {
+        if (params.action === "screenshot") return new Promise<string>((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => { const canvas = document.createElement("canvas"); canvas.width = 1000; canvas.height = 700; canvas.getContext("2d")?.drawImage(image, 0, 0); resolve(canvas.toDataURL("image/png").split(",")[1]); };
+          image.onerror = () => reject(new Error("Preview screenshot unavailable")); image.src = previewSnapshot;
+        });
+        if (params.action === "evaluate" && String(params.function).includes("timeOrigin: performance.timeOrigin")) return { width: 1000, height: 700, scrollX: 0, scrollY: 0, timeOrigin: 1 };
+        if (params.action === "evaluate") return { x: .06, y: .08, width: .44, height: .08, label: "h1 Example Domain (preview fixture)" };
         if (params.action === "new") { browser.active = id("page"); browser.tabs.push({ id: browser.active, title: "New page", url: "about:blank", loading: false, ready: true, snapshot: previewSnapshot }); }
         if (params.action === "activate") browser.active = String(params.id);
         if (params.action === "close") { browser.tabs = browser.tabs.filter(t => t.id !== params.id); if (browser.active === params.id) browser.active = browser.tabs[0]?.id ?? ""; }

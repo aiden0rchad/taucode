@@ -231,6 +231,9 @@ export function useThreadEventHandlers({
         }
       }
       if (method === "turn/completed" && typeof params.threadId === "string" && params.turn) {
+        const turn = params.turn as Turn;
+        dispatch({ type: "removeThreadApprovals", workspaceId: event.workspace_id,
+          threadId: params.threadId, turnId: typeof turn.id === "string" ? turn.id : undefined });
         dispatch({ type: "setThreadProtocolState", threadId: params.threadId, patch: { lastTurn: params.turn as Turn } });
       }
       const inferredSource = method === "codex/stderr" ? "stderr" : "event";

@@ -48,6 +48,7 @@ type FileTreePanelProps = {
   openAppIconById: Record<string, string>;
   selectedOpenAppId: string;
   onSelectOpenAppId: (id: string) => void;
+  requestedFile?: { path: string; requestId: number } | null;
 };
 
 type FileTreeBuildNode = {
@@ -174,6 +175,7 @@ export function FileTreePanel({
   openAppIconById,
   selectedOpenAppId,
   onSelectOpenAppId,
+  requestedFile,
 }: FileTreePanelProps) {
   const [filterMode, setFilterMode] = useState<"all" | "modified">("all");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -373,6 +375,10 @@ export function FileTreePanel({
     dragAnchorLineRef.current = null;
     dragMovedRef.current = false;
   }, []);
+
+  useEffect(() => {
+    if (requestedFile && listRef.current) openPreview(requestedFile.path, listRef.current);
+  }, [requestedFile, openPreview]);
 
   useEffect(() => {
     if (!previewPath) {

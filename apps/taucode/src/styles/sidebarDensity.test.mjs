@@ -52,6 +52,7 @@ it.each(["compact", "comfortable"])("keeps Work rows at most 32px and cards inse
     </div></aside></div>
     <div class="chat-layout"><aside class="sidebar chat-sidebar"><div class="chat-list sidebar-body"><button class="thread-row has-secondary-line">Chat title and model</button></div></aside></div>`);
   document.documentElement.dataset.sidebarDensity = density;
+  for (const entry of container.querySelectorAll(".sidebar")) expect(getComputedStyle(entry).getPropertyValue("--sidebar-padding")).toBe("12px");
   const sidebar = container.querySelector(".work-layout .sidebar");
   const row = sidebar.querySelector(".work-task-row");
   const codeBody = getComputedStyle(container.querySelector(".app .sidebar-body"));
@@ -75,7 +76,7 @@ it.each(["compact", "comfortable"])("keeps Work rows at most 32px and cards inse
     const body = getComputedStyle(sidebar.querySelector(".sidebar-body"));
     for (const property of ["marginInline", "paddingInline", "marginLeft", "marginRight", "paddingLeft", "paddingRight"]) expect(body[property], property).toBe(codeBody[property]);
     expect(getComputedStyle(sidebar).padding).toBe("var(--sidebar-top-padding, 36px) var(--sidebar-padding) 20px");
-    expect(parseFloat(getComputedStyle(sidebar).getPropertyValue("--sidebar-padding"))).toBe(20);
+    expect(parseFloat(getComputedStyle(sidebar).getPropertyValue("--sidebar-padding"))).toBe(12);
     expect(getComputedStyle(sidebar.querySelector(".work-space")).marginLeft).toBe("0px");
   }
   expect(getComputedStyle(container.querySelector(".chat-layout:not(.work-layout) .thread-row")).height).toBe("44px");
@@ -102,7 +103,7 @@ it("keeps the assistant content inset unchanged on hover and floats actions", ()
 it("lets user bubbles hug their content", () => {
   const { container } = render('<article class="message user"><div class="message-bubble">One line</div></article>');
   const style = getComputedStyle(container.querySelector(".message-bubble"));
-  expect(style.padding).toBe("12px 14px");
+  expect(style.padding).toBe("10px 14px");
   expect(style.minHeight).toBe("0");
   expect(style.height).toBe("auto");
 });

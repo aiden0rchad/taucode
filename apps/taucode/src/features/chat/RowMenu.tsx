@@ -21,6 +21,7 @@ export function RowMenu({ label, actions, children, portal = false, size = "sm" 
   return <div className="mode-row" ref={menu.containerRef} onContextMenu={event => { event.preventDefault(); menu.setOpen(true); }} onKeyDown={event => {
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); menu.setOpen(true); }
     if (menu.isOpen && event.key === "Escape") { event.preventDefault(); event.stopPropagation(); menu.setOpen(false); trigger.current?.focus(); }
+    if (menu.isOpen && event.key === "Tab") { trigger.current?.focus(); menu.setOpen(false); }
     if (menu.isOpen && ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
       event.preventDefault();
       const items = Array.from(surface.current!.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'));

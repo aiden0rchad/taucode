@@ -137,7 +137,7 @@ async fn cowork_imports_link_existing_work_spaces_copies_transcripts_and_undo() 
     assert!(read.to_string().contains("Report completed"));
     for name in ["outputs/report.txt", "uploads/notes.txt"] {
         let copy = work.output(&f.settings, task["id"].as_str().unwrap(), name).await.unwrap();
-        assert!(copy.starts_with(f.service.data.join("imports/attachments")));
+        assert!(copy.starts_with(f.service.data.canonicalize().unwrap().join("imports/attachments")));
         assert!(fs::read_to_string(copy).unwrap().contains("Synthetic"));
     }
     assert!(work.output(&f.settings, task["id"].as_str().unwrap(), "../escape").await.is_err());
@@ -485,4 +485,17 @@ fn interrupted_index_recovery_and_repeated_undo_preserve_new_imports() {
             assert!(f.service.data.join(path).exists());
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn system_alias_ancestors_are_allowed_but_source_symlinks_are_not() {
+    // /tmp is a root-owned link to /private/tmp; a link inside the source is still refused.
+    let dir = Path::new("/tmp").join(format!("tau-alias-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("a.txt"), "x").unwrap();
+    std::os::unix::fs::symlink(dir.join("a.txt"), dir.join("link.txt")).unwrap();
+    assert!(io::safe(&dir.join("a.txt")).is_ok());
+    assert_eq!(io::safe(&dir.join("link.txt")).unwrap_err(), "Source symlinks are not importable");
+    fs::remove_dir_all(dir).unwrap();
 }

@@ -25,8 +25,28 @@ function mergeUserInputQuestions(
   return [...merged, ...missingExisting];
 }
 
+function matchesOptimisticUser(pending: ConversationItem, incoming: ConversationItem) {
+  return pending.id.startsWith("optimistic-user-") && !incoming.id.startsWith("optimistic-user-") &&
+    pending.kind === "message" && pending.role === "user" && incoming.kind === "message" && incoming.role === "user" &&
+    pending.text.trim() === incoming.text.trim() && JSON.stringify(pending.images ?? []) === JSON.stringify(incoming.images ?? []);
+}
+
+export function removeEchoedOptimisticMessages(localItems: ConversationItem[], incomingItems: ConversationItem[]) {
+  const localIds = new Set(localItems.map(item => item.id));
+  const matched = new Set<string>();
+  for (const incoming of incomingItems) {
+    if (localIds.has(incoming.id)) continue;
+    const pending = localItems.find(item => !matched.has(item.id) && matchesOptimisticUser(item, incoming));
+    if (pending) matched.add(pending.id);
+  }
+  return localItems.filter(item => !matched.has(item.id));
+}
+
 export function upsertItem(list: ConversationItem[], item: ConversationItem) {
-  const index = list.findIndex((entry) => entry.id === item.id);
+  let index = list.findIndex((entry) => entry.id === item.id);
+  if (index === -1 && item.kind === "message" && item.role === "user") {
+    index = list.findIndex(entry => matchesOptimisticUser(entry, item));
+  }
   if (index === -1) {
     return [...list, item];
   }
@@ -214,6 +234,7 @@ export function mergeThreadItems(
   if (!localItems.length) {
     return remoteItems;
   }
+  localItems = removeEchoedOptimisticMessages(localItems, remoteItems);
   const byId = new Map(remoteItems.map((item) => [item.id, item]));
   const localItemsById = new Map(localItems.map((item) => [item.id, item]));
   const merged = remoteItems.map((item) => {

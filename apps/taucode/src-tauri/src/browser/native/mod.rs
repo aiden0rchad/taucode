@@ -2,11 +2,11 @@
 mod macos;
 #[cfg(target_os = "macos")]
 mod navigation_events;
-pub mod policy;
+pub use super::policy;
 
 use super::backend::BrowserBackend;
 use futures_util::future::BoxFuture;
-use policy::{label, navigation, Navigation, Rect};
+use policy::{allowed_origin, automation_allowed, label, navigation, Navigation, Rect};
 use serde_json::{json, Value};
 use std::{
     collections::HashSet,
@@ -96,6 +96,20 @@ impl NativeBackend {
                         self.update(&id, json!({"snapshot":image}));
                     }
                 }
+                #[cfg(target_os = "macos")]
+                {
+                    if macos::owns_focus(&view).await? {
+                        if let Some(main) = self.app.get_webview("main") {
+                            main.set_focus().map_err(|e| e.to_string())?;
+                        }
+                    }
+                    macos::expose_accessibility(&view, false).await?;
+                    // Keep WebKit's viewport/scroll while the parent clips the
+                    // parked view. NSView.setHidden collapses its layout viewport.
+                    view.set_position(LogicalPosition::new(-32000., -32000.))
+                        .map_err(|e| e.to_string())?;
+                }
+                #[cfg(not(target_os = "macos"))]
                 view.hide().map_err(|e| e.to_string())?;
             }
         }
@@ -196,6 +210,11 @@ impl NativeBackend {
                 LogicalSize::new(800., 600.),
             )
             .map_err(|e| e.to_string())?;
+        #[cfg(target_os = "macos")]
+        if let Err(error) = macos::install_accessibility(&view).await {
+            let _ = close_view(view);
+            return Err(error);
+        }
         if let Some(main) = self.app.get_webview("main") {
             // add_child changes the original webview's sizing semantics. Keep the
             // UI full-window; browser bounds remain controlled by place().
@@ -239,6 +258,8 @@ impl NativeBackend {
             .map_err(|e| e.to_string())?;
             if views.shown.as_deref() != Some(&id) {
                 view.show().map_err(|e| e.to_string())?;
+                #[cfg(target_os = "macos")]
+                macos::expose_accessibility(&view, true).await?;
                 views.shown = Some(id);
             }
         }
@@ -247,12 +268,11 @@ impl NativeBackend {
     async fn command(&self, p: Value) -> Result<Value, String> {
         let mut views = self.views.lock().await;
         self.state.send_if_modified(|s| {
-            if s["backend"] == "native" {
-                false
-            } else {
-                s["backend"] = json!("native");
-                true
-            }
+            let capabilities = json!({"screenshot":cfg!(target_os = "macos"),"evaluate":cfg!(target_os = "macos")});
+            let changed = s["backend"] != "native" || s["capabilities"] != capabilities;
+            s["backend"] = json!("native");
+            s["capabilities"] = capabilities;
+            changed
         });
         let settings = self.settings()?;
         if views.private != settings.private_browsing {
@@ -455,7 +475,9 @@ impl NativeBackend {
             self.add_tab("about:blank");
         }
         let id = self.active();
+        if matches!(action, "screenshot" | "evaluate") { policy::check_target(&p, &id, None)?; }
         let view = self.view(&id, &mut views).await?;
+        if matches!(action, "screenshot" | "evaluate") { policy::check_target(&p, &id, Some(view.url().map_err(|error| error.to_string())?.as_str()))?; }
         match action {
             "navigate" | "download" => {
                 let url = p["url"].as_str().ok_or("Missing URL")?;
@@ -498,9 +520,10 @@ impl NativeBackend {
                 if p["confirmed"] != true {
                     return Err("Confirm clearing site data first".into());
                 }
+                let url = view.url().map_err(|e| e.to_string())?;
+                policy::check_target(&p, &id, Some(url.as_str()))?;
                 #[cfg(target_os = "macos")]
                 {
-                    let url = view.url().map_err(|e| e.to_string())?;
                     macos::clear_site(
                         &view,
                         url.host_str().ok_or("This page has no site data")?.into(),
@@ -517,12 +540,30 @@ impl NativeBackend {
                 return macos::control(&view, action.into()).await;
             }
             #[cfg(target_os = "macos")]
-            "script" => {
-                return macos::script(&view, p).await;
+            "script" | "evaluate" => {
+                let url = view.url().map_err(|e| e.to_string())?;
+                if action == "evaluate" { policy::check_target(&p, &id, Some(url.as_str()))?; }
+                if !automation_allowed(&url, &settings) {
+                    return Err("Browser origin blocked by policy".into());
+                }
+                return if action == "evaluate" { macos::evaluate_page(&view, p, url.as_str()).await }
+                else {
+                    let mut p = p; p["expectedUrl"] = json!(url.as_str());
+                    macos::script(&view, p).await
+                };
             }
             #[cfg(target_os = "macos")]
             "screenshot" => {
-                return macos::image(&view).await;
+                let url = view.url().map_err(|error| error.to_string())?;
+                policy::check_target(&p, &id, Some(url.as_str()))?;
+                if !automation_allowed(&url, &settings) {
+                    return Err("Browser origin blocked by policy".into());
+                }
+                let result = macos::image(&view).await?;
+                if view.url().map_err(|error| error.to_string())? != url {
+                    return Err("Page changed during capture; retry on the current page".into());
+                }
+                return Ok(result);
             }
             #[cfg(target_os = "macos")]
             "wait" => {
@@ -595,25 +636,38 @@ fn update(state: &watch::Sender<Value>, id: &str, values: Value) {
         changed
     });
 }
-fn allowed_origin(url: &reqwest::Url, settings: &super::Settings) -> bool {
-    if !matches!(url.scheme(), "http" | "https") {
-        return true;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn clear_site_confirmation_rejects_changed_tab_or_url() {
+        let params = json!({"action":"clearSite","confirmed":true,"tabId":"one","expectedUrl":"https://first.example/page"});
+        assert!(policy::check_target(&params, "one", Some("https://first.example/page")).is_ok());
+        assert!(policy::check_target(&params, "two", Some("https://first.example/page")).is_err());
+        assert!(policy::check_target(&params, "one", Some("https://second.example/page")).is_err());
+        assert!(policy::check_target(&json!({"action":"clearSite","confirmed":true}), "one", Some("https://first.example/page")).is_ok());
     }
-    let origin = url.origin().ascii_serialization();
-    let matches = |pattern: &String| {
-        pattern == "*"
-            || pattern == &origin
-            || pattern.strip_prefix("*.").is_some_and(|host| {
-                url.host_str()
-                    .is_some_and(|h| h == host || h.ends_with(&format!(".{host}")))
-            })
-    };
-    !settings.blocked_origins.iter().any(matches)
-        && (settings.allowed_origins.is_empty() || settings.allowed_origins.iter().any(matches))
+    #[test]
+    fn automation_rechecks_current_origin_including_blob_pages() {
+        let mut settings = super::super::Settings::default();
+        settings.allowed_origins = vec!["https://allowed.example".into()];
+        for url in ["https://allowed.example/page", "blob:https://allowed.example/uuid", "about:blank", "data:image/png;base64,eA=="] {
+            assert!(automation_allowed(&url.parse().unwrap(), &settings), "{url}");
+        }
+        for url in ["https://blocked.example", "blob:https://blocked.example/uuid", "file:///etc/hosts", "tauri://localhost", "http://tauri.localhost", "javascript:alert(1)"] {
+            assert!(!automation_allowed(&url.parse().unwrap(), &settings), "{url}");
+        }
+        settings.blocked_origins = vec!["https://allowed.example".into()];
+        assert!(!automation_allowed(&"https://allowed.example/page".parse().unwrap(), &settings));
+        assert!(!automation_allowed(&"blob:https://allowed.example/uuid".parse().unwrap(), &settings));
+    }
 }
 
 fn close_view(view: Webview) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     navigation_events::release(&view);
+    #[cfg(target_os = "macos")]
+    macos::release_accessibility(&view);
     view.close().map_err(|e| e.to_string())
 }

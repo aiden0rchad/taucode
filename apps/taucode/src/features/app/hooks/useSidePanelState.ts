@@ -1,4 +1,5 @@
 import { useFeatures } from "@settings/features";
+import { registerNativeOverlay } from "@/features/design-system/nativeOverlays";
 import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { browserRequest, subscribeBrowser } from "@services/tauri";
@@ -7,13 +8,19 @@ import { isMacPlatform } from "@utils/platformPaths";
 import { useBrowserController } from "./useBrowserController";
 import { useResizablePanels } from "@/features/layout/hooks/useResizablePanels";
 import { defaultBrowserSettings, normalizeBrowserUrl, type BrowserState } from "@/features/browser/browser";
-import { panelReducer, readPanel, workspaceLayout, type PanelTab, type PanelState } from "@/features/panels/panelState";
+import { dockPanes, initialDock, panelReducer, readPanel, workspaceLayout, type PanelTab, type PanelState } from "@/features/panels/panelState";
 import type { WorkspaceShellProps } from "@/features/panels/SidePanel";
 
-export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowserSettings.searchUrl, onNavigate, reservedShortcuts = [] }: Pick<WorkspaceShellProps, "scope" | "tools" | "searchUrl" | "onNavigate" | "reservedShortcuts">) {
+export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowserSettings.searchUrl, onNavigate, reservedShortcuts = [], dock = false, sessionRail }: Pick<WorkspaceShellProps, "scope" | "tools" | "searchUrl" | "onNavigate" | "reservedShortcuts" | "dock" | "sessionRail">) {
   const features = useFeatures();
-  const [saved, setSaved] = useState(() => ({ scope, state: readPanel(scope, tools.some(t => t.id === "task")) }));
-  if (saved.scope !== scope) setSaved({ scope, state: readPanel(scope, tools.some(t => t.id === "task")) });
+  const load = (scope: string) => {
+    const state = readPanel(scope, tools.some(t => t.id === "task"));
+    const selectedBrowser = state.tabs.find(tab => tab.kind === "browser" && tab.id === (state.browserActive ?? state.active)) ?? state.tabs.find(tab => tab.kind === "browser");
+    return dock ? { ...state, ...(selectedBrowser ? { browserActive: selectedBrowser.id } : {}), open: state.dock ? state.open : state.open || Boolean(sessionRail), dock: state.dock ?? initialDock(state, Boolean(sessionRail)) } : state;
+  };
+  const [saved, setSaved] = useState(() => ({ scope, state: load(scope) }));
+  if (saved.scope !== scope) setSaved({ scope, state: load(scope) });
+  if (dock && !saved.state.dock) setSaved({ scope, state: load(scope) });
   const tabs = saved.state.tabs.filter(tab => tab.kind === "browser" ? features.browser : tools.some(t => t.id === tab.kind));
   const state = { ...saved.state, tabs, active: tabs.some(t => t.id === saved.state.active) ? saved.state.active : null };
   const currentScope = useRef(scope); currentScope.current = scope;
@@ -21,9 +28,9 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
   const browser = useBrowserController(false);
   const [expanded, setExpanded] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
-  const resize = useResizablePanels(windowWidth, expanded);
+  const resize = useResizablePanels(windowWidth);
   const { sidebarWidth, sidebarCollapsed, setSidebarCollapsed } = useSidebarState();
-  const layout = workspaceLayout(windowWidth, sidebarWidth, sidebarCollapsed, expanded ? Math.min(windowWidth * .75, 1000) : resize.rightPanelWidth, state.open);
+  const layout = workspaceLayout(windowWidth, sidebarWidth, sidebarCollapsed, resize.rightPanelWidth, !dock && state.open && !expanded);
   const narrow = layout.sidebarOverlay;
   const collapseRef = useRef(setSidebarCollapsed); collapseRef.current = setSidebarCollapsed;
   useEffect(() => { if (narrow) collapseRef.current(true); }, [narrow]);
@@ -35,9 +42,14 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     window.addEventListener("resize", resizeWindow);
     return () => { observer?.disconnect(); window.removeEventListener("resize", resizeWindow); };
   }, [resize.appRef]);
-  const overlay = layout.panelOverlay;
+  const overlay = !dock && !expanded && layout.panelOverlay;
   const panelRef = useRef<HTMLElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!state.open || !(dock || expanded) || !narrow || sidebarCollapsed) return;
+    const sidebar = mainRef.current?.querySelector<HTMLElement>(":scope > :is(.app.layout-desktop, .chat-layout) > .sidebar, :scope > .app.layout-tablet > .tablet-projects .sidebar");
+    if (sidebar) return registerNativeOverlay(sidebar);
+  }, [dock, expanded, state.open, narrow, sidebarCollapsed, scope, windowWidth]);
   useEffect(() => {
     if (!overlay || !state.open) return;
     const previousFocus = document.activeElement as HTMLElement | null;
@@ -57,6 +69,19 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     window.addEventListener("keydown", key);
     return () => { main?.removeAttribute("inert"); window.removeEventListener("keydown", key); if (previousFocus?.isConnected) previousFocus.focus(); };
   }, [overlay, state.open, update]);
+  useEffect(() => {
+    if (!expanded || !state.open) return;
+    const covered = [...(mainRef.current?.querySelectorAll<HTMLElement>(":scope > :is(.app, .chat-layout) > :is(.main, .chat-main, .tablet-main), :scope > .app > .compact-shell") ?? [])];
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const restoreFocus = previousFocus && covered.some(element => element.contains(previousFocus));
+    const wasInert = covered.map(element => element.hasAttribute("inert"));
+    covered.forEach(element => element.setAttribute("inert", ""));
+    if (restoreFocus) panelRef.current?.focus();
+    return () => {
+      covered.forEach((element, index) => { if (!wasInert[index]) element.removeAttribute("inert"); });
+      if (restoreFocus && previousFocus.isConnected && panelRef.current?.contains(document.activeElement)) previousFocus.focus();
+    };
+  }, [expanded, state.open, scope, windowWidth]);
   const [address, setAddress] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -83,6 +108,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
       if (disposed) return;
       const newPages = value.tabs.filter(page => !latest.current.tabs.some(old => old.id === page.id));
       const hadSnapshot = latest.current.active !== "";
+      const previousActive = latest.current.active;
       latest.current = value;
       const request = pending.current;
       const created = request && value.tabs.find(t => t.id === value.active && !request.previous.has(t.id));
@@ -101,7 +127,8 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
         if (!request && hadSnapshot) {
           for (const page of newPages) if (!tabs.some(tab => tab.target === page.id)) tabs.push({ id: page.id, kind: "browser", title: page.title || "New page", url: page.url, target: page.id });
         }
-        return JSON.stringify(tabs) === JSON.stringify(previous.state.tabs) ? previous : { ...previous, state: { ...previous.state, tabs } };
+        const browserActive = dock && (created || hadSnapshot && previousActive !== value.active) && tabs.some(tab => tab.kind === "browser" && tab.target === value.active) ? tabs.find(tab => tab.kind === "browser" && tab.target === value.active)?.id : previous.state.browserActive;
+        return JSON.stringify(tabs) === JSON.stringify(previous.state.tabs) && browserActive === previous.state.browserActive ? previous : { ...previous, state: { ...previous.state, tabs, ...(browserActive ? { browserActive } : {}) } };
       });
       if (created) pending.current = null;
       const page = value.tabs.find(t => t.id === value.active);
@@ -113,7 +140,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
       });
     }).then(unsubscribe => { if (disposed) unsubscribe(); else stop = unsubscribe; }).catch(e => { if (!disposed) setError(String(e)); });
     return () => { disposed = true; stop?.(); };
-  }, [features.browser]);
+  }, [features.browser, dock]);
   const openTool = useCallback((id: string, preserveActive = false) => {
     const tool = toolRef.current.find(t => t.id === id);
     if (tool) update(s => {
@@ -124,7 +151,8 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
   const closeTool = useCallback((id: string) => update(s => panelReducer(s, { type: "close", id })), [update]);
   const active = state.tabs.find(t => t.id === state.active);
   const activeId = active?.id, activeKind = active?.kind, activeTarget = active?.target;
-  useEffect(() => { if (state.open && activeKind && activeKind !== "browser") toolRef.current.find(t => t.id === activeKind)?.onOpen?.({ id: activeId!, kind: activeKind, title: "", target: activeTarget }); }, [scope, state.open, activeId, activeKind, activeTarget]);
+  const activeToolVisible = !dock || Boolean(activeKind && state.dock && dockPanes(state.dock.tree).includes(activeKind));
+  useEffect(() => { if (state.open && activeToolVisible && activeKind && activeKind !== "browser") toolRef.current.find(t => t.id === activeKind)?.onOpen?.({ id: activeId!, kind: activeKind, title: "", target: activeTarget }); }, [scope, state.open, activeToolVisible, activeId, activeKind, activeTarget]);
   const openPage = useCallback(async (input = "about:blank", existing?: PanelTab) => {
     if (!features.browser) return;
     if (pending.current) return;
@@ -144,8 +172,11 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     finally { setBusy(false); }
   }, [scope, searchUrl, update, features.browser]);
   const pageRef = useRef(openPage); pageRef.current = openPage;
-  const activeRef = useRef(active); activeRef.current = active;
-  useEffect(() => { const tab = activeRef.current; if (state.open && tab?.kind === "browser") void pageRef.current(tab.url, tab); }, [scope, state.open, activeId, activeKind]);
+  const selectedBrowser = state.tabs.find(tab => tab.kind === "browser" && tab.id === (state.browserActive ?? state.active)) ?? state.tabs.find(tab => tab.kind === "browser");
+  const browserVisible = dock ? state.open && Boolean(state.dock && dockPanes(state.dock.tree).includes("browser")) : state.open && activeKind === "browser";
+  const browserSelection = dock ? selectedBrowser : active;
+  const activeRef = useRef(browserSelection); activeRef.current = browserSelection;
+  useEffect(() => { const tab = activeRef.current; if (browserVisible && tab?.kind === "browser") void pageRef.current(tab.url, tab); }, [scope, browserVisible, browserSelection?.id]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.defaultPrevented || reservedShortcuts.some(shortcut => matchesShortcut(e, shortcut))) return;

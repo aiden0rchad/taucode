@@ -9,6 +9,8 @@ import {
   interruptTurn,
   listThreads,
   readThread,
+  respondToServerRequest,
+  rememberApprovalRule,
   resumeThread,
   sendUserMessage as sendUserMessageService,
   setThreadName,
@@ -69,6 +71,44 @@ describe("useThreads UX integration", () => {
 
   afterEach(() => {
     nowSpy.mockRestore();
+  });
+
+  it.each(["accept", "acceptForSession", "decline", "remember"] as const)(
+    "clears an approval after a rejected %s reply", async (decision) => {
+      const onDebug = vi.fn();
+      const request = { workspace_id: workspace.id, request_id: 42,
+        method: "item/commandExecution/requestApproval", params: { command: "echo test" } };
+      vi.mocked(respondToServerRequest).mockRejectedValueOnce(new Error("request expired"));
+      if (decision === "remember") {
+        vi.mocked(rememberApprovalRule).mockRejectedValueOnce(new Error("rule failed"));
+      }
+      const { result } = renderHook(() => useThreads({ activeWorkspace: workspace,
+        onWorkspaceConnected: vi.fn(), onDebug }));
+      act(() => handlers?.onApprovalRequest?.(request));
+      expect(result.current.approvals).toEqual([request]);
+      await act(async () => {
+        if (decision === "remember") {
+          await result.current.handleApprovalRemember(request, ["echo", "test"]);
+        } else {
+          await result.current.handleApprovalDecision(request, decision);
+        }
+      });
+      expect(result.current.approvals).toEqual([]);
+      expect(onDebug).toHaveBeenCalledWith(expect.objectContaining({
+        source: "error", label: "approval response error", payload: "request expired",
+      }));
+    },
+  );
+
+  it.each(["completed", "interrupted", "failed"])("clears approvals on a %s turn", (status) => {
+    const { result } = renderHook(() => useThreads({ activeWorkspace: workspace,
+      onWorkspaceConnected: vi.fn() }));
+    act(() => handlers?.onApprovalRequest?.({ workspace_id: workspace.id, request_id: 42,
+      method: "item/commandExecution/requestApproval", params: { threadId: "thread-1", turnId: "turn-1" } }));
+    expect(result.current.approvals).toHaveLength(1);
+    act(() => handlers?.onAppServerEvent?.({ workspace_id: workspace.id,
+      message: { method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1", status } } } }));
+    expect(result.current.approvals).toEqual([]);
   });
 
   it("resumes selected threads when no local items exist", async () => {

@@ -804,7 +804,7 @@ describe("useThreadActions", () => {
     expect(setThreadsAction.threads[20]?.updatedAt).toBe(4980);
   });
 
-  it("lists threads once and distributes results across workspaces", async () => {
+  it("lists each workspace while filtering global Codex results to their owning workspace", async () => {
     vi.mocked(listThreads).mockResolvedValue({
       result: {
         data: [
@@ -835,8 +835,9 @@ describe("useThreadActions", () => {
       await result.current.listThreadsForWorkspaces([workspace, workspaceTwo]);
     });
 
-    expect(listThreads).toHaveBeenCalledTimes(1);
+    expect(listThreads).toHaveBeenCalledTimes(2);
     expect(listThreads).toHaveBeenCalledWith("ws-1", null, 100, "updated_at");
+    expect(listThreads).toHaveBeenCalledWith("ws-2", null, 100, "updated_at");
     expect(dispatch).toHaveBeenCalledWith({
       type: "setThreads",
       workspaceId: "ws-1",
@@ -865,6 +866,40 @@ describe("useThreadActions", () => {
         },
       ],
     });
+  });
+
+  it.each([undefined, "pi", "omp"])("restores separately paginated workspace sessions with engine %s", async engine => {
+    vi.mocked(listThreads).mockImplementation(async (workspaceId, cursor) => ({ result: {
+      data: [{ id: `${workspaceId}-${cursor ? "older" : "newer"}`, cwd: workspaceId === workspace.id ? workspace.path : workspaceTwo.path, engine: "pi", preview: `${workspaceId} question`, updated_at: cursor ? 1000 : 2000 }],
+      nextCursor: cursor ? null : `${workspaceId}-next`,
+    } }));
+    vi.mocked(getThreadTimestamp).mockImplementation(thread => Number(thread.updated_at ?? 0));
+    const { result, dispatch, threadActivityRef } = renderActions({ engine });
+    await act(async () => { await result.current.listThreadsForWorkspaces([workspace, workspaceTwo, workspace]); });
+    expect(listThreads).toHaveBeenCalledTimes(4);
+    for (const id of [workspace.id, workspaceTwo.id]) {
+      expect(listThreads).toHaveBeenCalledWith(id, null, 100, "updated_at");
+      expect(listThreads).toHaveBeenCalledWith(id, `${id}-next`, 100, "updated_at");
+      const updates = dispatch.mock.calls.map(([action]) => action).filter(action => action.type === "setThreads" && action.workspaceId === id);
+      expect(updates).toHaveLength(1);
+      expect(updates[0].threads.map((thread: { id: string }) => thread.id)).toEqual([`${id}-newer`, `${id}-older`]);
+      expect(threadActivityRef.current[id]).toEqual({ [`${id}-newer`]: 2000, [`${id}-older`]: 1000 });
+    }
+  });
+
+  it("preserves a workspace's threads when its list fails while restoring another workspace", async () => {
+    vi.mocked(listThreads).mockImplementation(async workspaceId => {
+      if (workspaceId === workspace.id) throw new Error("Workspace offline");
+      return { result: { data: [{ id: "restored", cwd: workspaceTwo.path, engine: "pi", preview: "Restored", updated_at: 2000 }], nextCursor: null } };
+    });
+    vi.mocked(getThreadTimestamp).mockReturnValue(2000);
+    const { result, dispatch } = renderActions({ threadsByWorkspace: { [workspace.id]: [{ id: "keep", name: "Keep me", updatedAt: 1000 }] } });
+    await act(async () => { await result.current.listThreadsForWorkspaces([workspace, workspaceTwo]); });
+    const updates = dispatch.mock.calls.map(([action]) => action).filter(action => action.type === "setThreads");
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toEqual(expect.objectContaining({ workspaceId: workspaceTwo.id, threads: [expect.objectContaining({ id: "restored" })] }));
+    expect(dispatch).toHaveBeenCalledWith({ type: "setThreadListLoading", workspaceId: workspace.id, isLoading: false });
+    expect(dispatch).toHaveBeenCalledWith({ type: "setThreadListLoading", workspaceId: workspaceTwo.id, isLoading: false });
   });
 
   it("assigns shared-root threads to a single target workspace when listing multiple workspaces", async () => {

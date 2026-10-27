@@ -24,7 +24,7 @@ it('animates recap connectors and checks with shared delays, and keeps content e
   expect(css).toContain('animation-delay:min(calc(60ms + var(--word) * 25ms),300ms)');
   expect(css).toContain('@container(min-width:640px){.setup-theme-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}');
   expect(css).toContain('.setup-provider-grid{grid-template-columns:repeat(3,minmax(0,1fr))');
-  expect(css).toContain('height:60px;pointer-events:none');
+  expect(css).toContain('.setup-theme .theme-mini{width:100%;height:78px;pointer-events:none}');
 });
 
 import { createElement } from 'react';

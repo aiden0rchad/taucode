@@ -1,6 +1,6 @@
 import type { ConversationItem } from "../types";
 import { parseCollabToolCallItem } from "./threadItems.collab";
-import { asNumber, asString } from "./threadItems.shared";
+import { asNumber, asString, normalizeVirtualFileChange } from "./threadItems.shared";
 import type { ThreadItem } from "@protocol/v2/ThreadItem";
 
 function extractImageInputValue(input: Record<string, unknown>) {
@@ -139,7 +139,7 @@ export function buildConversationItem(
       .map((change) => change.diff ?? "")
       .filter(Boolean)
       .join("\n\n");
-    return {
+    return normalizeVirtualFileChange({
       id,
       kind: "tool",
       toolType: type,
@@ -148,7 +148,7 @@ export function buildConversationItem(
       status: asString(item.status ?? ""),
       output: diffOutput,
       changes: normalizedChanges,
-    };
+    });
   }
   if (type === "mcpToolCall") {
     const server = asString(item.server ?? "");

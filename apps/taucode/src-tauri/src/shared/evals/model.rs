@@ -84,11 +84,12 @@ pub fn safe_id(id: &str) -> Result<(),String> {
 }
 pub fn inside(root: &Path, name: &str) -> bool {
     let path = root.join(name);
-    let Ok(root) = root.canonicalize() else { return false };
-    if !path.starts_with(&root) || path.components().any(|c| c == std::path::Component::ParentDir) { return false; }
+    let Ok(canonical) = root.canonicalize() else { return false };
+    // Accept the root as given or resolved (/var vs /private/var); the canonical check below confines it.
+    if !(path.starts_with(root) || path.starts_with(&canonical)) || path.components().any(|c| c == std::path::Component::ParentDir) { return false; }
     let mut ancestor = path.as_path();
     while !ancestor.exists() { let Some(parent) = ancestor.parent() else { return false }; ancestor=parent; }
-    ancestor.canonicalize().is_ok_and(|p| p.starts_with(root))
+    ancestor.canonicalize().is_ok_and(|p| p.starts_with(canonical))
 }
 pub fn approval(root: &Path, params: &Value) -> bool {
     // Opaque commands cannot be proven confined, even when cwd is inside the repo.

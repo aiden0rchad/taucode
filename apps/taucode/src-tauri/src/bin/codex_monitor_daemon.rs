@@ -167,6 +167,7 @@ struct DaemonConfig {
 }
 
 struct DaemonState {
+    managed_tasks: Arc<shared::managed_tasks::ManagedTasks>,
     evals: Arc<shared::evals::Evals>,
     work: Arc<shared::work::Work>,
     chats: shared::chats::Chats,
@@ -203,6 +204,7 @@ impl DaemonState {
             .ok()
             .and_then(|path| path.to_str().map(str::to_string));
         Self {
+            managed_tasks: shared::managed_tasks::ManagedTasks::new(),
             browser: shared::browser::Browser::new(config.data_dir.clone()),
             evals: shared::evals::Evals::new(config.data_dir.clone(), event_sink.clone()),
             work: shared::work::Work::new(config.data_dir.clone(), event_sink.clone()),
@@ -1635,6 +1637,7 @@ mod tests {
     fn test_state(data_dir: &std::path::Path) -> DaemonState {
         let (tx, _rx) = broadcast::channel::<DaemonEvent>(32);
         DaemonState {
+            managed_tasks: shared::managed_tasks::ManagedTasks::new(),
             browser: shared::browser::Browser::new(data_dir.to_path_buf()),
             evals: shared::evals::Evals::new(data_dir.to_path_buf(), DaemonEventSink { tx: tx.clone() }),
             work: shared::work::Work::new(data_dir.to_path_buf(), DaemonEventSink { tx: tx.clone() }),
@@ -2089,6 +2092,7 @@ fn main() {
             Ok(listener) => listener,
             Err(err) => {
                 eprintln!("failed to bind {}: {err}", config.listen);
+                let _ = state.managed_tasks.shutdown().await;
                 state.browser.shutdown().await;
                 return 2;
             }
@@ -2120,6 +2124,7 @@ fn main() {
                 Err(_) => continue,
             }
         }
+        if let Err(error) = state.managed_tasks.shutdown().await { eprintln!("Background task shutdown: {error}"); }
         state.browser.shutdown().await;
         0
     });

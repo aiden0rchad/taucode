@@ -95,6 +95,46 @@ test("gate approval marker, persistence, live changes and noninteractive childre
   delete process.env.TAUCODE_TOOL_ACCESS;
 });
 
+test("OMP virtual MCP writes use only the inner connector gate and retain denials", async (t) => {
+  const keys = ["TAUCODE_OMP", "TAUCODE_CHAT", "PI_CODING_AGENT_DIR", "TAUCODE_SESSION_KEY", "TAUCODE_SUBAGENT_DEPTH", "TAUCODE_TOOL_ACCESS"];
+  const previous = keys.map(key => process.env[key]);
+  t.after(() => keys.forEach((key, i) => previous[i] === undefined ? delete process.env[key] : process.env[key] = previous[i]));
+  process.env.TAUCODE_OMP = "1";
+  delete process.env.TAUCODE_CHAT;
+  process.env.PI_CODING_AGENT_DIR = home;
+  process.env.TAUCODE_SESSION_KEY = "virtual";
+  delete process.env.TAUCODE_SUBAGENT_DEPTH;
+  const access = join(home, "taucode/threads/virtual.json");
+  const setMode = (accessMode: string) => writeFileSync(access, JSON.stringify({ accessMode, sessionAllow: [] }));
+  const connectors = [{ id: "taucode-browser", enabled: true, approval: "ask", toolDenylist: [] as string[] }];
+  const setConnectors = () => writeFileSync(join(home, "taucode/connectors.json"), JSON.stringify(connectors));
+  setMode("ask"); setConnectors();
+  let handler: any, prompts = 0;
+  gate({ on: (name: string, fn: any) => { if (name === "tool_call") handler = fn; } } as any);
+  const ctx = { cwd, hasUI: true, ui: { select: async () => { prompts++; return "Allow"; } } };
+  const outer = { toolName: "write", toolCallId: "virtual", input: { path: "xd://mcp__taucode_browser_browser_click", content: "{}" } };
+  const inner = { toolName: "mcp__taucode_browser_browser_click", toolCallId: "virtual", input: {} };
+  assert.equal(await handler(outer, ctx), undefined);
+  assert.equal(prompts, 0);
+  assert.equal(await handler(inner, ctx), undefined);
+  assert.equal(prompts, 1);
+  // Ordinary files, edits and other virtual devices still use their own gate.
+  for (const event of [{ ...outer, input: { path: "file.ts" } }, { ...outer, toolName: "edit" }, { ...outer, input: { path: "xd://other_device" } }]) {
+    assert.equal(await handler(event, ctx), undefined);
+  }
+  assert.equal(prompts, 4);
+  setMode("read-only");
+  assert.equal((await handler(inner, ctx)).block, true);
+  setMode("ask");
+  process.env.TAUCODE_SUBAGENT_DEPTH = "1";
+  process.env.TAUCODE_TOOL_ACCESS = "read-only";
+  assert.equal((await handler(inner, ctx)).block, true);
+  delete process.env.TAUCODE_SUBAGENT_DEPTH;
+  connectors[0].toolDenylist.push("browser_click"); setConnectors();
+  assert.equal((await handler(inner, ctx)).block, true);
+  assert.equal(prompts, 4);
+});
+
 test("subagents single, parallel, chain, concurrency, per-run limit, depth and abort without providers", async () => {
   process.env.PI_CODING_AGENT_DIR = home;
   process.env.TAUCODE_WORKSPACE = cwd;

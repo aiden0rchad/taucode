@@ -3,6 +3,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { assertRowAlignment } from '../src/test/rowAlignment.mjs';
+import { checkCodeDock } from './dock-check.mjs';
 
 const require = createRequire(new URL('../engines/browser/package.json', import.meta.url));
 const { webkit } = require('playwright');
@@ -20,6 +21,14 @@ try {
     const open = async params => {
       const url = new URL(base);
       url.search = new URLSearchParams({ mode: 'code', ...params }).toString();
+      // Baseline Code checks inspect the conversation; dock checks opt in via panel.
+      if ((params.mode ?? 'code') === 'code' && !params.panel) await page.evaluate(() => {
+        localStorage.setItem('codexmonitor.sidebarCollapsed', 'false');
+        for (const key of Object.keys(localStorage).filter(key => key.startsWith('taucode.panel.code:'))) {
+          const state = JSON.parse(localStorage.getItem(key));
+          if (state?.dock) localStorage.setItem(key, JSON.stringify({ ...state, open: false, dock: { ...state.dock, expanded: null, focused: 'conversation' } }));
+        }
+      }).catch(() => {});
       await page.goto(url.href);
       const root = { code: '.app', chat: '.chat-layout:not(.work-layout)', work: '.work-layout' }[params.mode ?? 'code'];
       await page.locator(root).waitFor();
@@ -59,11 +68,28 @@ try {
       if (params.thread === 'home') await page.locator('.sidebar .workspace-row').first().click();
       if (params.task !== 'task-needs-input') await page.locator('.composer-shell-toolbar').first().waitFor();
       const toggle = page.getByRole('button', { name: 'Toggle side panel', exact: true });
-      if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+      if (await toggle.count()) { if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click(); }
+      else if (await page.getByRole('button', { name: 'Toggle Files', exact: true }).count()) await page.getByRole('button', { name: 'Toggle Files', exact: true }).click();
       const result = await page.locator('body').evaluate(assertRowAlignment);
       assert(result.rows > 0 && result.icons > 0 && result.unmeasuredRows === 0 && result.unmeasuredIcons === 0, `Missing geometry: ${JSON.stringify(result)}`);
       assert(await page.locator('.workspace-titlebar, .main-header').getByRole('button', { name: 'Browser', exact: true }).count() === 0, 'Redundant Browser header button');
       console.log(`PASS ${label} row alignment ${width}x${height}: ${JSON.stringify(result)}`);
+    });
+    for (const mode of ['code', 'chat', 'work']) await check(`${mode} composer controls`, async () => {
+      await open({ mode, task: 'new' });
+      const composer = page.locator('.composer-shell').first();
+      await composer.waitFor();
+      for (const size of [300, 420, 470, 560, 680]) {
+        await composer.evaluate((element, width) => { element.style.width = `${width}px`; element.style.maxWidth = 'none'; }, size);
+        const overflow = await composer.evaluate(element => {
+          const box = element.getBoundingClientRect();
+          return [...element.querySelectorAll('.composer-shell-toolbar button, .composer-shell-toolbar select')].filter(control => {
+            const r = control.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && (r.left < box.left || r.right > box.right + 1 || r.top < box.top || r.bottom > box.bottom + 1);
+          }).map(control => control.getAttribute('aria-label') || control.textContent);
+        });
+        assert.deepEqual(overflow, [], `${mode} composer ${size}px`);
+      }
     });
     await check('Native browser toolbar', async () => {
       await open({ panel: 'browser' });
@@ -79,10 +105,123 @@ try {
       for (const control of geometry.controls) assert(control.delta <= .5, JSON.stringify(control));
       assert(geometry.controls.every(c => c.height === 28 || c.height === 30), JSON.stringify(geometry));
     });
+    for (const mode of ['code', 'chat', 'work']) await check(`${mode} expanded side panel`, async () => {
+      if (mode === 'code') { await checkCodeDock(page, { width, height, open }); return; }
+      await page.evaluate(() => {
+        localStorage.setItem('codexmonitor.sidebarWidth', '320');
+        localStorage.setItem('codexmonitor.sidebarCollapsed', 'false');
+        localStorage.setItem('codexmonitor.rightPanelWidth', '420');
+      });
+      await open({ mode, panel: 'browser', task: 'new', theme: 'light' });
+      const panel = page.getByRole('complementary', { name: 'Side panel', exact: true });
+      const slot = page.locator('.browser-native-slot');
+      await slot.waitFor();
+      await slot.evaluate(element => { element.dataset.expansionContinuity = 'retained'; });
+      const selected = await page.locator('.side-panel-tabs [role=tab][aria-selected=true]').textContent();
+      const normal = await page.locator('.tabbed-side-panel').boundingBox();
+      const preferred = await page.evaluate(() => localStorage.getItem('codexmonitor.rightPanelWidth'));
+      await page.getByRole('button', { name: 'Expand side panel', exact: true }).click();
+      const geometry = async label => {
+        await page.waitForFunction(() => {
+          const body = document.querySelector('.workspace-body').getBoundingClientRect();
+          const shell = document.querySelector('.workspace-shell');
+          const panel = document.querySelector('.tabbed-side-panel').getBoundingClientRect();
+          const rail = document.querySelector('.workspace-main .tablet-nav')?.getBoundingClientRect();
+          const sidebar = document.querySelector('.workspace-main .sidebar')?.getBoundingClientRect();
+          const sidebarVisible = localStorage.getItem('codexmonitor.sidebarCollapsed') !== 'true';
+          const left = Math.max(body.left, rail?.right ?? body.left, !shell.classList.contains('sidebar-overlay') && sidebarVisible ? sidebar?.right ?? body.left : body.left);
+          return Math.abs(panel.left - left) <= 1 && Math.abs(panel.right - body.right) <= 1 && Math.abs(panel.top - body.top) <= 1 && Math.abs(panel.bottom - body.bottom) <= 1;
+        });
+        assert.equal(await panel.count(), 1, `${label}: expanded panel must remain nonmodal`);
+        assert.equal(await page.getByRole('dialog', { name: 'Side panel' }).count(), 0, `${label}: unexpected dialog`);
+        assert.equal(await page.getByRole('button', { name: 'Dismiss side panel' }).count(), 0, `${label}: unexpected scrim`);
+        assert.equal(await page.getByRole('separator', { name: 'Resize side panel' }).count(), 0, `${label}: expanded resizer`);
+        assert.equal(await slot.getAttribute('data-expansion-continuity'), 'retained', `${label}: native slot remounted`);
+        assert.equal(await page.locator('.side-panel-tabs [role=tab][aria-selected=true]').textContent(), selected, `${label}: active tab changed`);
+        assert.equal(await page.evaluate(() => localStorage.getItem('codexmonitor.rightPanelWidth')), preferred, `${label}: width preference changed`);
+        const hiddenConversation = await page.locator('.workspace-main .composer-shell textarea').first().evaluate(element => {
+          element.focus(); return Boolean(element.closest('[inert]')) && document.activeElement !== element;
+        });
+        assert(hiddenConversation, `${label}: covered conversation remains focusable`);
+      };
+      const sidebarVisible = async visible => {
+        const toggle = page.locator('.workspace-titlebar .mode-sidebar-toggle');
+        if ((await toggle.getAttribute('aria-label') === 'Collapse sidebar') !== visible) await toggle.click();
+      };
+      const sidebarUsable = async label => {
+        const usable = await page.locator('.workspace-main .sidebar').first().evaluate(element => {
+          const r = element.getBoundingClientRect();
+          const target = document.elementFromPoint(r.left + Math.min(30, r.width / 2), r.top + Math.min(80, r.height / 2));
+          const button = [...element.querySelectorAll('button:not(:disabled),input:not(:disabled)')].find(control => control.getClientRects().length);
+          button?.focus();
+          return r.width > 0 && !element.closest('[inert]') && element.contains(target) && (!button || document.activeElement === button);
+        });
+        assert(usable, `${label}: sidebar is covered or cannot receive focus`);
+      };
+      try {
+        await sidebarVisible(true);
+        const sidebarResize = page.getByRole('separator', { name: 'Resize sidebar', exact: true });
+        if (await sidebarResize.count()) await sidebarResize.press('ArrowRight');
+        else await page.evaluate(() => { localStorage.setItem('codexmonitor.sidebarWidth', '330'); window.dispatchEvent(new Event('taucode:sidebar')); });
+        await geometry('resized sidebar'); await sidebarUsable('resized sidebar');
+        const divider = page.locator('.workspace-main .sidebar-resizer:visible, .workspace-main .projects-resizer:visible').first();
+        const originalSidebarWidth = await page.evaluate(() => Number(localStorage.getItem('codexmonitor.sidebarWidth')));
+        const originalPanelLeft = (await panel.boundingBox()).x;
+        for (const delta of [24, -24]) {
+          const hit = await divider.evaluate(element => {
+            const r = element.getBoundingClientRect();
+            const x = r.left + r.width / 2, y = r.top + r.height / 2;
+            const target = document.elementFromPoint(x, y);
+            return { x, y, ownsCenter: element.contains(target), target: target?.className };
+          });
+          assert(hit.ownsCenter, `Expanded panel covers sidebar divider center: ${JSON.stringify(hit)}`);
+          const sidebarWidth = await page.evaluate(() => Number(localStorage.getItem('codexmonitor.sidebarWidth')));
+          const panelLeft = (await panel.boundingBox()).x;
+          await page.mouse.move(hit.x, hit.y); await page.mouse.down();
+          try {
+            await page.mouse.move(hit.x + delta, hit.y, { steps: 4 });
+            await page.waitForFunction(({ expectedWidth, expectedLeft }) =>
+              Number(localStorage.getItem('codexmonitor.sidebarWidth')) === expectedWidth &&
+              Math.abs(document.querySelector('.tabbed-side-panel').getBoundingClientRect().left - expectedLeft) <= 1,
+            { expectedWidth: sidebarWidth + delta, expectedLeft: panelLeft + delta });
+          } finally { await page.mouse.up(); }
+          await geometry(`sidebar pointer drag ${delta}px`);
+        }
+        assert.equal(await page.evaluate(() => Number(localStorage.getItem('codexmonitor.sidebarWidth'))), originalSidebarWidth, 'Pointer drag did not restore the sidebar preference');
+        assert(Math.abs((await panel.boundingBox()).x - originalPanelLeft) <= 1, 'Pointer drag did not restore the expanded panel boundary');
+        for (const size of [width, 900, 740, 360, width]) {
+          await page.setViewportSize({ width: size, height });
+          await sidebarVisible(false); await geometry(`${size}px collapsed sidebar`);
+          if (await page.locator('.app.layout-phone').count()) {
+            assert(await page.locator('.compact-shell').evaluate(element => element.hasAttribute('inert') && getComputedStyle(element).visibility === 'hidden'), 'Phone conversation and Projects navigation must leave the focus order until contraction');
+          } else {
+            await sidebarVisible(true); await geometry(`${size}px visible sidebar`); await sidebarUsable(`${size}px`);
+          }
+        }
+        await page.getByRole('button', { name: 'Contract side panel', exact: true }).click();
+        await page.getByRole('separator', { name: 'Resize side panel' }).waitFor();
+        await page.waitForFunction(expected => Math.abs(document.querySelector('.tabbed-side-panel').getBoundingClientRect().width - expected) <= 1, normal.width);
+        const restored = await page.locator('.tabbed-side-panel').boundingBox();
+        assert(Math.abs(restored.width - normal.width) <= 1, `Normal width changed: ${JSON.stringify({ normal, restored })}`);
+        assert.equal(await slot.getAttribute('data-expansion-continuity'), 'retained', 'Native slot remounted on contraction');
+        assert.equal(await page.locator('.side-panel-tabs [role=tab][aria-selected=true]').textContent(), selected);
+        assert.equal(await page.evaluate(() => localStorage.getItem('codexmonitor.rightPanelWidth')), preferred);
+      } finally { await page.setViewportSize({ width, height }); }
+    });
     await check('Settings', async () => {
       await open({ settings: 'appearance', theme: 'dark' });
       const rect = await centered('Settings', '.settings-window');
       assert(Math.abs(rect.width - Math.min(1180, width * .94)) <= 2 && Math.abs(rect.height - Math.min(900, height * .92)) <= 2, `Settings size: ${JSON.stringify(rect)}`);
+    });
+    await check('Setup theme previews', async () => {
+      await open({ setup: '1' });
+      await page.getByRole('button', { name: 'Get started', exact: true }).click();
+      await page.locator('.setup-theme .theme-mini').first().waitFor();
+      const clipped = await page.locator('.setup-theme .theme-mini').evaluateAll(minis => minis.flatMap(mini => {
+        const box = mini.getBoundingClientRect();
+        return [...mini.querySelectorAll('.theme-mini-message, .theme-mini-prose, .theme-mini-button')].map(el => [el.className, el.getBoundingClientRect()]).filter(([, r]) => r.left < box.left || r.right > box.right || r.top < box.top || r.bottom > box.bottom).map(([name]) => name);
+      }));
+      assert.deepEqual(clipped, []);
     });
     await check('Theme editor', async () => {
       await open({ settings: 'appearance', theme: 'dark' });

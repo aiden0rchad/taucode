@@ -437,6 +437,98 @@ fn connector_items_names_and_every_call_approvals() {
 }
 
 #[test]
+fn virtual_connector_writes_and_edits_request_tool_approval() {
+    for tool in ["write", "edit"] {
+        for (name, label) in [
+            ("taucode_browser_browser_navigate", "taucode_browser · browser_navigate"),
+            ("my_server__read", "my_server · read"),
+            ("ambiguous_server_tool", "ambiguous_server_tool"),
+            ("a_a_b_b", "a_a_b_b"),
+        ] {
+            let request = json!({"id":"approval","method":"select","title":format!("taucode:approval:{}",json!({"toolCallId":"call","tool":tool,"path":format!("xd://mcp__{name}"),"cwd":"/workspace"}))});
+            let mapped = translate::ui_request(&request, "thread", "turn");
+            assert_eq!(mapped["method"], "item/commandExecution/requestApproval");
+            assert_eq!(mapped["params"]["reason"], format!("Connector requests permission to call {label}"));
+            assert_eq!(mapped["params"]["tool"], format!("mcp__{name}"));
+            assert_eq!(mapped["params"]["availableDecisions"], json!(["accept", "decline", "cancel"]));
+        }
+    }
+}
+
+#[test]
+fn virtual_connectors_keep_tool_items_results_and_replay_without_file_diffs() {
+    for tool in ["write", "edit"] {
+        let args = json!({"path":"xd://mcp__taucode_browser_browser_navigate","content":"{\"url\":\"https://example.com\"}"});
+        let mut t = Translator::new("thread", "/workspace")
+            .with_connectors(HashMap::from([("taucode_browser".into(), "Browser".into())]));
+        t.apply(&json!({"type":"agent_start"}));
+        let started = t.apply(&json!({"type":"tool_execution_start","toolCallId":"call","toolName":tool,"args":args}));
+        let item = &started[0]["params"]["item"];
+        assert_eq!(item["type"], "mcpToolCall");
+        assert_eq!(item["server"], "Browser");
+        assert_eq!(item["tool"], "browser_navigate");
+        assert_eq!(item["arguments"]["url"], "https://example.com");
+        let result = json!({"content":[{"type":"text","text":"Opened example.com"}]});
+        let completed = t.apply(&json!({"type":"tool_execution_end","toolCallId":"call","toolName":tool,"result":result}));
+        assert!(!completed.iter().any(|e| e["method"] == "turn/diff/updated"));
+        assert_eq!(t.turns[0]["items"][0]["result"]["content"], result["content"]);
+        let history = Translator::history("thread", "/workspace", &[
+            json!({"role":"user","timestamp":1,"content":"Browse"}),
+            json!({"role":"assistant","timestamp":2,"stopReason":"toolUse","content":[{"type":"toolCall","id":"call","name":tool,"arguments":args}]}),
+            json!({"role":"toolResult","toolCallId":"call","toolName":tool,"content":result["content"]}),
+        ]).with_connectors(HashMap::from([("taucode_browser".into(), "Browser".into())]));
+        assert_eq!(history.turns[0]["items"][1], t.turns[0]["items"][0]);
+    }
+}
+
+#[test]
+fn virtual_mutating_tools_are_not_file_changes_in_live_or_replayed_transcripts() {
+    for (name, expected) in [("subagent", "collabAgentToolCall"), ("custom_mutation", "dynamicToolCall")] {
+        for transport in ["write", "edit"] {
+            let input = json!({"task":"Inspect the project","agent":"scout"});
+            let args = json!({"path":format!("xd://{name}"),"content":input.to_string()});
+            let mut translator = Translator::new("thread", "/workspace");
+            translator.apply(&json!({"type":"agent_start"}));
+            let started = translator.apply(&json!({"type":"tool_execution_start","toolCallId":"call","toolName":transport,"args":args}));
+            assert_eq!(started[0]["params"]["item"]["type"], expected);
+            if name == "subagent" { assert_eq!(started[0]["params"]["item"]["prompt"], "Inspect the project"); }
+            let result = json!({"content":[{"type":"text","text":"Tool call failed"}],"isError":true});
+            let completed = translator.apply(&json!({"type":"tool_execution_end","toolCallId":"call","toolName":transport,"result":result,"isError":true}));
+            assert!(!completed.iter().any(|event| event["method"] == "turn/diff/updated"));
+            assert_eq!(translator.turns[0]["items"][0]["status"], "failed");
+            assert!(translator.turns[0]["items"][0].get("changes").is_none());
+            if name == "subagent" { assert_eq!(translator.turns[0]["items"][0]["agentsTree"][0]["status"], "failed"); }
+            let history = Translator::history("thread", "/workspace", &[
+                json!({"role":"user","timestamp":1,"content":"Inspect"}),
+                json!({"role":"assistant","timestamp":2,"stopReason":"toolUse","content":[{"type":"toolCall","id":"call","name":transport,"arguments":args}]}),
+                json!({"role":"toolResult","toolCallId":"call","toolName":transport,"content":result["content"],"isError":true}),
+            ]);
+            assert_eq!(history.turns[0]["items"][1]["type"], expected);
+            assert_eq!(history.turns[0]["items"][1]["status"], "failed");
+        }
+    }
+}
+
+#[tokio::test]
+async fn native_tool_gate_approvals_are_decisions_instead_of_user_questions() {
+    let dir = temp();
+    let (p, events) = fake(Duration::from_secs(600), &dir.join("eof")).await;
+    p.receive(json!({"type":"agent_start"})).await;
+    for tool in ["eval", "lsp", "debug"] {
+        let request = json!({"type":"extension_ui_request","id":tool,"method":"select","title":format!("taucode:approval:{}",json!({"toolCallId":tool,"tool":tool,"command":tool,"cwd":"/workspace"})),"options":["Allow","Block"]});
+        let mapped = translate::ui_request(&request, "fake-thread", "turn");
+        assert_eq!(mapped["method"], "item/commandExecution/requestApproval");
+        assert_eq!(mapped["params"]["reason"], format!("Pi requests permission to use {tool}"));
+        assert_eq!(mapped["params"]["availableDecisions"], json!(["accept", "decline", "cancel"]));
+        p.receive(request).await;
+        p.answer(&format!("pi:fake-thread:{tool}"), json!({"decision":"decline"})).await.unwrap();
+    }
+    assert!(!events.lock().unwrap().iter().any(|e| e["method"] == "item/tool/requestUserInput"));
+    p.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn managed_policy_and_access_files_update_and_preserve_session_rules() {
     let dir = temp();
     let home = dir.join("pi/agent/workspace");
@@ -817,9 +909,12 @@ async fn engine_switches_in_place_clones_and_respawns_after_idle() {
         .request("workspace", "thread/resume", json!({"threadId":id}))
         .await
         .unwrap();
+    assert!(Arc::ptr_eq(&original, engine.sessions.lock().await[id].process.as_ref().unwrap()));
+    engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"after resume"}]})).await.unwrap();
     let next = engine.sessions.lock().await[id].process.clone().unwrap();
     assert!(!Arc::ptr_eq(&original, &next));
     assert_eq!(engine.sessions.lock().await[id].file, file);
+    engine.request("workspace", "turn/interrupt", json!({"threadId":id})).await.unwrap();
     let fork = engine
         .request(
             "workspace",
@@ -1029,6 +1124,52 @@ async fn disk_history_pages_turns_and_items_without_starting_pi() {
         .values()
         .all(|s| s.process.is_none()));
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn stored_pi_and_omp_resume_without_credentials_and_spawn_only_when_sending() {
+    struct OfflineKeys;
+    impl KeyStore for OfflineKeys {
+        fn get(&self, _: &str) -> Result<Option<String>, String> { Err("credential access during offline resume".into()) }
+        fn set(&self, _: &str, _: &str) -> Result<(), String> { panic!("must not write credentials") }
+        fn delete(&self, _: &str) -> Result<(), String> { panic!("must not delete credentials") }
+    }
+    for profile in ["pi", "omp"] {
+        let dir = temp();
+        let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_, _| {}));
+        engine.profile.definition = crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), profile).unwrap().0;
+        engine.keys = Arc::new(OfflineKeys);
+        let providers: Vec<ProviderEntry> = serde_json::from_value(json!([{"id":"first","name":"First","kind":"ollama","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"fake","enabled":true}]}])).unwrap();
+        engine.configure("workspace", providers, AgentPolicy::default()).await;
+        let sessions = engine.directory("workspace").unwrap();
+        std::fs::create_dir_all(&sessions).unwrap();
+        let file = sessions.join("stored.jsonl");
+        let entries = [json!({"type":"session","version":3,"id":"stored","engine":profile,"cwd":dir,"modelProvider":"first","model":"fake"}),
+            json!({"type":"message","id":"u","parentId":null,"message":{"role":"user","timestamp":1,"content":"Saved question"}}),
+            json!({"type":"message","id":"a","parentId":"u","message":{"role":"assistant","timestamp":2,"content":[{"type":"text","text":"Saved answer"}],"stopReason":"stop"}})];
+        std::fs::write(&file, entries.iter().map(Value::to_string).collect::<Vec<_>>().join("\n") + "\n").unwrap();
+        config::write_access(&dir.join(format!("{profile}/agent/workspace")), "stored", Some("read-only")).unwrap();
+        let resumed = engine.request("workspace", "thread/resume", json!({"threadId":"stored"})).await.unwrap();
+        assert_eq!(resumed["result"]["thread"]["engine"], profile);
+        assert_eq!(resumed["result"]["thread"]["turns"][0]["items"][1]["text"], "Saved answer");
+        assert_eq!(resumed["result"]["sandbox"]["type"], "readOnly");
+        assert!(engine.sessions.lock().await["stored"].process.is_none());
+        assert!(!dir.join(format!("{profile}/agent/workspace/models.json")).exists());
+        assert!(engine.request("other-workspace", "thread/resume", json!({"threadId":"stored"})).await.is_err());
+        if profile == "pi" {
+            engine.fake = true; engine.keys = Arc::new(Keys);
+            engine.request("workspace", "turn/start", json!({"threadId":"stored","input":[{"type":"text","text":"Continue"}]})).await.unwrap();
+            let sessions = engine.sessions.lock().await;
+            let process = sessions["stored"].process.as_ref().unwrap();
+            assert_eq!(sessions["stored"].file, file);
+            assert_eq!(process.translator.lock().await.access_mode, "read-only");
+            drop(sessions);
+            engine.shutdown().await.unwrap();
+            let requests = std::fs::read_to_string(file.with_extension("requests")).unwrap();
+            assert!(requests.contains("\"type\": \"prompt\""));
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
 
 #[test]

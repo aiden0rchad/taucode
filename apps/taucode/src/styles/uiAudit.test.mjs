@@ -68,7 +68,7 @@ it("uses distinct settings icons and shared switches throughout settings", () =>
 it("keeps the compact composer controls and Changes header in flow", () => {
   const css = styles.map(([, css]) => css).join("\n");
   expect(css).toContain("container: composer / inline-size");
-  const compact = css.slice(css.indexOf("@container composer (max-width: 420px)"));
+  const compact = css.slice(css.indexOf("@container composer (max-width: 560px)"));
   expect(compact).toContain(".composer-shell .reasoning-chip-label");
   expect(compact).toContain(".composer-shell .reasoning-chip-dot { display: inline-block;");
   expect(compact).toContain(".composer-access-chip:focus-within");

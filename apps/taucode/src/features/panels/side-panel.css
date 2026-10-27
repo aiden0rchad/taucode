@@ -12,7 +12,7 @@
 .workspace-main > .app, .workspace-main > .chat-layout { height: 100%; --app-height: 100%; --sidebar-top-padding: 8px !important; }
 .workspace-main .sidebar .mode-switcher { margin-top: 0; }
 .workspace-main .main { grid-template-columns: minmax(0, 1fr); }
-.workspace-main .main-topbar { padding-left: 16px; padding-top: 6px; }
+.workspace-main .main-topbar { padding-left: 16px; padding-block: 5px; }
 .workspace-main .main-topbar .workspace-title { display: none; }
 .workspace-main .main-topbar .workspace-separator { display: none; }
 .workspace-main .main-header { min-width: 0; flex-wrap: nowrap; }
@@ -71,6 +71,7 @@
 @media (max-width: 700px) { .tabbed-side-panel { position: absolute; right: 0; top: 40px; bottom: 0; z-index: var(--z-panel); max-width: calc(100vw - 80px); } }
 
 .workspace-main > .app { width: 100%; min-height: 0; }
+.workspace-main > .app.sidebar-collapsed :is(.sidebar, .sidebar-resizer, .tablet-projects, .projects-resizer) { visibility: hidden; }
 .workspace-main .sidebar .thread-details, .workspace-main .sidebar .workspace-summary, .workspace-main .engine-badge, .workspace-main time { font-size: 11.5px; }
 .work-concurrency-popover { z-index: var(--z-popover); padding: 12px; }
 .workspace-main .launch-script-cluster { min-width: 0; flex-shrink: 1; }
@@ -131,3 +132,79 @@
 .workspace-main > :is(.app.layout-desktop, .chat-layout) > :is(.main, .chat-main) { grid-column: 2; grid-row: 1; min-width: 0; min-height: 0; }
 .workspace-shell.sidebar-overlay .workspace-main > :is(.app.layout-desktop, .chat-layout) > .sidebar { position: absolute; inset: 0 auto 0 0; z-index: var(--z-sheet); width: var(--sidebar-width); }
 .workspace-shell.sidebar-overlay .workspace-main > :is(.app.layout-desktop, .chat-layout) > .sidebar-resizer { display: none; }
+
+/* Expanded tools take over the conversation while the sidebar stays interactive. */
+.workspace-shell.panel-expanded .tabbed-side-panel {
+  position: absolute;
+  inset: 0 0 0 var(--layout-sidebar-column);
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  z-index: var(--z-panel);
+}
+.workspace-shell.panel-expanded .workspace-main :is(.sidebar-resizer, .projects-resizer) { z-index: var(--z-sheet); }
+.workspace-shell.panel-expanded .workspace-main > :is(.app, .chat-layout) > :is(.main, .chat-main, .tablet-main),
+.workspace-shell.panel-expanded .workspace-main > .app > .compact-shell { visibility: hidden; opacity: 0; }
+
+.workspace-shell.panel-expanded:has(.app.layout-tablet) .tabbed-side-panel { left: calc(var(--tablet-nav-width, 72px) + var(--layout-sidebar-column)); }
+.workspace-shell.sidebar-overlay .workspace-main > .app.layout-tablet { grid-template-columns: var(--tablet-nav-width, 72px) 0 minmax(0, 1fr); }
+.workspace-shell.sidebar-overlay .workspace-main > .app.layout-tablet:not(.sidebar-collapsed) > .tablet-projects {
+  position: absolute;
+  inset: 0 auto 0 var(--tablet-nav-width, 72px);
+  width: var(--sidebar-width);
+  z-index: var(--z-sheet);
+}
+.workspace-shell.sidebar-overlay .workspace-main > .app.layout-tablet > .projects-resizer { display: none; }
+
+/* Code's dock leaves stay in one DOM parent while the split tree changes. */
+.dock-workspace { --dock-content-inset: var(--layout-sidebar-column); }
+.dock-workspace:has(.app.layout-tablet) { --dock-content-inset: calc(var(--tablet-nav-width, 72px) + var(--layout-sidebar-column)); }
+.dock-workspace:has(.app.layout-phone) { --dock-content-inset: 0px; }
+.dock-body { position: relative; isolation: isolate; overflow: hidden; }
+.dock-workspace .workspace-main { position: absolute; inset: 0; width: 100%; }
+.dock-workspace .workspace-main > :is(.app, .chat-layout) { position: relative; }
+.dock-workspace .workspace-main > :is(.app, .chat-layout) > :is(.main, .chat-main, .tablet-main),
+.dock-workspace .workspace-main > .app > .compact-shell {
+  position: absolute;
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  left: calc(var(--dock-content-inset) + (100% - var(--dock-content-inset)) * var(--dock-conversation-x));
+  top: var(--dock-conversation-y);
+  width: calc((100% - var(--dock-content-inset)) * var(--dock-conversation-width));
+  height: var(--dock-conversation-height);
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+}
+.dock-stage { position: absolute; inset: 0 0 0 var(--dock-content-inset); min-width: 0; min-height: 0; pointer-events: none; z-index: var(--z-panel); }
+.dock-pane, .dock-divider { left: calc(var(--dock-content-inset) + (100% - var(--dock-content-inset)) * var(--dock-box-x)); width: calc((100% - var(--dock-content-inset)) * var(--dock-box-width)); }
+.dock-pane { position: absolute; display: flex; flex-direction: column; overflow: hidden; min-width: 0; min-height: 0; background: var(--surface-messages); border: 1px solid var(--border-subtle); pointer-events: auto; z-index: var(--z-panel); }
+.dock-pane[hidden] { display: none !important; }
+.dock-pane-header { min-height: 32px; height: 32px; display: flex; align-items: center; gap: 4px; padding: 0 6px 0 10px; flex-shrink: 0; border-bottom: 1px solid var(--border-subtle); background: var(--surface-sidebar); user-select: none; }
+.dock-pane-header > strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+.dock-pane-header .mode-row, .dock-toolbar .mode-row { display: flex; align-items: center; width: auto; flex: 0 0 auto; margin: 0; }
+.dock-pane-header .mode-row-menu-trigger, .dock-toolbar .mode-row-menu-trigger { position: static; opacity: 1; translate: none; }
+.dock-pane-content { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
+.dock-pane-content > * { min-width: 0; min-height: 0; max-width: 100%; }
+.dock-pane-content > :is(.browser-pane, .terminal-panel, .terminal-dock, .git-panel, .file-tree-panel) { height: 100%; }
+.dock-session-rail .dock-pane-content { background: var(--surface-sidebar); }
+.dock-toolbar { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; }
+.dock-toolbar > button { flex-shrink: 0; }
+.dock-toolbar [aria-pressed="true"] { background: var(--surface-hover); color: var(--text-primary); }
+.dock-browser-tabs { display: flex; align-items: center; gap: 2px; overflow-x: auto; min-width: 0; height: 100%; flex: 1; }
+.dock-browser-tab { display: flex; align-items: center; min-width: 0; flex: 0 0 auto; }
+.dock-browser-tab > [role="tab"] { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: transparent; color: var(--text-secondary); padding: 5px 8px; font-size: 12px; }
+.dock-browser-tab > [aria-selected="true"] { color: var(--text-primary); background: var(--surface-hover); }
+.dock-divider { position: absolute; pointer-events: auto; touch-action: none; z-index: var(--z-sheet); outline-offset: -2px; }
+.dock-divider.is-horizontal { cursor: col-resize; }
+.dock-divider.is-vertical { cursor: row-resize; }
+.dock-divider::after { content: ""; position: absolute; background: var(--border-subtle); }
+.dock-divider.is-horizontal::after { left: 3px; top: 0; bottom: 0; width: 2px; }
+.dock-divider.is-vertical::after { top: 3px; left: 0; right: 0; height: 2px; }
+.dock-divider:is(:hover, :focus-visible)::after { background: var(--text-secondary); }
+.dock-error { position: absolute; bottom: 8px; right: 12px; max-width: min(440px, 90%); z-index: var(--z-sheet); padding: 8px 12px; border-radius: 8px; color: var(--text-primary); background: var(--surface-sidebar); border: 1px solid var(--border-subtle); }
+.dock-workspace .workspace-main :is(.sidebar-resizer, .projects-resizer) { z-index: var(--z-sheet); }
+@media (max-width: 800px) {
+  .dock-workspace .titlebar-title, .dock-workspace .titlebar-actions { display: none; }
+  .dock-workspace .dock-toolbar { flex: 1; }
+}

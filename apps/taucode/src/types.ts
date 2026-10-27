@@ -299,7 +299,9 @@ export type McpServerEntry = {
 export type McpConnectionResult = { ok: boolean; latencyMs: number; tools?: { name: string; description?: string }[]; error?: string };
 
 export type AppMode = "code" | "chat" | "work";
+export type CodeEnvironment = { id: string; name: string; workspaceIds: string[]; engine: EngineKind; modelId: string | null };
 export type AppSettings = {
+  codeEnvironments?: CodeEnvironment[];
   setupComplete?: boolean;
   features?: Partial<import("@settings/features").Features>;
   diagnostics?: { level: "essential" | "standard" | "verbose"; retention: number; includeContentSnippets: boolean; exposeToAgents: boolean };

@@ -22,6 +22,17 @@ export function reduceThreadQueue(state: ThreadState, action: ThreadAction): Thr
             item.workspace_id !== action.workspaceId,
         ),
       };
+    case "removeThreadApprovals":
+      return {
+        ...state,
+        approvals: state.approvals.filter(
+          (item) =>
+            item.workspace_id !== action.workspaceId ||
+            item.params.threadId !== action.threadId ||
+            (item.params.turnId != null && action.turnId != null &&
+              item.params.turnId !== action.turnId),
+        ),
+      };
     case "addUserInputRequest": {
       const exists = state.userInputRequests.some(
         (item) =>

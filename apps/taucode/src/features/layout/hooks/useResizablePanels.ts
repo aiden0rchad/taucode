@@ -57,9 +57,8 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-export function getRightPanelMaxWidth(windowWidth: number, sidebarWidth: number, sidebarCollapsed: boolean, expanded = false) {
-  const panelWidth = expanded ? Math.min(windowWidth * .75, 1000) : MIN_RIGHT_PANEL_WIDTH;
-  return workspaceLayout(windowWidth, sidebarWidth, sidebarCollapsed, panelWidth, false).maxPanelWidth;
+export function getRightPanelMaxWidth(windowWidth: number, sidebarWidth: number, sidebarCollapsed: boolean) {
+  return workspaceLayout(windowWidth, sidebarWidth, sidebarCollapsed, MIN_RIGHT_PANEL_WIDTH, false).maxPanelWidth;
 }
 
 function readStoredWidth(key: string, fallback: number, min: number, max: number) {
@@ -83,7 +82,7 @@ function getContainerPointerPercent(event: PointerEvent, resize: ResizeState) {
   return ((event.clientX - containerLeft) / containerWidth) * 100;
 }
 
-export function useResizablePanels(availableWindowWidth?: number, expanded = false) {
+export function useResizablePanels(availableWindowWidth?: number) {
   const { sidebarWidth, sidebarCollapsed, onSidebarResizeStart, isResizing: sidebarResizing } = useSidebarState();
   const [chatDiffSplitPositionPercent, setChatDiffSplitPositionPercent] =
     useState(() =>
@@ -133,7 +132,7 @@ export function useResizablePanels(availableWindowWidth?: number, expanded = fal
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
   }, []);
-  const maxRightPanelWidth = getRightPanelMaxWidth(windowWidth, sidebarWidth, sidebarCollapsed, expanded);
+  const maxRightPanelWidth = getRightPanelMaxWidth(windowWidth, sidebarWidth, sidebarCollapsed);
   // Window and sidebar changes constrain rendering without overwriting the preference.
   const rightPanelWidth = clamp(preferredRightPanelWidth, MIN_RIGHT_PANEL_WIDTH, maxRightPanelWidth);
   const setRightPanelWidth = useCallback((value: number) => {

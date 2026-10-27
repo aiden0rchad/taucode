@@ -93,7 +93,7 @@ it("uses roomy dialog and row tokens with an opaque dialog and a fading transluc
   expect(settingsStyles).toContain(".settings-select-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }");
 });
 
-it.each([[1440, "dark", "rgba(0, 0, 0, 0.5)"], [900, "light", "rgba(15, 15, 20, 0.28)"]])("layers Settings over the open side-chat panel at %spx in %s theme", async (width, theme, tint) => {
+it.each([[1440, "dark", "rgba(0, 0, 0, 0.5)"], [900, "light", "rgba(15, 15, 20, 0.28)"]])("layers Settings over the open Code side-chat dock at %spx in %s theme", async (width, theme, tint) => {
   vi.stubGlobal("innerWidth", width);
   vi.stubEnv("MODE", "uipreview");
   window.history.replaceState(null, "", "/?mode=code&thread=thread-rich&sidechat=thread-side&settings=computer&theme=" + theme);
@@ -104,7 +104,8 @@ it.each([[1440, "dark", "rgba(0, 0, 0, 0.5)"], [900, "light", "rgba(15, 15, 20, 
   await screen.findByRole("textbox", { name: "Side chat message" });
   const dialog = await screen.findByRole("dialog", { name: "Settings" }, { timeout: 5000 });
   document.documentElement.dataset.theme = theme;
-  const panel = document.querySelector(".tabbed-side-panel");
+  const panel = document.querySelector('.dock-pane[data-dock-pane="sidechat"]');
+  expect(panel.parentElement.classList.contains("dock-body")).toBe(true);
   expect(panel.hidden).toBe(false);
   expect(dialog.parentElement).toBe(document.body);
   const layer = element => {

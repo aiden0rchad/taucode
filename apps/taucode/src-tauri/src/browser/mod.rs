@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod policy;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub mod native;
 use backend::BrowserBackend;
@@ -112,7 +113,7 @@ impl Browser {
             data,
             running: Mutex::new(None),
             state,
-            native_state: watch::channel(json!({"backend":"native","tabs":[],"active":"","agent":false})).0,
+            native_state: watch::channel(json!({"backend":"native","tabs":[],"active":"","agent":false,"capabilities":{"screenshot":cfg!(target_os = "macos"),"evaluate":cfg!(target_os = "macos")}})).0,
             server: Mutex::new(None),
             #[cfg(unix)]
             owner_lock: Mutex::new(None),
@@ -140,7 +141,7 @@ impl Browser {
                 let socket = bridge::Socket::connect(&process.websocket).await?;
                 self.state
                     .send_replace(json!({"tabs":[],"active":"","frame":null,"agent":false}));
-                let mut bridge = bridge::Bridge::new(socket, self.state.clone());
+                let mut bridge = bridge::Bridge::new(socket, self.state.clone(), self.data.join("settings.json"));
                 let downloads = std::env::var_os("HOME")
                     .or_else(|| std::env::var_os("USERPROFILE"))
                     .map(PathBuf::from)
