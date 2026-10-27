@@ -17,7 +17,7 @@ export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettin
   const [state, setState] = useState<BrowserState>({ tabs: [], active: "" });
   const native = state.backend === "native";
   const backend = useRef(state.backend); backend.current = state.backend;
-  const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmClear, setConfirmClear] = useState<{ tabId: string; expectedUrl: string } | null>(null);
   const [zoom, setZoom] = useState(1);
   const [viewport, setViewport] = useState<"responsive" | "phone">("responsive");
   const [capture, setCapture] = useState<BrowserCapture | null>(null);
@@ -33,6 +33,8 @@ export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettin
   const surface = useRef<HTMLDivElement>(null);
   const keyboard = useRef<HTMLTextAreaElement>(null);
   const address = useRef<HTMLInputElement>(null);
+  const annotateButton = useRef<HTMLButtonElement>(null);
+  const seenTabs = useRef(new Set<string>());
   const composing = useRef(false);
   const size = useRef({ width: 1000, height: 700, dpr: window.devicePixelRatio || 1 });
   const send = useCallback((params: Record<string, unknown>) => {
@@ -63,10 +65,19 @@ export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettin
     return () => { disposed = true; clearTimeout(timer); observer.disconnect(); window.removeEventListener("resize", resize); stop?.(); };
   }, [send]);
   const active = state.tabs?.find(tab => tab.id === state.active);
+  const blank = active?.url === "about:blank";
+  const loading = Boolean(active?.loading && !blank);
+  useEffect(() => {
+    const newBlank = blank && !seenTabs.current.has(state.active);
+    seenTabs.current = new Set(state.tabs.map(tab => tab.id));
+    if (newBlank) address.current?.focus();
+  }, [blank, state.active, state.tabs]);
+  useEffect(() => { setConfirmClear(null); }, [state.active, active?.url]);
+  const clearSiteTarget = confirmClear?.tabId === state.active && confirmClear.expectedUrl === active?.url ? confirmClear : null;
   useEffect(() => { captureId.current++; setCapture(null); setCapturing(false); }, [state.active, active?.url, active?.loading, viewport, agentActive, state.agent]);
   useEffect(() => () => { captureId.current++; }, []);
   const annotate = async () => {
-    if (capture) { setCapture(null); return; }
+    if (capture) { setCapture(null); annotateButton.current?.focus(); return; }
     const id = ++captureId.current;
     const rect = surface.current?.getBoundingClientRect();
     if (!active || !rect?.width || !rect.height) return;
@@ -142,34 +153,35 @@ export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettin
     <form className="browser-toolbar" onSubmit={e => { e.preventDefault(); try { send({ action: "navigate", url: normalizeBrowserUrl(url, searchUrl) }); } catch (err) { setError(String(err)); } }}>
       <button className="ghost" type="button" aria-label="Back" disabled={native && active?.canGoBack === false} onClick={() => send({ action: "back" })}><ArrowLeft aria-hidden /></button>
       <button className="ghost" type="button" aria-label="Forward" disabled={native && active?.canGoForward === false} onClick={() => send({ action: "forward" })}><ArrowRight aria-hidden /></button>
-      <button className="ghost" type="button" aria-label={active?.loading ? "Stop loading" : "Reload"} onClick={() => send({ action: active?.loading ? "stop" : "reload" })}>{active?.loading ? <X aria-hidden /> : <RotateCw aria-hidden />}</button>
+      <button className="ghost" type="button" aria-label={loading ? "Stop loading" : "Reload"} onClick={() => send({ action: loading ? "stop" : "reload" })}>{loading ? <X aria-hidden /> : <RotateCw aria-hidden />}</button>
       <div className="browser-address">{url.startsWith("https:") && <LockKeyhole aria-hidden />}<input ref={address} aria-label="URL or search" placeholder="Search or enter a URL" value={url} onChange={e => setUrl(e.target.value)} onFocus={e => e.target.select()} /></div>
       <button className="ghost" type="button" aria-label="Downloads" onClick={() => { void openBrowserDownloads().catch(e => setError(String(e))); }}><Download aria-hidden /></button>
-      {onBrowserContext && state.capabilities?.screenshot && <button className="ghost" type="button" aria-label="Annotate page" title="Select or annotate the page" aria-pressed={Boolean(capture)} disabled={!active || active.loading || capturing || agentActive || state.agent} onClick={() => void annotate()}><Pencil aria-hidden /></button>}
+      {onBrowserContext && state.capabilities?.screenshot && <button ref={annotateButton} className="ghost" type="button" aria-label="Annotate page" title="Select or annotate the page" aria-pressed={Boolean(capture)} disabled={!active || blank || active.loading || capturing || agentActive || state.agent} onClick={() => void annotate()}><Pencil aria-hidden /></button>}
       <RowMenu label="page" size="md" actions={[
         { label: "Open in default browser", onClick: () => { void openBrowserUrl(url).catch(e => setError(String(e))); } },
         { label: "Copy URL", onClick: () => { void navigator.clipboard.writeText(url).catch(e => setError(String(e))); } },
         ...(state.capabilities?.screenshot ? [{ label: "Save screenshot", onClick: () => { void exportBrowserScreenshot(state.active, active?.url).catch(e => setError(String(e))); } }] : []),
         { label: viewport === "phone" ? "Viewport: Responsive" : "Viewport: Phone (390px)", onClick: () => setViewport(old => old === "phone" ? "responsive" : "phone") },
         ...(native ? [
-          { label: "Clear site data", onClick: () => setConfirmClear(true) },
+          { label: "Clear site data", disabled: !active, onClick: () => { if (active) setConfirmClear({ tabId: state.active, expectedUrl: active.url }); } },
           { label: "Zoom +", onClick: () => { const value = Math.min(5, zoom + .1); setZoom(value); send({ action: "zoom", value }); } },
           { label: "Zoom −", onClick: () => { const value = Math.max(.25, zoom - .1); setZoom(value); send({ action: "zoom", value }); } },
         ] : []),
       ]}><span /></RowMenu>
     </form>
-    <div className="browser-progress" role="progressbar" aria-label="Page loading" aria-valuenow={active?.loading ? Math.round((active.progress ?? .2) * 100) : 100}><span style={{ width: active?.loading ? `${Math.max(5, (active.progress ?? .2) * 100)}%` : "0%" }} /></div>
-    {confirmClear && <div className="browser-confirm" role="alert">Clear sign-ins and storage for this site?<button onClick={() => { send({ action: "clearSite", confirmed: true }); setConfirmClear(false); }}>Clear data</button><button onClick={() => setConfirmClear(false)}>Cancel</button></div>}
+    <div className="browser-progress" role="progressbar" aria-label="Page loading" aria-valuenow={loading ? Math.round((active?.progress ?? .2) * 100) : 100}><span style={{ width: loading ? `${Math.max(5, (active?.progress ?? .2) * 100)}%` : "0%" }} /></div>
+    {clearSiteTarget && <div className="browser-confirm" role="alert">Clear sign-ins and storage for this site?<button onClick={() => { if (clearSiteTarget.tabId === state.active && clearSiteTarget.expectedUrl === active?.url) send({ action: "clearSite", confirmed: true, ...clearSiteTarget }); setConfirmClear(null); }}>Clear data</button><button onClick={() => setConfirmClear(null)}>Cancel</button></div>}
     {state.externalRequest && <div className="browser-confirm" role="alert">Open {state.externalRequest} externally?<button onClick={() => { void openBrowserUrl(state.externalRequest!).catch(e => setError(String(e))); send({ action: "dismiss", key: "externalRequest" }); }}>Open</button><button onClick={() => send({ action: "dismiss", key: "externalRequest" })}>Cancel</button></div>}
     {state.downloadRequest && <div className="browser-confirm" role="alert">Save this download to Downloads?<button onClick={() => send({ action: "download", url: state.downloadRequest, confirmed: true })}>Save download</button><button onClick={() => send({ action: "dismiss", key: "downloadRequest" })}>Cancel</button></div>}
     <div ref={surface} className="browser-surface" data-viewport={viewport}>
-      {native ? <NativeSlot tabId={state.active} ready={active?.ready === true} snapshot={active?.snapshot} blocked={Boolean(capture || pageError || confirmClear || state.externalRequest || state.downloadRequest)} onError={setError} /> : <>
+      {native ? !blank && <NativeSlot tabId={state.active} ready={active?.ready === true} snapshot={active?.snapshot} blocked={Boolean(capture || pageError || clearSiteTarget || state.externalRequest || state.downloadRequest)} onError={setError} /> : <>
       <canvas ref={canvas} tabIndex={0} aria-label="Browser page; Shift Escape returns to address bar" style={{ cursor: state.cursor || "default" }} onFocus={() => keyboard.current?.focus()} onMouseDown={e => mouse(e,"mousePressed")} onMouseUp={e => mouse(e,"mouseReleased")} onMouseMove={e => mouse(e,"mouseMoved")} onContextMenu={e => e.preventDefault()} onKeyDown={e => key(e,"keyDown")} onKeyUp={e => key(e,"keyUp")} />
       <textarea ref={keyboard} className="browser-keyboard" aria-label="Browser keyboard input" autoCapitalize="off" autoCorrect="off" spellCheck={false} onKeyDown={e => key(e,"keyDown")} onKeyUp={e => key(e,"keyUp")} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={e => { composing.current = false; send({ action: "text", text: e.data }); e.currentTarget.value = ""; }} onPaste={e => { e.preventDefault(); send({ action: "text", text: e.clipboardData.getData("text/plain") }); }} />
       </>}
-      {capture && onBrowserContext && <BrowserAnnotations key={`${capture.tab}:${capture.url}`} capture={capture} onAdd={onBrowserContext} onClose={() => setCapture(null)} />}
+      {blank && <div className="browser-empty">Enter a URL or search to open a page.</div>}
+      {capture && onBrowserContext && <BrowserAnnotations key={`${capture.tab}:${capture.url}`} capture={capture} onAdd={onBrowserContext} onClose={reason => { setCapture(null); if (reason === "dismiss") annotateButton.current?.focus(); }} />}
       {pageError && <div className="browser-error" role="alert"><p>{pageError}</p><button onClick={() => send({ action: native ? "reload" : "attach", ...(!native ? size.current : {}) })}>Retry</button></div>}
-      {!native && !state.frame && !pageError && <div className="browser-empty">{state.tabs?.length ? "Connecting to the page…" : "Open a tab to browse together."}</div>}
+      {!blank && !native && !state.frame && !pageError && <div className="browser-empty">{state.tabs?.length ? "Connecting to the page…" : "Open a tab to browse together."}</div>}
     </div>
   </section>;
 }

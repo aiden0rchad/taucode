@@ -32,7 +32,7 @@ export function selectionScript(point: Point, capture: BrowserCapture): string {
   }`;
 }
 
-export function BrowserAnnotations({ capture, onAdd, onClose }: { capture: BrowserCapture; onAdd: (context: BrowserContext) => void; onClose: () => void }) {
+export function BrowserAnnotations({ capture, onAdd, onClose }: { capture: BrowserCapture; onAdd: (context: BrowserContext) => void; onClose: (reason: "dismiss" | "add") => void }) {
   const [tool, setTool] = useState<Mark["tool"]>("pen");
   const [color, setColor] = useState("#ef4444");
   const [width, setWidth] = useState(3);
@@ -47,7 +47,7 @@ export function BrowserAnnotations({ capture, onAdd, onClose }: { capture: Brows
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => { live.current = true; root.current?.focus(); return () => { live.current = false; }; }, []);
   const add = (mark: Mark) => { setMarks(old => [...old, mark]); setRedo([]); setError(""); };
-  const close = () => { live.current = false; onClose(); };
+  const close = (reason: "dismiss" | "add" = "dismiss") => { live.current = false; onClose(reason); };
   const select = async (point: Point) => {
     setBusy(true); setError("");
     try {
@@ -80,7 +80,7 @@ export function BrowserAnnotations({ capture, onAdd, onClose }: { capture: Brows
         else context.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
       }
       onAdd({ image: canvas.toDataURL("image/png"), text: [`Browser: ${capture.url}`, ...marks.filter(mark => mark.tool === "select").map(mark => `Selected element: ${mark.text}`)].join("\n") });
-      close();
+      close("add");
     } catch (e) { if (live.current) { setError(String(e)); setBusy(false); } }
   };
   return <div ref={root} tabIndex={-1} className="browser-annotations" role="group" aria-label="Browser annotations" onKeyDown={e => {
@@ -119,7 +119,7 @@ export function BrowserAnnotations({ capture, onAdd, onClose }: { capture: Brows
         <button className="ghost" aria-label="Undo annotation" title="Undo" disabled={busy || !marks.length} onClick={() => { setRedo(old => [...old, marks[marks.length - 1]]); setMarks(old => old.slice(0, -1)); }}><Undo2 aria-hidden /></button>
         <button className="ghost" aria-label="Redo annotation" title="Redo" disabled={busy || !redo.length} onClick={() => { setMarks(old => [...old, redo[redo.length - 1]]); setRedo(old => old.slice(0, -1)); }}><Redo2 aria-hidden /></button>
         <button className="secondary browser-annotation-add" disabled={busy} onClick={() => void exportImage()}>{busy ? "Working…" : "Add to chat"}</button>
-        <button className="ghost" aria-label="Close annotations" title="Close annotations" onClick={close}><X aria-hidden /></button>
+        <button className="ghost" aria-label="Close annotations" title="Close annotations" onClick={() => close()}><X aria-hidden /></button>
       </div>
       <span className="browser-annotation-hint">{tool === "select" ? "Click an element to include its description." : tool === "text" ? "Enter text, then click where it belongs." : "Mark the captured page, then add it to your draft."}</span>
     </div>

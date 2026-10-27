@@ -520,9 +520,10 @@ impl NativeBackend {
                 if p["confirmed"] != true {
                     return Err("Confirm clearing site data first".into());
                 }
+                let url = view.url().map_err(|e| e.to_string())?;
+                policy::check_target(&p, &id, Some(url.as_str()))?;
                 #[cfg(target_os = "macos")]
                 {
-                    let url = view.url().map_err(|e| e.to_string())?;
                     macos::clear_site(
                         &view,
                         url.host_str().ok_or("This page has no site data")?.into(),
@@ -639,6 +640,14 @@ fn update(state: &watch::Sender<Value>, id: &str, values: Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn clear_site_confirmation_rejects_changed_tab_or_url() {
+        let params = json!({"action":"clearSite","confirmed":true,"tabId":"one","expectedUrl":"https://first.example/page"});
+        assert!(policy::check_target(&params, "one", Some("https://first.example/page")).is_ok());
+        assert!(policy::check_target(&params, "two", Some("https://first.example/page")).is_err());
+        assert!(policy::check_target(&params, "one", Some("https://second.example/page")).is_err());
+        assert!(policy::check_target(&json!({"action":"clearSite","confirmed":true}), "one", Some("https://first.example/page")).is_ok());
+    }
     #[test]
     fn automation_rechecks_current_origin_including_blob_pages() {
         let mut settings = super::super::Settings::default();

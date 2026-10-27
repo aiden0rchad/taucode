@@ -70,7 +70,20 @@ describe("Background Tasks", () => {
     const input = screen.getByRole("textbox"); fireEvent.change(input, { target: { value: "printf hello" } });
     fireEvent.click(screen.getByRole("button", { name: /^Run$/ })); await act(async () => {}); expect((input as HTMLInputElement).value).toBe("printf hello");
     fireEvent.click(screen.getByRole("button", { name: /^Run$/ })); await act(async () => {}); expect((input as HTMLInputElement).value).toBe("");
-    fireEvent.click(screen.getByRole("button", { name: "Lint" })); expect(value.start).toHaveBeenLastCalledWith("npm run lint", "Lint");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Lint" })); }); expect(value.start).toHaveBeenLastCalledWith("npm run lint", "Lint");
+  });
+  it("preserves the next command typed while a task start is pending", async () => {
+    const value = controller(); const started = deferred<void>();
+    vi.mocked(value.start).mockReturnValueOnce(started.promise);
+    const { rerender } = render(<BackgroundTasks controller={value} onOpenUrl={vi.fn()} />);
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "printf first" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    rerender(<BackgroundTasks controller={{ ...value, busy: true }} onOpenUrl={vi.fn()} />);
+    fireEvent.change(input, { target: { value: "printf next" } });
+    await act(async () => started.resolve());
+    expect(value.start).toHaveBeenCalledExactlyOnceWith("printf first", undefined);
+    expect(input.value).toBe("printf next");
   });
   it("keeps Stop available while Terminal is disabled and prevents new commands", () => {
     const value = controller([task()]);

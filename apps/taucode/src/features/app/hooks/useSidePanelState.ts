@@ -151,7 +151,8 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
   const closeTool = useCallback((id: string) => update(s => panelReducer(s, { type: "close", id })), [update]);
   const active = state.tabs.find(t => t.id === state.active);
   const activeId = active?.id, activeKind = active?.kind, activeTarget = active?.target;
-  useEffect(() => { if (state.open && activeKind && activeKind !== "browser") toolRef.current.find(t => t.id === activeKind)?.onOpen?.({ id: activeId!, kind: activeKind, title: "", target: activeTarget }); }, [scope, state.open, activeId, activeKind, activeTarget]);
+  const activeToolVisible = !dock || Boolean(activeKind && state.dock && dockPanes(state.dock.tree).includes(activeKind));
+  useEffect(() => { if (state.open && activeToolVisible && activeKind && activeKind !== "browser") toolRef.current.find(t => t.id === activeKind)?.onOpen?.({ id: activeId!, kind: activeKind, title: "", target: activeTarget }); }, [scope, state.open, activeToolVisible, activeId, activeKind, activeTarget]);
   const openPage = useCallback(async (input = "about:blank", existing?: PanelTab) => {
     if (!features.browser) return;
     if (pending.current) return;

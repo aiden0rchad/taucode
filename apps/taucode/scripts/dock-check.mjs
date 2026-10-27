@@ -49,6 +49,20 @@ export async function checkCodeDock(page, { width, height, open }) {
         if (Math.abs(actual.x - expected.x) > 1 || Math.abs(actual.y - expected.y) > 1 || Math.abs(actual.width - expected.w) > 1 || Math.abs(actual.height - expected.h) > 1) errors.push({ id: pane.dataset.dockPane, actual: actual.toJSON(), expected });
         if (!pane.parentElement.classList.contains('dock-body')) errors.push({ id: pane.dataset.dockPane, parent: pane.parentElement.className });
       }
+      const browser = document.querySelector('[data-dock-pane=browser]:not([hidden])');
+      if (browser) {
+        const header = browser.querySelector('.dock-pane-header'), tabs = browser.querySelector('.dock-browser-tabs');
+        if (tabs.parentElement !== header || Math.abs(rect(header).height - 32) > 1) errors.push({ browserHeader: rect(header).toJSON(), tabsParent: tabs.parentElement.className });
+        const controls = [...header.querySelectorAll('button')].filter(button => /^(Expand Browser|Restore Browser|Actions for Browser pane|Close Browser pane)$/.test(button.getAttribute('aria-label')));
+        for (let index = 0; index < controls.length; index++) {
+          const control = controls[index], bounds = rect(control), hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+          if (!control.contains(hit)) errors.push({ browserControlCovered: control.getAttribute('aria-label'), bounds: bounds.toJSON(), hit: hit?.outerHTML.slice(0, 160) });
+          for (const previous of controls.slice(0, index)) {
+            const other = rect(previous);
+            if (bounds.left < other.right && bounds.right > other.left && bounds.top < other.bottom && bounds.bottom > other.top) errors.push({ browserControlOverlap: [control.getAttribute('aria-label'), previous.getAttribute('aria-label')] });
+          }
+        }
+      }
       return errors;
     });
     assert.deepEqual(errors, [], `Dock geometry ${width}x${height}`);

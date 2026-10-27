@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { WorkspaceShell, useSidePanel, type PanelTool } from "./SidePanel";
+import { WorkspaceShell, PanelToolRequest, useSidePanel, type PanelTool } from "./SidePanel";
+import { usePanelVisibility } from "@/features/layout/hooks/usePanelVisibility";
 import { dockGeometry, dockPanes, readPanel } from "./panelState";
 import { browserNativeBounds, browserRequest, subscribeBrowser } from "@services/tauri";
 import type { BrowserState } from "@/features/browser/browser";
@@ -36,7 +37,7 @@ beforeEach(() => {
   vi.mocked(subscribeBrowser).mockImplementation(async callback => { callbacks.add(callback); callback(host); return () => { callbacks.delete(callback); }; });
   vi.mocked(browserRequest).mockImplementation(async request => {
     if (request.action === "screenshot") return "cG5n";
-    if (request.action === "new") { const id = `page-${host.tabs.length + 1}`; host = { ...host, active: id, tabs: [...host.tabs, { id, title: `Page ${host.tabs.length + 1}`, url: "about:blank", ready: true, loading: false }] }; }
+    if (request.action === "new") { const id = `page-${host.tabs.length + 1}`; host = { ...host, active: id, tabs: [...host.tabs, { id, title: `Page ${host.tabs.length + 1}`, url: `https://page.test/${id}`, ready: true, loading: false }] }; }
     if (request.action === "activate") host = { ...host, active: String(request.id) };
     if (request.action === "navigate") host = { ...host, tabs: host.tabs.map(tab => tab.id === host.active ? { ...tab, url: String(request.url) } : tab) };
     if (request.action === "close") { const tabs = host.tabs.filter(tab => tab.id !== request.id); host = { ...host, tabs, active: host.active === request.id ? tabs[0]?.id ?? "" : host.active }; }
@@ -61,6 +62,93 @@ beforeEach(() => {
   });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+it("restores focus to the view toggle when closing a tiled pane", () => {
+  render(shell());
+  fireEvent.click(screen.getByRole("button", { name: "Toggle Terminal" }));
+  const command = screen.getByRole("textbox", { name: "Terminal command" });
+  const close = screen.getByRole("button", { name: "Close Terminal pane" });
+  close.focus(); fireEvent.click(close);
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Toggle Terminal" }));
+  expect(pane("terminal").hidden).toBe(true);
+  expect(command.isConnected).toBe(true);
+});
+
+it.each(["Close Terminal pane", "Toggle Terminal"])("keeps Terminal closed after %s and remount with the legacy request controller", async closeLabel => {
+  const onClose = vi.fn();
+  function SyncedTerminal() {
+    const visibility = usePanelVisibility({ isCompact: false, activeWorkspaceId: "workspace", setActiveTab: () => {}, setDebugOpen: () => {} });
+    return <WorkspaceShell dock scope="code:one" title="Code thread" onInterrupt={() => {}} tools={[{
+      id: "terminal", label: "Terminal", content: <input aria-label="Terminal command" />,
+      onOpen: visibility.openTerminal, onClose: () => { onClose(); visibility.closeTerminal(); },
+    }]}><PanelToolRequest id="terminal" requestKey={visibility.terminalOpen} /><main className="main">Conversation</main></WorkspaceShell>;
+  }
+  const view = render(<SyncedTerminal />);
+  fireEvent.click(screen.getByRole("button", { name: "Toggle Terminal" }));
+  const command = await screen.findByRole("textbox", { name: "Terminal command" });
+  fireEvent.change(command, { target: { value: "retained" } });
+  fireEvent.click(screen.getByRole("button", { name: closeLabel }));
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(command.isConnected).toBe(true);
+  expect((command as HTMLInputElement).value).toBe("retained");
+  expect(readPanel("code:one").tabs.some(tab => tab.kind === "terminal")).toBe(false);
+  view.unmount(); render(<SyncedTerminal />);
+  expect(screen.getByRole("button", { name: "Toggle Terminal" }).getAttribute("aria-pressed")).toBe("false");
+  expect(screen.queryByRole("textbox", { name: "Terminal command" })).toBeNull();
+});
+
+it("does not restore a stored active terminal that is absent from the saved dock tree", () => {
+  const onOpen = vi.fn();
+  localStorage.setItem("taucode.panel.code:one", JSON.stringify({
+    tabs: [{ id: "terminal", kind: "terminal", title: "Terminal" }], active: "terminal", open: true,
+    dock: { tree: { type: "pane", id: "conversation" }, expanded: null },
+  }));
+  render(<WorkspaceShell dock scope="code:one" title="Code thread" onInterrupt={() => {}} tools={[{ id: "terminal", label: "Terminal", content: <p>Terminal session</p>, onOpen }]}><main>Conversation</main></WorkspaceShell>);
+  expect(onOpen).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Toggle Terminal" }).getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Toggle Terminal" }));
+  expect(onOpen).toHaveBeenCalledOnce();
+});
+
+it("uses one browser header with manual tab navigation and closes the focused tab", async () => {
+  render(shell()); fireEvent.click(screen.getByRole("button", { name: "Toggle Browser" }));
+  const slot = await screen.findByLabelText("Native browser page");
+  fireEvent.click(screen.getByRole("button", { name: "New browser tab" }));
+  await screen.findByRole("tab", { name: "Page 2", selected: true });
+  fireEvent.click(screen.getByRole("button", { name: "New browser tab" }));
+  const third = await screen.findByRole("tab", { name: "Page 3", selected: true });
+  const first = screen.getByRole("tab", { name: "Page 1" });
+  const second = screen.getByRole("tab", { name: "Page 2" });
+  const header = pane("browser").querySelector(".dock-pane-header")!;
+  expect(header.contains(screen.getByRole("tablist", { name: "Browser pages" }))).toBe(true);
+  expect(header.querySelector("strong")).toBeNull();
+  expect(third.getAttribute("tabindex")).toBe("0");
+  expect(first.getAttribute("tabindex")).toBe("-1");
+  act(() => third.focus()); fireEvent.keyDown(third, { key: "Home" });
+  expect(document.activeElement).toBe(first);
+  expect(third.getAttribute("aria-selected")).toBe("true");
+  expect(first.getAttribute("tabindex")).toBe("0");
+  fireEvent.keyDown(first, { key: "ArrowLeft" }); expect(document.activeElement).toBe(third);
+  fireEvent.keyDown(third, { key: "ArrowRight" }); expect(document.activeElement).toBe(first);
+  fireEvent.keyDown(first, { key: "End" }); expect(document.activeElement).toBe(third);
+  fireEvent.click(first);
+  expect(document.activeElement).toBe(first);
+  expect(await screen.findByRole("tab", { name: "Page 1", selected: true })).toBe(first);
+  fireEvent.keyDown(first, { key: "ArrowRight" });
+  fireEvent.keyDown(second, { key: "Delete" });
+  await waitFor(() => expect(screen.queryByRole("tab", { name: "Page 2" })).toBeNull());
+  expect(document.activeElement).toBe(third);
+  expect(screen.getByRole("tab", { name: "Page 1", selected: true })).toBe(first);
+  expect(screen.getByLabelText("Native browser page")).toBe(slot);
+});
+
+it("supports Backspace tab close and returns focus to Browser when the final tab closes", async () => {
+  render(shell()); fireEvent.click(screen.getByRole("button", { name: "Toggle Browser" }));
+  const first = await screen.findByRole("tab", { name: "Page 1" });
+  act(() => first.focus()); fireEvent.keyDown(first, { key: "Backspace" });
+  await waitFor(() => expect(pane("browser").hidden).toBe(true));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Toggle Browser" }));
+});
+
 it("tiles tools independently, restores filled layout, and preserves live content through closing/reopening", () => {
   render(shell());
   expect(pane("session").hidden).toBe(false);

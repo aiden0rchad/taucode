@@ -342,11 +342,11 @@ it.each(["code", "chat", "work"].flatMap(mode => [760, 960, 1180, 1440].map(widt
     await waitFor(visibleBrowser);
     const browserPane = shell.querySelector<HTMLElement>('.dock-pane[data-dock-pane="browser"]')!;
     expect(browserPane.hidden).toBe(false);
-    expect(parseFloat(browserPane.style.width)).toBeGreaterThan(0);
+    expect(Number(browserPane.style.getPropertyValue("--dock-box-width"))).toBeGreaterThan(0);
     expect(screen.queryByRole("dialog", { name: "Side panel" })).toBeNull();
     expect(conversation.hasAttribute("inert")).toBe(compact);
     if (compact) {
-      expect(browserPane.style.width).toBe("100%");
+      expect(browserPane.style.getPropertyValue("--dock-box-width")).toBe("1");
       fireEvent.click(screen.getByRole("button", { name: "Show conversation" }));
       expect(conversation.hasAttribute("inert")).toBe(false);
       expect(browserPane.hidden).toBe(true);

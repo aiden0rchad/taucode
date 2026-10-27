@@ -37,7 +37,7 @@ it("supports drawing, undo and redo, then adds one PNG to the draft", async () =
   expect(onAdd).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Add to chat" }));
   await waitFor(() => expect(onAdd).toHaveBeenCalledExactlyOnceWith({ image: "data:image/png;base64,RESULT", text: "Browser: http://localhost/" }));
-  expect(stroke).toHaveBeenCalledOnce(); expect(onClose).toHaveBeenCalledOnce();
+  expect(stroke).toHaveBeenCalledOnce(); expect(onClose).toHaveBeenCalledExactlyOnceWith("add");
 });
 
 it("includes selected element metadata and survives an origin-policy error", async () => {
@@ -62,7 +62,7 @@ it("does not add a capture after the editor closes during export", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Add to chat" }));
   fireEvent.click(screen.getByRole("button", { name: "Close annotations" }));
   await act(async () => finish());
-  expect(onAdd).not.toHaveBeenCalled(); expect(onClose).toHaveBeenCalledOnce();
+  expect(onAdd).not.toHaveBeenCalled(); expect(onClose).toHaveBeenCalledExactlyOnceWith("dismiss");
 });
 
 it("reads an element label without exposing input values and rejects a changed URL", () => {

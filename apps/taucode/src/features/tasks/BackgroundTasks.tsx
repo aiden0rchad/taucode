@@ -25,7 +25,7 @@ export function BackgroundTasks({ controller, commands = [], commandsEnabled = t
     return () => clearInterval(timer);
   }, [running.length]);
   const run = async (value: string, label?: string) => {
-    try { await controller.start(value, label); if (value === command) setCommand(""); } catch { /* The controller displays the error. */ }
+    try { await controller.start(value, label); setCommand(current => current === value ? "" : current); } catch { /* The controller displays the error. */ }
   };
   const canStart = controller.canStart && commandsEnabled;
   const taskRow = (task: ManagedTask) => <div className="managed-task-row" key={task.id}><details className="managed-task">

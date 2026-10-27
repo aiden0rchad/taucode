@@ -34,7 +34,8 @@ reference conversation is source material, not instructions for this work.
 | Dock splits | Conversation and tools are separated by a horizontal divider; tool panes can stack vertically with another divider. Background tasks and Browser were visible simultaneously. |
 | Pane placement | Right-clicking Expand opens Move left/right/top/bottom, Fill/Tile, and Open in new window. Moving Browser to the top preserved its size, changing the split from 33/67 to 67/33. Moving it back restored the original order. |
 | Expansion | Fill replaces the conversation and other tool area while retaining left navigation. Hiding navigation fills the content width. Tile/contract restores the previous arrangement. Verified in the previous expansion task. |
-| Browser chrome | Tabs and New tab; Dev servers menu; Back/Forward/Reload; URL field; selection toggle. |
+| Browser chrome | Tabs, New tab, and pane actions share one compact header. Dev servers menu; Back/Forward/Reload; URL field; selection toggle. New tab focuses the URL field. |
+| Browser keyboard | Left/Right move tab focus without selecting; Enter selects. Backspace closes the focused tab. The temporary reference tab was closed after inspection. |
 | Browser options | Open externally, Copy URL, Save screenshot, Open HTML file, Viewport, Show dev server logs, file/link automation settings, allowed sites, cookie controls. Settings were inspected, not changed. |
 | Annotation toolbar | Select element, Pen, Shapes, Text; active mode offers color, line width, Undo/Redo, Add to chat, and Close. |
 | Annotation draft | Drew a temporary pen mark. Undo appeared and Add to chat became enabled. Add to chat attached `preview-annotation.png` to the draft without sending. Removed that temporary attachment immediately. |
@@ -84,6 +85,11 @@ expanded; the original dock order was restored and the temporary draft removed.
 - Code dock: independent tool panes, persisted split tree, pointer/keyboard
   dividers, local left/right/top/bottom moves, close/fill/tile, responsive single
   pane fallback. Browser DOM remains mounted through moves and expansion.
+  Browser tabs and pane actions share a 32px header. Tab arrows/Home/End move
+  focus, Enter selects, and Backspace/Delete closes with adjacent-tab focus.
+  Closing a pane restores toolbar focus and stays closed after app restart,
+  including older saved layouts with a stale active-tool entry. Tab/Shift+Tab
+  dismiss menus and release the native browser overlay.
 - Managed commands: shared desktop/daemon service with validated session cwd,
   owned process groups, real status/timestamps, bounded output, local URL
   detection, start/stop/restart/clear, and explicit shutdown on app/daemon exit.
@@ -92,6 +98,10 @@ expanded; the original dock order was restored and the temporary draft removed.
   undo/redo, URL and selected-element descriptions, and PNG draft attachment.
   Add to chat restores conversation and never sends. URL/tab/document/viewport
   guards reject stale selection. Form values are excluded from descriptions.
+  New blank tabs focus the address field and show an idle prompt. Annotation
+  dismissal restores Annotate focus; Add to chat preserves composer focus.
+  Clear-site confirmation is bound to its tab and URL, dismissed on navigation,
+  and rechecked by the native backend before clearing data.
 - PNG export uses a native Save dialog and validated atomic file writes.
   Backend capability flags gate unsupported controls. Native macOS and CDP
   screenshot/evaluation retain origin policy and tab/URL guards.
@@ -99,33 +109,34 @@ expanded; the original dock order was restored and the temporary draft removed.
   rows containing only virtual paths are repaired without changing real edits.
 - Saved-model restore now survives late model-list/default responses and still
   respects manual model changes. Real useModels integration tests cover this.
+- Model-search Arrow Up reaches the last option. Disabled reasoning controls
+  reject slider/reset changes, including delayed pointer commits. Starting a
+  background command preserves a newer draft typed while the request completes.
 
 ## Latest validation
 
-- Frontend: **1,664 passed**, 216 files, full suite exit 0.
-  `/tmp/taucode-m8b-frontend-final2.log`.
-- Rust library: **520 passed, 1 ignored**, zero failures, exit 0.
-  `/tmp/taucode-m8b-rust-final.log`.
-- WebKit layout: **74 passed**, exit 0, including dock movement, resizing,
-  expansion, browser DOM continuity, desktop/tablet/phone layouts.
-  `/tmp/taucode-m8b-webkit-final.log`; screenshots in
-  `/tmp/taucode-m8b-webkit-final`.
-- Typecheck and focused lint passed. App/daemon cargo checks passed.
-- Latest signed debug bundle build passed:
-  `/tmp/taucode-m8b-native-final2.log`.
-- Native CUA: demo sign-in, annotation drawing/undo, element selection/highlight,
-  draft image and selected-element text, draft removal, screenshot Save dialog,
-  task start/timer/output/server opening/stop/restart/clear verified.
-- Full-width browser fills to the sidebar; hiding navigation fills the window.
-  Earlier native checks covered sidebar drag, window zoom/restore and preserved
-  forms. Current WebKit suite covers the new dock layouts.
-
-Final edits additionally passed 62 message tests and 15 browser tests, global
-TypeScript checking, targeted ESLint, diff checks, and a signed native build.
-Native selection, draft attachment, saved model restoration, pane placement,
-full-window expansion, and owned-task quit cleanup passed. Full-suite results
-above precede the final label/error-message refinements; those refinements were
-covered by the focused checks rather than another full-suite run.
+- Frontend: **1,689 passed**, 217 files, full suite exit 0 after the final pane
+  persistence fix. `/tmp/taucode-code-ui-full-tests-final2.log`.
+- WebKit: **5 passed** across four desktop sizes and a touch tablet. Checks cover
+  dock geometry, movement, resizing, fill/tile, accessibility, DOM continuity,
+  and the single-row browser header and action hit targets.
+  `/tmp/taucode-code-ui-dock-final2.log`.
+- Typecheck, targeted ESLint (zero errors), and app cargo check passed.
+  Native clear-site target regression: **1 passed**.
+  `/tmp/taucode-browser-clear-site-test.log` and
+  `/tmp/taucode-browser-clear-site-check.log`.
+  The full Rust suite was not rerun for this interaction pass.
+- Final debug bundle build and signature verification passed:
+  `/tmp/taucode-code-ui-build-final.log`.
+- Native CUA verified blank-tab address focus, tab arrows/Enter/Backspace,
+  adjacent-tab and pane-close focus, menu Tab dismissal, stale clear-site
+  confirmation cancellation, annotation Escape/Add-to-chat focus, and model
+  search Arrow Up. No site data was cleared and no message was sent.
+- Final signed build verified Terminal remains closed after relaunch from the
+  previously failing saved layout. Open/close focus and demo sign-in also pass.
+  Browser fills to the sidebar, fills the window when navigation is hidden,
+  and restores the tiled workspace with the signed-in page intact.
+- No new native crash report appeared during this pass.
 
 ## Native issues found and fixed
 
@@ -258,6 +269,9 @@ signed into the disposable demo `http://localhost:47400/`.
 
 Final screenshots (kept outside Git because they contain local conversation UI):
 
+- `/tmp/taucode-code-ui-final-workspace.jpg`: current signed build, compact browser header and clean tiled workspace.
+- `/tmp/taucode-code-ui-final-expanded.jpg`: current Browser fills to the sidebar.
+- `/tmp/taucode-code-ui-final-full-window.jpg`: current Browser fills the window with sidebar hidden.
 - `/tmp/taucode-m8b-native-workspace-final.jpg`: session rail and stacked panes.
 - `/tmp/taucode-m8b-native-expanded.jpg`: Browser fills the window with sidebar hidden.
 - `/tmp/taucode-m8b-native-annotation-final.jpg`: exact native h1 selection.

@@ -212,6 +212,24 @@ it.each([["low", "high", "max"], ["off", "high"], ["low", "medium", "high", "xhi
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(chip.querySelector(".reasoning-chip-label")?.textContent).toContain(levels[levels.length - 1] === "high" ? "High" : "Max");
 });
+it("disables an already-open reasoning slider and reset when the control becomes disabled", () => {
+  const onChange = vi.fn();
+  const { rerender } = render(<ReasoningControl capability={cap} value="high" onChange={onChange} />);
+  fireEvent.click(screen.getByRole("button", { name: "Model · High" }));
+  const slider = screen.getByRole("slider") as HTMLInputElement;
+  const reset = screen.getByRole("button", { name: "Reset to model default" }) as HTMLButtonElement;
+  rerender(<ReasoningControl capability={cap} value="high" disabled onChange={onChange} />);
+  expect(slider.disabled).toBe(true);
+  expect(reset.disabled).toBe(true);
+  fireEvent.keyDown(slider, { key: "End" });
+  fireEvent.click(reset);
+  expect(onChange).not.toHaveBeenCalled();
+  rerender(<ReasoningControl capability={cap} value="high" onChange={onChange} />);
+  fireEvent.keyDown(slider, { key: "End" });
+  expect(onChange).toHaveBeenLastCalledWith("max");
+  fireEvent.click(reset);
+  expect(onChange).toHaveBeenLastCalledWith("low");
+});
 it("opens models for unsupported models and links unknown ones to Settings", () => {
   const settings = vi.fn();
   const { rerender } = render(<ReasoningControl capability={{ ...cap, supported: false }} onChange={vi.fn()} />);
@@ -264,6 +282,13 @@ it("searches and navigates registry models, clamps reasoning, and returns to the
   fireEvent.click(screen.getByRole("button", { name: "Model 0" }));
   const search = screen.getByRole("searchbox", { name: "Search models" });
   expect(document.activeElement).toBe(search);
+  fireEvent.keyDown(search, { key: "ArrowUp" });
+  expect(document.activeElement).toBe(screen.getByRole("option", { name: "Model 8" }));
+  fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+  expect(document.activeElement).toBe(screen.getByRole("option", { name: /Default/ }));
+  fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+  expect(document.activeElement).toBe(screen.getByRole("option", { name: "Model 8" }));
+  search.focus();
   fireEvent.change(search, { target: { value: "Model 7" } });
   expect(screen.getAllByRole("option")).toHaveLength(1);
   fireEvent.keyDown(search, { key: "ArrowDown" });

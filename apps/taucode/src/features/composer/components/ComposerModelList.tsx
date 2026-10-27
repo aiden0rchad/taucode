@@ -15,7 +15,7 @@ export function ComposerModelList({ models, selectedId, defaultId, disabled, onS
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || (event.target instanceof HTMLInputElement && ["Home", "End"].includes(event.key))) return;
     const options = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
     const index = options.indexOf(document.activeElement as HTMLButtonElement);
-    const next = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : event.key === "ArrowDown" ? (index + 1) % options.length : (index - 1 + options.length) % options.length;
+    const next = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : event.key === "ArrowDown" ? (index + 1) % options.length : index <= 0 ? options.length - 1 : index - 1;
     event.preventDefault(); options[next]?.focus();
   }}>
     {models.length > 8 && <input type="search" aria-label="Search models" placeholder="Search models" value={search} onChange={event => setSearch(event.target.value)} />}

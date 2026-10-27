@@ -88,7 +88,7 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
     const rect = event.currentTarget.getBoundingClientRect();
     return Math.max(0, Math.min(1, (event.clientX - rect.left - 18) / Math.max(1, rect.width - 36))) * last;
   };
-  const select = (next: number) => { setDrag(null); onChange(levels[Math.max(0, Math.min(last, next))]); };
+  const select = (next: number) => { setDrag(null); if (!disabled) onChange(levels[Math.max(0, Math.min(last, next))]); };
   const selectModel = async (id: string) => {
     if (!onSelectModel) return;
     if (id === selectedModelId) { switchView("slider"); return; }
@@ -111,7 +111,7 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
             <span className="reasoning-level">{noReasoning ? "Model" : label}</span>
             <button type="button" className="reasoning-model" title={modelName} disabled={!onSelectModel || disabled} onClick={() => switchView("models")}><span>{modelName}</span><ChevronRight size={12} aria-hidden /></button>
           </div>
-          <IconButton type="button" className="reasoning-reset" disabled={unknown || noReasoning} title="Reset to model default" aria-label="Reset to model default" onClick={() => { setDrag(null); onChange(clampReasoning(capability, capability?.default)!); }}><RotateCcw size={16} aria-hidden /></IconButton>
+          <IconButton type="button" className="reasoning-reset" disabled={disabled || unknown || noReasoning} title="Reset to model default" aria-label="Reset to model default" onClick={() => { setDrag(null); onChange(clampReasoning(capability, capability?.default)!); }}><RotateCcw size={16} aria-hidden /></IconButton>
         </div>
         {noReasoning ? <p className="reasoning-empty">{unavailable || "This model does not support reasoning."}</p> : unknown ? <div className="reasoning-empty"><p>Reasoning capabilities are unknown.</p><button type="button" onClick={onOpenSettings ?? (() => window.dispatchEvent(new Event("taucode:provider-settings")))}>Detect in Settings</button></div> : <div className="reasoning-slider">
           <div className="reasoning-rail" aria-hidden="true">
@@ -119,7 +119,7 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
             {levels.map((stop, stopIndex) => <span className="reasoning-tick" key={stop} style={{ left: `${last > 0 ? stopIndex / last * 100 : 0}%` }} />)}
             <span className="reasoning-thumb">{burning && Array.from({ length: 6 }, (_, ember) => <span className="reasoning-ember" key={ember} />)}</span>
           </div>
-          <input type="range" aria-label="Reasoning level" min={0} max={last} step="any" value={position} aria-valuetext={label} onChange={event => select(Math.round(Number(event.target.value)))}
+          <input type="range" aria-label="Reasoning level" disabled={disabled} min={0} max={last} step="any" value={position} aria-valuetext={label} onChange={event => select(Math.round(Number(event.target.value)))}
             onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId); setDrag(pointerPosition(event)); }}
             onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setDrag(pointerPosition(event)); }}
             onPointerUp={event => { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; select(Math.round(pointerPosition(event))); event.currentTarget.releasePointerCapture(event.pointerId); }}
