@@ -40,3 +40,16 @@ it("shows file statuses, edits the selected file, and opens detected files", () 
   fireEvent.click(screen.getByRole("button", { name: "GEMINI.md" }));
   expect(openFile).toHaveBeenCalledWith({ path: "GEMINI.md", line: null, column: null });
 });
+
+it("displays and removes shared browser draft attachments across workspace changes", () => {
+  const image = "data:image/png;base64,AA==";
+  const imageAttachments = { activeImages: [image], attachImages: vi.fn(), pickImages: vi.fn(), removeImage: vi.fn(), clearActiveImages: vi.fn() };
+  const { container, rerender } = render(<WorkspaceHome {...props} imageAttachments={imageAttachments} />);
+  expect(container.querySelector('.composer-attachment img')?.getAttribute("src")).toBe(image);
+  fireEvent.click(screen.getByRole("button", { name: /^Remove / }));
+  expect(imageAttachments.removeImage).toHaveBeenCalledWith(image);
+  rerender(<WorkspaceHome {...props} workspace={{ ...props.workspace, id: "other", path: "/other" }} imageAttachments={{ ...imageAttachments, activeImages: [] }} />);
+  expect(container.querySelector(".composer-attachment")).toBeNull();
+  rerender(<WorkspaceHome {...props} imageAttachments={imageAttachments} />);
+  expect(container.querySelector('.composer-attachment img')?.getAttribute("src")).toBe(image);
+});

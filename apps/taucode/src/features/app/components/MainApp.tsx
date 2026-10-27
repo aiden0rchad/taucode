@@ -89,6 +89,12 @@ import { WorkspaceShell, PanelToolRequest } from "@/features/panels/SidePanel";
 import { buildGitNodes } from "@/features/layout/hooks/layoutNodes/buildGitNodes";
 import { formatShortcut } from "@utils/shortcuts";
 import { AppModals } from "./AppModals";
+import { CodeSessionRail, CodeBackgroundTasks } from "@/features/session/CodeSessionRail";
+import { useCodeSessionData } from "@/features/session/useCodeSessionData";
+import { useManagedTasks } from "@/features/tasks/useManagedTasks";
+import { useCodeEnvironments } from "@/features/session/useCodeEnvironments";
+import { useBrowserContextDraft } from "@/features/session/useBrowserContextDraft";
+import { useFileLinkOpener } from "@/features/messages/hooks/useFileLinkOpener";
 
 const SettingsView = lazy(() =>
   import("@settings/components/SettingsView").then((module) => ({
@@ -99,6 +105,8 @@ const SettingsView = lazy(() =>
 export default function MainApp({ settingsOnly = false, onCloseModeSettings, initialSettingsSection }: { settingsOnly?: boolean; initialSettingsSection?: import("@settings/components/settingsTypes").CodexSection; onCloseModeSettings?: () => void } = {}) {
   const features = useFeatures();
   const [selectedEngine, setSelectedEngine] = useState<import("@/types").EngineKind | undefined>();
+  const [environmentDraft, setEnvironmentDraft] = useState<{ workspaceId: string; profile: import("@/types").CodeEnvironment; revision: number } | null>(null);
+  const [requestedSessionFile, setRequestedSessionFile] = useState<{ workspaceId: string; path: string; requestId: number } | null>(null);
   const {
     appSettings,
     setAppSettings,
@@ -286,6 +294,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
 
   // Access mode is thread-scoped (best-effort persisted) and falls back to the app default.
 
+  const draftEnvironment = environmentDraft?.workspaceId === activeWorkspaceId && !activeThreadIdRef.current ? environmentDraft : null;
   const {
     models,
     selectedModel,
@@ -299,9 +308,9 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     threadId: activeThreadIdRef.current,
     activeWorkspace,
     onDebug: addDebugEntry,
-    preferredModelId: preferredModelId ?? (modelKey(activeWorkspace?.settings.agentPolicy?.defaultModel ?? appSettings.agentPolicy?.defaultModel) || null),
+    preferredModelId: draftEnvironment?.profile.modelId ?? preferredModelId ?? (modelKey(activeWorkspace?.settings.agentPolicy?.defaultModel ?? appSettings.agentPolicy?.defaultModel) || null),
     preferredEffort,
-    selectionKey: threadCodexSelectionKey,
+    selectionKey: draftEnvironment ? `${threadCodexSelectionKey}:environment:${draftEnvironment.revision}` : threadCodexSelectionKey,
   });
 
   useEffect(() => { void refreshModels(); }, [appSettings.providers, refreshModels]);
@@ -1473,6 +1482,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     workspaceHomeProps: activeWorkspace
       ? {
           workspace: activeWorkspace,
+          imageAttachments: composerWorkspaceState,
           showGitInitBanner: false,
           initGitRepoLoading,
           onInitGitRepo: modalActions.openInitGitRepoPrompt,
@@ -1928,6 +1938,47 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
   });
 
   const agentDetails = useMemo(() => agentThreadDetails(Object.values(threadsByWorkspace).flat(), threadStatusById, tokenUsageByThread), [threadsByWorkspace, threadStatusById, tokenUsageByThread]);
+  const sessionData = useCodeSessionData(settingsOnly ? null : activeWorkspaceId, JSON.stringify([appSettings.mcpServers, appSettings.codegraphEnabled, appSettings.computer?.enabled, appSettings.browser?.approval, appSettings.features, activeWorkspace?.settings.mcpServers, activeWorkspace?.settings.codegraphEnabled]), activeItems, activeWorkspace?.path);
+  const managedTaskState = useManagedTasks(settingsOnly ? null : activeWorkspaceId, activeThreadId);
+  const managedTasks = { ...managedTaskState, canStart: features.terminal && managedTaskState.canStart };
+  const fileLinkOpener = useFileLinkOpener(activeWorkspace?.path ?? null, appSettings.openAppTargets, appSettings.selectedOpenAppId);
+  const addBrowserContext = useBrowserContextDraft({
+    scope: activeWorkspaceId ? JSON.stringify([activeWorkspaceId, activeThreadId, showWorkspaceHome]) : null,
+    draft: showWorkspaceHome ? workspacePrompt : composerWorkspaceState.activeDraft,
+    onDraftChange: showWorkspaceHome ? setWorkspacePrompt : composerWorkspaceState.handleDraftChange,
+    attachImages: composerWorkspaceState.attachImages,
+    textareaRef: showWorkspaceHome ? workspaceHomeTextareaRef : composerInputRef,
+  });
+  const environments = useCodeEnvironments({
+    settings: appSettings, saveSettings: queueSaveSettings, workspaces,
+    engine: activeEngine, modelId: selectedModelId, selectWorkspace: layoutSurfaces.primary.sidebarProps.onSelectWorkspace,
+    setActiveThreadId, startDraft: startNewAgentDraft,
+    restore: (profile, workspaceId) => {
+      setSelectedEngine(profile.engine);
+      setEnvironmentDraft(previous => ({ workspaceId, profile, revision: (previous?.revision ?? 0) + 1 }));
+    },
+  });
+  const sessionRail = activeWorkspace ? <CodeSessionRail key={`${activeWorkspace.id}:${activeThreadId ?? ""}`}
+    workspace={activeWorkspace} workspaces={workspaces} branch={currentBranch || activeWorkspace.worktree?.branch || ""} branches={branches} canCheckoutBranch={isBranchSwitcherEnabled}
+    onCheckoutBranch={branch => { void handleCheckoutBranch(branch); }} onSelectWorkspace={layoutSurfaces.primary.sidebarProps.onSelectWorkspace}
+    profiles={environments.profiles} engine={activeEngine} modelId={selectedModelId}
+    onSaveEnvironment={environments.save} onSelectEnvironment={environments.select} onDeleteEnvironment={environments.remove}
+    remote={{ mode: appSettings.backendMode, host: appSettings.remoteBackendHost }}
+    usage={activeTokenUsage} protocol={appSettings.engines?.find(engine => engine.id === activeEngine)?.protocol ?? (activeEngine === "claude" ? "acp" : activeEngine === "codex" ? "codex-app-server" : "pi-rpc")}
+    skills={skills} skillsAvailable={activeEngine === "codex"} memoryFiles={[...Object.entries(agentMdState.fileStatuses).filter(([, exists]) => exists).map(([path]) => path), ...agentMdState.detected]}
+    {...sessionData} browserEnabled={features.browser}
+    onOpenFile={path => {
+      const root = activeWorkspace.path.replace(/\\/g, "/").replace(/\/$/, "");
+      const normalized = path.replace(/\\/g, "/");
+      if ((normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)) && !normalized.startsWith(`${root}/`)) {
+        void fileLinkOpener.openFileLink({ path, line: null, column: null }); return false;
+      }
+      setRequestedSessionFile({ workspaceId: activeWorkspace.id, path: normalized.startsWith(`${root}/`) ? normalized.slice(root.length + 1) : path, requestId: Date.now() });
+      return true;
+    }}
+    git={{ enabled: features.git, files: gitState.gitStatus.files.length, additions: gitState.gitStatus.totalAdditions, deletions: gitState.gitStatus.totalDeletions, error: gitState.gitStatus.error }}
+    tasks={managedTasks} tasksEnabled={features.terminal} onOpenSettings={modalActions.openSettings} onEditLaunchScripts={launchScriptsState.onOpenNew}
+  /> : null;
   if (settingsOnly) return <div className="mode-settings-host" style={mainAppShellProps.appStyle}><AppModals {...mainAppShellProps.appModalsProps} settingsOpen settingsSection={initialSettingsSection ?? mainAppShellProps.appModalsProps.settingsSection} onCloseSettings={onCloseModeSettings ?? mainAppShellProps.appModalsProps.onCloseSettings} /></div>;
   return <AgentsContext.Provider value={{ details: agentDetails, workspaceId: activeWorkspaceId, threadId: activeThreadId, itemsByThread,
     policy: appSettings.agentPolicy ? { ...appSettings.agentPolicy.subagents, ...activeWorkspace?.settings.agentPolicy?.subagents } : undefined }}>
@@ -1935,7 +1986,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     await refreshThread(workspace, thread);
     if (text !== undefined) composerWorkspaceState.restoreDraftForThread(thread, text);
     if (text !== undefined && workspace === activeWorkspaceId && thread === activeThreadId) setPrefillDraft({ id: `rewind-${Date.now()}`, text, createdAt: Date.now() });
-  }} />}<WorkspaceShell reservedShortcuts={Object.entries(appSettings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`code:${encodeURIComponent(activeWorkspaceId ?? "")}:${encodeURIComponent(activeThreadId ?? "")}`} title={threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.name || activeWorkspace?.name || "taucode"}
+  }} />}<WorkspaceShell dock sessionRail={sessionRail} onBrowserContext={activeWorkspace ? addBrowserContext : undefined} reservedShortcuts={Object.entries(appSettings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`code:${encodeURIComponent(activeWorkspaceId ?? "")}:${encodeURIComponent(activeThreadId ?? "")}`} title={threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.name || activeWorkspace?.name || "taucode"}
     onNavigate={scope => { const [, workspace, thread] = scope.split(":").map(decodeURIComponent); if (workspace && thread) layoutSurfaces.primary.sidebarProps.onSelectThread(workspace, thread); else if (workspace) layoutSurfaces.primary.sidebarProps.onSelectWorkspace(workspace); else layoutSurfaces.primary.sidebarProps.onSelectHome(); }}
     actions={activeWorkspaceId && activeThreadId ? [
       { label: "Rename", onClick: () => handleRenameThread(activeWorkspaceId, activeThreadId) },
@@ -1946,8 +1997,9 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     tools={activeWorkspace ? [
       ...(["git", "files", "agents", "prompts"] as const).map(id => ({ id, label: { git: "Changes", files: "Files", agents: "Agents", prompts: "Prompts" }[id], shortcut: id === "git" ? "⌃⇧G" : id === "files" ? "⌘P" : undefined,
         onOpen: () => layoutSurfaces.git.gitDiffPanelProps.onFilePanelModeChange(id),
-        content: buildGitNodes({ ...layoutSurfaces.git, filePanelMode: id, gitDiffPanelProps: { ...layoutSurfaces.git.gitDiffPanelProps, planSection: hasActivePlan ? <details className="changes-plan" open><summary>Plan</summary>{planPanelNode}</details> : null } }).gitDiffPanelNode,
+        content: buildGitNodes({ ...layoutSurfaces.git, filePanelMode: id, fileTreeProps: layoutSurfaces.git.fileTreeProps ? { ...layoutSurfaces.git.fileTreeProps, requestedFile: requestedSessionFile?.workspaceId === activeWorkspace.id ? requestedSessionFile : null } : null, gitDiffPanelProps: { ...layoutSurfaces.git.gitDiffPanelProps, planSection: hasActivePlan ? <details className="changes-plan" open><summary>Plan</summary>{planPanelNode}</details> : null } }).gitDiffPanelNode,
       })),
+      { id: "background", label: "Background tasks", content: <CodeBackgroundTasks key={`${activeWorkspace.id}:${activeThreadId ?? ""}`} tasks={managedTasks} commandsEnabled={features.terminal} commands={[...(activeWorkspace.settings.launchScript ? [{ id: "default", script: activeWorkspace.settings.launchScript, icon: "play" as const, label: "Launch script" }] : []), ...launchScriptsState.launchScripts]} /> },
       { id: "terminal", label: "Terminal", shortcut: formatShortcut(appSettings.toggleTerminalShortcut || "ctrl+`"), onOpen: openTerminalWithFocus, onClose: closeTerminalPanel, content: terminalDockNode },
       { id: "sidechat", label: "Side chat", shortcut: "⌘⇧K", target: sideChat?.id, content: sideChatInSplit ? null : sideChatNode, onClose: sideChats.close,
         onOpen: (tab: import("@/features/panels/panelState").PanelTab) => { setSplitSideChatId(null); if (tab.target && sideChat?.id !== tab.target && activeThreadId) sideChats.open({ id: tab.target, name: "Side chat", updatedAt: Date.now(), engine: parentEngine, sideOf: { threadId: activeThreadId, workspaceId: activeWorkspace.id, atItemId: null } }); },

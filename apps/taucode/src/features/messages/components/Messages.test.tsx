@@ -5,6 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import type { ConversationItem } from "../../../types";
 import { expectOpenedFileTarget } from "../test/fileLinkAssertions";
 import { Messages } from "./Messages";
+import { prepareThreadItems } from "@utils/threadItems";
 
 const useFileLinkOpenerMock = vi.fn(
   (_workspacePath: string | null, _openTargets: unknown[], _selectedOpenAppId: string) => ({
@@ -37,6 +38,27 @@ vi.mock("@services/tauri", async () => {
 });
 
 describe("Messages", () => {
+  it("renders a stored virtual subagent write as a tool instead of a file edit", () => {
+    const items = prepareThreadItems([{ id: "old-subagent", kind: "tool", toolType: "fileChange", title: "File changes", detail: "A xd://subagent", status: "failed", output: "Call failed", changes: [{ path: "xd://subagent", kind: "add" }] }]);
+    render(<Messages items={items} threadId="thread" workspaceId="workspace" isThinking={false} openTargets={[]} selectedOpenAppId="" />);
+    expect(screen.getByText("Tool: subagent")).toBeTruthy();
+    expect(screen.queryByText("file edited")).toBeNull();
+  });
+
+  it("renders a failed spawn with readable synthetic receiver labels", () => {
+    const items: ConversationItem[] = [{
+      id: "call_failed", kind: "tool", toolType: "collabToolCall",
+      title: "Collab: spawnAgent", detail: "", status: "failed", output: "Call failed",
+      collabReceivers: [{ threadId: "call_failed:agent:0" }, { threadId: "call_failed:agent:1" }],
+      agentsTree: [
+        { id: "call_failed:agent:0", agent: "scout", status: "failed", children: [] },
+        { id: "call_failed:agent:1", agent: "writer", status: "failed", children: [] },
+      ],
+    }];
+    render(<Messages items={items} threadId="thread" workspaceId="workspace" isThinking={false} openTargets={[]} selectedOpenAppId="" />);
+    expect(screen.getByRole("button", { name: /spawn failed:\s*scout \+1/i })).toBeTruthy();
+    expect(screen.queryByText(/call_failed:agent:/)).toBeNull();
+  });
   beforeAll(() => {
     if (!HTMLElement.prototype.scrollIntoView) {
       HTMLElement.prototype.scrollIntoView = vi.fn();

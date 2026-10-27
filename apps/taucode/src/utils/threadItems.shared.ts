@@ -20,6 +20,13 @@ export function asString(value: unknown) {
   return typeof value === "string" ? value : value ? String(value) : "";
 }
 
+export function normalizeVirtualFileChange(item: Extract<ConversationItem, { kind: "tool" }>) {
+  if (item.toolType !== "fileChange" || !item.changes?.length) return item;
+  const tools = item.changes.map(change => /^xd:\/\/([A-Za-z0-9_.:-]+)$/.exec(change.path)?.[1]);
+  if (tools.some(tool => !tool)) return item;
+  return { ...item, toolType: "dynamicToolCall", title: `Tool: ${[...new Set(tools)].join(", ")}`, detail: "", changes: undefined };
+}
+
 export function asNumber(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;

@@ -83,3 +83,22 @@ it.each(["sidebar", "side panel"])("hides the native view behind the %s resize o
   expect(document.querySelector(".panel-resize-overlay")).toBeNull();
   expect(browserNativeBounds).toHaveBeenLastCalledWith("one", expect.anything(), true);
 });
+
+it("preserves full page bounds while annotation blocking hides and restores the native view", async () => {
+  const view = render(<NativeSlot tabId="one" ready blocked={false} onError={error} />);
+  await frame();
+  const expected = { x: 12, y: 61, w: 400, h: 300 };
+  expect(browserNativeBounds).toHaveBeenLastCalledWith("one", expected, true);
+  vi.mocked(browserNativeBounds).mockClear();
+  // A screenshot-backed annotation overlay changes visibility, not the viewport.
+  view.rerender(<NativeSlot tabId="one" ready blocked snapshot="AAAA" onError={error} />);
+  await frame(); await frame();
+  expect(browserNativeBounds).toHaveBeenCalled();
+  for (const [tab, bounds, visible] of vi.mocked(browserNativeBounds).mock.calls) {
+    expect(tab).toBe("one"); expect(bounds).toEqual(expected); expect(visible).toBe(false);
+  }
+  expect(screen.getByLabelText("Native browser page").getAttribute("data-native-hidden")).toBe("true");
+  view.rerender(<NativeSlot tabId="one" ready blocked={false} snapshot="AAAA" onError={error} />);
+  await frame();
+  expect(browserNativeBounds).toHaveBeenLastCalledWith("one", expected, true);
+});

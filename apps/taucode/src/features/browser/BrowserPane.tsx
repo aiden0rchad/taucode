@@ -1,21 +1,28 @@
 import { NativeSlot } from "./NativeSlot";
 import { RowMenu } from "@/features/chat/RowMenu";
-import { ArrowLeft, ArrowRight, Download, LockKeyhole, Plus, RotateCw, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Download, LockKeyhole, Pencil, Plus, RotateCw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
-import { browserRequest, subscribeBrowser, openBrowserDownloads, openBrowserUrl } from "@services/tauri";
+import { browserRequest, subscribeBrowser, openBrowserDownloads, openBrowserUrl, exportBrowserScreenshot } from "@services/tauri";
 import { isMacPlatform } from "@utils/platformPaths";
 import { defaultBrowserSettings, drawBrowserFrame, modifiers, normalizeBrowserUrl } from "./browser";
 import type { BrowserState } from "./browser";
+import { BrowserAnnotations } from "./BrowserAnnotations";
+import type { BrowserCapture, BrowserPageGeometry } from "./BrowserAnnotations";
 import "./browser.css";
 
-type Props = { embedded?: boolean; searchUrl?: string; agentActive?: boolean; onTakeOver: () => void | Promise<void>; onClose: () => void };
-export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettings.searchUrl, agentActive = false, onTakeOver, onClose }: Props) {
+export type BrowserContext = { text: string; image?: string };
+type Props = { embedded?: boolean; searchUrl?: string; agentActive?: boolean; onBrowserContext?: (context: BrowserContext) => void; onTakeOver: () => void | Promise<void>; onClose: () => void };
+export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettings.searchUrl, agentActive = false, onBrowserContext, onTakeOver, onClose }: Props) {
   const [state, setState] = useState<BrowserState>({ tabs: [], active: "" });
   const native = state.backend === "native";
   const backend = useRef(state.backend); backend.current = state.backend;
   const [confirmClear, setConfirmClear] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [viewport, setViewport] = useState<"responsive" | "phone">("responsive");
+  const [capture, setCapture] = useState<BrowserCapture | null>(null);
+  const [capturing, setCapturing] = useState(false);
+  const captureId = useRef(0);
   const takeover = useRef(0);
   useEffect(() => {
     if (state.takeover && state.takeover > takeover.current) { takeover.current = state.takeover; void onTakeOver(); }
@@ -29,6 +36,7 @@ export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettin
   const composing = useRef(false);
   const size = useRef({ width: 1000, height: 700, dpr: window.devicePixelRatio || 1 });
   const send = useCallback((params: Record<string, unknown>) => {
+    if (["navigate", "back", "forward", "reload", "activate", "close", "zoom"].includes(String(params.action))) { captureId.current++; setCapture(null); setCapturing(false); }
     void browserRequest(params).then(() => setError("")).catch(e => setError(String(e)));
   }, []);
   useEffect(() => {
@@ -44,13 +52,45 @@ export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettin
       if (disposed) { unsubscribe(); return; }
       stop = unsubscribe; send({ action: "attach", ...size.current });
     }).catch(e => { if (!disposed) setError(String(e)); });
-    const resize = () => { clearTimeout(timer); timer = setTimeout(() => { measure(); if (backend.current !== "native") send({ action: "resize", ...size.current }); }, 100); };
+    const resize = () => { clearTimeout(timer); timer = setTimeout(() => {
+      const previous = size.current; measure();
+      if (previous.width !== size.current.width || previous.height !== size.current.height) { captureId.current++; setCapture(null); setCapturing(false); }
+      if (backend.current !== "native") send({ action: "resize", ...size.current });
+    }, 100); };
     const observer = new ResizeObserver(resize);
     if (surface.current) observer.observe(surface.current);
     window.addEventListener("resize", resize);
     return () => { disposed = true; clearTimeout(timer); observer.disconnect(); window.removeEventListener("resize", resize); stop?.(); };
   }, [send]);
   const active = state.tabs?.find(tab => tab.id === state.active);
+  useEffect(() => { captureId.current++; setCapture(null); setCapturing(false); }, [state.active, active?.url, active?.loading, viewport, agentActive, state.agent]);
+  useEffect(() => () => { captureId.current++; }, []);
+  const annotate = async () => {
+    if (capture) { setCapture(null); return; }
+    const id = ++captureId.current;
+    const rect = surface.current?.getBoundingClientRect();
+    if (!active || !rect?.width || !rect.height) return;
+    setCapturing(true); setError("");
+    try {
+      let page: BrowserPageGeometry | undefined;
+      if (state.capabilities?.evaluate) {
+        // Page metadata can be unavailable even when capture is supported.
+        try {
+          const result = await browserRequest<BrowserPageGeometry>({ action: "evaluate", tabId: state.active, expectedUrl: active.url, function: "() => ({ width: innerWidth, height: innerHeight, scrollX, scrollY, timeOrigin: performance.timeOrigin })" });
+          if (result && [result.width, result.height, result.scrollX, result.scrollY, result.timeOrigin].every(Number.isFinite) && result.width > 0 && result.height > 0) page = result;
+        } catch { /* Keep selection disabled for this capture. */ }
+      }
+      if (id !== captureId.current) return;
+      const image = await browserRequest<string>({ action: "screenshot", tabId: state.active, expectedUrl: active.url });
+      if (id !== captureId.current) return;
+      if (typeof image !== "string" || !/^[A-Za-z0-9+/=\r\n]+$/.test(image)) throw new Error("The browser did not return a screenshot");
+      const decoded = new Image(); decoded.src = `data:image/png;base64,${image}`; await decoded.decode();
+      if (id !== captureId.current) return;
+      if (!decoded.naturalWidth || !decoded.naturalHeight) throw new Error("The screenshot is empty");
+      setCapture({ image: decoded.src, width: decoded.naturalWidth, height: decoded.naturalHeight, url: active.url, tab: state.active, page });
+    } catch (e) { if (id === captureId.current) setError(String(e)); }
+    finally { if (id === captureId.current) setCapturing(false); }
+  };
   useEffect(() => { setUrl(active?.url === "about:blank" ? "" : active?.url ?? ""); }, [active?.url, state.active]);
   useEffect(() => {
     const target = canvas.current;
@@ -105,9 +145,12 @@ export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettin
       <button className="ghost" type="button" aria-label={active?.loading ? "Stop loading" : "Reload"} onClick={() => send({ action: active?.loading ? "stop" : "reload" })}>{active?.loading ? <X aria-hidden /> : <RotateCw aria-hidden />}</button>
       <div className="browser-address">{url.startsWith("https:") && <LockKeyhole aria-hidden />}<input ref={address} aria-label="URL or search" placeholder="Search or enter a URL" value={url} onChange={e => setUrl(e.target.value)} onFocus={e => e.target.select()} /></div>
       <button className="ghost" type="button" aria-label="Downloads" onClick={() => { void openBrowserDownloads().catch(e => setError(String(e))); }}><Download aria-hidden /></button>
+      {onBrowserContext && state.capabilities?.screenshot && <button className="ghost" type="button" aria-label="Annotate page" title="Select or annotate the page" aria-pressed={Boolean(capture)} disabled={!active || active.loading || capturing || agentActive || state.agent} onClick={() => void annotate()}><Pencil aria-hidden /></button>}
       <RowMenu label="page" size="md" actions={[
         { label: "Open in default browser", onClick: () => { void openBrowserUrl(url).catch(e => setError(String(e))); } },
         { label: "Copy URL", onClick: () => { void navigator.clipboard.writeText(url).catch(e => setError(String(e))); } },
+        ...(state.capabilities?.screenshot ? [{ label: "Save screenshot", onClick: () => { void exportBrowserScreenshot(state.active, active?.url).catch(e => setError(String(e))); } }] : []),
+        { label: viewport === "phone" ? "Viewport: Responsive" : "Viewport: Phone (390px)", onClick: () => setViewport(old => old === "phone" ? "responsive" : "phone") },
         ...(native ? [
           { label: "Clear site data", onClick: () => setConfirmClear(true) },
           { label: "Zoom +", onClick: () => { const value = Math.min(5, zoom + .1); setZoom(value); send({ action: "zoom", value }); } },
@@ -119,11 +162,12 @@ export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettin
     {confirmClear && <div className="browser-confirm" role="alert">Clear sign-ins and storage for this site?<button onClick={() => { send({ action: "clearSite", confirmed: true }); setConfirmClear(false); }}>Clear data</button><button onClick={() => setConfirmClear(false)}>Cancel</button></div>}
     {state.externalRequest && <div className="browser-confirm" role="alert">Open {state.externalRequest} externally?<button onClick={() => { void openBrowserUrl(state.externalRequest!).catch(e => setError(String(e))); send({ action: "dismiss", key: "externalRequest" }); }}>Open</button><button onClick={() => send({ action: "dismiss", key: "externalRequest" })}>Cancel</button></div>}
     {state.downloadRequest && <div className="browser-confirm" role="alert">Save this download to Downloads?<button onClick={() => send({ action: "download", url: state.downloadRequest, confirmed: true })}>Save download</button><button onClick={() => send({ action: "dismiss", key: "downloadRequest" })}>Cancel</button></div>}
-    <div ref={surface} className="browser-surface">
-      {native ? <NativeSlot tabId={state.active} ready={active?.ready === true} snapshot={active?.snapshot} blocked={Boolean(pageError || confirmClear || state.externalRequest || state.downloadRequest)} onError={setError} /> : <>
+    <div ref={surface} className="browser-surface" data-viewport={viewport}>
+      {native ? <NativeSlot tabId={state.active} ready={active?.ready === true} snapshot={active?.snapshot} blocked={Boolean(capture || pageError || confirmClear || state.externalRequest || state.downloadRequest)} onError={setError} /> : <>
       <canvas ref={canvas} tabIndex={0} aria-label="Browser page; Shift Escape returns to address bar" style={{ cursor: state.cursor || "default" }} onFocus={() => keyboard.current?.focus()} onMouseDown={e => mouse(e,"mousePressed")} onMouseUp={e => mouse(e,"mouseReleased")} onMouseMove={e => mouse(e,"mouseMoved")} onContextMenu={e => e.preventDefault()} onKeyDown={e => key(e,"keyDown")} onKeyUp={e => key(e,"keyUp")} />
       <textarea ref={keyboard} className="browser-keyboard" aria-label="Browser keyboard input" autoCapitalize="off" autoCorrect="off" spellCheck={false} onKeyDown={e => key(e,"keyDown")} onKeyUp={e => key(e,"keyUp")} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={e => { composing.current = false; send({ action: "text", text: e.data }); e.currentTarget.value = ""; }} onPaste={e => { e.preventDefault(); send({ action: "text", text: e.clipboardData.getData("text/plain") }); }} />
       </>}
+      {capture && onBrowserContext && <BrowserAnnotations key={`${capture.tab}:${capture.url}`} capture={capture} onAdd={onBrowserContext} onClose={() => setCapture(null)} />}
       {pageError && <div className="browser-error" role="alert"><p>{pageError}</p><button onClick={() => send({ action: native ? "reload" : "attach", ...(!native ? size.current : {}) })}>Retry</button></div>}
       {!native && !state.frame && !pageError && <div className="browser-empty">{state.tabs?.length ? "Connecting to the page…" : "Open a tab to browse together."}</div>}
     </div>

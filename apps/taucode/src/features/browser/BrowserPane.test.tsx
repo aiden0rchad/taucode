@@ -6,7 +6,7 @@ import { drawBrowserFrame, normalizeBrowserUrl } from "./browser";
 import { browserRequest, subscribeBrowser, browserNativeBounds } from "@services/tauri";
 import type { BrowserState } from "./browser";
 
-vi.mock("@services/tauri", () => ({ browserRequest: vi.fn(), subscribeBrowser: vi.fn(), browserNativeBounds: vi.fn(), openBrowserDownloads: vi.fn(), openBrowserUrl: vi.fn() }));
+vi.mock("@services/tauri", () => ({ browserRequest: vi.fn(), subscribeBrowser: vi.fn(), browserNativeBounds: vi.fn(), openBrowserDownloads: vi.fn(), openBrowserUrl: vi.fn(), exportBrowserScreenshot: vi.fn() }));
 const drawImage = vi.fn();
 let receive: (s: BrowserState) => void;
 const stop = vi.fn();
@@ -18,7 +18,7 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage, clearRect: vi.fn() } as unknown as CanvasRenderingContext2D);
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-const state: BrowserState = { tabs: [{ id: "one", title: "Example", url: "https://example.test/", loading: false }], active: "one" };
+const state: BrowserState = { tabs: [{ id: "one", title: "Example", url: "https://example.test/", loading: false }], active: "one", capabilities: { screenshot: true, evaluate: true } };
 describe("Browser pane", () => {
   it("normalizes URLs and search terms, rejecting executable schemes", () => {
     const search = "https://search.test/?q={query}";
@@ -88,4 +88,45 @@ it("uses the native slot, aligned toolbar sizes, and native takeover events", as
   expect(screen.getByRole("progressbar", { name: "Page loading" })).toBeTruthy();
   expect(document.querySelector(".browser-toolbar .browser-address")).toBeTruthy();
   expect(takeover).toHaveBeenCalledOnce();
+});
+
+it("captures before hiding the native page and discards late captures after a tab change", async () => {
+  vi.stubGlobal("Image", class { naturalWidth = 800; naturalHeight = 600; src = ""; decode = async () => {}; });
+  let finish!: (image: string) => void;
+  vi.mocked(browserRequest).mockImplementation(async params => params.action === "screenshot" ? new Promise<string>(resolve => { finish = resolve; }) : undefined);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, width: 500, height: 400 } as DOMRect);
+  render(<BrowserPane onBrowserContext={vi.fn()} onClose={vi.fn()} onTakeOver={vi.fn()} />);
+  await waitFor(() => expect(subscribeBrowser).toHaveBeenCalled());
+  act(() => receive({ ...state, backend: "native", tabs: [{ ...state.tabs[0], ready: true }] }));
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Annotate page" })));
+  expect(screen.queryByRole("group", { name: "Browser annotations" })).toBeNull();
+  await act(async () => finish("AAAA"));
+  expect(screen.getByRole("group", { name: "Browser annotations" })).toBeTruthy();
+  expect(screen.getByRole("img", { name: /Page screenshot/ }).getAttribute("viewBox")).toBe("0 0 800 600");
+  fireEvent.click(screen.getByRole("button", { name: "Close annotations" }));
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Annotate page" })));
+  act(() => receive({ ...state, active: "two", tabs: [{ ...state.tabs[0], id: "two" }] }));
+  await act(async () => finish("AAAA"));
+  expect(screen.queryByRole("group", { name: "Browser annotations" })).toBeNull();
+});
+
+it.each(["reload", "agent"])("closes stale annotations when %s begins", async reason => {
+  vi.stubGlobal("Image", class { naturalWidth = 800; naturalHeight = 600; src = ""; decode = async () => {}; });
+  vi.mocked(browserRequest).mockImplementation(async params => params.action === "screenshot" ? "AAAA" : undefined);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 500, height: 400 } as DOMRect);
+  render(<BrowserPane onBrowserContext={vi.fn()} onClose={vi.fn()} onTakeOver={vi.fn()} />);
+  await waitFor(() => expect(subscribeBrowser).toHaveBeenCalled());
+  act(() => receive(state));
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Annotate page" })));
+  expect(screen.getByRole("group", { name: "Browser annotations" })).toBeTruthy();
+  act(() => receive(reason === "reload" ? { ...state, tabs: [{ ...state.tabs[0], loading: true }] } : { ...state, agent: true }));
+  expect(screen.queryByRole("group", { name: "Browser annotations" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Annotate page" }).hasAttribute("disabled")).toBe(true);
+});
+
+it("does not offer capture tools when the backend reports no screenshot support", async () => {
+  render(<BrowserPane onBrowserContext={vi.fn()} onClose={vi.fn()} onTakeOver={vi.fn()} />);
+  await waitFor(() => expect(subscribeBrowser).toHaveBeenCalled());
+  act(() => receive({ ...state, backend: "native", capabilities: { screenshot: false, evaluate: false } }));
+  expect(screen.queryByRole("button", { name: "Annotate page" })).toBeNull();
 });

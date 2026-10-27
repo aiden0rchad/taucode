@@ -10,7 +10,9 @@ pub(super) async fn try_handle(
         "daemon_info" => Some(Ok(state.daemon_info())),
         "daemon_shutdown" => {
             let browser = state.browser.clone();
+            let managed_tasks = state.managed_tasks.clone();
             tokio::spawn(async move {
+                if let Err(error) = managed_tasks.shutdown().await { eprintln!("Background task shutdown: {error}"); }
                 browser.shutdown().await;
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 std::process::exit(0);

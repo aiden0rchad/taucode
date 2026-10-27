@@ -7,6 +7,7 @@ import {
   TOOL_OUTPUT_RECENT_ITEMS,
   truncateText,
   truncateToolText,
+  normalizeVirtualFileChange,
 } from "./threadItems.shared";
 
 const READ_COMMANDS = new Set(["cat", "sed", "head", "tail", "less", "more", "nl"]);
@@ -61,21 +62,22 @@ export function normalizeItem(item: ConversationItem): ConversationItem {
     return { ...item, diff: truncateText(item.diff) };
   }
   if (item.kind === "tool") {
+    const tool = normalizeVirtualFileChange(item);
     return {
-      ...item,
-      title: truncateText(item.title, 200),
-      detail: truncateText(item.detail, 2000),
-      output: item.output
-        ? truncateToolText(item.toolType, item.output)
-        : item.output,
-      changes: item.changes
-        ? item.changes.map((change) => ({
+      ...tool,
+      title: truncateText(tool.title, 200),
+      detail: truncateText(tool.detail, 2000),
+      output: tool.output
+        ? truncateToolText(tool.toolType, tool.output)
+        : tool.output,
+      changes: tool.changes
+        ? tool.changes.map((change) => ({
             ...change,
             diff: change.diff
-              ? truncateToolText(item.toolType, change.diff)
+              ? truncateToolText(tool.toolType, change.diff)
               : change.diff,
           }))
-        : item.changes,
+        : tool.changes,
     };
   }
   return item;

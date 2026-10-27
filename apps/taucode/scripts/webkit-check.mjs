@@ -3,6 +3,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { assertRowAlignment } from '../src/test/rowAlignment.mjs';
+import { checkCodeDock } from './dock-check.mjs';
 
 const require = createRequire(new URL('../engines/browser/package.json', import.meta.url));
 const { webkit } = require('playwright');
@@ -20,6 +21,14 @@ try {
     const open = async params => {
       const url = new URL(base);
       url.search = new URLSearchParams({ mode: 'code', ...params }).toString();
+      // Baseline Code checks inspect the conversation; dock checks opt in via panel.
+      if ((params.mode ?? 'code') === 'code' && !params.panel) await page.evaluate(() => {
+        localStorage.setItem('codexmonitor.sidebarCollapsed', 'false');
+        for (const key of Object.keys(localStorage).filter(key => key.startsWith('taucode.panel.code:'))) {
+          const state = JSON.parse(localStorage.getItem(key));
+          if (state?.dock) localStorage.setItem(key, JSON.stringify({ ...state, open: false, dock: { ...state.dock, expanded: null, focused: 'conversation' } }));
+        }
+      }).catch(() => {});
       await page.goto(url.href);
       const root = { code: '.app', chat: '.chat-layout:not(.work-layout)', work: '.work-layout' }[params.mode ?? 'code'];
       await page.locator(root).waitFor();
@@ -59,7 +68,8 @@ try {
       if (params.thread === 'home') await page.locator('.sidebar .workspace-row').first().click();
       if (params.task !== 'task-needs-input') await page.locator('.composer-shell-toolbar').first().waitFor();
       const toggle = page.getByRole('button', { name: 'Toggle side panel', exact: true });
-      if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+      if (await toggle.count()) { if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click(); }
+      else if (await page.getByRole('button', { name: 'Toggle Files', exact: true }).count()) await page.getByRole('button', { name: 'Toggle Files', exact: true }).click();
       const result = await page.locator('body').evaluate(assertRowAlignment);
       assert(result.rows > 0 && result.icons > 0 && result.unmeasuredRows === 0 && result.unmeasuredIcons === 0, `Missing geometry: ${JSON.stringify(result)}`);
       assert(await page.locator('.workspace-titlebar, .main-header').getByRole('button', { name: 'Browser', exact: true }).count() === 0, 'Redundant Browser header button');
@@ -96,6 +106,7 @@ try {
       assert(geometry.controls.every(c => c.height === 28 || c.height === 30), JSON.stringify(geometry));
     });
     for (const mode of ['code', 'chat', 'work']) await check(`${mode} expanded side panel`, async () => {
+      if (mode === 'code') { await checkCodeDock(page, { width, height, open }); return; }
       await page.evaluate(() => {
         localStorage.setItem('codexmonitor.sidebarWidth', '320');
         localStorage.setItem('codexmonitor.sidebarCollapsed', 'false');

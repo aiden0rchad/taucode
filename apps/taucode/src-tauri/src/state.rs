@@ -30,6 +30,7 @@ impl Default for TcpDaemonRuntime {
 }
 
 pub(crate) struct AppState {
+    pub(crate) managed_tasks: Arc<crate::shared::managed_tasks::ManagedTasks>,
     pub(crate) evals: Arc<crate::shared::evals::Evals>,
     pub(crate) work: Arc<crate::shared::work::Work>,
     pub(crate) imports: Arc<crate::shared::imports::Imports>,
@@ -65,6 +66,7 @@ impl AppState {
         let workspaces = read_workspaces(&storage_path).unwrap_or_default();
         let app_settings = read_settings(&settings_path).unwrap_or_default();
         Self {
+            managed_tasks: crate::shared::managed_tasks::ManagedTasks::new(),
             evals: crate::shared::evals::Evals::new(data_dir.clone(), crate::event_sink::TauriEventSink::new(app.clone())),
             imports: crate::shared::imports::Imports::new(data_dir.clone()),
             browser: crate::shared::browser::Browser::new(data_dir.clone()),

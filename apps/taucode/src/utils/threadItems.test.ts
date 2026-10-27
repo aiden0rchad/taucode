@@ -458,6 +458,23 @@ describe("threadItems", () => {
     }
   });
 
+  it("repairs historical OMP virtual tool writes without claiming file edits", () => {
+    for (const name of ["subagent", "mcp__taucode_browser_browser_click", "custom_mutation"]) {
+      const item = buildConversationItem({ type: "fileChange", id: name, status: "failed", changes: [{ path: `xd://${name}`, kind: "add", diff: "+request" }] });
+      expect(item).toMatchObject({ id: name, kind: "tool", toolType: "dynamicToolCall", title: `Tool: ${name}`, status: "failed", output: "+request" });
+      expect(item && "changes" in item ? item.changes : null).toBeUndefined();
+      const prepared = prepareThreadItems([{ id: name, kind: "tool", toolType: "fileChange", title: "File changes", detail: `A xd://${name}`, status: "failed", output: "original output", changes: [{ path: `xd://${name}`, kind: "add" }] }]);
+      expect(prepared[0]).toMatchObject({ id: name, toolType: "dynamicToolCall", title: `Tool: ${name}`, status: "failed", output: "original output" });
+    }
+  });
+
+  it("retains real filesystem writes and mixed file changes", () => {
+    for (const paths of [["src/subagent"], ["src/subagent", "xd://subagent"]]) {
+      const item = buildConversationItem({ type: "fileChange", id: "real", status: "completed", changes: paths.map(path => ({ path, kind: "update", diff: "actual diff" })) });
+      expect(item).toMatchObject({ toolType: "fileChange", title: "File changes" });
+    }
+  });
+
   it("defaults web search items to completed status", () => {
     const item = buildConversationItem({
       type: "webSearch",

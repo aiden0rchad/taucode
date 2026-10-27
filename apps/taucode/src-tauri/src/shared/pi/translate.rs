@@ -274,7 +274,7 @@ impl Translator {
         let a = &m["args"];
         let virtual_name = matches!(name, "write" | "edit")
             .then(|| a["path"].as_str().and_then(|path| path.strip_prefix("xd://")))
-            .flatten().filter(|name| name.starts_with("mcp__"));
+            .flatten().filter(|name| !name.is_empty() && name.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"_-.:".contains(&byte)));
         let name = virtual_name.unwrap_or(name);
         let virtual_args = virtual_name.and_then(|_| a["content"].as_str())
             .and_then(|content| serde_json::from_str::<Value>(content).ok());
@@ -445,6 +445,12 @@ impl Translator {
                         .is_some_and(|s| s.values().any(|v| v["status"] == "errored"))
                 {
                     item["status"] = json!("failed");
+                }
+                if done && failed {
+                    super::agents::settle(&mut item["agentsTree"], "failed");
+                    for state in item["agentsStates"].as_object_mut().into_iter().flat_map(|states| states.values_mut()) {
+                        if state["status"] == "running" { state["status"] = json!("errored"); }
+                    }
                 }
                 if !done {
                     out.push(self.item_event("item/started", &item));

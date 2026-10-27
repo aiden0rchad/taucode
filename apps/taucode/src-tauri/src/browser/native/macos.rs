@@ -1,7 +1,7 @@
 use base64::Engine;
 use block2::RcBlock;
 use objc2::runtime::AnyObject;
-use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
+use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage, NSView};
 use objc2_foundation::{NSDictionary, NSError, NSString};
 use objc2_web_kit::{WKContentWorld, WKWebView};
 use serde_json::{json, Value};
@@ -168,6 +168,24 @@ pub async fn image(view: &Webview) -> Result<Value, String> {
         .await
         .map_err(|_| "Native snapshot timed out")?
         .map_err(|_| "Native view closed")?
+}
+
+/// Check native keyboard focus without changing visibility or WebKit's viewport.
+pub async fn owns_focus(view: &Webview) -> Result<bool, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    view.with_webview(move |platform| unsafe {
+        let wk = &*(platform.inner() as *const WKWebView);
+        let focused = wk.window().is_some_and(|window| {
+            window.firstResponder().is_some_and(|responder| {
+                responder
+                    .downcast_ref::<NSView>()
+                    .is_some_and(|view| view.isDescendantOf(wk))
+            })
+        });
+        let _ = tx.send(focused);
+    })
+    .map_err(|e| e.to_string())?;
+    rx.await.map_err(|_| "Native view closed".into())
 }
 
 pub async fn control(view: &Webview, action: String) -> Result<Value, String> {

@@ -481,6 +481,34 @@ fn virtual_connectors_keep_tool_items_results_and_replay_without_file_diffs() {
     }
 }
 
+#[test]
+fn virtual_mutating_tools_are_not_file_changes_in_live_or_replayed_transcripts() {
+    for (name, expected) in [("subagent", "collabAgentToolCall"), ("custom_mutation", "dynamicToolCall")] {
+        for transport in ["write", "edit"] {
+            let input = json!({"task":"Inspect the project","agent":"scout"});
+            let args = json!({"path":format!("xd://{name}"),"content":input.to_string()});
+            let mut translator = Translator::new("thread", "/workspace");
+            translator.apply(&json!({"type":"agent_start"}));
+            let started = translator.apply(&json!({"type":"tool_execution_start","toolCallId":"call","toolName":transport,"args":args}));
+            assert_eq!(started[0]["params"]["item"]["type"], expected);
+            if name == "subagent" { assert_eq!(started[0]["params"]["item"]["prompt"], "Inspect the project"); }
+            let result = json!({"content":[{"type":"text","text":"Tool call failed"}],"isError":true});
+            let completed = translator.apply(&json!({"type":"tool_execution_end","toolCallId":"call","toolName":transport,"result":result,"isError":true}));
+            assert!(!completed.iter().any(|event| event["method"] == "turn/diff/updated"));
+            assert_eq!(translator.turns[0]["items"][0]["status"], "failed");
+            assert!(translator.turns[0]["items"][0].get("changes").is_none());
+            if name == "subagent" { assert_eq!(translator.turns[0]["items"][0]["agentsTree"][0]["status"], "failed"); }
+            let history = Translator::history("thread", "/workspace", &[
+                json!({"role":"user","timestamp":1,"content":"Inspect"}),
+                json!({"role":"assistant","timestamp":2,"stopReason":"toolUse","content":[{"type":"toolCall","id":"call","name":transport,"arguments":args}]}),
+                json!({"role":"toolResult","toolCallId":"call","toolName":transport,"content":result["content"],"isError":true}),
+            ]);
+            assert_eq!(history.turns[0]["items"][1]["type"], expected);
+            assert_eq!(history.turns[0]["items"][1]["status"], "failed");
+        }
+    }
+}
+
 #[tokio::test]
 async fn native_tool_gate_approvals_are_decisions_instead_of_user_questions() {
     let dir = temp();

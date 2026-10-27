@@ -37,6 +37,7 @@ mod chats;
 mod work;
 pub mod evals;
 mod import_commands;
+mod managed_tasks_commands;
 mod storage;
 mod tailscale;
 #[cfg(desktop)]
@@ -249,6 +250,7 @@ pub fn run() {
             providers::engine_test,
             computer_commands::computer_request,
             computer_commands::computer_request_permissions,
+            managed_tasks_commands::managed_tasks_request,
             browser_commands::browser_request,
             browser_commands::browser_native_attach,
             browser_commands::browser_native_bounds,
@@ -277,6 +279,7 @@ pub fn run() {
             files::file_write,
             files::read_image_as_data_url,
             files::write_text_file,
+            files::write_png_file,
             codex::get_config_model,
             menu::menu_set_accelerators,
             tray::set_tray_recent_threads,
@@ -410,7 +413,10 @@ pub fn run() {
             taucode_diag_mcp::writer::stop();
             let state = app_handle.state::<state::AppState>();
             state.computer.stop();
-            tauri::async_runtime::block_on(state.browser.shutdown());
+            tauri::async_runtime::block_on(async {
+                if let Err(error) = state.managed_tasks.shutdown().await { eprintln!("Background task shutdown: {error}"); }
+                state.browser.shutdown().await;
+            });
         }
         #[cfg(desktop)]
         if let RunEvent::ExitRequested { api, .. } = event {

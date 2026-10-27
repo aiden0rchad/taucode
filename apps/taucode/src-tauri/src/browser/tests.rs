@@ -141,6 +141,7 @@ async fn bridge_tracks_tabs_streams_and_navigates_without_sockets() {
             replies: VecDeque::new(),
         },
         state.clone(),
+        PathBuf::from("/unused-browser-test-settings.json"),
     );
     bridge.initialize("/home/test/Downloads").await.unwrap();
     assert_eq!(state.borrow()["tabs"].as_array().unwrap().len(), 2);
@@ -395,4 +396,112 @@ fn cancellation_drops_a_tool_waiting_for_tab_selection() {
     assert!(!pending.contains_key("internal-1"));
     assert!(pending.contains_key("internal-2"));
     assert!(launcher::cancel_pending(&mut pending, &json!("8")).is_empty());
+}
+
+mod cdp_page_operations {
+    use super::*;
+
+    struct Control { urls: VecDeque<String>, loaders: VecDeque<String>, evaluation: Value }
+    struct Peer {
+        sent: Arc<StdMutex<Vec<Value>>>,
+        replies: VecDeque<Value>,
+        control: Arc<StdMutex<Control>>,
+    }
+    impl Transport for Peer {
+        async fn send(&mut self, request: Value) -> Result<(), String> {
+            self.sent.lock().unwrap().push(request.clone());
+            let result = match request["method"].as_str().unwrap() {
+                "Target.getTargets" => json!({"targetInfos":[{"targetId":"one","type":"page","url":"https://cached.test","title":"One"}]}),
+                "Target.attachToTarget" => json!({"sessionId":"session-one"}),
+                "Page.getFrameTree" => {
+                    let mut control = self.control.lock().unwrap();
+                    let url = if control.urls.len() > 1 { control.urls.pop_front().unwrap() } else { control.urls.front().cloned().unwrap_or_else(|| "https://allowed.test/page".into()) };
+                    let loader = if control.loaders.len() > 1 { control.loaders.pop_front().unwrap() } else { control.loaders.front().cloned().unwrap_or_else(|| "loader-one".into()) };
+                    let (url, fragment) = url.split_once('#').map_or((url.as_str(), String::new()), |(url, fragment)| (url, format!("#{fragment}")));
+                    json!({"frameTree":{"frame":{"id":"frame-one","loaderId":loader,"url":url,"urlFragment":fragment}}})
+                }
+                "Page.captureScreenshot" => json!({"data":"iVBORw0KGgo="}),
+                "Runtime.evaluate" if request["params"]["awaitPromise"] == true => self.control.lock().unwrap().evaluation.clone(),
+                _ => json!({}),
+            };
+            self.replies.push_back(json!({"id":request["id"],"result":result}));
+            Ok(())
+        }
+        async fn receive(&mut self) -> Result<Value, String> { self.replies.pop_front().ok_or_else(|| "fake peer disconnected".into()) }
+    }
+    async fn fixture(urls: &[&str], evaluation: Value) -> (Bridge<Peer>, Arc<StdMutex<Vec<Value>>>, PathBuf, Arc<StdMutex<Control>>) {
+        let dir = std::env::temp_dir().join(format!("cdp-page-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        std::fs::write(&path, r#"{"browser":{"allowedOrigins":["https://allowed.test"],"blockedOrigins":[]}}"#).unwrap();
+        let sent = Arc::new(StdMutex::new(vec![]));
+        let (state, _) = watch::channel(json!({}));
+        let control = Arc::new(StdMutex::new(Control { urls: urls.iter().map(|url| (*url).into()).collect(), loaders: VecDeque::new(), evaluation }));
+        let mut bridge = Bridge::new(Peer { sent: sent.clone(), replies: VecDeque::new(), control: control.clone() }, state, path);
+        bridge.initialize("/unused-downloads").await.unwrap();
+        sent.lock().unwrap().clear();
+        (bridge, sent, dir, control)
+    }
+    #[tokio::test]
+    async fn png_and_json_use_the_active_session_and_report_capabilities() {
+        let (mut bridge, sent, dir, _) = fixture(&["https://allowed.test/page"], json!({"result":{"value":"{\"result\":{\"width\":1000}}"}})).await;
+        assert_eq!(bridge.state.borrow()["capabilities"], json!({"screenshot":true,"evaluate":true}));
+        assert_eq!(bridge.command(json!({"action":"screenshot","tabId":"one","expectedUrl":"https://allowed.test/page"})).await.unwrap(), "iVBORw0KGgo=");
+        assert_eq!(bridge.command(json!({"action":"evaluate","function":"async () => ({width: innerWidth})","tabId":"one"})).await.unwrap(), json!({"width":1000}));
+        let requests = sent.lock().unwrap();
+        assert!(requests.iter().all(|request| request["sessionId"] == "session-one"));
+        let screenshot = requests.iter().find(|request| request["method"] == "Page.captureScreenshot").unwrap();
+        assert_eq!(screenshot["params"], json!({"format":"png","captureBeyondViewport":false}));
+        let evaluation = requests.iter().find(|request| request["method"] == "Runtime.evaluate").unwrap();
+        let script = evaluation["params"]["expression"].as_str().unwrap();
+        assert!(script.contains("location.href !== expectedUrl") && script.contains("https://allowed.test/page"));
+        assert_eq!(evaluation["params"]["awaitPromise"], true);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[tokio::test]
+    async fn real_frame_origin_is_checked_and_policy_changes_take_effect_without_restart() {
+        let (mut bridge, sent, dir, control) = fixture(&["https://blocked.test/private"], json!({})).await;
+        assert!(bridge.command(json!({"action":"evaluate","function":"() => document.title"})).await.unwrap_err().contains("origin blocked"));
+        assert!(sent.lock().unwrap().iter().all(|request| request["method"] != "Runtime.evaluate"));
+        control.lock().unwrap().urls = ["https://allowed.test/page".into()].into();
+        assert!(bridge.command(json!({"action":"screenshot"})).await.is_ok());
+        std::fs::write(dir.join("settings.json"), r#"{"browser":{"allowedOrigins":[],"blockedOrigins":["https://allowed.test"]}}"#).unwrap();
+        assert!(bridge.command(json!({"action":"evaluate","function":"() => 1"})).await.unwrap_err().contains("origin blocked"));
+        assert!(bridge.command(json!({"action":"screenshot"})).await.unwrap_err().contains("origin blocked"));
+        control.lock().unwrap().urls = ["http://tauri.localhost/private".into()].into();
+        assert!(bridge.command(json!({"action":"screenshot"})).await.unwrap_err().contains("blocked by policy"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[tokio::test]
+    async fn stale_targets_and_navigation_during_capture_fail_closed() {
+        let (mut bridge, sent, dir, control) = fixture(&["https://allowed.test/page", "https://allowed.test/next"], json!({})).await;
+        assert!(bridge.command(json!({"action":"screenshot","tabId":"another"})).await.is_err());
+        assert!(sent.lock().unwrap().is_empty());
+        assert!(bridge.command(json!({"action":"screenshot","expectedUrl":"https://allowed.test/stale"})).await.is_err());
+        control.lock().unwrap().urls = ["https://allowed.test/page".into(), "https://allowed.test/next".into()].into();
+        assert!(bridge.command(json!({"action":"screenshot"})).await.unwrap_err().contains("changed during capture"));
+        control.lock().unwrap().urls = ["https://allowed.test/page".into()].into();
+        control.lock().unwrap().loaders = ["before-reload".into(), "after-reload".into()].into();
+        assert!(bridge.command(json!({"action":"screenshot"})).await.unwrap_err().contains("changed during capture"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[tokio::test]
+    async fn hash_routes_keep_the_exact_execution_url() {
+        let (mut bridge, sent, dir, _) = fixture(&["https://allowed.test/page#settings"], json!({"result":{"value":"{\"result\":42}"}})).await;
+        assert_eq!(bridge.command(json!({"action":"evaluate","function":"() => 42","expectedUrl":"https://allowed.test/page#settings"})).await.unwrap(), 42);
+        assert!(sent.lock().unwrap().iter().any(|request| request["params"]["expression"].as_str().is_some_and(|script| script.contains("https://allowed.test/page#settings"))));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[tokio::test]
+    async fn eval_rejects_targets_exceptions_and_unbounded_results() {
+        let (mut bridge, sent, dir, control) = fixture(&[], json!({"result":{"value":"{\"error\":\"Page navigated before evaluation\"}"}})).await;
+        assert!(bridge.command(json!({"action":"evaluate","function":"() => 1","ref":"missing"})).await.is_err());
+        assert!(sent.lock().unwrap().is_empty());
+        assert!(bridge.command(json!({"action":"evaluate","function":"() => 1"})).await.unwrap_err().contains("Page navigated"));
+        control.lock().unwrap().evaluation = json!({"exceptionDetails":{"text":"SyntaxError"}});
+        assert!(bridge.command(json!({"action":"evaluate","function":"bad syntax"})).await.is_err());
+        control.lock().unwrap().evaluation = json!({"result":{"value":"x".repeat(200001)}});
+        assert!(bridge.command(json!({"action":"evaluate","function":"() => 1"})).await.unwrap_err().contains("200 KB"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

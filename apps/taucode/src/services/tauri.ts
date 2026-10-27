@@ -897,6 +897,11 @@ export async function openBrowserUrl(url: string): Promise<void> {
 export function browserRequest<T = void>(params: Record<string, unknown>): Promise<T> {
   return invoke<T>("browser_request", { params });
 }
+export async function exportBrowserScreenshot(tabId: string, expectedUrl?: string): Promise<void> {
+  const data = await browserRequest<string>({ action: "screenshot", tabId, expectedUrl });
+  const path = await save({ defaultPath: "browser-screenshot.png", filters: [{ name: "PNG image", extensions: ["png"] }] });
+  if (path) await invoke("write_png_file", { path, data });
+}
 export async function subscribeBrowser(onState: (state: import("@/features/browser/browser").BrowserState) => void): Promise<() => void> {
   const channel = new Channel<import("@/features/browser/browser").BrowserState>();
   channel.onmessage = onState;
@@ -1304,3 +1309,7 @@ export async function openSetupPrivacy(pane: "screen" | "accessibility") {
   await openUrl(`x-apple.systempreferences:com.apple.preference.security?${pane === "screen" ? "Privacy_ScreenCapture" : "Privacy_Accessibility"}`);
 }
 export const evalRequest = <T = unknown>(action: string, params: object = {}) => invoke<T>("eval_request", { action, params });
+
+export function managedTasksRequest<T>(workspaceId: string, threadId: string, action: string, params: Record<string, unknown> = {}): Promise<T> {
+  return invoke<T>("managed_tasks_request", { workspaceId, threadId, action, params });
+}

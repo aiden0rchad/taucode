@@ -175,6 +175,11 @@ pub(super) async fn handle_rpc_request(
     if method == "computer_request" {
         return crate::shared::computer::ipc(&state.data_dir, params.get("params").cloned().unwrap_or_default()).await;
     }
+    if method == "managed_tasks_request" {
+        return state.managed_tasks.request(&state.app_settings, &state.workspaces, &state.sessions,
+            parse_string(&params, "workspaceId")?, parse_string(&params, "threadId")?,
+            parse_string(&params, "action")?, params["params"].clone()).await;
+    }
     if method == "browser_request" {
         return state.browser.request(params["params"].clone()).await;
     }

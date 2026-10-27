@@ -39,6 +39,7 @@ import { useWorkspaceHomeSuggestionsStyle } from "../hooks/useWorkspaceHomeSugge
 import type { ThreadStatusById } from "../../../utils/threadStatus";
 
 type WorkspaceHomeProps = {
+  imageAttachments?: Pick<ReturnType<typeof useComposerImages>, "activeImages" | "attachImages" | "pickImages" | "removeImage" | "clearActiveImages">;
   workspace: WorkspaceInfo;
   showGitInitBanner: boolean;
   initGitRepoLoading: boolean;
@@ -106,6 +107,7 @@ type WorkspaceHomeProps = {
 };
 
 export function WorkspaceHome({
+  imageAttachments,
   workspace,
   showGitInitBanner,
   initGitRepoLoading,
@@ -177,16 +179,11 @@ export function WorkspaceHome({
   const iconSrc = useMemo(() => convertFileSrc(iconPath), [iconPath]);
   const fallbackTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const textareaRef = textareaRefProp ?? fallbackTextareaRef;
-  const {
-    activeImages,
-    attachImages,
-    pickImages,
-    removeImage,
-    clearActiveImages,
-  } = useComposerImages({
+  const localImages = useComposerImages({
     activeThreadId: null,
     activeWorkspaceId: workspace.id,
   });
+  const { activeImages, attachImages, pickImages, removeImage, clearActiveImages } = imageAttachments ?? localImages;
 
   const {
     isAutocompleteOpen,

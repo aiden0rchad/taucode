@@ -124,3 +124,36 @@ pub(crate) fn write_text_file(path: String, content: String) -> Result<(), Strin
     }
     std::fs::write(&target, content).map_err(|err| format!("Failed to write export file: {err}"))
 }
+
+/// Local export to a path chosen in the desktop Save dialog, including in remote mode.
+#[tauri::command]
+pub(crate) fn write_png_file(path: String, data: String) -> Result<(), String> {
+    use base64::Engine;
+    use std::io::Write;
+    let target = PathBuf::from(path);
+    if !target.is_absolute() || target.extension().and_then(|ext| ext.to_str()).is_none_or(|ext| !ext.eq_ignore_ascii_case("png")) {
+        return Err("Choose an absolute .png file path".into());
+    }
+    if data.len() > 32 * 1024 * 1024 { return Err("Screenshot exceeds 24 MB".into()); }
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data).map_err(|_| "Invalid screenshot encoding")?;
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") { return Err("Expected a PNG screenshot".into()); }
+    let temporary = target.with_file_name(format!(".taucode-export-{}.tmp", uuid::Uuid::new_v4()));
+    let result = (|| {
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&temporary)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        std::fs::rename(&temporary, &target)
+    })();
+    if result.is_err() { let _ = std::fs::remove_file(&temporary); }
+    result.map_err(|err: std::io::Error| format!("Failed to save screenshot: {err}"))
+}
+
+#[cfg(test)]
+mod export_tests {
+    #[test]
+    fn screenshot_export_rejects_non_png_and_relative_paths() {
+        assert!(super::write_png_file("image.png".into(), "AAAA".into()).is_err());
+        assert!(super::write_png_file("/tmp/image.txt".into(), "AAAA".into()).is_err());
+        assert!(super::write_png_file("/tmp/image.png".into(), "AAAA".into()).unwrap_err().contains("PNG"));
+    }
+}
