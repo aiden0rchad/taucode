@@ -103,6 +103,7 @@ impl NativeBackend {
                             main.set_focus().map_err(|e| e.to_string())?;
                         }
                     }
+                    macos::expose_accessibility(&view, false).await?;
                     // Keep WebKit's viewport/scroll while the parent clips the
                     // parked view. NSView.setHidden collapses its layout viewport.
                     view.set_position(LogicalPosition::new(-32000., -32000.))
@@ -209,6 +210,11 @@ impl NativeBackend {
                 LogicalSize::new(800., 600.),
             )
             .map_err(|e| e.to_string())?;
+        #[cfg(target_os = "macos")]
+        if let Err(error) = macos::install_accessibility(&view).await {
+            let _ = close_view(view);
+            return Err(error);
+        }
         if let Some(main) = self.app.get_webview("main") {
             // add_child changes the original webview's sizing semantics. Keep the
             // UI full-window; browser bounds remain controlled by place().
@@ -252,6 +258,8 @@ impl NativeBackend {
             .map_err(|e| e.to_string())?;
             if views.shown.as_deref() != Some(&id) {
                 view.show().map_err(|e| e.to_string())?;
+                #[cfg(target_os = "macos")]
+                macos::expose_accessibility(&view, true).await?;
                 views.shown = Some(id);
             }
         }
@@ -650,5 +658,7 @@ mod tests {
 fn close_view(view: Webview) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     navigation_events::release(&view);
+    #[cfg(target_os = "macos")]
+    macos::release_accessibility(&view);
     view.close().map_err(|e| e.to_string())
 }

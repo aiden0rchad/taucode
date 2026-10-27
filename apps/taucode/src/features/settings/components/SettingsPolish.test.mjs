@@ -105,8 +105,7 @@ it.each([[1440, "dark", "rgba(0, 0, 0, 0.5)"], [900, "light", "rgba(15, 15, 20, 
   const dialog = await screen.findByRole("dialog", { name: "Settings" }, { timeout: 5000 });
   document.documentElement.dataset.theme = theme;
   const panel = document.querySelector('.dock-pane[data-dock-pane="sidechat"]');
-  const stage = panel.closest(".dock-stage");
-  expect(stage).toBeTruthy();
+  expect(panel.parentElement.classList.contains("dock-body")).toBe(true);
   expect(panel.hidden).toBe(false);
   expect(dialog.parentElement).toBe(document.body);
   const layer = element => {
@@ -115,8 +114,8 @@ it.each([[1440, "dark", "rgba(0, 0, 0, 0.5)"], [900, "light", "rgba(15, 15, 20, 
     return Number(getComputedStyle(document.documentElement).getPropertyValue(value.slice(4, -1)));
   };
   const scrim = dialog.querySelector(".ds-modal-backdrop");
-  expect(layer(dialog)).toBeGreaterThan(layer(stage));
-  expect(layer(scrim)).toBeGreaterThan(layer(stage));
+  expect(layer(dialog)).toBeGreaterThan(layer(panel));
+  expect(layer(scrim)).toBeGreaterThan(layer(panel));
   expect(layer(dialog.querySelector(".ds-modal-card"))).toBeGreaterThan(layer(scrim));
   expect(getComputedStyle(scrim).backgroundColor).toBe(tint);
   expect(getComputedStyle(scrim).position).toBe("absolute");

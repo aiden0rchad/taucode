@@ -18,6 +18,10 @@ custom-protocol = ["tauri/custom-protocol"]
 name = "codex_monitor_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[test]]
+name = "native_browser_accessibility"
+harness = false
+
 [build-dependencies]
 serde_json = "1"
 tauri-build = { version = "2.5.6", features = [] }

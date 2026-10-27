@@ -141,9 +141,8 @@ covered by the focused checks rather than another full-suite run.
   metadata passed after this change.
 - An attempted accessibility-hidden setter changed the native page viewport and
   broke selection. It was reverted. Parking preserves dimensions; keyboard focus
-  transfers to the main view only if the parked browser owned it. Final native
-  h1 selection and draft metadata pass. Accessibility traversal remains a known
-  limitation described below.
+  transfers to the main view only if the parked browser owned it. An owned native
+  container now gates accessibility independently; see the follow-up below.
 - Background command text received smart quotes: disabled correction,
   capitalization, and spelling on that field. Focused UI tests pass.
 - Saved environment reset Astra to Sol after restore: declarative preference and
@@ -175,6 +174,52 @@ covered by the focused checks rather than another full-suite run.
 
 ## Boundaries and remaining limitations
 
+### Native accessibility follow-up
+
+The browser now has an owned `NSView` accessibility container. It excludes the
+parked page through both modern properties and legacy child queries, while the
+original `WKWebView` keeps its class, observers, viewport, and title updates.
+Replacing WebKit's runtime class after KVO enrollment caused a frame-setter
+crash during development; that approach was removed. The container passes
+pointer and accessibility hits outside the page through to the app and is
+removed when its tab closes. Its accessibility frame matches the page when
+exposed and is empty when parked, including legacy position/size queries; its
+physical frame still preserves Wry's coordinate system.
+
+The Code dock keeps panes directly under the workspace body. Expansion moves
+the existing pane nodes past a keyed measurement anchor, refreshing WebKit's
+native accessibility children without remounting the page. A flat structure
+alone did not fix the stale toolbar after annotation, a second tab, and expansion.
+Collapsed desktop and tablet navigation, including their resize handles, are
+excluded from accessibility navigation.
+
+Validation: 38 focused frontend tests, four desktop WebKit dock matrices, one
+touch-tablet matrix, TypeScript checking, and the main-thread AppKit integration
+test pass. The integration test shows no windows and covers an already-observed
+native child, both coordinate orientations, viewport retention, legacy and modern
+child/frame queries, pointer and screen-coordinate accessibility hit testing,
+resize, window movement, and cleanup. Run it with
+`cargo test --test native_browser_accessibility --offline` from `apps/taucode/src-tauri`.
+
+Native testing reproduced the earlier crash in WebKit's observed frame setter;
+the replacement container survived sign-in, annotations, tab changes, and pane
+expansion. The regression sequence is: expand Browser, hide navigation, sign in,
+annotate, select the h1, add to an unsent draft, create a second tab, then expand
+again. Browser restore, tabs, address, and annotation controls remain in raw AX.
+Annotation mode excludes the live page, keyboard navigation stays in its tools,
+and closing it restores form values, click state, and scroll position. Test draft
+text and attachments were removed without sending a message. The final signed
+build passed this sequence again with corrected AX frames, plus inactive-tab
+exclusion, tab-state retention, sidebar expansion/collapse, and composer input.
+No crash report appeared after the initial experimental frame-setter crash.
+The disposable port 47501 server was stopped; the 47400 demo and 1421 preview
+were left running.
+
+Relevant platform contracts: [AppKit accessibility children](https://developer.apple.com/documentation/AppKit/NSAccessibility-c.protocol/accessibilityChildren)
+and [Apple's KVO implementation notes](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/KeyValueObserving/Articles/KVOImplementation.html).
+
+### Feature boundaries
+
 - This adapts the highlighted Claude workspace to taucode's existing features.
   Environment profiles reference existing folders, engine/model, and existing
   setup/launch scripts; they do not create worktrees or store environment secrets.
@@ -189,15 +234,10 @@ covered by the focused checks rather than another full-suite run.
   native platforms hide these controls through backend capability flags. CDP
   also supplies guarded capture/evaluation. Desktop/daemon checks pass; native
   Windows behavior was not exercised on this Mac.
-- A parked WKWebView still appears in raw accessibility inspection. Setting
-  AppKit accessibility-hidden caused a viewport regression and was reverted.
-  WebKit's [accessibility implementation](https://raw.githubusercontent.com/WebKit/WebKit/main/Source/WebKit/UIProcess/mac/WebViewImpl.mm)
-  returns its remote web-content child even when the view is parked. No public
-  independent subtree suppression was verified. VoiceOver behavior has not been
-  validated; do not claim complete accessibility parity with Claude.
-- During native full-pane expansion, raw accessibility inspection occasionally
-  omitted toolbar nodes even though the visible restore control worked with
-  pointer input. This remains part of the native accessibility follow-up.
+- VoiceOver was briefly enabled with user approval and turned back off. The
+  automation could not reliably drive its navigation commands, so full spoken
+  navigation remains unverified. Raw macOS accessibility and keyboard behavior
+  were checked; do not claim complete VoiceOver parity with Claude.
 
 All implementation agents and owned checks have finished. Main remains unmerged.
 The unrelated `docs/HANDOFF-window-resize.md` and main checkout's `.claude/launch.json`
@@ -208,12 +248,12 @@ were preserved. User UI review and explicit approval are required before merging
 App path:
 `/Users/rolandleyco/taucode-m1w/apps/taucode/src-tauri/target/debug/bundle/macos/taucode.app`.
 Bind by full path because other worktrees share the bundle ID. CUA input uses
-screenshot pixels on this Mac (3456x2034 is not halved). Refresh full AX indices
+screenshot pixels on this Mac (the final capture is 3416x1994, not halved). Refresh full AX indices
 after screenshots or app transitions; failed actions may require a fresh state.
 
 Current native view: Plant Tracker verification conversation, Code mode, session
-rail and stacked Background tasks/Browser panes. One finished disposable task,
-no running managed tasks, empty command field and message draft. Browser is
+rail and stacked Background tasks/Browser panes. No running or finished managed
+tasks, empty command field and message draft. Browser is
 signed into the disposable demo `http://localhost:47400/`.
 
 Final screenshots (kept outside Git because they contain local conversation UI):
@@ -222,6 +262,11 @@ Final screenshots (kept outside Git because they contain local conversation UI):
 - `/tmp/taucode-m8b-native-expanded.jpg`: Browser fills the window with sidebar hidden.
 - `/tmp/taucode-m8b-native-annotation-final.jpg`: exact native h1 selection.
 - `/tmp/taucode-m8b-native-export.png`: exported PNG, 888x1678.
+- `/tmp/taucode-native-ax-final-workspace.jpg`: final signed build, clean draft and tiled workspace.
+- `/tmp/taucode-native-ax-final-expanded.jpg`: full-window browser after the accessibility fixes.
+- `/tmp/taucode-native-ax-final-expanded.txt`: matching native accessibility tree with toolbar and live page.
+- `/tmp/taucode-native-ax-frame-test.log`: main-thread AppKit regression test.
+- `/tmp/taucode-native-ax-build6.log`: final signed app build.
 
 CUA root bindings: `tau` (native app), `preview` (IAB tab 5), `claude` (reference),
 `panelFiles` (fs promises for screenshot saving). After context compaction call

@@ -7,6 +7,11 @@ use objc2_web_kit::{WKContentWorld, WKWebView};
 use serde_json::{json, Value};
 use std::sync::Mutex;
 use tauri::Webview;
+#[path = "accessibility.rs"]
+mod accessibility;
+pub use accessibility::expose as expose_accessibility;
+pub use accessibility::install_view as install_accessibility;
+pub use accessibility::release as release_accessibility;
 thread_local! {
     // Retain the named world for the app lifetime so refs survive separate calls.
     static WORLD: objc2::rc::Retained<WKContentWorld> = unsafe { WKContentWorld::worldWithName(&NSString::from_str("taucode.browser.private"), objc2::MainThreadMarker::new().expect("WebKit main thread")) };

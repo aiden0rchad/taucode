@@ -71,6 +71,7 @@
 @media (max-width: 700px) { .tabbed-side-panel { position: absolute; right: 0; top: 40px; bottom: 0; z-index: var(--z-panel); max-width: calc(100vw - 80px); } }
 
 .workspace-main > .app { width: 100%; min-height: 0; }
+.workspace-main > .app.sidebar-collapsed :is(.sidebar, .sidebar-resizer, .tablet-projects, .projects-resizer) { visibility: hidden; }
 .workspace-main .sidebar .thread-details, .workspace-main .sidebar .workspace-summary, .workspace-main .engine-badge, .workspace-main time { font-size: 11.5px; }
 .work-concurrency-popover { z-index: var(--z-popover); padding: 12px; }
 .workspace-main .launch-script-cluster { min-width: 0; flex-shrink: 1; }
@@ -176,7 +177,8 @@
   margin: 0;
 }
 .dock-stage { position: absolute; inset: 0 0 0 var(--dock-content-inset); min-width: 0; min-height: 0; pointer-events: none; z-index: var(--z-panel); }
-.dock-pane { position: absolute; display: flex; flex-direction: column; overflow: hidden; min-width: 0; min-height: 0; background: var(--surface-messages); border: 1px solid var(--border-subtle); pointer-events: auto; }
+.dock-pane, .dock-divider { left: calc(var(--dock-content-inset) + (100% - var(--dock-content-inset)) * var(--dock-box-x)); width: calc((100% - var(--dock-content-inset)) * var(--dock-box-width)); }
+.dock-pane { position: absolute; display: flex; flex-direction: column; overflow: hidden; min-width: 0; min-height: 0; background: var(--surface-messages); border: 1px solid var(--border-subtle); pointer-events: auto; z-index: var(--z-panel); }
 .dock-pane[hidden] { display: none !important; }
 .dock-pane-header { min-height: 32px; height: 32px; display: flex; align-items: center; gap: 4px; padding: 0 6px 0 10px; flex-shrink: 0; border-bottom: 1px solid var(--border-subtle); background: var(--surface-sidebar); user-select: none; }
 .dock-pane-header > strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }

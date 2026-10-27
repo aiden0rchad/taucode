@@ -15,7 +15,7 @@ import { dockGeometry, dockPanes, hideDockPane, initialDock, moveDockPane, panel
 
 const quickTools = [{ id: "terminal", label: "Terminal", icon: Terminal }, { id: "git", label: "Changes", icon: GitBranch }, { id: "browser", label: "Browser", icon: Globe }, { id: "files", label: "Files", icon: Folder }];
 const full: DockBox = { x: 0, y: 0, w: 100, h: 100 };
-const position = (box: DockBox): CSSProperties => ({ left: `${box.x}%`, top: `${box.y}%`, width: `${box.w}%`, height: `${box.h}%` });
+const position = (box: DockBox): CSSProperties => ({ "--dock-box-x": box.x / 100, "--dock-box-width": box.w / 100, top: `${box.y}%`, height: `${box.h}%` } as CSSProperties);
 
 type Controller = ReturnType<typeof useSidePanelState>;
 export function DockWorkspace({ children, scope, title, tools = [], searchUrl, onInterrupt, titleActions, actions = [], onNavigate, sessionRail, onBrowserContext, controller }: WorkspaceShellProps & { controller: Controller }) {
@@ -85,6 +85,7 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
     ...tools,
     ...(features.browser && mounted.current.ids.has("browser") ? [{ id: "browser", label: "Browser", content: <BrowserPane embedded onBrowserContext={addBrowserContext} searchUrl={searchUrl} agentActive={browser.agentActive} onTakeOver={browser.agentActive ? browser.takeOver : onInterrupt} onClose={() => setDock(layout => hideDockPane(layout, "browser"))} /> }] : []),
   ];
+  const measurement = <div key="dock-measurement" className="dock-stage" ref={stage} aria-hidden="true" />;
   return <div className={`workspace-shell dock-workspace${compact ? " is-compact" : ""}${layout.sidebarOverlay ? " sidebar-overlay" : ""}${covered ? " panel-expanded" : ""}`} ref={resize.appRef} style={{
     "--right-panel-width": "0px", "--sidebar-width": `${layout.sidebarWidth}px`, "--layout-sidebar-column": `${layout.sidebarColumn}px`,
     "--dock-conversation-x": (conversation?.x ?? 0) / 100, "--dock-conversation-y": `${conversation?.y ?? 0}%`, "--dock-conversation-width": (conversation?.w ?? 100) / 100, "--dock-conversation-height": `${conversation?.h ?? 100}%`,
@@ -107,8 +108,8 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
     </header>
     <div className="workspace-body dock-body">
       <div className="workspace-main" ref={mainRef}>{children}</div>
-      <div className="dock-stage" ref={stage}>
-        {content.filter(pane => mounted.current.ids.has(pane.id)).map(pane => {
+      {/* Moving existing panes past this keyed anchor refreshes WebKit's native AX children on expansion without remounting live content. */}
+        {[...(expanded ? [measurement] : []), ...content.filter(pane => mounted.current.ids.has(pane.id)).map(pane => {
           const shown = visible.has(pane.id) && (compact ? focused === pane.id : !expanded || expanded === pane.id);
           const box = compact || expanded === pane.id ? full : geometry.panes[pane.id] ?? full;
           return <section className={`dock-pane${expanded === pane.id ? " is-expanded" : ""}${pane.id === "session" ? " dock-session-rail" : ""}`} key={pane.id} data-dock-pane={pane.id} aria-label={pane.label} hidden={!shown} tabIndex={-1} ref={element => { if (element) panes.current.set(pane.id, element); else panes.current.delete(pane.id); }} style={position(box)}>
@@ -122,10 +123,12 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
             {pane.id === "browser" && <div className="dock-browser-tabs" role="tablist" aria-label="Browser pages">{browserTabs.map(tab => <div className="dock-browser-tab" key={tab.id}><button role="tab" aria-selected={(state.browserActive ?? browserTabs[0]?.id) === tab.id} onClick={() => update(state => panelReducer(state, { type: "select", id: tab.id }))}>{tab.title}</button><IconButton aria-label={`Close ${tab.title}`} onClick={() => { void close(tab); }}><X aria-hidden /></IconButton></div>)}<IconButton aria-label="New browser tab" disabled={busy} onClick={() => { void openPage(); }}><Plus aria-hidden /></IconButton></div>}
             <div className="dock-pane-content"><DiagnosticBoundary panel={pane.id}>{pane.content}</DiagnosticBoundary></div>
           </section>;
-        })}
+        }), ...(!expanded ? [measurement] : [])]}
         {!expanded && !compact && geometry.splits.map(({ node, box }, index) => {
           const horizontal = node.axis === "horizontal";
-          const style: CSSProperties = horizontal ? { left: `calc(${box.x + box.w * node.ratio}% - 4px)`, top: `${box.y}%`, height: `${box.h}%`, width: 8 } : { left: `${box.x}%`, top: `calc(${box.y + box.h * node.ratio}% - 4px)`, width: `${box.w}%`, height: 8 };
+          const style: CSSProperties = horizontal
+            ? { ...position({ ...box, x: box.x + box.w * node.ratio }), width: 8, transform: "translateX(-4px)" }
+            : { ...position({ ...box, y: box.y + box.h * node.ratio }), height: 8, transform: "translateY(-4px)" };
           return <div key={node.id} className={`dock-divider ${horizontal ? "is-horizontal" : "is-vertical"}`} role="separator" aria-label={`Resize dock split ${index + 1}`} aria-orientation={horizontal ? "vertical" : "horizontal"} aria-valuemin={15} aria-valuemax={85} aria-valuenow={Math.round(node.ratio * 100)} tabIndex={0} style={style} onKeyDown={event => {
             if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
             event.preventDefault(); const ratio = event.key === "Home" ? .15 : event.key === "End" ? .85 : node.ratio + (["ArrowLeft", "ArrowUp"].includes(event.key) ? -.05 : .05);
@@ -138,7 +141,6 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
             });
           }} />;
         })}
-      </div>
       {error && <p className="dock-error" role="alert">{error}</p>}
     </div>
   </div>;

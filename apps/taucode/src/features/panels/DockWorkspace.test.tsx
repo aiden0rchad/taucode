@@ -55,7 +55,7 @@ beforeEach(() => {
     if (this.classList.contains("browser-native-slot") || this.classList.contains("browser-surface")) {
       const panel = this.closest<HTMLElement>("[data-dock-pane]")!;
       if (panel.hidden) return { x: 0, y: 0, width: 0, height: 0 } as DOMRect;
-      return { x: sidebar + width * parseFloat(panel.style.left) / 100, y: 100 + 600 * parseFloat(panel.style.top) / 100, width: width * parseFloat(panel.style.width) / 100, height: 600 * parseFloat(panel.style.height) / 100 } as DOMRect;
+      return { x: sidebar + width * Number(panel.style.getPropertyValue("--dock-box-x")), y: 100 + 600 * parseFloat(panel.style.top) / 100, width: width * Number(panel.style.getPropertyValue("--dock-box-width")), height: 600 * parseFloat(panel.style.height) / 100 } as DOMRect;
     }
     return { x: 0, y: 0, width: 0, height: 0 } as DOMRect;
   });
@@ -112,6 +112,9 @@ it("moves/reorders and resizes both split axes, persists by scope, and honors th
 it("keeps one native browser and selected page through tool selection, moving, filling and closing its group", async () => {
   render(shell()); fireEvent.click(screen.getByRole("button", { name: "Toggle Browser" }));
   const slot = await screen.findByLabelText("Native browser page"); await frame();
+  const browserPane = pane("browser"), body = document.querySelector(".dock-body");
+  expect(browserPane.parentElement).toBe(body);
+  expect(document.querySelector(".dock-stage")?.childElementCount).toBe(0);
   fireEvent.click(screen.getByRole("button", { name: "New browser tab" }));
   await screen.findByRole("tab", { name: "Page 2", selected: true });
   fireEvent.click(screen.getByRole("button", { name: "Toggle Terminal" }));
@@ -130,6 +133,7 @@ it("keeps one native browser and selected page through tool selection, moving, f
   const count = host.tabs.length;
   fireEvent.click(screen.getByRole("button", { name: "Toggle Browser" })); await frame();
   expect(screen.getAllByLabelText("Native browser page")).toEqual([slot]);
+  expect(pane("browser")).toBe(browserPane); expect(browserPane.parentElement).toBe(body);
   expect(host.tabs).toHaveLength(count); expect(host.active).toBe("page-1");
   expect(vi.mocked(browserNativeBounds).mock.calls[vi.mocked(browserNativeBounds).mock.calls.length - 1]?.[2]).toBe(true);
 });
@@ -176,12 +180,29 @@ it("tiles a filled browser before forwarding its attachment to the visible draft
   const children = <div className="app layout-desktop"><aside className="sidebar"/><main className="main"><input aria-label="Conversation draft" /></main></div>;
   render(<WorkspaceShell dock scope="code:one" title="Thread" sessionRail={<Rail />} tools={tools} onInterrupt={() => {}} onBrowserContext={add}>{children}</WorkspaceShell>);
   fireEvent.click(screen.getByRole("button", { name: "Toggle Browser" }));
-  await screen.findByLabelText("Native browser page");
+  const slot = await screen.findByLabelText("Native browser page"), browserPane = pane("browser");
   fireEvent.click(screen.getByRole("button", { name: "Expand Browser" }));
   fireEvent.click(screen.getByRole("button", { name: "Annotate page" }));
   fireEvent.click(await screen.findByRole("button", { name: "Attach browser draft" }));
   expect(add).toHaveBeenCalledExactlyOnceWith({ text: "Selected heading", image: "data:image/png;base64,cG5n" });
   expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Conversation draft" }));
+  fireEvent.click(screen.getByRole("button", { name: "New browser tab" }));
+  await screen.findByRole("tab", { name: "Page 2", selected: true });
+  const body = browserPane.parentElement!, slotParent = slot.parentElement;
+  const measurement = body.querySelector(".dock-stage")!;
+  expect(measurement.previousElementSibling).toBe(browserPane);
+  const moves = new MutationObserver(() => {});
+  moves.observe(body, { childList: true });
+  fireEvent.click(screen.getByRole("button", { name: "Expand Browser" }));
+  const records = moves.takeRecords(); moves.disconnect();
+  expect(records.some(record => [...record.addedNodes].includes(browserPane))).toBe(true);
+  expect(measurement.nextElementSibling).not.toBeNull();
+  expect(body.querySelector(".dock-stage")).toBe(measurement);
+  expect(pane("browser")).toBe(browserPane);
+  expect(browserPane.parentElement).toBe(body);
+  expect(screen.getByLabelText("Native browser page")).toBe(slot);
+  expect(slot.parentElement).toBe(slotParent);
+  expect(within(browserPane).getByRole("button", { name: "Restore Browser" })).toBeTruthy();
 });
 
 it("uses a full-width focused pane in compact layouts and restores the saved tile tree on widening", () => {
@@ -191,13 +212,13 @@ it("uses a full-width focused pane in compact layouts and restores the saved til
   fireEvent.click(screen.getByRole("button", { name: "Toggle Files" }));
   const tree = layout().tree;
   vi.stubGlobal("innerWidth", 720); fireEvent(window, new Event("resize"));
-  expect(pane("files").hidden).toBe(false); expect(pane("files").style.width).toBe("100%");
+  expect(pane("files").hidden).toBe(false); expect(pane("files").style.getPropertyValue("--dock-box-width")).toBe("1");
   expect(terminal.hidden).toBe(true); expect(screen.queryByRole("separator")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Show conversation" }));
   expect(screen.getByRole("textbox", { name: "Conversation draft" }).closest("[inert]")).toBeNull();
   expect(pane("files").hidden).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Toggle Terminal" }));
-  expect(terminal.hidden).toBe(false); expect(terminal.style.width).toBe("100%");
+  expect(terminal.hidden).toBe(false); expect(terminal.style.getPropertyValue("--dock-box-width")).toBe("1");
   vi.stubGlobal("innerWidth", 1600); fireEvent(window, new Event("resize"));
   expect(terminal.hidden).toBe(false); expect(pane("files").hidden).toBe(false);
   expect(layout().tree).toEqual(tree);
