@@ -10,5 +10,7 @@ export function connectorDecision(servers: Connector[], tool: string, mode: stri
   if (server.id === "taucode-computer" && name === "computer_screenshot") return "allow";
   if (mode === "read-only") return "block";
   if (server.id === "taucode-computer") return "allow";
+  // Full access means no prompts; connector allow/deny lists and disabled servers still block.
+  if (mode === "full-access") return "allow";
   return server.approval === "ask" ? (interactive ? "ask" : "block") : "allow";
 }
