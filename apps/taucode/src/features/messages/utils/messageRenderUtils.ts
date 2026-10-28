@@ -347,6 +347,100 @@ export function cleanCommandText(commandText: string) {
   return stripped.trim();
 }
 
+export type ToolCategory = "read" | "edit" | "command" | "browser" | "search" | "agent" | "plan" | "other";
+export type ToolDescription = { verb: string; target: string; category: ToolCategory; mono?: boolean };
+
+const BROWSER_VERBS: Record<string, [string, string[]]> = {
+  browser_navigate: ["Opened", ["url"]],
+  browser_navigate_back: ["Went back", []],
+  browser_snapshot: ["Read page", []],
+  browser_take_screenshot: ["Took screenshot", []],
+  browser_click: ["Clicked", ["element", "target", "ref"]],
+  browser_type: ["Typed into", ["element", "target", "ref"]],
+  browser_fill_form: ["Filled form", []],
+  browser_select_option: ["Selected in", ["element", "target", "ref"]],
+  browser_press_key: ["Pressed", ["key"]],
+  browser_hover: ["Hovered", ["element", "target", "ref"]],
+  browser_evaluate: ["Ran page script", []],
+  browser_console_messages: ["Checked console", []],
+  browser_network_requests: ["Checked network", []],
+  browser_handle_dialog: ["Answered dialog", []],
+  browser_wait_for: ["Waited for", ["text", "textGone"]],
+  browser_tabs: ["Managed tabs", []],
+  browser_close: ["Closed browser", []],
+};
+
+const shortUrl = (url: string) => url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+const humanize = (name: string) => name.replace(/^mcp__/, "").replace(/[_-]+/g, " ").trim();
+const stripRange = (path: string) => path.replace(/:\d+(?:-\d+)?$/, "");
+
+/** One verb + short target per tool call, in the style of Claude/Codex desktop. */
+export function describeTool(item: Extract<ConversationItem, { kind: "tool" }>): ToolDescription {
+  const args = parseToolArgs(item.detail);
+  if (item.toolType === "commandExecution") {
+    return { verb: "Ran", target: cleanCommandText(item.title.replace(/^Command:\s*/i, "")) || "command", category: "command", mono: true };
+  }
+  if (item.toolType === "fileChange") {
+    const changes = item.changes ?? [];
+    const names = changes.map((change) => basename(change.path)).filter(Boolean);
+    const created = changes.length > 0 && changes.every((change) => /add|create/i.test(change.kind ?? ""));
+    return { verb: created ? "Created" : "Edited", target: names.length > 1 ? `${names[0]} +${names.length - 1}` : names[0] || "files", category: "edit" };
+  }
+  if (item.toolType === "plan") return { verb: "Updated plan", target: "", category: "plan" };
+  if (item.toolType === "webSearch") return { verb: "Searched", target: item.detail || "the web", category: "search" };
+  if (item.toolType === "imageView") return { verb: "Viewed", target: basename(item.detail || "") || "image", category: "read" };
+  if (item.toolType === "collabToolCall") {
+    const label = summarizeCollabLabel(item.title, item.status);
+    return { verb: label.charAt(0).toUpperCase() + label.slice(1), target: summarizeCollabReceiver(item), category: "agent" };
+  }
+  if (item.toolType === "hook") return { verb: "Hook", target: item.title.replace(/^Hook:\s*/i, "").trim(), category: "other" };
+  const name = (toolNameFromTitle(item.title) || item.title).trim();
+  const browser = BROWSER_VERBS[name];
+  if (browser) {
+    const value = firstStringField(args, browser[1]);
+    return { verb: browser[0], target: name === "browser_navigate" ? shortUrl(value) : value, category: "browser" };
+  }
+  const path = stripRange(firstStringField(args, ["path", "file", "filename", "file_path"]));
+  const lower = name.toLowerCase();
+  if (lower === "subagent" || lower === "task") return { verb: "Ran sub-agent", target: firstStringField(args, ["agent", "description"]), category: "agent" };
+  if (/codegraph|explore/.test(lower)) return { verb: "Explored code", target: firstStringField(args, ["query"]), category: "search" };
+  if (lower === "read" || lower.endsWith("read_file") || lower === "view") return { verb: "Read", target: basename(path) || path, category: "read" };
+  if (lower === "ls" || lower.includes("list_dir")) return { verb: "Listed", target: path || ".", category: "read" };
+  if (/grep|find|glob|search/.test(lower)) return { verb: "Searched", target: firstStringField(args, ["pattern", "query", "text", "glob"]), category: "search" };
+  if (lower === "write" || lower === "edit") return { verb: lower === "write" ? "Wrote" : "Edited", target: basename(path), category: "edit" };
+  if (lower === "bash" || lower === "eval") return { verb: lower === "eval" ? "Ran code" : "Ran", target: lower === "bash" ? firstStringField(args, ["command"]) : "", category: "command", mono: lower === "bash" };
+  if (lower === "fetch" || lower.includes("web_fetch")) return { verb: "Fetched", target: shortUrl(firstStringField(args, ["url"])), category: "search" };
+  return { verb: "Used", target: humanize(name) || "tool", category: "other" };
+}
+
+/** "Read 3 files · Edited 2 files · Ran 1 command · 4 browser actions · 1 failed" */
+export function summarizeToolGroup(items: ToolGroupItem[]) {
+  const counts = new Map<ToolCategory, number>();
+  let failed = 0;
+  let explored = 0;
+  for (const item of items) {
+    if (item.kind === "explore") { explored += item.entries.length; continue; }
+    if (item.kind !== "tool") continue;
+    const { category } = describeTool(item);
+    counts.set(category, (counts.get(category) ?? 0) + 1);
+    if (statusToneFromText(item.status) === "failed") failed += 1;
+  }
+  const n = (category: ToolCategory) => counts.get(category) ?? 0;
+  const parts = [
+    n("read") && `Read ${formatCount(n("read"), "file", "files")}`,
+    explored && `Explored ${formatCount(explored, "item", "items")}`,
+    n("search") && `${formatCount(n("search"), "search", "searches")}`,
+    n("edit") && `Edited ${formatCount(n("edit"), "file", "files")}`,
+    n("command") && `Ran ${formatCount(n("command"), "command", "commands")}`,
+    n("browser") && formatCount(n("browser"), "browser action", "browser actions"),
+    n("agent") && formatCount(n("agent"), "sub-agent call", "sub-agent calls"),
+    n("plan") && "Updated plan",
+    n("other") && formatCount(n("other"), "other tool", "other tools"),
+    failed && `${failed} failed`,
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
 export function buildToolSummary(
   item: Extract<ConversationItem, { kind: "tool" }>,
   commandText: string,

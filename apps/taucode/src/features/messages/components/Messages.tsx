@@ -14,7 +14,7 @@ import type {
 import { PlanReadyFollowupMessage } from "../../app/components/PlanReadyFollowupMessage";
 import { RequestUserInputMessage } from "../../app/components/RequestUserInputMessage";
 import { useFileLinkOpener } from "../hooks/useFileLinkOpener";
-import { formatCount, parseReasoning } from "../utils/messageRenderUtils";
+import { formatCount, parseReasoning, statusToneFromText, summarizeToolGroup } from "../utils/messageRenderUtils";
 import {
   DiffRow,
   ExploreRow,
@@ -275,14 +275,10 @@ export const Messages = memo(function Messages({
         {groupedItems.map((entry) => {
           if (entry.kind === "toolGroup") {
             const { group } = entry;
-            const isCollapsed = collapsedToolGroups.has(group.id);
-            const summaryParts = [
-              formatCount(group.toolCount, "tool call", "tool calls"),
-            ];
-            if (group.messageCount > 0) {
-              summaryParts.push(formatCount(group.messageCount, "message", "messages"));
-            }
-            const summaryText = summaryParts.join(", ");
+            // Finished groups start collapsed (like Claude/Codex desktop); the set holds user toggles.
+            const running = group.items.some((item) => item.kind === "tool" && statusToneFromText(item.status) === "processing");
+            const isCollapsed = collapsedToolGroups.has(group.id) !== !running;
+            const summaryText = summarizeToolGroup(group.items) || formatCount(group.toolCount, "tool call", "tool calls");
             const groupBodyId = `tool-group-${group.id}`;
             const ChevronIcon = isCollapsed ? ChevronDown : ChevronUp;
             return (

@@ -41,7 +41,7 @@ describe("Messages", () => {
   it("renders a stored virtual subagent write as a tool instead of a file edit", () => {
     const items = prepareThreadItems([{ id: "old-subagent", kind: "tool", toolType: "fileChange", title: "File changes", detail: "A xd://subagent", status: "failed", output: "Call failed", changes: [{ path: "xd://subagent", kind: "add" }] }]);
     render(<Messages items={items} threadId="thread" workspaceId="workspace" isThinking={false} openTargets={[]} selectedOpenAppId="" />);
-    expect(screen.getByText("Tool: subagent")).toBeTruthy();
+    expect(screen.getByText("Ran sub-agent")).toBeTruthy();
     expect(screen.queryByText("file edited")).toBeNull();
   });
 
@@ -56,7 +56,7 @@ describe("Messages", () => {
       ],
     }];
     render(<Messages items={items} threadId="thread" workspaceId="workspace" isThinking={false} openTargets={[]} selectedOpenAppId="" />);
-    expect(screen.getByRole("button", { name: /spawn failed:\s*scout \+1/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /spawn failed\s*scout \+1/i })).toBeTruthy();
     expect(screen.queryByText(/call_failed:agent:/)).toBeNull();
   });
   beforeAll(() => {
@@ -1150,6 +1150,7 @@ describe("Messages", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Expand tool calls" }));
     await waitFor(() => {
       const exploreBlocks = container.querySelectorAll(".explore-inline");
       expect(exploreBlocks.length).toBe(2);
@@ -1192,6 +1193,7 @@ describe("Messages", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Expand tool calls" }));
     await waitFor(() => {
       expect(container.querySelectorAll(".explore-inline").length).toBe(2);
     });
@@ -1299,7 +1301,7 @@ describe("Messages", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("5 tool calls")).toBeTruthy();
+      expect(screen.getByText("Explored 3 items · Ran 2 commands")).toBeTruthy();
     });
   });
 
@@ -1714,7 +1716,7 @@ describe("Messages", () => {
       />,
     );
 
-    expect(screen.getByText("hook:")).toBeTruthy();
+    expect(screen.getByText("Hook")).toBeTruthy();
     expect(screen.getByText("session-start")).toBeTruthy();
     expect(screen.getByText("failed • 0:03")).toBeTruthy();
 

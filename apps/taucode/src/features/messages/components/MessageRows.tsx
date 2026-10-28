@@ -27,6 +27,7 @@ import {
   MAX_COMMAND_OUTPUT_LINES,
   basename,
   buildToolSummary,
+  describeTool,
   exploreKindLabel,
   formatDurationMs,
   formatToolStatusLabel,
@@ -727,21 +728,8 @@ export const ToolRow = memo(function ToolRow({
   const hasChanges = changeNames.length > 0;
   const tone = toolStatusTone(item, hasChanges);
   const ToolIcon = toolIconForSummary(item, summary);
-  const summaryLabel = isFileChange
-    ? changeNames.length > 1
-      ? "files edited"
-      : "file edited"
-    : isCommand
-      ? ""
-      : summary.label;
+  const description = describeTool(item);
   const inlineStatus = formatToolStatusLabel(item);
-  const summaryValue = isFileChange
-    ? changeNames.length > 1
-      ? `${changeNames[0]} +${changeNames.length - 1}`
-      : changeNames[0] || "changes"
-    : summary.value;
-  const shouldFadeCommand =
-    isCommand && !isExpanded && (summaryValue?.length ?? 0) > 80;
   const showToolOutput = isExpanded && (!isFileChange || !hasChanges);
   const normalizedStatus = (item.status ?? "").toLowerCase();
   const isCommandRunning = isCommand && /in[_\s-]*progress|running|started/.test(normalizedStatus);
@@ -820,26 +808,13 @@ export const ToolRow = memo(function ToolRow({
           aria-expanded={isExpanded}
         >
           {tone === "processing" ? <LoaderCircle className="tool-inline-icon tool-spinner" aria-hidden /> : tone === "failed" ? <CircleAlert className="tool-inline-icon error" aria-hidden /> : <ToolIcon className={`tool-inline-icon ${tone}`} size={16} aria-hidden />}
-          {summaryLabel && (
-            <span className="tool-inline-label">{summaryLabel}:</span>
-          )}
-          {summaryValue && (
+          <span className="tool-inline-verb">{description.verb}</span>
+          {description.target && (
             <span
-              className={`tool-inline-value ${isCommand ? "tool-inline-command" : ""} ${
-                isCommand && isExpanded ? "tool-inline-command-full" : ""
-              }`}
+              className={`tool-inline-value${description.mono ? " tool-inline-command" : ""}${isCommand && isExpanded ? " tool-inline-command-full" : ""}`}
+              title={description.target}
             >
-              {isCommand ? (
-                <span
-                  className={`tool-inline-command-text ${
-                    shouldFadeCommand ? "tool-inline-command-fade" : ""
-                  }`}
-                >
-                  {summaryValue}
-                </span>
-              ) : (
-                summaryValue
-              )}
+              {description.target}
             </span>
           )}
           <ChevronDown className="tool-chevron" aria-hidden />
