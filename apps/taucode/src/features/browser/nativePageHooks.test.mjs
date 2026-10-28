@@ -147,3 +147,16 @@ it("keeps page dialogs when the Tauri dialog plugin script runs afterwards", () 
   expect(page.confirm("Clear all?")).toBe(true);
   expect(page.alert("hi")).toBeUndefined();
 });
+
+it("hides Tauri plugin IPC denials but keeps real page rejections", () => {
+  const fire = (reason) => {
+    const event = new page.Event("unhandledrejection", { cancelable: true });
+    Object.defineProperty(event, "reason", { value: reason });
+    page.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  expect(fire("notification.is_permission_granted not allowed")).toBe(true);
+  expect(fire(new Error("dialog.confirm not allowed on window main"))).toBe(true);
+  expect(fire(new Error("Failed to fetch"))).toBe(false);
+  expect(hooks.messages.map((entry) => entry.text)).toEqual(["Unhandled promise rejection: Failed to fetch"]);
+});

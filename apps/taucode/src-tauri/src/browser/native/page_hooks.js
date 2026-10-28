@@ -31,8 +31,15 @@
   addEventListener("error", (event) => {
     try { record("error", `${text(event.message)} (${text(event.filename)}:${text(event.lineno)})`); } catch { /* Ignore malformed events. */ }
   });
+  // Tauri injects app plugin scripts into every webview; their IPC is denied in browser tabs
+  // ("notification.is_permission_granted not allowed"). That is taucode noise, not a page error.
+  const tauriDenial = /^[\w-]+\.[\w-]+ not allowed\b/;
   addEventListener("unhandledrejection", (event) => {
-    try { record("error", `Unhandled promise rejection: ${text(event.reason?.message ?? event.reason)}`); } catch { /* Ignore malformed events. */ }
+    try {
+      const reason = text(event.reason?.message ?? event.reason);
+      if (tauriDenial.test(reason)) { event.preventDefault(); return; }
+      record("error", `Unhandled promise rejection: ${reason}`);
+    } catch { /* Ignore malformed events. */ }
   });
   // Read-only: the Tauri dialog plugin's init script assigns async IPC versions of these into
   // every webview; in a browser tab that IPC is rejected, so its strict assignment must fail.
