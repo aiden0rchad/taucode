@@ -245,25 +245,38 @@ fn key_entry(id: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new("dev.taucode.desktop", &account)
         .map_err(|_| "Cannot access provider Keychain".into())
 }
+// One Keychain read per credential per launch: every read can raise a macOS access
+// prompt (each read, when the user picks Allow instead of Always Allow).
+static KEY_CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Option<String>>>> =
+    std::sync::LazyLock::new(Default::default);
 impl KeyStore for Keychain {
     fn get(&self, id: &str) -> Result<Option<String>, String> {
-        match key_entry(id)?.get_password() {
-            Ok(v) => { taucode_diag_mcp::writer::remember_secret(&v); Ok(Some(v)) },
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(_) => Err("Cannot read provider Keychain".into()),
+        if let Some(cached) = KEY_CACHE.lock().map_err(|e| e.to_string())?.get(id) {
+            return Ok(cached.clone());
         }
+        let value = match key_entry(id)?.get_password() {
+            Ok(v) => { taucode_diag_mcp::writer::remember_secret(&v); Some(v) },
+            Err(keyring::Error::NoEntry) => None,
+            Err(_) => return Err("Cannot read provider Keychain".into()),
+        };
+        KEY_CACHE.lock().map_err(|e| e.to_string())?.insert(id.into(), value.clone());
+        Ok(value)
     }
     fn set(&self, id: &str, key: &str) -> Result<(), String> {
         taucode_diag_mcp::writer::remember_secret(key);
         key_entry(id)?
             .set_password(key)
-            .map_err(|_| "Cannot save provider key".into())
+            .map_err(|_| "Cannot save provider key")?;
+        KEY_CACHE.lock().map_err(|e| e.to_string())?.insert(id.into(), Some(key.into()));
+        Ok(())
     }
     fn delete(&self, id: &str) -> Result<(), String> {
         match key_entry(id)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(_) => Err("Cannot delete provider key".into()),
+            Ok(()) | Err(keyring::Error::NoEntry) => {}
+            Err(_) => return Err("Cannot delete provider key".into()),
         }
+        KEY_CACHE.lock().map_err(|e| e.to_string())?.insert(id.into(), None);
+        Ok(())
     }
 }
 pub(crate) fn delete_removed_keys(
