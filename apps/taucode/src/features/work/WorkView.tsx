@@ -67,7 +67,8 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [spaceId, setSpaceId] = useState("");
   const [access, setAccess] = useState<WorkTask["accessMode"]>("ask");
   const models = (settings.providers ?? []).filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => ({ ...m, provider: p.name, key: p.id + "/" + m.id, label: p.name + " · " + (m.displayName || m.id) })));
-  const [model, setModel] = useState(models[0]?.key ?? "");
+  const policyModel = settings.agentPolicy?.defaultModel ? settings.agentPolicy.defaultModel.providerId + "/" + settings.agentPolicy.defaultModel.modelId : "";
+  const [model, setModel] = useState(models.find(m => m.key === policyModel)?.key ?? models[0]?.key ?? "");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [dictating, setDictating] = useState(false);

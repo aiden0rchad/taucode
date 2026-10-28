@@ -129,6 +129,16 @@ describe("Work mode", () => {
     await waitFor(() => expect(workRequest).toHaveBeenCalledWith("create", expect.objectContaining({ spaceId: "space", model: "local/test", accessMode: "ask", runNow: false, attachments: [".taucode/uploads/copied-notes.pdf"] })));
     expect(await screen.findByText(/Waiting for an available slot/)).toBeTruthy();
   });
+  it("starts new tasks on the policy default model rather than the first enabled one", async () => {
+    const withDefault = { providers: [{ id: "local", name: "Local", enabled: true, models: [{ id: "test", enabled: true }, { id: "sol", enabled: true }] }], agentPolicy: { defaultModel: { providerId: "local", modelId: "sol" } } } as AppSettings;
+    render(<WorkView settings={withDefault} />);
+    await screen.findByRole("option", { name: "Research" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Space" }), { target: { value: "space" } });
+    fireEvent.click(screen.getByRole("button", { name: "Research brief" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add attachments and tools" }));
+    fireEvent.click(screen.getByRole("button", { name: "Queue task" }));
+    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("create", expect.objectContaining({ model: "local/sol" })));
+  });
   it("groups tasks, exposes the input callout, renders plans and output actions, and responds", async () => {
     const needs = task("Review brief", "needs-input");
     needs.plan = [{ step: "Write report", status: "completed" }];
