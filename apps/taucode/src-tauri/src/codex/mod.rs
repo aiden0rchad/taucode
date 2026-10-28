@@ -604,8 +604,10 @@ pub(crate) async fn model_list(
         .await;
     }
 
-    let providers = state.app_settings.lock().await.providers.clone();
-    Ok(crate::shared::reasoning::catalog(&providers, &state.sessions, &workspace_id, thread_id.as_deref()).await)
+    let settings = state.app_settings.lock().await.clone();
+    let mut catalog = crate::shared::reasoning::catalog(&settings.providers, &state.sessions, &workspace_id, thread_id.as_deref()).await;
+    crate::shared::providers::mark_default(&mut catalog, settings.agent_policy.default_model.as_ref());
+    Ok(catalog)
 }
 
 #[tauri::command]

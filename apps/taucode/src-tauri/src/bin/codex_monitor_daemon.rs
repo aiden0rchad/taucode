@@ -932,8 +932,10 @@ impl DaemonState {
     }
 
     async fn model_list(&self, workspace_id: String, thread_id: Option<String>) -> Result<Value, String> {
-        let providers = self.app_settings.lock().await.providers.clone();
-        Ok(shared::reasoning::catalog(&providers, &self.sessions, &workspace_id, thread_id.as_deref()).await)
+        let settings = self.app_settings.lock().await.clone();
+        let mut catalog = shared::reasoning::catalog(&settings.providers, &self.sessions, &workspace_id, thread_id.as_deref()).await;
+        shared::providers::mark_default(&mut catalog, settings.agent_policy.default_model.as_ref());
+        Ok(catalog)
     }
 
     async fn experimental_feature_list(

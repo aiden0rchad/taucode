@@ -226,6 +226,15 @@ pub(crate) fn catalog(providers: &[ProviderEntry]) -> Value {
         "contextWindow": m.context_window
     }))).collect::<Vec<_>>() } })
 }
+// The client falls back to the first model when nothing is flagged; flag the user's
+// policy default so new threads start on it.
+pub(crate) fn mark_default(catalog: &mut Value, default: Option<&crate::types::ModelRef>) {
+    let Some(d) = default else { return };
+    let id = format!("{}/{}", d.provider_id, d.model_id);
+    if let Some(data) = catalog["result"]["data"].as_array_mut() {
+        for entry in data { entry["isDefault"] = json!(entry["id"] == id.as_str()); }
+    }
+}
 pub(crate) trait KeyStore: Send + Sync {
     fn get(&self, id: &str) -> Result<Option<String>, String>;
     fn set(&self, id: &str, key: &str) -> Result<(), String>;
@@ -847,6 +856,18 @@ mod tests {
         assert!(validate(&[p], &policy)
             .unwrap_err()
             .contains("Enable provider"));
+    }
+    #[test]
+    fn catalog_flags_only_the_policy_default_model() {
+        let mut p = provider(ProviderKind::Openai);
+        p.models.push(serde_json::from_value(json!({"id":"sol","enabled":true})).unwrap());
+        let mut list = catalog(&[p]);
+        mark_default(&mut list, Some(&ModelRef { provider_id: "test".into(), model_id: "sol".into() }));
+        let flags: Vec<_> = list["result"]["data"].as_array().unwrap().iter().map(|m| (m["modelId"].clone(), m["isDefault"].clone())).collect();
+        assert_eq!(flags, vec![(json!("model"), json!(false)), (json!("sol"), json!(true))]);
+        let before = list.clone();
+        mark_default(&mut list, None);
+        assert_eq!(list, before);
     }
     #[test]
     fn registry_only_catalog_and_codex_config_are_secret_free() {
