@@ -68,6 +68,23 @@ fn reference(args: &Value) -> Result<&str, String> {
         .ok_or_else(|| "Missing target (snapshot ref or unique selector)".into())
 }
 
+pub fn supported_tools() -> &'static [&'static str] {
+    &[
+        "browser_navigate", "browser_navigate_back", "browser_snapshot", "browser_click",
+        "browser_type", "browser_press_key", "browser_select_option", "browser_fill_form",
+        "browser_evaluate", "browser_scroll", "browser_wait_for", "browser_tabs",
+        "browser_close", "browser_take_screenshot", "browser_console_messages", "browser_handle_dialog",
+    ]
+}
+
+pub fn filter_tools(response: &mut Value, native: bool) {
+    if native {
+        if let Some(tools) = response.get_mut("result").and_then(|r| r.get_mut("tools")).and_then(Value::as_array_mut) {
+            tools.retain(|tool| tool["name"].as_str().is_some_and(|name| supported_tools().contains(&name)));
+        }
+    }
+}
+
 pub async fn tool(backend: &dyn BrowserBackend, name: &str, args: Value) -> Result<Value, String> {
     let result = match name {
         "browser_navigate" => backend.navigate(args["url"].as_str().ok_or("Missing URL")?).await?,
@@ -88,6 +105,22 @@ pub async fn tool(backend: &dyn BrowserBackend, name: &str, args: Value) -> Resu
         "browser_wait_for" => backend.wait_for(args).await?,
         "browser_tabs" => backend.tabs(json!({"action":"tabs","params":args})).await?,
         "browser_close" => backend.request(json!({"action":"close"})).await?,
+        "browser_console_messages" => {
+            if !args["level"].is_null() && !args["level"].as_str().is_some_and(|s| ["error", "warning", "info", "debug"].contains(&s)) {
+                return Err("Invalid console level".into());
+            }
+            for key in ["all", "onlyErrors"] {
+                if !args[key].is_null() && !args[key].is_boolean() { return Err(format!("Invalid console {key} boolean")); }
+            }
+            backend.request(json!({"action":"console","level":args["level"],"all":args["all"],"onlyErrors":args["onlyErrors"]})).await?
+        },
+        "browser_handle_dialog" => {
+            let accept = args["accept"].as_bool().ok_or("Missing dialog accept boolean")?;
+            if !args["promptText"].is_null() && !args["promptText"].as_str().is_some_and(|s| s.chars().count() <= 2000) {
+                return Err("Dialog promptText must be a string of at most 2000 characters".into());
+            }
+            backend.request(json!({"action":"dialog","accept":accept,"promptText":args["promptText"]})).await?
+        },
         "browser_take_screenshot" => return Ok(json!({"content":[{"type":"image","mimeType":"image/png","data":backend.screenshot().await?}]})),
         _ => return Err("This tool needs trusted input or CDP. Try the Headless Chromium backend (Settings → Browser)".into()),
     };
@@ -128,6 +161,42 @@ mod tests {
     async fn dispatched(name: &str, args: Value) -> Value {
         let result = tool(&Fake, name, args).await.unwrap();
         serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap()
+    }
+    #[tokio::test]
+    async fn console_and_dialog_requests_reach_native_actions() {
+        assert_eq!(dispatched("browser_console_messages", json!({"level":"warning","all":false,"onlyErrors":true})).await,
+            json!({"action":"console","level":"warning","all":false,"onlyErrors":true}));
+        for args in [json!({"level":"warn"}), json!({"level":["error"]}), json!({"all":"true"}), json!({"onlyErrors":1})] {
+            assert!(tool(&Fake, "browser_console_messages", args).await.is_err());
+        }
+        assert_eq!(dispatched("browser_handle_dialog", json!({"accept":true,"promptText":"answer"})).await,
+            json!({"action":"dialog","accept":true,"promptText":"answer"}));
+        assert_eq!(dispatched("browser_handle_dialog", json!({"accept":false})).await,
+            json!({"action":"dialog","accept":false,"promptText":null}));
+        for args in [json!({}), json!({"accept":"yes"}), json!({"accept":true,"promptText":42}), json!({"accept":true,"promptText":"x".repeat(2001)})] {
+            assert!(tool(&Fake, "browser_handle_dialog", args).await.is_err());
+        }
+    }
+    #[test]
+    fn native_tool_list_keeps_supported_tools_and_schemas_only() {
+        let mut tools: Vec<_> = supported_tools().iter().map(|name| json!({"name":name,"inputSchema":{"properties":{"target":{"type":"string"}}}})).collect();
+        for name in ["browser_run_code_unsafe", "browser_drag", "browser_file_upload", "browser_network_requests", "browser_future_tool"] {
+            tools.push(json!({"name":name}));
+        }
+        tools.push(json!({"name":null}));
+        let response = json!({"jsonrpc":"2.0","id":5,"result":{"tools":tools,"nextCursor":"next"}});
+        let mut cdp = response.clone();
+        filter_tools(&mut cdp, false);
+        assert_eq!(cdp, response);
+        let mut native = response.clone();
+        filter_tools(&mut native, true);
+        assert_eq!(native["result"]["tools"].as_array().unwrap(), &tools[..supported_tools().len()]);
+        assert_eq!(native["result"]["nextCursor"], "next");
+        assert_eq!(native["id"], 5);
+        let mut error = json!({"id":5,"error":{"message":"upstream failed"}});
+        let original = error.clone();
+        filter_tools(&mut error, true);
+        assert_eq!(error, original);
     }
     #[tokio::test]
     async fn advertised_targets_and_legacy_refs_reach_native_actions() {

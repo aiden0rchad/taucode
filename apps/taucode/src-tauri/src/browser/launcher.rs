@@ -180,7 +180,13 @@ async fn proxy(
                 }
                 line = output.next_line() => {
                     let Some(line) = line.map_err(|e| e.to_string())? else { break; };
-                    if let Ok(v) = serde_json::from_str::<Value>(&line) {
+                    let mut line = line;
+                    if let Ok(mut v) = serde_json::from_str::<Value>(&line) {
+                        if v["result"]["tools"].is_array() {
+                            let native = cfg!(target_os = "macos") && browser.settings()?.engine == crate::types::BrowserEngine::Native;
+                            super::backend::filter_tools(&mut v, native);
+                            line = v.to_string();
+                        }
                         if let Some(original) = v["id"].as_str().and_then(|id| pending.remove(id)) {
                             let id = v["id"].as_str().unwrap();
                             if !id.ends_with("-select") {

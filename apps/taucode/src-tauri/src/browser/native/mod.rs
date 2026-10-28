@@ -9,7 +9,7 @@ use futures_util::future::BoxFuture;
 use policy::{allowed_origin, automation_allowed, label, navigation, Navigation, Rect};
 use serde_json::{json, Value};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -23,6 +23,7 @@ const STORE: [u8; 16] = *b"taucode-browser1";
 const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
 struct Views {
     live: Vec<String>,
+    hook_keys: HashMap<String, String>,
     shown: Option<String>,
     rect: Option<Rect>,
     visible: bool,
@@ -47,6 +48,7 @@ impl NativeBackend {
             state,
             views: tokio::sync::Mutex::new(Views {
                 live: vec![],
+                hook_keys: HashMap::new(),
                 shown: None,
                 rect: None,
                 visible: false,
@@ -130,6 +132,7 @@ impl NativeBackend {
             if let Some(view) = self.app.get_webview(&label(&evicted)?) {
                 close_view(view)?;
             }
+            views.hook_keys.remove(&evicted);
             self.update(&evicted, json!({"ready":false}));
         }
         let settings = self.settings()?;
@@ -143,10 +146,12 @@ impl NativeBackend {
         let download_state = self.state.clone();
         let downloads = self.downloads.clone();
         let downloads_dir = self.app.path().download_dir().map_err(|e| e.to_string())?;
+        let hook_key = uuid::Uuid::new_v4().to_string();
         let mut builder = WebviewBuilder::new(&name, WebviewUrl::External(url.parse().map_err(|_|"Invalid URL")?))
             .user_agent(UA).devtools(cfg!(debug_assertions)).focused(false)
             .background_color(tauri::window::Color(255,255,255,255))
             .incognito(settings.private_browsing)
+            .initialization_script(format!("({})({});", include_str!("page_hooks.js"), json!(hook_key)))
             .on_navigation(move |url| {
                 let current = nav_state.borrow()["tabs"].as_array().and_then(|tabs|tabs.iter().find(|t|t["id"] == nav_id)).and_then(|t|t["url"].as_str()).unwrap_or("about:blank").to_string();
                 match navigation(url.as_str(), &current) {
@@ -224,6 +229,7 @@ impl NativeBackend {
         view.hide().map_err(|e| e.to_string())?;
         #[cfg(target_os = "macos")]
         navigation_events::install(&view, id.to_string(), self.state.clone())?;
+        views.hook_keys.insert(id.into(), hook_key);
         Ok(view)
     }
     async fn place(&self, views: &mut Views) -> Result<(), String> {
@@ -283,6 +289,7 @@ impl NativeBackend {
                 }
                 self.update(&id, json!({"ready":false}));
             }
+            views.hook_keys.clear();
             views.private = settings.private_browsing;
         }
         let action = p["action"].as_str().ok_or("Missing browser action")?;
@@ -351,6 +358,7 @@ impl NativeBackend {
                     close_view(view)?;
                 }
             }
+            views.hook_keys.clear();
             self.state
                 .send_replace(json!({"tabs":[],"active":"","agent":false}));
             return Ok(Value::Null);
@@ -371,6 +379,7 @@ impl NativeBackend {
                     close_view(view)?;
                 }
             }
+            views.hook_keys.clear();
             self.state
                 .send_replace(json!({"backend":"native","tabs":[],"active":"","agent":false}));
             return Ok(Value::Null);
@@ -449,6 +458,7 @@ impl NativeBackend {
                 close_view(view)?;
             }
             views.live.retain(|v| v != &id);
+            views.hook_keys.remove(&id);
             self.state.send_modify(|s| {
                 if let Some(tabs) = s["tabs"].as_array_mut() {
                     tabs.retain(|t| t["id"] != id);
@@ -540,17 +550,31 @@ impl NativeBackend {
                 return macos::control(&view, action.into()).await;
             }
             #[cfg(target_os = "macos")]
-            "script" | "evaluate" => {
+            "script" | "evaluate" | "console" | "dialog" => {
                 let url = view.url().map_err(|e| e.to_string())?;
                 if action == "evaluate" { policy::check_target(&p, &id, Some(url.as_str()))?; }
                 if !automation_allowed(&url, &settings) {
                     return Err("Browser origin blocked by policy".into());
                 }
-                return if action == "evaluate" { macos::evaluate_page(&view, p, url.as_str()).await }
-                else {
-                    let mut p = p; p["expectedUrl"] = json!(url.as_str());
-                    macos::script(&view, p).await
-                };
+                if action == "evaluate" { return macos::evaluate_page(&view, p, url.as_str()).await; }
+                let key = views.hook_keys.get(&id).ok_or("Native page hooks unavailable; reload the tab")?;
+                let hooks = |params: Value| json!({"function":format!("() => globalThis[{}].request({params})", json!(key))});
+                if matches!(action, "console" | "dialog") {
+                    return macos::evaluate_page(&view, hooks(p), url.as_str()).await;
+                }
+                let snapshot = p["op"] == "snapshot";
+                let mut p = p; p["expectedUrl"] = json!(url.as_str());
+                let mut result = macos::script(&view, p).await?;
+                if snapshot {
+                    let note = macos::evaluate_page(&view, hooks(json!({"action":"snapshot"})), url.as_str()).await?;
+                    if let Some(note) = note.as_str().filter(|s| !s.is_empty()) {
+                        result["dialogNote"] = json!(note.chars().take(14000).collect::<String>());
+                    }
+                    if serde_json::to_vec(&result).map_err(|e| e.to_string())?.len() > 200000 {
+                        return Err("Native result exceeds 200 KB".into());
+                    }
+                }
+                return Ok(result);
             }
             #[cfg(target_os = "macos")]
             "screenshot" => {
