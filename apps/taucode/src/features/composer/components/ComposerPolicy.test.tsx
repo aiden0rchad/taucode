@@ -42,7 +42,9 @@ it("toggles real policy, exposes configuration only when enabled, and preserves 
   fireEvent.click(screen.getByRole("button", { name: "Configure Chain of Command" }));
   const editor = screen.getByRole("dialog", { name: "Configure Chain of Command" });
   expect(screen.queryByRole("dialog", { name: "Model and reasoning" })).toBeNull();
-  expect(within(editor).getByText("Project · Demo · Applies to new turns")).toBeTruthy();
+  expect(within(editor).getByText("Project · Demo")).toBeTruthy();
+  expect(within(editor).getByText("Applies to new turns")).toBeTruthy();
+  expect(within(editor).getByRole("button", { name: "Save changes" })).toHaveProperty("disabled", true);
   expect(within(editor).queryByLabelText("Agent mode")).toBeNull();
   expect(within(editor).queryByLabelText("Default engine")).toBeNull();
   fireEvent.change(await within(editor).findByLabelText("Enlisted model"), { target: { value: "local/small" } });
@@ -54,6 +56,47 @@ it("toggles real policy, exposes configuration only when enabled, and preserves 
   fireEvent.click(screen.getByRole("button", { name: "Chain of Command" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Configure Chain of Command" })).toBeNull());
   expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ subagents: expect.objectContaining({ enabled: false, roles: expect.arrayContaining([expect.objectContaining({ name: "enlisted", model: { providerId: "local", modelId: "small" } })]) }) }));
+});
+it("keeps role drafts across keyboard navigation, validates limits, and discards cancelled edits", async () => {
+  const save = vi.fn().mockResolvedValue(undefined);
+  render(<Picker save={save} />);
+  const open = async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Commander · Low" }));
+    const toggle = screen.getByRole("button", { name: "Chain of Command" });
+    if (toggle.getAttribute("aria-pressed") !== "true") {
+      fireEvent.click(toggle);
+      await waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("true"));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Configure Chain of Command" }));
+    await screen.findByLabelText("Colonel model");
+    const body = screen.getByRole("tabpanel", { name: "Team models" });
+    body.scrollTop = 200;
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Team models" }), { key: "End" });
+    expect(body.scrollTop).toBe(0);
+  };
+  await open();
+  fireEvent.change(screen.getByLabelText("Instructions"), { target: { value: "Delegate bounded work." } });
+  fireEvent.keyDown(screen.getByRole("tab", { name: "Colonel" }), { key: "ArrowRight" });
+  expect(screen.getByRole("tab", { name: "Major" }).getAttribute("aria-selected")).toBe("true");
+  fireEvent.change(screen.getByLabelText("Instructions"), { target: { value: "Report verification evidence." } });
+  fireEvent.keyDown(screen.getByRole("tab", { name: "Major" }), { key: "ArrowLeft" });
+  expect(screen.getByLabelText("Instructions")).toHaveProperty("value", "Delegate bounded work.");
+  fireEvent.click(screen.getByRole("tab", { name: "Limits" }));
+  fireEvent.change(screen.getByLabelText("Max concurrent"), { target: { value: "17" } });
+  expect(screen.getByRole("alert").textContent).toContain("concurrent 1–16");
+  expect(screen.getByRole("button", { name: "Save changes" })).toHaveProperty("disabled", true);
+  fireEvent.change(screen.getByLabelText("Max concurrent"), { target: { value: "3" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ subagents: expect.objectContaining({ maxConcurrent: 3, roles: expect.arrayContaining([
+    expect.objectContaining({ name: "colonel", instructions: "Delegate bounded work." }),
+    expect.objectContaining({ name: "major", instructions: "Report verification evidence." }),
+  ]) }) }));
+  await open();
+  fireEvent.change(screen.getByLabelText("Instructions"), { target: { value: "Discard this edit." } });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await open();
+  expect(screen.getByLabelText("Instructions")).toHaveProperty("value", "Delegate bounded work.");
 });
 it("leaves the toggle off and reports failed saves", async () => {
   render(<Picker save={async () => { throw new Error("Disk unavailable"); }} />);

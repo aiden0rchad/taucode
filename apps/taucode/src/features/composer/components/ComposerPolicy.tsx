@@ -1,5 +1,5 @@
 import { createContext, lazy, Suspense, useContext, useEffect, useRef, useState, type ReactNode, type CSSProperties } from "react";
-import { ChevronRight, Star, X } from "lucide-react";
+import { ChevronRight, Network, Star, X } from "lucide-react";
 import type { AgentPolicy, EngineKind } from "@/types";
 import { useFeatures, useFeatureSettings } from "@settings/features";
 import { useEngines } from "@settings/engines";
@@ -8,7 +8,7 @@ import { SettingsButton, SettingsSegmented } from "@/features/design-system/comp
 import { ModalShell } from "@/features/design-system/components/modal/ModalShell";
 import "./composerPolicy.css";
 
-const AgentPolicyEditor = lazy(() => import("@settings/components/sections/SettingsRegistrySections").then(module => ({ default: module.AgentPolicyEditor })));
+const CommandPolicyEditor = lazy(() => import("./CommandPolicyEditor"));
 
 const ComposerPolicy = createContext<{
   policy: AgentPolicy; scope: string; busy: boolean; error: string;
@@ -29,6 +29,10 @@ export function ComposerPolicyProvider({ policy, scope, onChange, children }: {
   const opened = draft !== null;
   useEffect(() => { setDraft(null); setError(""); }, [scope]);
   useEffect(() => {
+    const body = content.current?.querySelector(".command-editor-body");
+    if (body) body.scrollTop = 0;
+  }, [tab]);
+  useEffect(() => {
     if (!opened) return;
     const previous = document.activeElement as HTMLElement | null;
     content.current?.querySelector<HTMLElement>("button")?.focus();
@@ -46,6 +50,7 @@ export function ComposerPolicyProvider({ policy, scope, onChange, children }: {
   };
   const close = () => { if (!saving.current) { setDraft(null); setError(""); } };
   const validation = draft ? policyError(draft, settings?.providers ?? []) : null;
+  const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(policy);
   return <ComposerPolicy.Provider value={{ policy, scope, busy, error, save, configure: () => { setDraft(policy); setTab("defaults"); setError(""); } }}>
     {children}
     {draft && <ModalShell ariaLabel="Configure Chain of Command" cardClassName="command-editor settings-page" onBackdropClick={close}>
@@ -58,13 +63,13 @@ export function ComposerPolicyProvider({ policy, scope, onChange, children }: {
           else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }
       }}>
-        <header><div><h2>Chain of Command</h2><p>{scope} · Applies to new turns</p></div><button type="button" className="ghost" aria-label="Close Chain of Command" disabled={busy} onClick={close}><X size={20} aria-hidden /></button></header>
+        <header><span className="command-editor-emblem"><Network size={21} aria-hidden /></span><div className="command-editor-title"><h2>Chain of Command</h2><p title={scope}>{scope}</p></div><button type="button" className="ghost" aria-label="Close Chain of Command" disabled={busy} onClick={close}><X size={18} aria-hidden /></button></header>
         <fieldset disabled={busy}>
-          <SettingsSegmented tabs label="Chain of Command settings" value={tab} options={[{ value: "defaults", label: "Team models" }, { value: "subagents", label: "Limits" }, { value: "roles", label: "Roles" }]} onChange={setTab} />
-          <div className="command-editor-body"><Suspense fallback={<p role="status">Loading team settings…</p>}><AgentPolicyEditor compact policy={draft} providers={settings?.providers ?? []} tab={tab as "defaults" | "subagents" | "roles"} onChange={setDraft} /></Suspense></div>
+          <div className="command-editor-navigation"><SettingsSegmented tabs label="Chain of Command settings" value={tab} options={[{ value: "defaults", label: "Team models" }, { value: "subagents", label: "Limits" }, { value: "roles", label: "Roles" }]} onChange={setTab} /></div>
+          <div className="command-editor-body" role="tabpanel" aria-label={tab === "defaults" ? "Team models" : tab === "subagents" ? "Limits" : "Roles"}><Suspense fallback={<p role="status">Loading team settings…</p>}><CommandPolicyEditor policy={draft} providers={settings?.providers ?? []} tab={tab} onChange={setDraft} /></Suspense></div>
         </fieldset>
         {(validation || error) && <p role="alert">{validation || error}</p>}
-        <footer><SettingsButton disabled={busy} onClick={close}>Cancel</SettingsButton><SettingsButton className="primary" disabled={busy || !!validation} onClick={() => { void save(draft).then(saved => { if (saved) setDraft(null); }); }}>{busy ? "Saving…" : "Save changes"}</SettingsButton></footer>
+        <footer><span className="command-save-note" data-dirty={dirty}>{dirty ? "Unsaved changes" : "Applies to new turns"}</span><SettingsButton disabled={busy} onClick={close}>Cancel</SettingsButton><SettingsButton className="primary" disabled={busy || !!validation || !dirty} onClick={() => { void save(draft).then(saved => { if (saved) setDraft(null); }); }}>{busy ? "Saving…" : "Save changes"}</SettingsButton></footer>
       </div>
     </ModalShell>}
   </ComposerPolicy.Provider>;

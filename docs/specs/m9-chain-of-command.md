@@ -93,14 +93,23 @@ The Code model/reasoning picker exposes Chain of Command through a compact 20px
 five-star rank toggle with a 32px click target. After a successful activation, stars
 light sequentially, followed by a steady soft aura. Opening an already enabled
 picker does not replay the animation. Reduced motion and disabled reasoning effects
-skip the animation. The adjacent chevron appears only while enabled and opens the same
-team models, limits and role editor used by Settings. Off selects Single model
+skip the animation. The adjacent chevron appears only while enabled and opens a
+focused editor for the same policy fields exposed by Settings. Off selects Single model
 without discarding role choices. Code saves the effective project policy; Chat
 and Work do not expose the controls. Unsupported engines cannot enable Chain from the
 picker. Saves are acknowledged before the toggle changes, and failures remain
 visible. The editor loads on demand and supports keyboard focus and Escape.
+Its Team models tab connects the conversation commander to three compact,
+color-coded role rows. Limits groups concurrency, turn budget and depth, with
+model defaults/restrictions under a disclosure. Roles edits one specialist at a
+time, keeping draft values while switching roles or tabs. The fixed header and
+footer frame a scrollable body on smaller windows; light and dark themes use the
+shared design-system controls and tokens. Save stays disabled until values change,
+and invalid limits show an inline error without committing the draft.
+Changing tabs starts the new panel at the top without losing role drafts.
 Regression tests cover mode visibility, successful activation, failed saves, role
-preservation, and Chat/Work runtime normalization without changing saved policy.
+preservation, keyboard role navigation, cancelled drafts, limit validation, and
+Chat/Work runtime normalization without changing saved policy.
 
 The rebuilt, signed app was verified live in Code with GPT 6.1 Sol: the smaller
 icon, sequential star illumination, settled glow, keyboard toggle, conditional
@@ -109,6 +118,14 @@ Chat and Work pickers showed no Chain controls. The original enabled Code policy
 was restored, and Work retained Full access. Validation: 222 frontend files /
 1,732 tests; 41 Pi Rust tests (one unrelated live OMP test ignored); typecheck,
 changed-file lint, cargo check, build and signature verification passed.
+
+The redesigned editor was verified in the signed app with the saved GPT 6.1 Sol
+team: all three tabs, model popup dismissal, keyboard role switching, draft
+retention/cancellation, invalid limits, and save persistence after relaunch.
+The original policy, window dimensions and 100% zoom were restored after testing
+at 960×650 and enlarged text. Light/dark previews passed. Validation: 1,733
+frontend tests, final focused regressions, typecheck, changed-file lint, app build
+and signature verification passed.
 
 ## Work still required for the full product goal
 
