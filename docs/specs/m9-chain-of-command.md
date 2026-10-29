@@ -73,16 +73,40 @@ OMP default engine remains selected; Work runs Pi.
 
 The first live smoke test exposed strict-schema calls containing a valid single
 agent plus empty `tasks` and `chain` arrays. This caused repeated validation
-failures before any child launched. The fix has regression coverage and is in the
-rebuilt, signed app. Its resumed task is currently waiting for macOS Keychain
-approval; no successful end-to-end hierarchy run is claimed yet.
+failures before any child launched. The fix has regression coverage and was
+verified in the rebuilt, signed app after the user approved Keychain access.
 
-Task: `ef8c2e02-b3c2-460b-8fc0-af864542af23` in the dogfood `work-notes` space.
-Acceptance: colonel delegates JSON generation to enlisted; a separate major checks
-`outputs/command-summary.json` against `outputs/action-items.csv` with Python.
-The later activity-tree/error-display fix has passed checks but still needs the
-next rebuild/live check. Do not interrupt the pending Keychain request to replace
-the running build.
+Task `ef8c2e02-b3c2-460b-8fc0-af864542af23` completed at 8:52 p.m. PDT October 28:
+Sol commander → one Sol colonel → one Luna enlisted worker, then a separate Sol
+major. The worker created `outputs/command-summary.json`; the major ran independent
+Python QA (exit 0). Host session records show the nested roles/models and successful
+tool results. The gateway's internal model routing is outside that evidence.
+
+An independent host check confirmed the JSON equals the CSV: 7 items; Lee, Priya,
+and Sam each 1, Unassigned 4; P1 1, P2 5, P3 1. SHA-256 values for the CSV, existing
+HTML dashboard and weekly brief match the agents' recorded before values. Work
+shows done, all three plan steps checked, and one output. Settings confirms the
+three team model choices persisted after restart.
+
+The late credential approval exposed another defect: Work held its global state
+lock during engine startup. Startup now runs in cancellable jobs with visible
+starting/stopping states, and unsent messages persist for retry. Credential reads
+run on a blocking worker without runtime file writes; cancellation drops their
+result and cannot start the agent later. Transcript reads release the Work lock.
+Checkpoint preparation finishes before cancellation cleanup, and the space remains
+occupied until cleanup ends. Regression coverage deliberately blocks credentials
+while checking list/read/stop responsiveness and absence of a late process launch.
+Live startup recovery check (`b8ac0e44-ce8e-4300-b138-fa899ac0137b`): stopped
+while macOS awaited credentials at 9:02 p.m.; after approval, the task remained
+stopped and its session contained only the header (no submitted message). A manual
+retry launched, submitted exactly the saved message, and reached the gateway.
+LiteLLM returned HTTP 502 after runtime retries, so a successful model response on
+this recovery test remains unverified. The earlier full hierarchy run succeeded.
+
+Pending drafts now store only the user's text, without internal attachment headings.
+Validation: 220 frontend files / 1,724 tests; typecheck; changed frontend lint;
+7 Work and 40 Pi Rust tests (1 ignored); cargo check. The draft cleanup also passed
+the Work suite and cargo check after the live startup check.
 
 ## Work still required for the full product goal
 
@@ -92,4 +116,5 @@ the running build.
   the tree; concurrency is currently per delegator.
 - Cost/capability-aware model selection backed by evaluation evidence, including
   actual cloud/local mixed-model dogfood runs.
-- Live verification of this mode, agent-tree navigation and recovery after errors.
+- Work agent-tree navigation and recovery after errors; Work currently renders
+  delegated results as expandable tool rows rather than the full interactive tree.

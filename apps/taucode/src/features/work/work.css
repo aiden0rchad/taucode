@@ -21,14 +21,14 @@
 .work-layout .work-input-callout { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 6px 8px; border-radius: 6px; color: var(--text-primary); background: color-mix(in srgb, var(--status-warning) 10%, transparent); font-size: 12px; text-align: left; }
 .work-layout .sidebar .thread-status { box-sizing: border-box; }
 .work-layout .sidebar .work-status-needs-input { background: var(--status-warning); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-warning) 18%, transparent); animation: work-input-pulse 1.8s ease-in-out infinite; }
-.work-layout .sidebar .work-status-running { border: 1.5px solid var(--border-accent); border-top-color: transparent; animation: work-status-spin 1s linear infinite; }
+.work-layout .sidebar :is(.work-status-starting, .work-status-running, .work-status-stopping) { border: 1.5px solid var(--border-accent); border-top-color: transparent; animation: work-status-spin 1s linear infinite; }
 .work-layout .sidebar :is(.work-status-queued, .work-status-done, .work-status-stopped) { border: 1px solid var(--text-muted); }
 .work-layout .sidebar .work-status-done { opacity: .6; }
 .work-layout .sidebar .work-status-failed { background: var(--status-error); }
 @keyframes work-status-spin { to { transform: rotate(360deg); } }
 @keyframes work-input-pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--status-warning) 6%, transparent); } }
 @media (prefers-reduced-motion: reduce) {
-  .work-layout .sidebar :is(.work-status-needs-input, .work-status-running) { animation: none; }
+  .work-layout .sidebar :is(.work-status-needs-input, .work-status-starting, .work-status-running, .work-status-stopping) { animation: none; }
 }
 @media (hover: none) { .work-layout .sidebar .workspace-row .sidebar-title-add { opacity: 1; } }
 .work-concurrency { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }

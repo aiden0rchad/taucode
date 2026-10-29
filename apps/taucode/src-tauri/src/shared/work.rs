@@ -3,7 +3,7 @@ use crate::{backend::events::{AppServerEvent, EventSink}, types::{AppSettings, W
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::HashMap, path::{Path, PathBuf}, sync::Arc};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +42,8 @@ struct Task {
     outputs: Vec<String>,
     pending: Vec<Value>,
     error: Option<String>,
+    #[serde(default)]
+    pending_message: Option<String>,
 }
 impl Task {
     fn set_status(&mut self, status: &str) {
@@ -66,6 +68,7 @@ struct State {
     sessions: HashMap<String, Arc<WorkspaceSession>>,
     settings: AppSettings,
     loaded: bool,
+    starts: HashMap<String, oneshot::Sender<()>>,
 }
 pub(crate) struct Work {
     data: PathBuf,
@@ -74,7 +77,7 @@ pub(crate) struct Work {
     tx: mpsc::UnboundedSender<AppServerEvent>,
     rx: Mutex<Option<mpsc::UnboundedReceiver<AppServerEvent>>>,
 }
-fn occupied(status: &str) -> bool { matches!(status, "running" | "needs-input") }
+fn occupied(status: &str) -> bool { matches!(status, "starting" | "running" | "needs-input" | "stopping") }
 fn next_task(store: &Store) -> Option<usize> {
     if store.tasks.iter().filter(|t| occupied(&t.status)).count() >= store.concurrency { return None; }
     // A single writer per space makes checkpoint attribution and rewind deterministic.
@@ -107,7 +110,7 @@ impl Work {
     pub fn new(data: PathBuf, sink: impl EventSink) -> Arc<Self> {
         let (tx, rx) = mpsc::unbounded_channel();
         Arc::new(Self {
-            data, state: Mutex::new(State { store: Store::default(), sessions: HashMap::new(), settings: AppSettings::default(), loaded: false }),
+            data, state: Mutex::new(State { store: Store::default(), sessions: HashMap::new(), settings: AppSettings::default(), loaded: false, starts: HashMap::new() }),
             emit: Arc::new(move |event| sink.emit_app_server_event(event)), tx, rx: Mutex::new(Some(rx)),
         })
     }
@@ -188,7 +191,7 @@ impl Work {
                 created_at: None, updated_at: None, attachments: vec![], model: String::new(), effort: None, access_mode: "read-only".into(),
                 status: if completed { "done" } else { "stopped" }.into(), plan: vec![],
                 outputs: history["attachments"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_owned)).collect(),
-                pending: vec![], error: history["warning"].as_str().map(str::to_owned),
+                pending: vec![], pending_message: None, error: history["warning"].as_str().map(str::to_owned),
             });
         }
         store.spaces.retain(|s| !s.imported || store.tasks.iter().any(|t| t.space_id == s.id));
@@ -223,44 +226,84 @@ impl Work {
         state.sessions.insert(space.id.clone(), session.clone());
         session
     }
-    async fn pump(&self, state: &mut State) {
-        if !super::engine_registry::features(Some(&self.data)).work_mode { return; }
-        while let Some(index) = next_task(&state.store) {
-            state.store.tasks[index].set_status("running");
-            if let Err(error) = self.save(&state.store) {
-                state.store.tasks[index].set_status("failed");
-                state.store.tasks[index].error = Some(error);
+    fn pump<'a>(self: &'a Arc<Self>, state: &'a mut State) -> super::providers::BoxFuture<'a, ()> {
+        Box::pin(async move {
+            if !super::engine_registry::features(Some(&self.data)).work_mode { return; }
+            while let Some(index) = next_task(&state.store) {
+                let space = state.store.spaces.iter().find(|s| s.id == state.store.tasks[index].space_id).unwrap().clone();
+                let session = self.session(state, &space).await;
+                let task = &mut state.store.tasks[index];
+                // Work thread creation does not launch a process or access credentials.
+                if task.thread_id.is_none() {
+                    match session.pi.request(&space.id, "thread/start", json!({"model":task.model})).await {
+                        Ok(response) => task.thread_id = response["result"]["thread"]["id"].as_str().map(str::to_owned),
+                        Err(error) => { task.set_status("failed"); task.error = Some(error); }
+                    }
+                    if task.thread_id.is_none() {
+                        if task.error.is_none() { task.error = Some("Missing task thread".into()); task.set_status("failed"); }
+                        let _ = self.save(&state.store);
+                        self.publish(state, Some(&state.store.tasks[index]), Some("queued"));
+                        continue;
+                    }
+                }
+                task.pending_message.get_or_insert_with(|| task.brief.clone());
+                task.set_status("starting");
+                let task = task.clone();
+                if let Err(error) = self.save(&state.store) {
+                    state.store.tasks[index].set_status("failed");
+                    state.store.tasks[index].error = Some(error);
+                    self.publish(state, Some(&state.store.tasks[index]), Some("queued"));
+                    break;
+                }
+                let (cancel, cancelled) = oneshot::channel();
+                state.starts.insert(task.id.clone(), cancel);
                 self.publish(state, Some(&state.store.tasks[index]), Some("queued"));
-                break;
+                let this = self.clone();
+                tokio::spawn(async move {
+                    let thread = task.thread_id.as_deref().unwrap();
+                    let mut text = task.pending_message.clone().unwrap_or_else(|| task.brief.clone());
+                    if !task.attachments.is_empty() { text.push_str(&format!("\n\nAttached files (inside this space):\n{}", task.attachments.join("\n"))); }
+                    if !space.read_only_folders.is_empty() { text.push_str(&format!("\n\nRead-only folders:\n{}", space.read_only_folders.join("\n"))); }
+                    let params = json!({"threadId":thread,"accessMode":task.access_mode,"model":task.model,"effort":task.effort,"input":[{"type":"text","text":text}]});
+                    let checkpoints = session.checkpoints.as_ref().unwrap();
+                    // Finish checkpoint preparation before cancellation cleanup; its disk
+                    // work must not race a later launch after this future is dropped.
+                    let prepared = if super::engine_registry::features(Some(&this.data)).checkpoints {
+                        checkpoints.before(&space.id, thread, "pi", &params).await
+                    } else { Ok(()) };
+                    let result = match prepared {
+                        Err(error) => Some(Err(error)),
+                        Ok(()) => tokio::select! {
+                            biased;
+                            _ = cancelled => None,
+                            result = session.pi.request(&space.id, "turn/start", params) => Some(result.map(|_| ())),
+                        },
+                    };
+                    // Claim completion under the same lock as stop, so a late stop wins.
+                    let mut state = this.state.lock().await;
+                    state.starts.remove(&task.id);
+                    let Some(index) = state.store.tasks.iter().position(|t| t.id == task.id) else { return };
+                    let cancelled = result.is_none() || state.store.tasks[index].status == "stopping";
+                    let failed = result.as_ref().is_some_and(|r| r.is_err());
+                    if cancelled || failed {
+                        state.store.tasks[index].set_status("stopping");
+                        drop(state);
+                        if cancelled { let _ = session.pi.request(&space.id, "turn/interrupt", json!({"threadId":task.thread_id})).await; }
+                        let checkpoints = session.checkpoints.as_ref().unwrap();
+                        if let Some(finish) = checkpoints.complete(&space.id, task.thread_id.as_deref().unwrap()) { let _ = finish.await; }
+                        state = this.state.lock().await;
+                    }
+                    let Some(index) = state.store.tasks.iter().position(|t| t.id == task.id) else { return };
+                    let entry = &mut state.store.tasks[index];
+                    if cancelled { entry.set_status("stopped"); entry.pending.clear(); }
+                    else if let Some(Err(error)) = result { entry.set_status("failed"); entry.error = Some(error); }
+                    else { if entry.status == "starting" { entry.set_status("running"); } entry.pending_message = None; }
+                    if let Err(error) = this.save(&state.store) { state.store.tasks[index].error = Some(error); }
+                    this.publish(&state, Some(&state.store.tasks[index]), Some("starting"));
+                    this.pump(&mut state).await;
+                });
             }
-            let result = self.start(state, index).await;
-            if let Err(error) = result {
-                state.store.tasks[index].set_status("failed");
-                state.store.tasks[index].error = Some(error);
-            }
-            if let Err(error) = self.save(&state.store) {
-                state.store.tasks[index].error = Some(error);
-            }
-            self.publish(state, Some(&state.store.tasks[index]), Some("queued"));
-        }
-    }
-    async fn start(&self, state: &mut State, index: usize) -> Result<(), String> {
-        let task = state.store.tasks[index].clone();
-        let space = state.store.spaces.iter().find(|s| s.id == task.space_id).ok_or("Unknown space")?.clone();
-        let session = self.session(state, &space).await;
-        let response = session.pi.request(&space.id, "thread/start", json!({"model":task.model})).await?;
-        let thread = response["result"]["thread"]["id"].as_str().ok_or("Missing task thread")?.to_owned();
-        state.store.tasks[index].thread_id = Some(thread.clone());
-        self.save(&state.store)?;
-        let text = format!("{}\n\nAttached files (inside this space):\n{}\n\nRead-only folders:\n{}", task.brief, task.attachments.join("\n"), space.read_only_folders.join("\n"));
-        let params = json!({"threadId":thread,"accessMode":task.access_mode,"effort":task.effort,"input":[{"type":"text","text":text}]});
-        let checkpoints = session.checkpoints.as_ref().unwrap();
-        if super::engine_registry::features(Some(&self.data)).checkpoints { checkpoints.before(&space.id, &thread, "pi", &params).await?; }
-        if let Err(error) = session.pi.request(&space.id, "turn/start", params).await {
-            if let Some(finish) = checkpoints.complete(&space.id, &thread) { let _ = finish.await; }
-            return Err(error);
-        }
-        Ok(())
+        })
     }
     async fn observe(&self, state: &mut State, event: &AppServerEvent) -> Result<(), String> {
         let params = &event.message["params"];
@@ -271,7 +314,8 @@ impl Work {
         let task = &mut state.store.tasks[index];
         let previous = task.status.clone();
         let method = event.message["method"].as_str().unwrap_or("");
-        if occupied(&task.status) {
+        if occupied(&task.status) && task.status != "stopping" {
+            if method == "turn/started" { task.set_status("running"); task.pending_message = None; }
             if method.ends_with("/requestApproval") || method == "item/tool/requestUserInput" {
                 if !task.pending.iter().any(|p| p["id"] == event.message["id"]) { task.pending.push(event.message.clone()); }
                 task.set_status("needs-input");
@@ -293,7 +337,7 @@ impl Work {
                 merge_outputs(task, &space, item["changes"].as_array().into_iter().flatten().filter_map(|c| c["path"].as_str().map(str::to_owned)));
             }
         }
-        if method == "turn/completed" && previous != "stopped" {
+        if method == "turn/completed" && !matches!(previous.as_str(), "stopped" | "stopping") {
             match session.checkpoints.as_ref().unwrap().outputs(&space.id, task.thread_id.as_deref().unwrap()).await {
                 Ok(paths) => merge_outputs(task, &space, paths),
                 Err(error) => task.error = Some(format!("{}Checkpoint outputs unavailable: {error}", task.error.as_ref().map(|e| format!("{e}\n")).unwrap_or_default())),
@@ -310,6 +354,15 @@ impl Work {
         let mut state = self.state.lock().await;
         self.initialize(&mut state).await?;
         state.settings = settings.clone();
+        if action == "read" {
+            if let Some(task) = state.store.tasks.iter().find(|t| Some(t.id.as_str()) == params["taskId"].as_str() && t.import_id.is_none()).cloned() {
+                let space = state.store.spaces.iter().find(|s| s.id == task.space_id).ok_or("Unknown space")?.clone();
+                let thread = task.thread_id.ok_or("Task is queued")?;
+                let session = self.session(&mut state, &space).await;
+                drop(state);
+                return session.pi.request(&space.id, "thread/read", json!({"threadId":thread})).await;
+            }
+        }
         let result = self.action(&mut state, action, params).await;
         self.save(&state.store)?;
         if !matches!(action, "list" | "read" | "checkpoint") { self.publish(&state, None, None); }
@@ -361,7 +414,7 @@ impl Work {
                 let model = params["model"].as_str().ok_or("Select a model")?;
                 let (provider, model_id) = model.split_once('/').ok_or("Select a registry model")?;
                 if !state.settings.providers.iter().any(|p| p.enabled && p.id == provider && p.models.iter().any(|m| m.enabled && m.id == model_id)) { return Err("Enable this registry model in Settings".into()); }
-                let task = Task { created_at: Some(chrono::Utc::now().timestamp()), updated_at: None, id: uuid::Uuid::new_v4().to_string(), import_id: None, space_id: space_id.into(), thread_id: None, title: brief.lines().next().unwrap().chars().take(100).collect(), brief: brief.into(), attachments, model: model.into(), effort: params["effort"].as_str().map(str::to_owned), access_mode: mode.into(), status: "queued".into(), plan: vec![], outputs: vec![], pending: vec![], error: None };
+                let task = Task { created_at: Some(chrono::Utc::now().timestamp()), updated_at: None, id: uuid::Uuid::new_v4().to_string(), import_id: None, space_id: space_id.into(), thread_id: None, title: brief.lines().next().unwrap().chars().take(100).collect(), brief: brief.into(), attachments, model: model.into(), effort: params["effort"].as_str().map(str::to_owned), access_mode: mode.into(), status: "queued".into(), plan: vec![], outputs: vec![], pending: vec![], pending_message: None, error: None };
                 let result = json!(task);
                 if params["runNow"] == true { state.store.tasks.insert(0, task); } else { state.store.tasks.push(task); }
                 return Ok(result);
@@ -396,7 +449,7 @@ impl Work {
                 if message.is_empty() || message.len() > 100_000 { return Err("Message must be 1–100000 bytes".into()); }
                 if space.read_only { return Err("This space is read-only".into()); }
                 if task.status == "needs-input" { return Err("Answer the pending request before sending another message".into()); }
-                if task.status == "queued" { return Err("Wait for this task to start".into()); }
+                if matches!(task.status.as_str(), "queued" | "starting" | "stopping") { return Err("Wait for this task to start or finish stopping".into()); }
                 let input = json!([{"type":"text","text":message}]);
                 if task.status == "running" {
                     return session.pi.request(&space.id, "turn/steer", json!({"threadId":thread,"input":input})).await;
@@ -406,15 +459,9 @@ impl Work {
                 }
                 let mode = params["accessMode"].as_str().unwrap_or(&task.access_mode);
                 if !["ask", "read-only", "full-access"].contains(&mode) { return Err("Invalid access mode".into()); }
-                let request = json!({"threadId":thread,"accessMode":mode,"model":task.model,"effort":task.effort,"input":input});
-                let checkpoints = session.checkpoints.as_ref().unwrap();
-                if super::engine_registry::features(Some(&self.data)).checkpoints { checkpoints.before(&space.id, thread, "pi", &request).await?; }
-                if let Err(error) = session.pi.request(&space.id, "turn/start", request).await {
-                    if let Some(finish) = checkpoints.complete(&space.id, thread) { let _ = finish.await; }
-                    return Err(error);
-                }
                 let task = &mut state.store.tasks[index];
-                task.set_status("running");
+                task.pending_message = Some(message.into());
+                task.set_status("queued");
                 task.access_mode = mode.into();
                 task.error = None;
                 Ok(json!({}))
@@ -428,6 +475,7 @@ impl Work {
                 Ok(json!({}))
             }
             "checkpoint" => {
+                if matches!(task.status.as_str(), "starting" | "stopping") { return Err("Wait for startup or stopping before opening checkpoints".into()); }
                 let mut request = params["request"].clone();
                 if !request.is_object() { return Err("Invalid checkpoint request".into()); }
                 request["threadId"] = json!(thread);
@@ -442,6 +490,12 @@ impl Work {
     }
     async fn stop(&self, state: &mut State, id: &str) -> Result<(), String> {
         let index = state.store.tasks.iter().position(|t| t.id == id).ok_or("Unknown task")?;
+        if let Some(cancel) = state.starts.remove(id) {
+            state.store.tasks[index].set_status("stopping");
+            let _ = cancel.send(());
+            return Ok(());
+        }
+        if state.store.tasks[index].status == "stopping" { return Ok(()); }
         let task = state.store.tasks[index].clone();
         if occupied(&task.status) {
             if let (Some(thread), Some(session)) = (&task.thread_id, state.sessions.get(&task.space_id)) {
@@ -520,7 +574,7 @@ mod tests {
         fn emit_terminal_exit(&self, _: TerminalExit) {}
     }
     fn task(id: &str, space: &str, status: &str) -> Task {
-        Task { created_at: None, updated_at: None, import_id: None, id: id.into(), space_id: space.into(), thread_id: Some(id.into()), title: id.into(), brief: "brief".into(), attachments: vec![], model: "local/test".into(), effort: None, access_mode: "ask".into(), status: status.into(), plan: vec![], outputs: vec![], pending: vec![], error: None }
+        Task { created_at: None, updated_at: None, import_id: None, id: id.into(), space_id: space.into(), thread_id: Some(id.into()), title: id.into(), brief: "brief".into(), attachments: vec![], model: "local/test".into(), effort: None, access_mode: "ask".into(), status: status.into(), plan: vec![], outputs: vec![], pending: vec![], pending_message: None, error: None }
     }
     #[test]
     fn task_timestamps_are_backward_compatible_and_track_status_changes() {
@@ -542,6 +596,18 @@ mod tests {
         let root = std::env::temp_dir().join(format!("work-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+    async fn wait_status(service: &Arc<Work>, id: &str, expected: &str) {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let state = service.state.lock().await;
+                let task = state.store.tasks.iter().find(|t| t.id == id).unwrap();
+                if task.status == expected && !state.starts.contains_key(id) { break; }
+                assert_ne!(task.status, "failed", "{:?}", task.error);
+                drop(state);
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        }).await.expect("Task did not settle");
     }
     #[tokio::test]
     async fn imported_continuation_runs_with_summary_and_survives_undo() {
@@ -568,6 +634,9 @@ mod tests {
         assert!(brief.contains(&super::super::imports::continuation(&messages)));
         assert_eq!(state.store.tasks.iter().find(|t| t.id == imported.id).unwrap().status, "stopped");
         work.pump(&mut state).await;
+        drop(state);
+        wait_status(&work, continuation["id"].as_str().unwrap(), "running").await;
+        let mut state = work.state.lock().await;
         assert_eq!(state.store.tasks[0].status, "running", "{:?}", state.store.tasks[0].error);
         assert!(state.store.tasks[0].thread_id.is_some());
         let session = state.sessions.get(&imported.space_id).unwrap().clone();
@@ -689,6 +758,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn waiting_for_credentials_keeps_work_responsive_and_cancel_prevents_late_start() {
+        use std::sync::{Condvar, Mutex as StdMutex};
+        struct WaitingKeys {
+            entered: StdMutex<Option<oneshot::Sender<()>>>,
+            gate: Arc<(StdMutex<bool>, Condvar)>,
+            finished: StdMutex<Option<oneshot::Sender<()>>>,
+        }
+        impl super::super::providers::KeyStore for WaitingKeys {
+            fn get(&self, _: &str) -> Result<Option<String>, String> {
+                if let Some(tx) = self.entered.lock().unwrap().take() { let _ = tx.send(()); }
+                let (lock, ready) = &*self.gate;
+                let (_guard, timeout) = ready.wait_timeout_while(lock.lock().unwrap(), std::time::Duration::from_secs(3), |open| !*open).unwrap();
+                assert!(!timeout.timed_out(), "Credential read blocked the async executor");
+                if let Some(tx) = self.finished.lock().unwrap().take() { let _ = tx.send(()); }
+                Ok(Some("synthetic-key".into()))
+            }
+            fn set(&self, _: &str, _: &str) -> Result<(), String> { unreachable!() }
+            fn delete(&self, _: &str) -> Result<(), String> { unreachable!() }
+        }
+        let root = temp();
+        let service = Work::new(root.join("data"), Sink::default());
+        let folder = root.join("space"); std::fs::create_dir(&folder).unwrap();
+        let mut settings = AppSettings::default();
+        settings.providers = vec![serde_json::from_value(json!({"id":"local","name":"Synthetic","kind":"ollama","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"test","enabled":true}]})).unwrap()];
+        let space = service.request(&settings, "add-space", json!({"path":folder,"readOnlyFolders":[]})).await.unwrap();
+        let id = space["id"].as_str().unwrap();
+        let (entered, entering) = oneshot::channel();
+        let (finished, finishing) = oneshot::channel();
+        let gate = Arc::new((StdMutex::new(false), Condvar::new()));
+        {
+            let mut state = service.state.lock().await;
+            let space = state.store.spaces[0].clone();
+            service.session(&mut state, &space).await;
+            Arc::get_mut(state.sessions.get_mut(id).unwrap()).unwrap().pi.keys = Arc::new(WaitingKeys { entered: StdMutex::new(Some(entered)), gate: gate.clone(), finished: StdMutex::new(Some(finished)) });
+        }
+        let created = service.request(&settings, "create", json!({"spaceId":id,"model":"local/test","brief":"Keep this unsent message","attachments":[],"runNow":true})).await.unwrap();
+        let task_id = created["id"].as_str().unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), entering).await.unwrap().unwrap();
+        // A transcript read may wait on this session, but it must not lock Work.
+        let (reader, read_settings, read_id) = (service.clone(), settings.clone(), task_id.to_owned());
+        let reading = tokio::spawn(async move { reader.request(&read_settings, "read", json!({"taskId":read_id})).await });
+        tokio::task::yield_now().await;
+        let list = tokio::time::timeout(std::time::Duration::from_millis(250), service.request(&settings, "list", json!({}))).await.unwrap().unwrap();
+        assert_eq!(list["tasks"][0]["status"], "starting");
+        tokio::time::timeout(std::time::Duration::from_millis(250), service.request(&settings, "stop", json!({"taskId":task_id}))).await.unwrap().unwrap();
+        wait_status(&service, task_id, "stopped").await;
+        reading.await.unwrap().unwrap();
+        *gate.0.lock().unwrap() = true; gate.1.notify_all();
+        finishing.await.unwrap();
+        tokio::task::yield_now().await;
+        let list = service.request(&settings, "list", json!({})).await.unwrap();
+        assert_eq!(list["tasks"][0]["status"], "stopped");
+        assert_eq!(list["tasks"][0]["pendingMessage"], "Keep this unsent message");
+        let thread = list["tasks"][0]["threadId"].as_str().unwrap();
+        assert!(!service.data.join("pi/sessions").join(id).join(format!("{thread}.requests")).exists());
+        assert!(!service.data.join("pi/agent").join(id).join("models.json").exists(), "Cancelled credential lookup must not write runtime files");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
     async fn queue_runs_two_pi_tasks_and_stop_releases_capacity() {
         let root = temp();
         let service = Work::new(root.join("data"), Sink::default());
@@ -703,12 +832,19 @@ mod tests {
             state.store.tasks.push(entry);
         }
         service.pump(&mut state).await;
+        drop(state);
+        wait_status(&service, "one", "running").await;
+        wait_status(&service, "two", "running").await;
+        let mut state = service.state.lock().await;
         assert_eq!(state.store.tasks.iter().map(|t| t.status.as_str()).collect::<Vec<_>>(), vec!["running","running","queued"], "{:?}", state.store.tasks.iter().map(|t| &t.error).collect::<Vec<_>>());
         assert!(state.store.tasks[0].thread_id.is_some());
         assert!(state.store.tasks[1].thread_id.is_some());
         service.stop(&mut state, "one").await.unwrap();
         assert_eq!(state.store.tasks[0].status, "stopped");
         service.pump(&mut state).await;
+        drop(state);
+        wait_status(&service, "three", "running").await;
+        let mut state = service.state.lock().await;
         assert_eq!(state.store.tasks[2].status, "running");
         service.action(&mut state, "stop-all", json!({})).await.unwrap();
         assert!(state.store.tasks.iter().all(|t| t.status == "stopped"));
@@ -724,8 +860,12 @@ mod tests {
         state.store.tasks.pop();
         service.action(&mut state, "follow-up", json!({"taskId":"one","message":"Check the output","accessMode":"full-access"})).await.unwrap();
         assert_eq!(state.store.tasks[0].thread_id, thread);
-        assert_eq!(state.store.tasks[0].status, "running");
+        assert_eq!(state.store.tasks[0].status, "queued");
         assert_eq!(state.store.tasks[0].access_mode, "full-access");
+        service.pump(&mut state).await;
+        drop(state);
+        wait_status(&service, "one", "running").await;
+        let mut state = service.state.lock().await;
         service.action(&mut state, "follow-up", json!({"taskId":"one","message":"Also check keyboard controls"})).await.unwrap();
         assert_eq!(state.store.tasks.len(), 3);
         service.stop(&mut state, "one").await.unwrap();

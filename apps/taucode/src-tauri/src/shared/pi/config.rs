@@ -196,7 +196,6 @@ pub(super) fn prepare(
     home: &Path,
     registry: &[ProviderEntry],
     graph: Option<&CodegraphSetup>,
-    keys: &dyn KeyStore,
 ) -> Result<HashMap<String, String>, String> {
     std::fs::create_dir_all(home.join("extensions")).map_err(|e| e.to_string())?;
     #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; std::fs::set_permissions(home, std::fs::Permissions::from_mode(0o700)).map_err(|e|e.to_string())?; }
@@ -240,15 +239,6 @@ pub(super) fn prepare(
         &json!({"quietStartup":true,"enableInstallTelemetry":false,"enabledModels":registry.iter().filter(|p|p.enabled).flat_map(|p|p.models.iter().filter(|m|m.enabled).map(move |m|format!("{}/{}",provider_id(p,registry),m.id))).collect::<Vec<_>>()}),
     )?;
     let mut env = HashMap::new();
-    for p in registry.iter().filter(|p| p.enabled) {
-        if matches!(p.auth, ProviderAuth::ApiKey) {
-            env.insert(
-                key_env(&p.id),
-                keys.get(&p.id)?
-                    .ok_or_else(|| format!("Save an API key for {} in Settings", p.name))?,
-            );
-        }
-    }
     env.insert(
         "PI_CODING_AGENT_DIR".into(),
         home.to_string_lossy().into_owned(),
@@ -258,4 +248,10 @@ pub(super) fn prepare(
     env.insert("PI_AUTO_QA".into(), "0".into());
     env.insert("PI_SKIP_VERSION_CHECK".into(), "1".into());
     Ok(env)
+}
+// No file writes: this may outlive a cancelled startup while macOS awaits approval.
+pub(super) fn credentials(registry: &[ProviderEntry], keys: &dyn KeyStore) -> Result<HashMap<String, String>, String> {
+    registry.iter().filter(|p| p.enabled && matches!(p.auth, ProviderAuth::ApiKey))
+        .map(|p| Ok((key_env(&p.id), keys.get(&p.id)?.ok_or_else(|| format!("Save an API key for {} in Settings", p.name))?)))
+        .collect()
 }

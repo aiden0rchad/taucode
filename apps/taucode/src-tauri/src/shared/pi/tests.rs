@@ -633,7 +633,8 @@ fn every_provider_and_auth_config_is_secret_free() {
             let models = config::models(&registry);
             let id = config::provider_id(&registry[0], &registry);
             assert_eq!(models["providers"][&id]["models"][0]["id"], "fake");
-            let env = config::prepare(&dir, &registry, None, &Keys).unwrap();
+            let mut env = config::prepare(&dir, &registry, None).unwrap();
+            env.extend(config::credentials(&registry, &Keys).unwrap());
             if auth["type"] == "apiKey" {
                 assert_eq!(env["TAUCODE_PROVIDER_LOCAL_KEY"], "keychain-secret-canary");
                 assert_eq!(
@@ -1272,6 +1273,9 @@ async fn real_pi_work_starts_offline_with_work_policy_and_skills() {
     engine.configure("workspace", vec![provider], AgentPolicy::default()).await;
     let response = engine.request("workspace", "thread/start", json!({"model":"local/offline"})).await.unwrap();
     let id = response["result"]["thread"]["id"].as_str().unwrap();
+    assert!(engine.sessions.lock().await[id].process.is_none());
+    let (registry, policy) = engine.registry.lock().await["workspace"].clone();
+    engine.spawn(engine.sessions.lock().await.get_mut(id).unwrap(), &registry, &policy).await.unwrap();
     let access: Value = serde_json::from_slice(&std::fs::read(dir.join("data/pi/agent/workspace/taucode/threads").join(format!("{id}.json"))).unwrap()).unwrap();
     assert_eq!(access["kind"], "work");
     assert_eq!(access["accessMode"], "ask");

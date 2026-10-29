@@ -36,6 +36,15 @@ struct Session {
     process: Option<Arc<Process>>,
     configuration: String,
 }
+// A cancelled startup must not leave a child alive before it joins the session.
+struct StartingProcess(Option<Arc<Process>>);
+impl Drop for StartingProcess {
+    fn drop(&mut self) {
+        if let Some(process) = self.0.take() {
+            tokio::spawn(async move { let _ = process.shutdown().await; });
+        }
+    }
+}
 pub(crate) struct PiEngine {
     pub(super) data: Option<PathBuf>,
     profile: profile::EngineProfile,
@@ -49,7 +58,7 @@ pub(crate) struct PiEngine {
     sink: Sink,
     graph: Option<CodegraphSetup>,
     idle: Duration,
-    keys: Arc<dyn KeyStore>,
+    pub(super) keys: Arc<dyn KeyStore>,
     #[cfg(test)]
     pub(super) fake: bool,
     #[cfg(test)]
@@ -354,7 +363,14 @@ impl PiEngine {
             .ok_or("Pi runtime is not configured")?
             .join(if self.chat { "chats/agent".into() } else { format!("{}/agent", self.profile.id()) })
             .join(if self.chat { &id } else { &s.workspace });
-        let mut env = config::prepare(&home, registry, self.graph.as_ref(), self.keys.as_ref())?;
+        let (credentials, delivery) = {
+            let (registry, connectors, keys) = (registry.to_vec(), connectors.clone(), self.keys.clone());
+            tokio::task::spawn_blocking(move || -> Result<_, String> {
+                Ok((config::credentials(&registry, keys.as_ref())?, super::connectors::delivery(&connectors, keys.as_ref())?))
+            }).await.map_err(|_| "Credential lookup failed".to_string())??
+        };
+        let mut env = config::prepare(&home, registry, self.graph.as_ref())?;
+        env.extend(credentials);
         let features = super::engine_registry::features(self.data.as_deref());
         self.profile.prepare(&home, registry, &features, &mut env)?;
         for p in registry.iter().filter(|p| p.enabled) {
@@ -367,7 +383,6 @@ impl PiEngine {
                 }
             }
         }
-        let delivery = super::connectors::delivery(&connectors, self.keys.as_ref())?;
         config::write_json(&home.join("mcp.json"), &delivery.pi)?;
         if self.profile.omp() {
             let network = home.join("taucode/network.json");
@@ -536,6 +551,7 @@ impl PiEngine {
             secrets,
         )
         .await?;
+        let mut starting = StartingProcess(Some(p.clone()));
         let state = match p.request(json!({"type":"get_state"})).await {
             Ok(v) => v,
             Err(e) => {
@@ -570,6 +586,7 @@ impl PiEngine {
         p.translator.lock().await.model = state["model"].clone();
         s.configuration = fingerprint;
         s.process = Some(p.clone());
+        starting.0 = None;
         Ok(p)
     }
     async fn dispatch(
@@ -630,7 +647,7 @@ impl PiEngine {
                 process: None,
                 configuration: String::new(),
             };
-            if let Err(e) = self.spawn(&mut session, &registry, &policy).await {
+            if let Err(e) = if self.work { Ok(()) } else { self.spawn(&mut session, &registry, &policy).await.map(|_| ()) } {
                 let _ = std::fs::remove_file(&session.file);
                 return Err(e);
             }
@@ -861,6 +878,7 @@ impl PiEngine {
         let p = if matches!(method, "turn/interrupt" | "turn/steer") {
             match &s.process {
                 Some(p) if p.alive.load(Ordering::SeqCst) => p.clone(),
+                _ if method == "turn/interrupt" => return Ok(json!({"result":{}})),
                 _ => self.spawn(s, &registry, &policy).await?,
             }
         } else {

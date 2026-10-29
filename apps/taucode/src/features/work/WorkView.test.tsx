@@ -42,6 +42,17 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Work mode", () => {
+  it("keeps a starting task cancellable and preserves its pending message", async () => {
+    state.tasks = [{ ...task("Starting report", "starting"), pendingMessage: "Check the report" }];
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Starting report" }));
+    expect(await screen.findByText(/Starting the model/)).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Message task" }) as HTMLTextAreaElement).value).toBe("Check the report");
+    expect((screen.getByRole("button", { name: "Send follow-up" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Stop task" }));
+    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("stop", { taskId: "Starting report" }));
+  });
+
   it.each(["done", "failed", "stopped", "running"] as const)("continues a %s task in the same conversation", async status => {
     state.tasks = [{ ...task("Report", status), accessMode: "full-access" }];
     render(<WorkView settings={settings} />);

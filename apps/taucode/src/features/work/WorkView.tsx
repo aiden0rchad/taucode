@@ -86,12 +86,12 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const needs = work.state.tasks.filter(t => t.status === "needs-input");
   const task = work.task;
   useEffect(() => { setFollowAccess(task?.accessMode ?? "ask"); }, [task?.id, task?.accessMode]);
-  const followUp = task ? drafts[task.id] ?? "" : "";
-  const followBlocked = busy || !task?.threadId || task.status === "queued" || task.status === "needs-input";
+  const followUp = task ? drafts[task.id] ?? task.pendingMessage ?? "" : "";
+  const followBlocked = busy || !task?.threadId || ["queued", "starting", "stopping", "needs-input"].includes(task.status);
   const capability = models.find(m => m.key === model)?.reasoning;
   const reasoning = useReasoningSelection(model, work.active, capability);
   const continuationSpace = writableSpaces.find(s => s.id === spaceId)?.id || writableSpaces.find(s => s.id === task?.spaceId)?.id || writableSpaces[0]?.id || "";
-  const active = task?.status === "running" || task?.status === "needs-input";
+  const active = task != null && ["starting", "running", "stopping", "needs-input"].includes(task.status);
   const nativeDrop = useRef<(paths: string[]) => void>(() => {});
   useEffect(() => subscribeWindowDragDrop(event => { setDragOver(event.payload.type === "enter" || event.payload.type === "over"); if (event.payload.type === "drop") nativeDrop.current(event.payload.paths ?? []); }), []);
   const run = async (operation: () => Promise<unknown>) => {
@@ -116,7 +116,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     const id = task.id;
     void run(async () => {
       await work.mutate("follow-up", { taskId: id, message: followUp, accessMode: followAccess });
-      setDrafts(current => ({ ...current, [id]: "" }));
+      setDrafts(current => { const next = { ...current }; delete next[id]; return next; });
     });
   };
   const selectTask = (id: string) => { work.setActive(id); setSpaceId(""); if (window.innerWidth < 760) setSidebarCollapsed(true); };
@@ -146,7 +146,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     ].filter(Boolean).join(" · ");
     return <RowMenu key={entry.id} label={entry.title} actions={[
     { label: "Open task", onClick: () => selectTask(entry.id) },
-    ...(["running", "needs-input", "queued"].includes(entry.status) ? [{ label: "Stop task", disabled: busy, onClick: () => { void run(() => work.mutate("stop", { taskId: entry.id })); } }] : []),
+    ...(["starting", "running", "needs-input", "queued"].includes(entry.status) ? [{ label: "Stop task", disabled: busy, onClick: () => { void run(() => work.mutate("stop", { taskId: entry.id })); } }] : []),
   ]}><button className={`thread-row work-task-row is-nested${work.active === entry.id ? " active" : ""}`} data-task-id={entry.id} data-depth={1} title={title} aria-label={entry.title} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}><span className={`thread-status work-status-${entry.status}`} aria-label={status} /><span className="thread-name">{entry.title}</span>{(attention || timestamp != null) && <span className={`thread-time${attention ? ` work-attention-${entry.status}` : ""}`}>{attention ? status : formatRelativeTimeShort(timestamp! * 1000)}</span>}</button></RowMenu>;
   };
   const checkpoints = useCallback<typeof checkpointRequest>((_space, params) => {
@@ -176,10 +176,10 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
         </aside>) : null;
   return <WorkspaceShell titleActions={<>
         <span className="thread-header-model" title={formatModelRef(settings, task?.model ?? model).title}>pi · {formatModelRef(settings, task?.model ?? model).name}</span>
-        {task && <div className="work-actions"><span className={`thread-state-chip ${task.status === "running" ? "processing" : task.status === "needs-input" ? "reviewing" : "ready"}`} role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && <button className="ghost main-header-action" aria-label="Stop task" title="Stop task" disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop</button>}
+        {task && <div className="work-actions"><span className={`thread-state-chip ${["starting", "running", "stopping"].includes(task.status) ? "processing" : task.status === "needs-input" ? "reviewing" : "ready"}`} role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && task.status !== "stopping" && <button className="ghost main-header-action" aria-label="Stop task" title="Stop task" disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop</button>}
           {task.threadId && !task.importId && <RewindAction workspaceId={task.spaceId} threadId={task.threadId} running={active} />}
         </div>}
-        {work.state.tasks.some(t => ["running", "needs-input"].includes(t.status)) && <IconButton className="ghost main-header-action" aria-label="Stop all tasks" title="Stop all tasks" disabled={busy} onClick={() => { void run(() => work.mutate("stop-all")); }}><Square size={14} aria-hidden /></IconButton>}
+        {work.state.tasks.some(t => ["starting", "running", "needs-input"].includes(t.status)) && <IconButton className="ghost main-header-action" aria-label="Stop all tasks" title="Stop all tasks" disabled={busy} onClick={() => { void run(() => work.mutate("stop-all")); }}><Square size={14} aria-hidden /></IconButton>}
       </>} reservedShortcuts={Object.entries(settings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`work:${work.active ?? "new"}`} title={task?.title || "New task"} actions={task ? [{ label: "Copy", onClick: () => { void run(() => navigator.clipboard.writeText(taskMarkdown)); } }, { label: "Export", onClick: () => { void run(() => exportMarkdownFile(taskMarkdown, "task.md", "Export task")); } }] : []} onNavigate={scope => work.setActive(scope.slice(5) === "new" ? null : scope.slice(5))} tools={task ? [{ id: "task", label: "Task", content: taskPanel }, { id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={task.spaceId} /> }] : selectedSpace ? [{ id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={selectedSpace} /> }] : []} searchUrl={settings.browser?.searchUrl} onInterrupt={() => work.active ? workRequest("stop", { taskId: work.active }).then(() => {}) : undefined}><div className={"chat-layout work-layout" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
     <SidebarResizeHandle />
     <aside className="sidebar chat-sidebar" aria-label="Spaces and tasks">
@@ -214,7 +214,9 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           {task.error && <p role="alert">{task.error}</p>}
           {items.map(item => { const description = item.kind === "tool" ? describeTool(item) : null; return item.kind === "message" ? <article className={"message chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.text} showFilePath={false} /><div className="message-hover-actions"><IconButton className="ghost" title="Copy message" aria-label="Copy message" onClick={() => { void navigator.clipboard.writeText(item.text).catch(() => work.setError("Could not copy message.")); }}><Copy aria-hidden /></IconButton></div></article> : item.kind === "tool" ? <details className={`work-tool${/fail|error/i.test(item.status ?? "") ? " is-error" : ""}`} key={item.id}><summary>{createElement(/fail|error/i.test(item.status ?? "") ? CircleAlert : item.status === "inProgress" ? LoaderCircle : workToolIcons[item.toolType] ?? Search, { "aria-hidden": true, className: item.status === "inProgress" ? "tool-spinner" : undefined })}<span className="work-tool-label" title={item.title}>{description?.verb}{description?.target ? ` ${description.target}` : ""}</span>{/fail|error/i.test(item.status ?? "") && <span>Failed</span>}<ChevronDown aria-hidden /></summary><pre>{item.detail}</pre>{item.output && <Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.content || item.summary} showFilePath={false} /></details> : null; })}
           {task.status === "queued" && <p className="chat-muted">Waiting for an available slot. One task runs in each space at a time.</p>}
-          {active && <p className="chat-muted">This task keeps running when you switch modes or hide the window.</p>}
+          {task.status === "starting" && <p role="status" className="chat-muted">Starting the model. If macOS requests Keychain access, respond to its prompt. You can stop this launch and keep your message.</p>}
+          {task.status === "stopping" && <p role="status" className="chat-muted">Stopping the launch… Your message is kept for retry.</p>}
+          {active && task.status !== "stopping" && <p className="chat-muted">This task keeps running when you switch modes or hide the window.</p>}
           {task.importId ? <section aria-label="Continue imported task">
             <p className="chat-muted">Read-only Cowork history. Continue starts a new task with summarized context and the last 10 messages.</p>
             <label>Space <select aria-label="Continuation space" value={continuationSpace} onChange={e => setSpaceId(e.target.value)} disabled={busy}><option value="" disabled>Choose an available space</option>{writableSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
@@ -226,7 +228,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           </section> : null}
         </div></div>
         {!task.importId && <form className="work-follow-up" aria-label="Task conversation" onSubmit={e => { e.preventDefault(); sendFollowUp(); }}>
-          <ComposerShell toolbar={<><ComposerAccessControl value={followAccess} onChange={setFollowAccess} disabled={busy || active || task.status === "queued"} /><span className="chat-muted">{formatModelRef(settings, task.model).name}</span></>} actions={<ComposerSendButton label={task.status === "running" ? "Send instruction" : "Send follow-up"} disabled={followBlocked || !followUp.trim()} disabledReason={task.status === "needs-input" ? "Answer the pending request first" : task.status === "queued" ? "Waiting for this task to start" : busy ? "Please wait" : "Write a message"} onSend={sendFollowUp} />}>
+          <ComposerShell toolbar={<><ComposerAccessControl value={followAccess} onChange={setFollowAccess} disabled={busy || active || task.status === "queued"} /><span className="chat-muted">{formatModelRef(settings, task.model).name}</span></>} actions={<ComposerSendButton label={task.status === "running" ? "Send instruction" : "Send follow-up"} disabled={followBlocked || !followUp.trim()} disabledReason={task.status === "needs-input" ? "Answer the pending request first" : ["queued", "starting", "stopping"].includes(task.status) ? "Waiting for this task to start or finish stopping" : busy ? "Please wait" : "Write a message"} onSend={sendFollowUp} />}>
             <textarea aria-label="Message task" placeholder={task.status === "running" ? "Add an instruction…" : "Ask for changes or continue this task…"} rows={2} value={followUp} disabled={busy} onChange={e => setDrafts(current => ({ ...current, [task.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); sendFollowUp(); } }} />
           </ComposerShell>
           {task.status === "needs-input" && <button className="ghost" type="button" onClick={jumpToInput}>Answer the pending request above to continue</button>}
@@ -249,7 +251,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           <div className="chat-examples work-templates starter-pills">{templates.map(template => <button key={template.title} onClick={() => { setBrief(template.brief); setAccess(template.access); }}>{createElement(templateIcons[template.title], { "aria-hidden": true })}{template.title}</button>)}</div>
       </div></div>}
     </main>
-    {features.checkpoints && <Checkpoints requestCheckpoint={checkpoints} running={Object.fromEntries(work.state.tasks.filter(t => t.threadId).map(t => [t.threadId!, { isProcessing: ["running","needs-input"].includes(t.status) }]))} onChanged={async (_space, thread) => { const task = tasksRef.current.find(t => t.threadId === thread); if (task) await work.read(task); await work.refresh(); }} />}
+    {features.checkpoints && <Checkpoints requestCheckpoint={checkpoints} running={Object.fromEntries(work.state.tasks.filter(t => t.threadId).map(t => [t.threadId!, { isProcessing: ["starting","stopping","running","needs-input"].includes(t.status) }]))} onChanged={async (_space, thread) => { const task = tasksRef.current.find(t => t.threadId === thread); if (task) await work.read(task); await work.refresh(); }} />}
   </div></WorkspaceShell>;
 }
 
