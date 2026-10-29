@@ -1,4 +1,4 @@
-import type { AgentPolicy, AppSettings, ModelRef, ProviderEntry } from "@/types";
+import type { AgentPolicy, AppSettings, ModelRef, ProviderEntry, WorkspaceSettings } from "@/types";
 export const defaultAgentPolicy: AgentPolicy = {
   defaultEngine: "pi", defaultModel: null,
   subagents: { enabled: true, mode: "custom", maxConcurrent: 4, maxPerTurn: 8, maxDepth: 1, allowedModels: [], defaultModel: null,
@@ -61,4 +61,8 @@ export function policyError(p: AgentPolicy, providers: ProviderEntry[]): string 
   if (allowed.size && [s.defaultModel, ...s.roles.map(r => r.model)].some(m => m && !allowed.has(modelKey(m)))) return "Role and default subagent models must be in allowed models.";
   if (new Set(s.roles.map(r => r.name)).size !== s.roles.length || s.roles.some(r => !/^[a-z0-9_-]{1,32}$/.test(r.name))) return "Role names must be unique slugs.";
   return null;
+}
+
+export function mergePolicy(base: AgentPolicy, override: WorkspaceSettings["agentPolicy"]): AgentPolicy {
+  return { ...base, ...override, defaultModel: override?.defaultModel ?? base.defaultModel, subagents: { ...base.subagents, ...override?.subagents, defaultModel: override?.subagents?.defaultModel ?? base.subagents.defaultModel } };
 }

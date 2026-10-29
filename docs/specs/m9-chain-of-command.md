@@ -108,6 +108,20 @@ Validation: 220 frontend files / 1,724 tests; typecheck; changed frontend lint;
 7 Work and 40 Pi Rust tests (1 ignored); cargo check. The draft cleanup also passed
 the Work suite and cargo check after the live startup check.
 
+## Composer control
+
+The model/reasoning picker now exposes Chain of Command through a five-star
+rank toggle. The adjacent chevron appears only while enabled and opens the same
+team models, limits and role editor used by Settings. Off selects Single model
+without discarding role choices. Code saves the effective project policy; Chat
+and Work save the app policy. Unsupported engines cannot enable Chain from the
+picker. Saves are acknowledged before the toggle changes, and failures remain
+visible. The editor loads on demand and supports keyboard focus and Escape.
+Live checks confirmed controls in Work, Chat and Code, the conditional chevron,
+and saved limit edits. The original policy was restored byte-equivalently after
+JSON normalization. Full frontend suite: 221 files / 1,727 tests passed; the final
+compact editor also passed 13 focused tests, typecheck and lint.
+
 ## Work still required for the full product goal
 
 - Per-conversation mode visibility and switching, rather than settings-only control.

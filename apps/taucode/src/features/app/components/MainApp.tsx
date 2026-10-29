@@ -1,12 +1,13 @@
 import { useFeatures } from "@settings/features";
-import { exportMarkdownFile } from "@services/tauri";
+import { exportMarkdownFile, getAppSettings, updateAppSettings } from "@services/tauri";
 import { buildThreadTranscript } from "@utils/threadText";
 import { Checkpoints } from "@/features/checkpoints/Checkpoints";
 import { useModeSettings } from "@/features/chat/ModeShell";
 import { AgentsContext, agentThreadDetails } from "@/features/agents/agents";
 import { useSideChats, sideChatQuote } from "@/features/sidechats/useSideChats";
 import { SideChatPane, SideChatSplit } from "@/features/sidechats/SideChatPane";
-import { modelKey } from "@/features/settings/registry";
+import { ComposerPolicyProvider } from "@/features/composer/components/ComposerPolicy";
+import { defaultAgentPolicy, mergePolicy, modelKey } from "@/features/settings/registry";
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import successSoundUrl from "@/assets/success-notification.mp3";
 import errorSoundUrl from "@/assets/error-notification.mp3";
@@ -1980,7 +1981,10 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     tasks={managedTasks} tasksEnabled={features.terminal} onOpenSettings={modalActions.openSettings} onEditLaunchScripts={launchScriptsState.onOpenNew}
   /> : null;
   if (settingsOnly) return <div className="mode-settings-host" style={mainAppShellProps.appStyle}><AppModals {...mainAppShellProps.appModalsProps} settingsOpen settingsSection={initialSettingsSection ?? mainAppShellProps.appModalsProps.settingsSection} onCloseSettings={onCloseModeSettings ?? mainAppShellProps.appModalsProps.onCloseSettings} /></div>;
-  return <AgentsContext.Provider value={{ details: agentDetails, workspaceId: activeWorkspaceId, threadId: activeThreadId, itemsByThread,
+  return <ComposerPolicyProvider policy={mergePolicy(appSettings.agentPolicy ?? defaultAgentPolicy, activeWorkspace?.settings.agentPolicy)} scope={activeWorkspace ? `Project · ${activeWorkspace.name}` : "App policy"} onChange={async agentPolicy => {
+    if (activeWorkspace) await updateWorkspaceSettings(activeWorkspace.id, { agentPolicy });
+    else setAppSettings(await updateAppSettings({ ...await getAppSettings(), agentPolicy }));
+  }}><AgentsContext.Provider value={{ details: agentDetails, workspaceId: activeWorkspaceId, threadId: activeThreadId, itemsByThread,
     policy: appSettings.agentPolicy ? { ...appSettings.agentPolicy.subagents, ...activeWorkspace?.settings.agentPolicy?.subagents } : undefined }}>
     {features.checkpoints && <Checkpoints running={threadStatusById} onChanged={async (workspace, thread, text) => {
     await refreshThread(workspace, thread);
@@ -2004,5 +2008,5 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
       { id: "sidechat", label: "Side chat", shortcut: "⌘⇧K", target: sideChat?.id, content: sideChatInSplit ? null : sideChatNode, onClose: sideChats.close,
         onOpen: (tab: import("@/features/panels/panelState").PanelTab) => { setSplitSideChatId(null); if (tab.target && sideChat?.id !== tab.target && activeThreadId) sideChats.open({ id: tab.target, name: "Side chat", updatedAt: Date.now(), engine: parentEngine, sideOf: { threadId: activeThreadId, workspaceId: activeWorkspace.id, atItemId: null } }); },
       },
-    ].filter(tool => tool.id === "git" ? features.git : tool.id === "agents" ? features.subagents : tool.id === "terminal" ? features.terminal : tool.id === "sidechat" ? features.sideChats : true) : []} searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><PanelToolRequest id="terminal" requestKey={layoutSurfaces.secondary.terminalDockProps.isOpen} /><PanelToolRequest id="sidechat" requestKey={sideChatInSplit ? null : sideChat?.id} /><MainAppShell {...mainAppShellProps} /></WorkspaceShell></AgentsContext.Provider>;
+    ].filter(tool => tool.id === "git" ? features.git : tool.id === "agents" ? features.subagents : tool.id === "terminal" ? features.terminal : tool.id === "sidechat" ? features.sideChats : true) : []} searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><PanelToolRequest id="terminal" requestKey={layoutSurfaces.secondary.terminalDockProps.isOpen} /><PanelToolRequest id="sidechat" requestKey={sideChatInSplit ? null : sideChat?.id} /><MainAppShell {...mainAppShellProps} /></WorkspaceShell></AgentsContext.Provider></ComposerPolicyProvider>;
 }

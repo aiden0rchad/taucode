@@ -195,7 +195,6 @@ it.each([["low", "high", "max"], ["off", "high"], ["low", "medium", "high", "xhi
     expect(particle.style.animationDuration).toBe("");
   }
   expect(dialog.style.getPropertyValue("--reasoning-position")).toBe("100%");
-  expect(dialog.querySelector(".reasoning-heading .lucide-flame")).toBeTruthy();
   rerender(<ReasoningControl capability={capability} value={levels[levels.length - 2]} onChange={vi.fn()} />);
   expect(dialog.classList.contains("warm")).toBe(true);
   expect(dialog.classList.contains("burning")).toBe(false);

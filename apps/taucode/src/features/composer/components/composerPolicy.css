@@ -1,0 +1,24 @@
+.reasoning-popover .command-controls { display: flex; align-items: center; gap: 2px; position: relative; }
+.reasoning-popover .command-toggle, .reasoning-popover .command-configure { display: grid; place-items: center; padding: 0; height: 36px; flex-shrink: 0; }
+.reasoning-popover .command-toggle { width: 36px; color: var(--text-muted); }
+.reasoning-popover .command-toggle[aria-pressed="true"] { color: #e9ba62; background: color-mix(in srgb, #e9ba62 13%, transparent); }
+.reasoning-popover .command-configure { width: 28px; color: var(--text-secondary); }
+.reasoning-popover .command-controls button:hover:not(:disabled) { background: var(--surface-card-muted); }
+.reasoning-popover .command-controls button:disabled { opacity: .45; cursor: default; }
+.reasoning-model-heading .command-controls { margin-left: auto; }
+.command-toggle-error { position: absolute; top: 100%; left: 0; z-index: var(--z-popover); width: 240px; padding: 8px; background: var(--surface-card); border: 1px solid var(--border-muted); border-radius: 6px; font-size: 12px; }
+.command-editor { width: min(700px, calc(100vw - 32px)); padding: 24px; border-radius: 18px; }
+.command-editor > div { display: flex; flex-direction: column; max-height: calc(100vh - 96px); }
+.command-editor header, .command-editor footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-shrink: 0; }
+.command-editor h2 { margin: 0; font-size: 20px; }
+.command-editor header p { margin: 6px 0 18px; color: var(--text-muted); font-size: 12px; }
+.command-editor header button { align-self: flex-start; width: 36px; height: 36px; }
+.command-editor fieldset { display: flex; flex-direction: column; border: 0; padding: 0; margin: 0; min-height: 0; min-width: 0; }
+.command-editor-body { overflow-y: auto; min-height: 0; padding: 0 4px 16px; }
+.command-editor footer { justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.command-editor [role="alert"] { color: var(--text-error); font-size: 13px; }
+
+.command-editor .registry-policy { margin-top: 18px; gap: 16px; }
+.command-editor .settings-group { margin: 0; }
+.command-editor.settings-page .settings-segmented { align-self: stretch; width: auto; margin-bottom: 0; }
+.command-editor .settings-segmented-option { white-space: nowrap; }

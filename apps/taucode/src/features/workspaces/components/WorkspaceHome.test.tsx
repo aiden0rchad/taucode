@@ -29,7 +29,7 @@ it("uses the combined model chip with heat and a reasoning slider", () => {
   expect(screen.getByRole("slider")).toBeTruthy();
   expect(container.querySelector(".reasoning-chip")).toBeTruthy();
   rerender(<WorkspaceHome {...props} selectedEffort="high" />);
-  expect(document.querySelector(".reasoning-popover.burning .reasoning-flame")).toBeTruthy();
+  expect(document.querySelector(".reasoning-popover.burning .reasoning-ember")).toBeTruthy();
 });
 it("shows file statuses, edits the selected file, and opens detected files", () => {
   render(<WorkspaceHome {...props} />);

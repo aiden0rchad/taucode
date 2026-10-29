@@ -22,7 +22,7 @@ export function ComposerMetaBar({ disabled, engine = "codex", models, selectedMo
   const protocol = useEngines().find(e => e.id === engine)?.protocol;
   const modelEngine = protocol === "pi-rpc" || (protocol === "acp" && engine !== "claude") ? "pi" : engine;
   const selected = models.find(model => model.id === selectedModelId);
-  return <ReasoningControl
+  return <ReasoningControl engine={engine}
     modelName={settings ? formatModelRef(settings, selectedModelId).name : selected?.displayName || selected?.model || "Select model"}
     models={models.map(model => ({ id: model.id, name: model.displayName || model.model, provider: model.providerName || model.providerId, disabled: !!model.engines && !model.engines.includes(modelEngine), disabledReason: model.engines && !model.engines.includes(modelEngine) ? "Unavailable for " + engine : undefined }))}
     selectedModelId={selectedModelId} defaultModelId={defaultModelId} onSelectModel={onSelectModel}
