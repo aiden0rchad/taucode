@@ -79,7 +79,7 @@ it.each([
     }
     expect(document.querySelector(".browser-toggle")).toBeNull();
     if (query.includes("mode=code")) {
-      expect(screen.getByPlaceholderText("Ask taucode to do something…").closest(".squircle")).toBeTruthy();
+      expect(screen.getByPlaceholderText("Ask taucode to do something… Type / for commands").closest(".squircle")).toBeTruthy();
       expect(document.querySelectorAll(".workspace-card.squircle")).toHaveLength(3);
       expect(document.querySelector(".sidebar .squircle .squircle")).toBeNull();
       expect(screen.getByRole("button", { name: "Orbit" }).closest(".workspace-card")?.querySelector(".workspace-card-content.collapsed")).toBeTruthy();
@@ -296,7 +296,7 @@ it("uses desktop Code chrome and a focused dock pane at 960px", async () => {
   expect(document.querySelector(".app.layout-desktop")).toBeTruthy();
   expect(document.querySelector(".dock-workspace.is-compact")).toBeTruthy();
   expect(screen.queryByRole("dialog", { name: "Side panel" })).toBeNull();
-  const input = screen.getByPlaceholderText("Ask taucode to do something…");
+  const input = screen.getByPlaceholderText("Ask taucode to do something… Type / for commands");
   fireEvent.change(input, { target: { value: "Keep this draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Toggle session rail" }));
   expect(document.querySelector('.dock-pane[data-dock-pane="session"]')?.hasAttribute("hidden")).toBe(false);
@@ -323,7 +323,7 @@ it.each(["code", "chat", "work"].flatMap(mode => [760, 960, 1180, 1440].map(widt
   const query = mode === "code" ? "mode=code&thread=thread-rich" : mode === "chat" ? "mode=chat&chat=chat-1" : "mode=work&task=new";
   window.history.replaceState(null, "", "/?" + query);
   installUiPreview(); render(<App />);
-  const input = mode === "code" ? await screen.findByPlaceholderText("Ask taucode to do something…") : await screen.findByRole("textbox", { name: mode === "chat" ? "Message" : "Task brief" });
+  const input = mode === "code" ? await screen.findByPlaceholderText("Ask taucode to do something… Type / for commands") : await screen.findByRole("textbox", { name: mode === "chat" ? "Message" : "Task brief" });
   const shell = document.querySelector<HTMLElement>(".workspace-shell")!;
   await waitFor(() => expect(shell.style.getPropertyValue("--sidebar-width")).toBe(`${Math.min(280, width - 520)}px`));
   const conversation = input.closest(mode === "code" ? ".main" : ".chat-main")!;
@@ -372,7 +372,7 @@ it.each(["code", "chat", "work"].flatMap(mode => [500, 740].map(width => ({ mode
   vi.stubGlobal("innerWidth", width); vi.stubEnv("MODE", "uipreview");
   window.history.replaceState(null, "", "/?" + (mode === "code" ? "mode=code&thread=thread-rich" : mode === "chat" ? "mode=chat&chat=chat-1" : "mode=work&task=new"));
   installUiPreview(); render(<App />);
-  const input = mode === "code" ? await screen.findByPlaceholderText("Ask taucode to do something…") : await screen.findByRole("textbox", { name: mode === "chat" ? "Message" : "Task brief" });
+  const input = mode === "code" ? await screen.findByPlaceholderText("Ask taucode to do something… Type / for commands") : await screen.findByRole("textbox", { name: mode === "chat" ? "Message" : "Task brief" });
   const shell = document.querySelector<HTMLElement>(".workspace-shell")!;
   expect(shell.classList.contains("sidebar-overlay")).toBe(true);
   expect(shell.style.getPropertyValue("--layout-sidebar-column")).toBe("0px");

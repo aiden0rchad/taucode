@@ -20,6 +20,7 @@ import type {
   WorkspaceInfo,
 } from "../../../types";
 import { ComposerInput } from "../../composer/components/ComposerInput";
+import { basicCommands, expandTaskCommand } from "../../composer/commands";
 import { useComposerImages } from "../../composer/hooks/useComposerImages";
 import { useComposerAutocompleteState } from "../../composer/hooks/useComposerAutocompleteState";
 import { usePromptHistory } from "../../composer/hooks/usePromptHistory";
@@ -200,6 +201,7 @@ export function WorkspaceHome({
     text: prompt,
     selectionStart,
     disabled: isSubmitting,
+    commands: basicCommands.filter(command => command.replaceTrigger),
 
     skills,
 
@@ -301,6 +303,17 @@ export function WorkspaceHome({
     }
 
     const trimmed = prompt.trim();
+    const task = expandTaskCommand(trimmed);
+    if (task) {
+      onPromptChange(task.text);
+      const cursor = task.text.lastIndexOf("\n\n");
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.setSelectionRange(cursor, cursor);
+        setSelectionStart(cursor);
+      });
+      return;
+    }
     const didStart = await onStartRun(activeImages);
     if (didStart) {
       if (trimmed) {

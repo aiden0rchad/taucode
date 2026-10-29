@@ -250,7 +250,7 @@ export function ComposerInput({
             placeholder={
               disabled
                 ? "Review in progress. Chat will re-enable when it completes."
-                : `Ask ${{ codex: "Codex", claude: "Claude Code" }[engine as "codex" | "claude"] ?? "taucode"} to do something…`
+                : `Ask ${{ codex: "Codex", claude: "Claude Code" }[engine as "codex" | "claude"] ?? "taucode"} to do something… Type / for commands`
             }
             value={text}
             onChange={handleTextareaChange}

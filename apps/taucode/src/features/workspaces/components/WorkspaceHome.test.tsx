@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { assertRowAlignment } from "@/test/rowAlignment.mjs";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import { WorkspaceHome } from "./WorkspaceHome";
@@ -23,7 +23,7 @@ const props = {
 } as unknown as ComponentProps<typeof WorkspaceHome>;
 it("uses the combined model chip with heat and a reasoning slider", () => {
   const { container, rerender } = render(<WorkspaceHome {...props} />);
-  expect(screen.getByPlaceholderText("Ask taucode to do something…")).toBeTruthy();
+  expect(screen.getByPlaceholderText("Ask taucode to do something… Type / for commands")).toBeTruthy();
   expect(screen.queryByRole("combobox", { name: "Thinking mode" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Claude Opus 5.5 · Medium" }));
   expect(screen.getByRole("slider")).toBeTruthy();
@@ -52,4 +52,22 @@ it("displays and removes shared browser draft attachments across workspace chang
   expect(container.querySelector(".composer-attachment")).toBeNull();
   rerender(<WorkspaceHome {...props} imageAttachments={imageAttachments} />);
   expect(container.querySelector('.composer-attachment img')?.getAttribute("src")).toBe(image);
+});
+
+it("offers only task starters before a conversation exists", () => {
+  render(<WorkspaceHome {...props} prompt="/" />);
+  const input = screen.getByRole("textbox", { name: "Message" });
+  fireEvent.select(input, { target: { selectionStart: 1 } });
+  expect(within(screen.getByRole("listbox")).getAllByRole("option").map(item => item.textContent)).toEqual([
+    "/planDraft a plan before making changes", "/goalStart a task with a clear outcome",
+  ]);
+});
+
+it("prepares a typed goal without submitting stale command text", () => {
+  const onStartRun = vi.fn();
+  const onPromptChange = vi.fn();
+  render(<WorkspaceHome {...props} prompt="/goal Add a timer" onPromptChange={onPromptChange} onStartRun={onStartRun} />);
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Message" }), { key: "Enter" });
+  expect(onPromptChange).toHaveBeenCalledWith(expect.stringMatching(/^Goal: Add a timer\n\nWork toward this goal/));
+  expect(onStartRun).not.toHaveBeenCalled();
 });

@@ -567,7 +567,7 @@
   padding: 8px;
   border-radius: 16px;
   width: min(100%, 420px);
-  max-height: 220px;
+  max-height: min(320px, 50vh);
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -594,6 +594,12 @@
   text-transform: uppercase;
   color: var(--text-faint);
   padding: 6px 8px 2px;
+}
+
+.composer-command-notice {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .composer-suggestion:hover,

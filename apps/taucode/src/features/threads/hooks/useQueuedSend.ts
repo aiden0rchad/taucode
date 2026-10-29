@@ -70,31 +70,8 @@ type SlashCommandKind =
   | "status";
 
 function parseSlashCommand(text: string): SlashCommandKind | null {
-  if (/^\/fork\b/i.test(text)) {
-    return "fork";
-  }
-  if (/^\/fast\b/i.test(text)) {
-    return "fast";
-  }
-  if (/^\/mcp\b/i.test(text)) {
-    return "mcp";
-  }
-  if (/^\/review\b/i.test(text)) {
-    return "review";
-  }
-  if (/^\/compact\b/i.test(text)) {
-    return "compact";
-  }
-  if (/^\/new\b/i.test(text)) {
-    return "new";
-  }
-  if (/^\/resume\b/i.test(text)) {
-    return "resume";
-  }
-  if (/^\/status\b/i.test(text)) {
-    return "status";
-  }
-  return null;
+  const match = /^\/(compact|fast|fork|mcp|new|resume|review|status)(?=\s|$)/i.exec(text);
+  return match ? match[1].toLowerCase() as SlashCommandKind : null;
 }
 
 export function useQueuedSend({

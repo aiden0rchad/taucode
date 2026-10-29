@@ -9,6 +9,7 @@ import Plug from "lucide-react/dist/esm/icons/plug";
 import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw";
 import ScrollText from "lucide-react/dist/esm/icons/scroll-text";
 import Wrench from "lucide-react/dist/esm/icons/wrench";
+import { ListChecks, MessageSquarePlus, Target, Shrink } from "lucide-react";
 import { PopoverSurface } from "../../design-system/components/popover/PopoverPrimitives";
 import { ReviewInlinePrompt } from "./ReviewInlinePrompt";
 import type { ReviewPromptState, ReviewPromptStep } from "../../threads/hooks/useReviewPrompt";
@@ -48,6 +49,10 @@ type ComposerSuggestionsPopoverProps = {
 const isFileSuggestion = (item: AutocompleteItem) => item.group === "Files";
 
 const suggestionIcon = (item: AutocompleteItem) => {
+  if (item.id === "plan") return ListChecks;
+  if (item.id === "goal") return Target;
+  if (item.id === "sidechat") return MessageSquarePlus;
+  if (item.id === "compact") return Shrink;
   if (isFileSuggestion(item)) {
     return FileText;
   }
@@ -153,6 +158,7 @@ export function ComposerSuggestionsPopover({
     <PopoverSurface
       className={`composer-suggestions${reviewPromptOpen ? " review-inline-suggestions" : ""}`}
       role="listbox"
+      aria-label="Composer suggestions"
       ref={suggestionListRef}
       style={suggestionsStyle}
     >
@@ -202,13 +208,13 @@ export function ComposerSuggestionsPopover({
           const Icon = suggestionIcon(item);
           const fileSuggestion = isFileSuggestion(item);
           const skillSuggestion = item.id.startsWith("skill:");
-          const title = fileSuggestion ? fileTitle(item.label) : item.label;
+          const title = fileSuggestion ? fileTitle(item.label) : item.group === "Slash" ? `/${item.label}` : item.label;
           const description = fileSuggestion ? item.label : item.description;
           const fileTypeIconUrl = fileSuggestion ? getFileTypeIconUrl(item.label) : null;
 
           return (
             <div key={item.id}>
-              {showGroup && <div className="composer-suggestion-section">{item.group}</div>}
+              {showGroup && <div className="composer-suggestion-section">{item.group === "Slash" ? "Commands" : item.group}</div>}
               <button
                 type="button"
                 className={`composer-suggestion${index === highlightIndex ? " is-active" : ""}`}

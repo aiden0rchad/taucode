@@ -1789,6 +1789,11 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     ...layoutSurfaces,
     primary: {
       ...layoutSurfaces.primary,
+      composerProps: layoutSurfaces.primary.composerProps ? {
+        ...layoutSurfaces.primary.composerProps,
+        onSideChat: features.sideChats && activeThreadId ? () => void sideChats.create() : undefined,
+        sideChatDisabledReason: !features.sideChats ? "Enable side chats in Settings to use /sidechat." : sideChats.disabledReason ?? (sideChats.creating ? "Creating side chat…" : null),
+      } : null,
       sidebarProps: {
         ...layoutSurfaces.primary.sidebarProps,
         newThreadShortcut: appSettings.newAgentShortcut,
