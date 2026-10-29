@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AgentPolicy, AppSettings, EngineKind } from "@/types";
@@ -26,9 +26,18 @@ it("toggles real policy, exposes configuration only when enabled, and preserves 
   const toggle = screen.getByRole("button", { name: "Chain of Command" });
   expect(toggle.getAttribute("aria-pressed")).toBe("false");
   expect(toggle.querySelectorAll("svg.lucide-star")).toHaveLength(5);
+  expect(toggle.querySelector(".command-insignia")?.getAttribute("width")).toBe("20");
+  expect(toggle.classList.contains("is-activating")).toBe(false);
   expect(screen.queryByRole("button", { name: "Configure Chain of Command" })).toBeNull();
   fireEvent.click(toggle);
   await waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("true"));
+  expect(toggle.classList.contains("is-activating")).toBe(true);
+  expect([...toggle.querySelectorAll<SVGElement>(".command-star")].map(star => star.style.getPropertyValue("--star-index"))).toEqual(["0", "1", "2", "3", "4"]);
+  const animationEnd = createEvent.animationEnd(toggle);
+  Object.defineProperty(animationEnd, "animationName", { value: "command-aura-in" });
+  fireEvent(toggle, animationEnd);
+  expect(toggle.classList.contains("is-activating")).toBe(false);
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
   expect(save).toHaveBeenCalledWith(expect.objectContaining({ subagents: expect.objectContaining({ enabled: true, mode: "chain-of-command", maxDepth: 2 }) }));
   fireEvent.click(screen.getByRole("button", { name: "Configure Chain of Command" }));
   const editor = screen.getByRole("dialog", { name: "Configure Chain of Command" });
@@ -41,6 +50,7 @@ it("toggles real policy, exposes configuration only when enabled, and preserves 
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(document.activeElement).toBe(chip);
   fireEvent.click(chip);
+  expect(screen.getByRole("button", { name: "Chain of Command" }).classList.contains("is-activating")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Chain of Command" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Configure Chain of Command" })).toBeNull());
   expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ subagents: expect.objectContaining({ enabled: false, roles: expect.arrayContaining([expect.objectContaining({ name: "enlisted", model: { providerId: "local", modelId: "small" } })]) }) }));
@@ -51,6 +61,7 @@ it("leaves the toggle off and reports failed saves", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Chain of Command" }));
   expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Error: Disk unavailable");
   expect(screen.getByRole("button", { name: "Chain of Command" }).getAttribute("aria-pressed")).toBe("false");
+  expect(screen.getByRole("button", { name: "Chain of Command" }).classList.contains("is-activating")).toBe(false);
 });
 it("offers the controls for models without reasoning and keeps unsupported engines disabled", () => {
   const view = render(<Picker reasoning={false} engine="codex" />);

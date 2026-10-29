@@ -1,7 +1,9 @@
 # Chain of Command
 
-Taucode supports a single model and a team of models selected from the same provider
-registry. Cloud and local models use identical role configuration.
+Taucode supports a single model and, in Code, a Chain of Command selected from the
+same provider registry. Cloud and local models use identical role configuration.
+Chat and Work use a single model when inheriting a Chain of Command policy, without
+changing the saved roles or models. Custom delegation remains available separately.
 
 ## Current contract
 
@@ -38,7 +40,7 @@ same restriction to permission requests, with a runtime refresh when policy chan
   budget. Each top-level turn gets a new budget; end/shutdown removes its directory.
 - Concurrency limits each delegator's immediate children, not the whole tree.
 - Depth remains enforced. Majors and enlisted cannot delegate even if depth remains.
-- Root and child tools retain the thread's access restrictions. Full-access Work
+- Root and child tools retain the thread's access restrictions. Full-access
   children can run ordinary validation commands. Read-only roles and protected
   writes remain restricted; non-interactive children cannot approve protected work.
 - Empty or ambiguous delegation requests fail before launching processes. Empty
@@ -65,7 +67,10 @@ passed (220 files, 1,723 tests). Pi extension tests passed (15); Rust Pi tests p
 (40, one ignored), as did ACP (11), provider (12), and engine routing tests (7).
 `cargo check` passed with existing warnings.
 
-## Live dogfood status
+## Earlier live dogfood evidence
+
+These checks preceded the restriction of Chain of Command to Code. Work no longer
+runs this mode; the historical results below document engine and recovery behavior.
 
 Saved through Settings: Chain of Command, GPT 6.1 Sol as default/commander and
 colonel/major, GPT 6 Luna as enlisted, Full access for the Work test. The existing
@@ -110,21 +115,30 @@ the Work suite and cargo check after the live startup check.
 
 ## Composer control
 
-The model/reasoning picker now exposes Chain of Command through a five-star
-rank toggle. The adjacent chevron appears only while enabled and opens the same
+The Code model/reasoning picker exposes Chain of Command through a compact 20px
+five-star rank toggle with a 32px click target. After a successful activation, stars
+light sequentially, followed by a steady soft aura. Opening an already enabled
+picker does not replay the animation. Reduced motion and disabled reasoning effects
+skip the animation. The adjacent chevron appears only while enabled and opens the same
 team models, limits and role editor used by Settings. Off selects Single model
 without discarding role choices. Code saves the effective project policy; Chat
-and Work save the app policy. Unsupported engines cannot enable Chain from the
+and Work do not expose the controls. Unsupported engines cannot enable Chain from the
 picker. Saves are acknowledged before the toggle changes, and failures remain
 visible. The editor loads on demand and supports keyboard focus and Escape.
-Live checks confirmed controls in Work, Chat and Code, the conditional chevron,
-and saved limit edits. The original policy was restored byte-equivalently after
-JSON normalization. Full frontend suite: 221 files / 1,727 tests passed; the final
-compact editor also passed 13 focused tests, typecheck and lint.
+Regression tests cover mode visibility, successful activation, failed saves, role
+preservation, and Chat/Work runtime normalization without changing saved policy.
+
+The rebuilt, signed app was verified live in Code with GPT 6.1 Sol: the smaller
+icon, sequential star illumination, settled glow, keyboard toggle, conditional
+chevron, editor opening/Escape dismissal, and preserved team models all passed.
+Chat and Work pickers showed no Chain controls. The original enabled Code policy
+was restored, and Work retained Full access. Validation: 222 frontend files /
+1,732 tests; 41 Pi Rust tests (one unrelated live OMP test ignored); typecheck,
+changed-file lint, cargo check, build and signature verification passed.
 
 ## Work still required for the full product goal
 
-- Per-conversation mode visibility and switching, rather than settings-only control.
+- Per-conversation policy overrides beyond the current project defaults.
 - Durable orchestration state and evidence-backed QA completion gates.
 - Global resource/usage budgets, deadlines, cancellation and crash recovery across
   the tree; concurrency is currently per delegator.

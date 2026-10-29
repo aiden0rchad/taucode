@@ -115,7 +115,7 @@ export function AgentPolicyEditor({ policy, providers, onChange, tab, compact = 
   const chain = sub.enabled && sub.mode === "chain-of-command";
   const modelSelect = (label: string, value: string, change: (value: string) => void) => <SettingsFieldRow  title={<>{label}</>}><SettingsSelect value={value} onChange={e => change(e.target.value)}><option value="">Inherit</option>{models.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</SettingsSelect></SettingsFieldRow>;
   return <div className="registry-policy">
-    {!compact && <SettingsGroup title="Working mode" subtitle="Choose one model or a team with separate models for planning, implementation and review.">
+    {!compact && <SettingsGroup title="Working mode" subtitle="Choose one model or a team for Code. Chain of Command is available only in Code; Chat and Work use a single model when it is selected.">
       <SettingsFieldRow title="Agent mode"><SettingsSelect value={!sub.enabled ? "single" : sub.mode ?? "custom"} onChange={e => {
         const next = setAgentMode(policy, e.target.value as "single" | "custom" | "chain-of-command");
         if (next.subagents.enabled && next.subagents.mode === "chain-of-command" && !engines.some(engine => engine.id === next.defaultEngine && engine.protocol === "pi-rpc")) next.defaultEngine = "pi";

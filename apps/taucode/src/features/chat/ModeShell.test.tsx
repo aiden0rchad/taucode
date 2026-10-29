@@ -6,11 +6,13 @@ import { ModeShell, ModeSwitcher, modeShortcut, useModeSettings } from "./ModeSh
 import { getAppSettings, setWindowMode, windowSetMaterial, updateAppSettings } from "@services/tauri";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { applyTheme } from '@/features/themes/applyTheme';
+import { ChainOfCommandControls, ComposerPolicyProvider } from "@/features/composer/components/ComposerPolicy";
+import { defaultAgentPolicy, setAgentMode } from "@settings/registry";
 import { builtins } from '@/features/themes/builtins';
 vi.mock("@services/tauri", () => ({ getAppSettings: vi.fn(), setWindowMode: vi.fn().mockResolvedValue(undefined), themesList: vi.fn(async () => []), windowSetMaterial: vi.fn(async () => {}), updateAppSettings: vi.fn(async (settings: unknown) => settings) }));
 vi.mock("@/features/onboarding/SetupWizard", () => ({ SetupWizard: () => null }));
-vi.mock("@/features/work/WorkView", () => ({ WorkView: () => <><ModeSwitcher /><p>Work content</p></> }));
-vi.mock("./ChatView", () => ({ ChatView: () => <><ModeSwitcher /><p>Chat content</p></> }));
+vi.mock("@/features/work/WorkView", () => ({ WorkView: () => <><ModeSwitcher /><p>Work content</p><ChainOfCommandControls onConfigure={() => {}} /></> }));
+vi.mock("./ChatView", () => ({ ChatView: () => <><ModeSwitcher /><p>Chat content</p><ChainOfCommandControls onConfigure={() => {}} /></> }));
 vi.mock("@/features/evals/EvalsView", () => ({ EvalsView: ({full,initialRunId,onClose}:{full:boolean;initialRunId?:string;onClose:()=>void}) => <section aria-label="Full eval results"><p>{full?initialRunId:"compact"}</p><button onClick={onClose}>Close results</button></section> }));
 vi.mock("@/features/layout/hooks/useWindowLabel", () => ({ useWindowLabel: () => "second-window" }));
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: vi.fn(() => ({ setZoom: vi.fn().mockResolvedValue(undefined) })) }));
@@ -88,4 +90,18 @@ it("falls back to Code when a saved mode is disabled and hides both disabled seg
   expect(screen.queryByRole("button", { name: "Work" })).toBeNull();
   expect(screen.getByRole("button", { name: "Code" })).toBeTruthy();
   expect(setWindowMode).toHaveBeenCalledWith("code");
+});
+
+it("limits the Chain of Command picker to Code even with an enabled app policy", async () => {
+  const policy = setAgentMode(defaultAgentPolicy, "chain-of-command");
+  vi.mocked(getAppSettings).mockResolvedValue({ agentPolicy: policy, uiScale: 1, windowModes: { "second-window": "chat" } } as unknown as AppSettings);
+  render(<ModeShell><ComposerPolicyProvider policy={policy} scope="Project · Demo" onChange={async () => {}}><ModeSwitcher /><p>Code content</p><ChainOfCommandControls onConfigure={() => {}} /></ComposerPolicyProvider></ModeShell>);
+  await screen.findByText("Chat content");
+  expect(screen.queryByRole("button", { name: "Chain of Command" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Work" }));
+  await screen.findByText("Work content");
+  expect(screen.queryByRole("button", { name: "Chain of Command" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Code" }));
+  expect(await screen.findByRole("button", { name: "Chain of Command" })).toHaveProperty("ariaPressed", "true");
+  expect(screen.getByRole("button", { name: "Configure Chain of Command" })).toBeTruthy();
 });

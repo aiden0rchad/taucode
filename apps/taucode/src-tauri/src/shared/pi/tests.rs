@@ -12,6 +12,35 @@ fn fixture(name: &str) -> String {
 }
 
 #[tokio::test]
+async fn chain_of_command_is_code_only_and_does_not_change_saved_policy() {
+    let dir = temp();
+    let mut policy = AgentPolicy::default();
+    policy.subagents.enabled = true;
+    policy.subagents.mode = crate::types::SubagentMode::ChainOfCommand;
+    policy.subagents.default_model = Some(crate::types::ModelRef { provider_id: "local".into(), model_id: "worker".into() });
+    let original = json!(policy);
+    for (engine, code) in [
+        (PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_, _| {})), true),
+        (PiEngine::chat(dir.clone(), Arc::new(|_, _| {})), false),
+        (PiEngine::work(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), Arc::new(|_, _| {})), false),
+    ] {
+        engine.configure("workspace", vec![], policy.clone()).await;
+        let effective = engine.registry.lock().await["workspace"].1.clone();
+        assert_eq!(effective.subagents.enabled, code);
+        assert_eq!(effective.subagents.mode == crate::types::SubagentMode::ChainOfCommand, code);
+        assert_eq!(json!(effective.subagents.roles), json!(policy.subagents.roles));
+        assert_eq!(json!(effective.subagents.default_model), json!(policy.subagents.default_model));
+        // Custom delegation remains independent of the Code-only hierarchy.
+        let mut custom = policy.clone();
+        custom.subagents.mode = crate::types::SubagentMode::Custom;
+        engine.configure("workspace", vec![], custom).await;
+        assert!(engine.registry.lock().await["workspace"].1.subagents.enabled);
+    }
+    assert_eq!(json!(policy), original);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
 async fn chat_profile_is_isolated_and_forks_models_and_last_user_without_changing_parent() {
     let dir = temp();
     let mut engine = PiEngine::chat(dir.clone(), Arc::new(|_, _| {}));
@@ -1270,12 +1299,18 @@ async fn real_pi_work_starts_offline_with_work_policy_and_skills() {
     std::fs::create_dir(&space).unwrap();
     let engine = PiEngine::work(dir.join("data"), "workspace".into(), space.to_string_lossy().into_owned(), Arc::new(|_, _| {}));
     let provider: ProviderEntry = serde_json::from_value(json!({"id":"local","name":"Offline","kind":"ollama","enabled":true,"auth":{"type":"none"},"models":[{"id":"offline","enabled":true}]})).unwrap();
-    engine.configure("workspace", vec![provider], AgentPolicy::default()).await;
+    let mut policy = AgentPolicy::default();
+    policy.subagents.mode = crate::types::SubagentMode::ChainOfCommand;
+    policy.subagents.enabled = true;
+    engine.configure("workspace", vec![provider], policy).await;
     let response = engine.request("workspace", "thread/start", json!({"model":"local/offline"})).await.unwrap();
     let id = response["result"]["thread"]["id"].as_str().unwrap();
     assert!(engine.sessions.lock().await[id].process.is_none());
     let (registry, policy) = engine.registry.lock().await["workspace"].clone();
     engine.spawn(engine.sessions.lock().await.get_mut(id).unwrap(), &registry, &policy).await.unwrap();
+    let delivered: Value = serde_json::from_slice(&std::fs::read(dir.join("data/pi/agent/workspace/taucode/policy.json")).unwrap()).unwrap();
+    assert_eq!(delivered["enabled"], false);
+    assert_eq!(delivered["mode"], "custom");
     let access: Value = serde_json::from_slice(&std::fs::read(dir.join("data/pi/agent/workspace/taucode/threads").join(format!("{id}.json"))).unwrap()).unwrap();
     assert_eq!(access["kind"], "work");
     assert_eq!(access["accessMode"], "ask");

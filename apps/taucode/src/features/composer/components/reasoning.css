@@ -35,7 +35,7 @@
 .composer-model-provider { padding: 10px 8px 3px; color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
 .reasoning-popover button { cursor: pointer; color: var(--text-primary); background: transparent; border: 0; border-radius: var(--radius-chip); padding: 7px 10px; }
 .reasoning-popover button:focus-visible { outline: 2px solid var(--reasoning-color); outline-offset: 2px; }
-.reasoning-heading { display: grid; grid-template-columns: 66px minmax(0, 1fr) 66px; align-items: center; height: 40px; gap: 8px; }
+.reasoning-heading { display: grid; grid-template-columns: 58px minmax(0, 1fr) 58px; align-items: center; height: 40px; gap: 8px; }
 .reasoning-heading > .reasoning-heading-center { grid-column: 2; }
 .reasoning-heading-center { display: flex; flex-direction: column; align-items: center; min-width: 0; }
 .reasoning-level { width: 100px; text-align: center; font-size: 15px; font-weight: 600; line-height: 22px; color: var(--reasoning-ink); }

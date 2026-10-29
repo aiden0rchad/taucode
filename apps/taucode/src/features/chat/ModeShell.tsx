@@ -17,8 +17,6 @@ import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import { useThemePreference } from "@/features/layout/hooks/useThemePreference";
 import { useUiScaleShortcuts } from "@/features/layout/hooks/useUiScaleShortcuts";
 import { DEFAULT_THEME_ID } from "@/features/themes/defaults";
-import { ComposerPolicyProvider } from "@/features/composer/components/ComposerPolicy";
-import { defaultAgentPolicy } from "@settings/registry";
 import { WorkView } from "@/features/work/WorkView";
 import { ChatView } from "./ChatView";
 import "./chat.css";
@@ -113,14 +111,11 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
     {mode !== "code" && !settingsOpen && settings && <ModeScale settings={settings} setSettings={setSettings} />}
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
     {evalsFull && settings && <main className="evals-full"><EvalsView full initialRunId={evalsFull.runId} appSettings={settings} onUpdateAppSettings={async next => { const saved = await updateAppSettings(next); setSettings(saved); return saved; }} onClose={() => setEvalsFull(null)} /></main>}
-    <ComposerPolicyProvider policy={settings?.agentPolicy ?? defaultAgentPolicy} scope="App policy" onChange={async agentPolicy => {
-      const saved = await updateAppSettings({ ...await getAppSettings(), agentPolicy });
-      setSettings(saved); notifySetupChanged();
-    }}><div style={{ display: evalsFull ? "none" : "contents" }}>
+    <div style={{ display: evalsFull ? "none" : "contents" }}>
     {mode === "code" && <SidebarEngine.Provider value={settings?.agentPolicy?.defaultEngine ?? "pi"}>{children}</SidebarEngine.Provider>}
     {mode === "chat" && settings && <ChatView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
     {mode === "work" && settings && <WorkView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}
-    </div></ComposerPolicyProvider>
+    </div>
     {settingsOpen && renderSettings?.(() => { setSettingsOpen(false); setSetupSection(undefined); void getAppSettings().then(setSettings).catch(e => setError(String(e))); }, setupSection)}
     <SetupWizard onSettings={setSettings} onFinish={async (next, workspaceId) => { await setWindowMode(next); setMode(next); setSetupWorkspace(workspaceId); setSettingsOpen(false); }} />
   </ModeContext.Provider></FeatureSettings.Provider>;

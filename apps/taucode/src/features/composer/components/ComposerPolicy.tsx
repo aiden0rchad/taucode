@@ -1,4 +1,4 @@
-import { createContext, lazy, Suspense, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, lazy, Suspense, useContext, useEffect, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { ChevronRight, Star, X } from "lucide-react";
 import type { AgentPolicy, EngineKind } from "@/types";
 import { useFeatures, useFeatureSettings } from "@settings/features";
@@ -72,14 +72,15 @@ export function ComposerPolicyProvider({ policy, scope, onChange, children }: {
 
 export function ChainOfCommandControls({ disabled, engine = "pi", onConfigure }: { disabled?: boolean; engine?: EngineKind; onConfigure: () => void }) {
   const context = useContext(ComposerPolicy);
-  const available = useFeatures().subagents;
+  const { subagents: available, reasoningEffects } = useFeatures();
+  const [activating, setActivating] = useState(false);
   const supported = useEngines().some(e => e.id === engine && e.protocol === "pi-rpc");
   if (!context || !available) return null;
   const { policy, scope, busy, save, configure, error } = context;
   const enabled = policy.subagents.enabled && policy.subagents.mode === "chain-of-command";
   return <div className="command-controls">
-    <button type="button" className="command-toggle" aria-label="Chain of Command" aria-pressed={enabled} disabled={disabled || busy || (!supported && !enabled)} title={error || (!supported ? "Chain of Command requires Pi or OMP" : `Chain of Command ${enabled ? "on" : "off"} · ${scope}`)} onClick={() => { void save(setAgentMode(policy, enabled ? "single" : "chain-of-command")); }}>
-      <svg width="30" height="30" viewBox="0 0 32 34" aria-hidden="true">{[[11, 0], [22, 8], [18, 22], [4, 22], [0, 8]].map(([x, y]) => <Star key={x} x={x} y={y} width={10} height={10} strokeWidth={1.5} fill="currentColor" />)}</svg>
+    <button type="button" className={`command-toggle${activating && enabled ? " is-activating" : ""}`} onAnimationEnd={event => { if (event.animationName === "command-aura-in") setActivating(false); }} aria-label="Chain of Command" aria-pressed={enabled} disabled={disabled || busy || (!supported && !enabled)} title={error || (!supported ? "Chain of Command requires Pi or OMP" : `Chain of Command ${enabled ? "on" : "off"} · ${scope}`)} onClick={() => { void save(setAgentMode(policy, enabled ? "single" : "chain-of-command")).then(saved => { if (saved) setActivating(!enabled && reasoningEffects); }); }}>
+      <svg className="command-insignia" width="20" height="20" viewBox="0 0 32 34" aria-hidden="true">{[[11, 0], [22, 8], [18, 22], [4, 22], [0, 8]].map(([x, y], index) => <Star className="command-star" key={x} x={x} y={y} width={10} height={10} strokeWidth={1.5} fill="currentColor" style={{ "--star-index": index } as CSSProperties} />)}</svg>
     </button>
     {enabled && <button type="button" className="command-configure" aria-label="Configure Chain of Command" title="Configure Chain of Command" disabled={disabled || busy} onClick={() => { configure(); onConfigure(); }}><ChevronRight size={16} aria-hidden /></button>}
     {error && <span role="alert" className="command-toggle-error">{error}</span>}

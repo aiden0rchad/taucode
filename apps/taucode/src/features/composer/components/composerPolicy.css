@@ -1,8 +1,19 @@
 .reasoning-popover .command-controls { display: flex; align-items: center; gap: 2px; position: relative; }
-.reasoning-popover .command-toggle, .reasoning-popover .command-configure { display: grid; place-items: center; padding: 0; height: 36px; flex-shrink: 0; }
-.reasoning-popover .command-toggle { width: 36px; color: var(--text-muted); }
-.reasoning-popover .command-toggle[aria-pressed="true"] { color: #e9ba62; background: color-mix(in srgb, #e9ba62 13%, transparent); }
-.reasoning-popover .command-configure { width: 28px; color: var(--text-secondary); }
+.reasoning-popover .command-controls .command-toggle, .reasoning-popover .command-controls .command-configure { display: grid; place-items: center; padding: 0; height: 32px; flex-shrink: 0; }
+.reasoning-popover .command-toggle { position: relative; width: 32px; color: var(--text-muted); isolation: isolate; }
+.reasoning-popover .command-toggle[aria-pressed="true"] { color: #dbb56c; }
+.command-insignia { width: 20px; height: 20px; opacity: .72; }
+.command-toggle[aria-pressed="true"] .command-insignia { opacity: 1; }
+.command-toggle::before { content: ""; position: absolute; inset: 2px; border-radius: 50%; background: radial-gradient(circle, #e9ba6240, #e9ba6214 45%, transparent 72%); opacity: 0; pointer-events: none; }
+.command-toggle[aria-pressed="true"]::before { opacity: 1; }
+.command-toggle.is-activating .command-star { animation: command-star-light 120ms ease-out calc(var(--star-index) * 120ms) both; }
+.command-toggle.is-activating::before { animation: command-aura-in 450ms ease-out 600ms both; }
+@keyframes command-star-light { from { color: var(--text-muted); opacity: .25; } to { color: #dbb56c; opacity: 1; } }
+@keyframes command-aura-in { from { opacity: 0; transform: scale(.65); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .command-toggle.is-activating .command-star, .command-toggle.is-activating::before { animation: none; }
+}
+.reasoning-popover .command-configure { width: 24px; color: var(--text-secondary); }
 .reasoning-popover .command-controls button:hover:not(:disabled) { background: var(--surface-card-muted); }
 .reasoning-popover .command-controls button:disabled { opacity: .45; cursor: default; }
 .reasoning-model-heading .command-controls { margin-left: auto; }

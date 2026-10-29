@@ -150,7 +150,13 @@ impl PiEngine {
         registry: Vec<ProviderEntry>,
         policy: AgentPolicy,
     ) {
-        let policy = super::engines::feature_policy(policy, &super::engine_registry::features(self.data.as_deref()));
+        let mut policy = super::engines::feature_policy(policy, &super::engine_registry::features(self.data.as_deref()));
+        // Chain of Command belongs to Code. Keep the saved role/model choices,
+        // but run Chat and Work as a single model when inheriting that policy.
+        if (self.chat || self.work) && policy.subagents.mode == crate::types::SubagentMode::ChainOfCommand {
+            policy.subagents.enabled = false;
+            policy.subagents.mode = crate::types::SubagentMode::Custom;
+        }
         self.registry
             .lock()
             .await
