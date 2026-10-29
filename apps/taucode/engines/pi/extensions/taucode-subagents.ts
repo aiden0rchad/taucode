@@ -1,6 +1,6 @@
 // Derived from pi's examples/extensions/subagent (MIT, Copyright Mario Zechner).
 // Keeps single/parallel/chain JSON streaming; roles come only from taucode policy.
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -90,9 +90,40 @@ export default function (pi: ExtensionAPI) {
           args.push(`Task: ${r.task}`);
           r.exitCode = await new Promise<number>((resolve, reject) => {
             const child = spawn(process.execPath, args, { cwd, env: { ...process.env, TAUCODE_SUBAGENT_DEPTH: String(depth + 1), TAUCODE_SUBAGENT_ROLE: role.name, TAUCODE_SUBAGENT_BUDGET: budget, TAUCODE_WORKSPACE: workspace, TAUCODE_TOOL_ACCESS: toolAccess }, stdio: ["ignore", "pipe", "pipe"], detached: depth === 0 && process.platform !== "win32" });
-            let timer: ReturnType<typeof setTimeout> | undefined;
-            const kill = (sig: NodeJS.Signals) => { try { if (depth === 0 && process.platform !== "win32" && child.pid) process.kill(-child.pid, sig); else child.kill(sig); } catch { /* already exited */ } };
-            const abort = () => { kill("SIGTERM"); timer = setTimeout(() => kill("SIGKILL"), 1000); };
+            let stopping: Promise<void> | undefined;
+            const abort = () => {
+              if (stopping) return;
+              const targets = new Set<number>();
+              if (child.pid) targets.add(depth === 0 && process.platform !== "win32" ? -child.pid : child.pid);
+              if (child.pid && process.platform !== "win32") {
+                try {
+                  // Snapshot before signalling: shell tools can lead separate groups,
+                  // and their ancestry disappears as soon as a coordinator exits.
+                  const rows = execFileSync("/bin/ps", ["-axo", "pid=,ppid=,pgid="], { encoding: "utf8", timeout: 1000 })
+                    .trim().split("\n").map(line => line.trim().split(/\s+/).map(Number))
+                    .filter(row => row.length === 3 && row.every(Number.isInteger) && row[0] > 0 && row[1] >= 0 && row[2] > 0);
+                  const owned = new Set([child.pid]);
+                  let size: number;
+                  do {
+                    size = owned.size;
+                    for (const [pid, parent] of rows) if (owned.has(parent)) owned.add(pid);
+                  } while (owned.size !== size);
+                  for (const [pid, , group] of rows) if (owned.has(pid)) {
+                    targets.delete(pid);
+                    targets.add(owned.has(group) ? -group : pid);
+                  }
+                } catch {
+                  r.stderr += "\nProcess-tree inspection failed; stopping the known subagent process group only.";
+                }
+              }
+              const kill = (sig: NodeJS.Signals) => {
+                for (const target of targets) { try { process.kill(target, sig); } catch { /* already exited */ } }
+              };
+              stopping = new Promise(resolve => {
+                kill("SIGTERM");
+                setTimeout(() => { kill("SIGKILL"); resolve(); }, 1000);
+              });
+            };
             signal?.addEventListener("abort", abort, { once: true });
             const lines = createInterface({ input: child.stdout });
             lines.on("line", line => {
@@ -129,7 +160,11 @@ export default function (pi: ExtensionAPI) {
             });
             child.stderr.on("data", data => { r.stderr = (r.stderr + data.toString()).slice(-16000); });
             child.on("error", reject);
-            child.on("close", code => { clearTimeout(timer); signal?.removeEventListener("abort", abort); lines.close(); resolve(code ?? 1); });
+            child.on("close", async code => {
+              // Do not release the slot while a detached descendant can still run.
+              await stopping;
+              signal?.removeEventListener("abort", abort); lines.close(); resolve(code ?? 1);
+            });
             if (signal?.aborted) abort();
           });
           r.status = r.exitCode === 0 && !["error", "aborted"].includes(r.stopReason ?? "") && !signal?.aborted ? "completed" : "failed";

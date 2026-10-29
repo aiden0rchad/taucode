@@ -374,6 +374,11 @@ impl Translator {
     }
     fn tool_end(&mut self, m: &Value, done: bool, out: &mut Vec<Value>) {
         let id = m["toolCallId"].as_str().unwrap_or("");
+        // Aborted runtimes can flush progress after the terminal tool/turn frame.
+        // Keep final results (including usage), but never reopen a finished tool.
+        if !done && self.completed.contains(id) {
+            return;
+        }
         let Some(mut item) = self.find(id) else {
             return;
         };

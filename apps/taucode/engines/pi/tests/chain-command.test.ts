@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { commandInstructions, resolveTask, type Policy } from "../extensions/lib/policy.ts";
@@ -86,4 +88,60 @@ test("nested subprocesses share one turn budget, reset it, route models and fail
   writeFileSync(join(home, "taucode/policy.json"), JSON.stringify({ ...policy, enabled: false }));
   assert.match((await tool.execute("single", { agent: "enlisted", task: "work" }, undefined, undefined, ctx)).details.results[0].stderr, /disabled/);
   assert.deepEqual(readdirSync(join(home, "taucode")), ["policy.json"]);
+});
+
+for (const { detached, depth } of [{ detached: false, depth: 0 }, { detached: true, depth: 0 }, { detached: true, depth: 1 }]) test(`abort at depth ${depth} kills a ${detached ? "detached" : "grouped"} stubborn descendant without killing its parent or starting queued work`, { skip: process.platform === "win32", timeout: 10000 }, async t => {
+  const root = mkdtempSync(join(tmpdir(), "taucode-command-abort-"));
+  const home = join(root, "agent"), cwd = join(root, "workspace"), cli = join(root, "fake-cli.mjs");
+  const ready = join(root, "ready.json"), queued = join(root, "queued"), controller = new AbortController();
+  mkdirSync(join(home, "taucode"), { recursive: true }); mkdirSync(cwd);
+  const budget = join(home, "taucode/parent-turn");
+  mkdirSync(budget);
+  const variables = { PI_CODING_AGENT_DIR: home, TAUCODE_WORKSPACE: cwd, TAUCODE_PI_CLI: cli, TAUCODE_SUBAGENT_DEPTH: String(depth), TAUCODE_SUBAGENT_ROLE: depth ? "colonel" : "", TAUCODE_SUBAGENT_BUDGET: budget };
+  const previous = Object.fromEntries(Object.keys(variables).map(key => [key, process.env[key]]));
+  Object.assign(process.env, variables);
+  let pids: number[] = [];
+  let tool: any;
+  const events: Record<string, () => void> = {};
+  t.after(() => {
+    controller.abort();
+    for (const pid of pids) { try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ } }
+    events.agent_end?.();
+    for (const [key, value] of Object.entries(previous)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    rmSync(root, { recursive: true, force: true });
+  });
+  writeFileSync(join(home, "taucode/policy.json"), JSON.stringify({ ...policy, maxConcurrent: 1 }));
+  const stubborn = `import { writeFileSync } from 'node:fs';
+    process.on('SIGTERM', () => {});
+    writeFileSync(${JSON.stringify(ready)}, JSON.stringify([process.ppid, process.pid]));
+    setInterval(() => {}, 1000);`;
+  writeFileSync(cli, `import { spawn } from 'node:child_process'; import { writeFileSync } from 'node:fs';
+    if (process.argv.at(-1).includes('wait for stop')) {
+      process.on('SIGTERM', () => process.exit(0));
+      spawn(process.execPath, ['--input-type=module', '-e', ${JSON.stringify(stubborn)}], {stdio:'ignore',detached:${detached}});
+      setInterval(() => {}, 1000);
+    } else writeFileSync(${JSON.stringify(queued)}, 'started');`);
+  subagents({ on: (name: string, fn: any) => { events[name] = fn; }, registerTool: (value: any) => { tool = value; } } as any);
+  events.agent_start();
+  const ctx = { cwd, model: { provider: "taucode-cloud", id: "strong" } };
+  const running = tool.execute("cancel-tree", { tasks: [{ agent: depth ? "enlisted" : "colonel", task: "wait for stop" }, { agent: "major", task: "queued" }] }, controller.signal, undefined, ctx);
+  for (let i = 0; i < 150 && !existsSync(ready); i++) await delay(20);
+  assert.ok(existsSync(ready), "descendant started and installed its SIGTERM handler");
+  pids = JSON.parse(readFileSync(ready, "utf8"));
+  assert.ok(!existsSync(queued));
+  controller.abort();
+  const result = await running;
+  assert.equal(result.isError, true);
+  assert.ok(result.details.results.every((r: any) => r.status === "failed" && r.stopReason === "aborted"));
+  assert.ok(!existsSync(queued), "queued work must not start after cancellation");
+  // An orphan can briefly remain a zombie until the OS reaps it; it cannot run.
+  const alive = (pid: number) => {
+    try { const state = execFileSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).trim(); return !!state && !state.startsWith("Z"); }
+    catch { return false; }
+  };
+  for (let i = 0; i < 100 && pids.some(alive); i++) await delay(20);
+  assert.ok(pids.every(pid => !alive(pid)), "the stopped command tree has no running descendants");
+  events.agent_end(); events.agent_start();
+  assert.equal((await tool.execute("recovery", { agent: "major", task: "next turn" }, undefined, undefined, ctx)).isError, false);
+  assert.ok(existsSync(queued), "a new turn can use the released concurrency slot");
 });

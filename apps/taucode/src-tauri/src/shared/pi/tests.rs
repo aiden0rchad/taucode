@@ -305,6 +305,30 @@ fn subagent_validation_failure_keeps_error_and_single_agent_with_empty_modes() {
 }
 
 #[test]
+fn late_subagent_progress_cannot_restart_a_finished_tool_or_turn() {
+    for aborted in [false, true] {
+        let mut t = Translator::new("test", "/workspace");
+        t.apply(&json!({"type":"agent_start"}));
+        t.apply(&json!({"type":"tool_execution_start","toolCallId":"child","toolName":"subagent","args":{"agent":"colonel","task":"delegate"}}));
+        let progress = json!({"type":"tool_execution_update","toolCallId":"child","partialResult":{"details":{"results":[{"agent":"colonel","status":"running","messages":[],"usage":{}}]}}});
+        assert!(t.apply(&progress).iter().any(|e| e["method"] == "item/started"));
+        if !aborted {
+            t.apply(&json!({"type":"tool_execution_end","toolCallId":"child","result":{"details":{"results":[]}}}));
+        }
+        t.apply(&json!({"type":"agent_settled","aborted":aborted}));
+        let settled = t.turns.clone();
+        assert!(t.apply(&progress).is_empty(), "late progress must not re-open Working");
+        assert_eq!(t.turns, settled);
+        t.apply(&json!({"type":"agent_start"}));
+        t.apply(&json!({"type":"tool_execution_start","toolCallId":"next","toolName":"subagent","args":{"agent":"major","task":"review"}}));
+        let mut next = progress.clone();
+        next["toolCallId"] = json!("next");
+        assert!(t.apply(&next).iter().any(|e| e["method"] == "item/started"));
+        assert!(t.apply(&progress).is_empty());
+    }
+}
+
+#[test]
 fn recorded_subagents_stream_states_outputs_and_usage_without_double_counting() {
     let (mut t, events) = replay("rpc_subagents.jsonl");
     let item = t

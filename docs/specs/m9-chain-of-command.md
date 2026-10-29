@@ -39,6 +39,14 @@ same restriction to permission requests, with a runtime refresh when policy chan
   reservations in a private managed directory. Descendants cannot start a fresh
   budget. Each top-level turn gets a new budget; end/shutdown removes its directory.
 - Concurrency limits each delegator's immediate children, not the whole tree.
+- On POSIX systems, Stop snapshots the delegation's descendants before signalling
+  them, including shell tools in separate process groups. Only groups whose leader
+  belongs to that tree receive a group signal. Forced cleanup runs after a one-second
+  grace period, even if the coordinator exits first, before releasing its concurrency
+  slot. Queued tasks do not start after Stop. Failed process inspection reports a
+  diagnostic and falls back to the known child/group.
+- Progress arriving after a tool finishes cannot reopen the activity indicator or
+  replace its final state. Final result frames still reconcile usage.
 - Depth remains enforced. Majors and enlisted cannot delegate even if depth remains.
 - Root and child tools retain the thread's access restrictions. Full-access
   children can run ordinary validation commands. Read-only roles and protected
@@ -62,56 +70,22 @@ gate. The app must not represent unperformed QA as verified.
 - Rust tests cover mode serialization/overrides, policy file delivery, unsupported
   engine rejection before launch, and Claude delegation disabling/runtime refresh.
 
-October 28 checks: typecheck and changed-file ESLint passed; full frontend suite
-passed (220 files, 1,723 tests). Pi extension tests passed (15); Rust Pi tests passed
-(40, one ignored), as did ACP (11), provider (12), and engine routing tests (7).
-`cargo check` passed with existing warnings.
+The extension suite also starts real subprocesses to verify cancellation: a
+coordinator exits on SIGTERM while its grouped or detached descendant ignores it.
+Root and nested cancellation must stop those descendants without killing the parent,
+discard queued work, and release the concurrency slot for the next turn. Rust replay
+tests cover late subagent progress after normal completion and interruption, while
+allowing new-turn progress. These regressions fail against the old behavior.
+They do not establish Windows process-tree cleanup or crash recovery.
 
-## Earlier live dogfood evidence
-
-These checks preceded the restriction of Chain of Command to Code. Work no longer
-runs this mode; the historical results below document engine and recovery behavior.
-
-Saved through Settings: Chain of Command, GPT 6.1 Sol as default/commander and
-colonel/major, GPT 6 Luna as enlisted, Full access for the Work test. The existing
-OMP default engine remains selected; Work runs Pi.
-
-The first live smoke test exposed strict-schema calls containing a valid single
-agent plus empty `tasks` and `chain` arrays. This caused repeated validation
-failures before any child launched. The fix has regression coverage and was
-verified in the rebuilt, signed app after the user approved Keychain access.
-
-Task `ef8c2e02-b3c2-460b-8fc0-af864542af23` completed at 8:52 p.m. PDT October 28:
-Sol commander → one Sol colonel → one Luna enlisted worker, then a separate Sol
-major. The worker created `outputs/command-summary.json`; the major ran independent
-Python QA (exit 0). Host session records show the nested roles/models and successful
-tool results. The gateway's internal model routing is outside that evidence.
-
-An independent host check confirmed the JSON equals the CSV: 7 items; Lee, Priya,
-and Sam each 1, Unassigned 4; P1 1, P2 5, P3 1. SHA-256 values for the CSV, existing
-HTML dashboard and weekly brief match the agents' recorded before values. Work
-shows done, all three plan steps checked, and one output. Settings confirms the
-three team model choices persisted after restart.
-
-The late credential approval exposed another defect: Work held its global state
-lock during engine startup. Startup now runs in cancellable jobs with visible
-starting/stopping states, and unsent messages persist for retry. Credential reads
-run on a blocking worker without runtime file writes; cancellation drops their
-result and cannot start the agent later. Transcript reads release the Work lock.
-Checkpoint preparation finishes before cancellation cleanup, and the space remains
-occupied until cleanup ends. Regression coverage deliberately blocks credentials
-while checking list/read/stop responsiveness and absence of a late process launch.
-Live startup recovery check (`b8ac0e44-ce8e-4300-b138-fa899ac0137b`): stopped
-while macOS awaited credentials at 9:02 p.m.; after approval, the task remained
-stopped and its session contained only the header (no submitted message). A manual
-retry launched, submitted exactly the saved message, and reached the gateway.
-LiteLLM returned HTTP 502 after runtime retries, so a successful model response on
-this recovery test remains unverified. The earlier full hierarchy run succeeded.
-
-Pending drafts now store only the user's text, without internal attachment headings.
-Validation: 220 frontend files / 1,724 tests; typecheck; changed frontend lint;
-7 Work and 40 Pi Rust tests (1 ignored); cargo check. The draft cleanup also passed
-the Work suite and cargo check after the live startup check.
+Live macOS verification used the signed app, OMP, GPT 6.1 Sol and Full access in a
+disposable Code workspace. A colonel delegated a foreground Node worker through an
+enlisted agent. The worker ignored SIGTERM and ran in a separate process group.
+Stop removed the process and stopped its heartbeat before the 120-second safety
+timeout; the composer remained idle after delayed cleanup. A subsequent prompt in
+the same conversation returned `Ready`. Validation: 18 extension tests, 42 Pi Rust
+tests (one unrelated live OMP test ignored), typecheck, changed-file lint, cargo
+check, app build and signature verification passed.
 
 ## Composer control
 
