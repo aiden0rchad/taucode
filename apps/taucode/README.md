@@ -26,6 +26,12 @@ CodexMonitor is a Tauri app for orchestrating multiple Codex agents across local
 - Dictation with hold-to-talk shortcuts and live waveform (Whisper).
 - Render reasoning/tool/diff items and handle approval prompts.
 
+### View Menu
+
+- Zoom In (`Cmd/Ctrl+=`), Zoom Out (`Cmd/Ctrl+-`), and Actual Size (`Cmd/Ctrl+0`) share the saved UI scale across Code, Chat, and Work.
+- Toggle the sidebar or side panel, navigate conversation history (`Cmd/Ctrl+[` and `Cmd/Ctrl+]`), cycle panel tabs (`Cmd/Ctrl+Shift+[` and `Cmd/Ctrl+Shift+]`), or open a browser tab (`Cmd/Ctrl+Shift+B`).
+- Code-specific agent, workspace, terminal, and debug commands remain available alongside Full Screen.
+
 ### Git & GitHub
 
 - Diff stats, staged/unstaged file diffs, revert/stage controls, and commit log.

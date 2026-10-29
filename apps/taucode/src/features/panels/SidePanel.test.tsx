@@ -5,11 +5,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WorkspaceShell, type PanelTool } from "./SidePanel";
 import { panelReducer, readPanel } from "./panelState";
 import { browserNativeBounds, browserRequest, subscribeBrowser } from "@services/tauri";
+import type { MenuViewAction } from "@services/events";
 import type { BrowserState } from "@/features/browser/browser";
 import { useSidebarToggles } from "@/features/layout/hooks/useSidebarToggles";
 
 vi.mock("@services/tauri", () => ({ browserRequest: vi.fn(), subscribeBrowser: vi.fn(), openBrowserDownloads: vi.fn(), browserNativeBounds: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@services/events", () => ({ subscribeAppServerEvents: () => () => {} }));
+const menu = vi.hoisted(() => ({ view: (_action: MenuViewAction) => {} }));
+vi.mock("@services/events", () => ({ subscribeMenuViewAction: (listener: typeof menu.view) => { menu.view = listener; return () => { menu.view = () => {}; }; }, subscribeAppServerEvents: () => () => {} }));
 let host: BrowserState;
 let callbacks: Set<(state: BrowserState) => void>;
 const tools: PanelTool[] = [
@@ -352,4 +354,29 @@ it("excludes phone Projects and bottom navigation from focus until contraction w
   expect(projects.closest("[inert]")).toBeNull();
   expect(project.closest("[inert]")).toBeNull();
   expect(screen.getByRole("tab", { name: "Terminal", hidden: true }).isConnected).toBe(true);
+});
+
+it("routes native View commands through the current panel and conversation history", async () => {
+  const onNavigate = vi.fn();
+  const view = render(<WorkspaceShell scope="chat:one" title="One" tools={tools} onNavigate={onNavigate} onInterrupt={() => {}}><p>Conversation</p></WorkspaceShell>);
+  act(() => menu.view("back"));
+  expect(onNavigate).not.toHaveBeenCalled();
+  act(() => menu.view("toggle_side_panel"));
+  expect(screen.getByRole("button", { name: "Toggle side panel" }).getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: /Changes/ }));
+  act(() => menu.view("new_browser_tab"));
+  await screen.findByRole("tab", { name: "New page", selected: true });
+  act(() => menu.view("previous_tab"));
+  expect(screen.getByRole("tab", { name: "Changes", selected: true })).toBeTruthy();
+  act(() => menu.view("next_tab"));
+  expect(screen.getByRole("tab", { name: "New page", selected: true })).toBeTruthy();
+  view.rerender(<WorkspaceShell scope="chat:two" title="Two" tools={tools} onNavigate={onNavigate} onInterrupt={() => {}}><p>Conversation</p></WorkspaceShell>);
+  act(() => menu.view("back"));
+  expect(onNavigate).toHaveBeenLastCalledWith("chat:one");
+  act(() => menu.view("forward"));
+  expect(onNavigate).toHaveBeenLastCalledWith("chat:two");
+  view.unmount();
+  vi.mocked(browserRequest).mockClear();
+  act(() => menu.view("new_browser_tab"));
+  expect(browserRequest).not.toHaveBeenCalled();
 });

@@ -190,7 +190,7 @@ pub(crate) fn build_menu<R: tauri::Runtime>(
     )?;
 
     let toggle_projects_sidebar_item =
-        MenuItemBuilder::with_id("view_toggle_projects_sidebar", "Toggle Projects Sidebar")
+        MenuItemBuilder::with_id("view_toggle_projects_sidebar", "Toggle Sidebar")
             .build(handle)?;
     let toggle_git_sidebar_item =
         MenuItemBuilder::with_id("view_toggle_git_sidebar", "Toggle Git Sidebar").build(handle)?;
@@ -221,6 +221,33 @@ pub(crate) fn build_menu<R: tauri::Runtime>(
     registry.register("view_next_workspace", &next_workspace_item);
     registry.register("view_prev_workspace", &prev_workspace_item);
 
+    let toggle_side_panel_item = MenuItemBuilder::with_id("view_toggle_side_panel", "Toggle Side Panel")
+        .build(handle)?;
+    let back_item = MenuItemBuilder::with_id("view_back", "Back")
+        .accelerator("CmdOrCtrl+[")
+        .build(handle)?;
+    let forward_item = MenuItemBuilder::with_id("view_forward", "Forward")
+        .accelerator("CmdOrCtrl+]")
+        .build(handle)?;
+    let previous_tab_item = MenuItemBuilder::with_id("view_previous_tab", "Previous Panel Tab")
+        .accelerator("CmdOrCtrl+Shift+[")
+        .build(handle)?;
+    let next_tab_item = MenuItemBuilder::with_id("view_next_tab", "Next Panel Tab")
+        .accelerator("CmdOrCtrl+Shift+]")
+        .build(handle)?;
+    let new_browser_tab_item = MenuItemBuilder::with_id("view_new_browser_tab", "New Browser Tab")
+        .accelerator("CmdOrCtrl+Shift+B")
+        .build(handle)?;
+    let zoom_in_item = MenuItemBuilder::with_id("view_zoom_in", "Zoom In")
+        .accelerator("CmdOrCtrl+Equal")
+        .build(handle)?;
+    let zoom_out_item = MenuItemBuilder::with_id("view_zoom_out", "Zoom Out")
+        .accelerator("CmdOrCtrl+Minus")
+        .build(handle)?;
+    let zoom_reset_item = MenuItemBuilder::with_id("view_zoom_reset", "Actual Size")
+        .accelerator("CmdOrCtrl+0")
+        .build(handle)?;
+
     #[cfg(target_os = "linux")]
     let view_menu = {
         let fullscreen_item =
@@ -231,15 +258,27 @@ pub(crate) fn build_menu<R: tauri::Runtime>(
             true,
             &[
                 &toggle_projects_sidebar_item,
+                &toggle_side_panel_item,
                 &toggle_git_sidebar_item,
                 &PredefinedMenuItem::separator(handle)?,
                 &toggle_debug_panel_item,
                 &toggle_terminal_item,
                 &PredefinedMenuItem::separator(handle)?,
+                &back_item,
+                &forward_item,
+                &PredefinedMenuItem::separator(handle)?,
+                &previous_tab_item,
+                &next_tab_item,
+                &new_browser_tab_item,
+                &PredefinedMenuItem::separator(handle)?,
                 &next_agent_item,
                 &prev_agent_item,
                 &next_workspace_item,
                 &prev_workspace_item,
+                &PredefinedMenuItem::separator(handle)?,
+                &zoom_in_item,
+                &zoom_out_item,
+                &zoom_reset_item,
                 &PredefinedMenuItem::separator(handle)?,
                 &fullscreen_item,
             ],
@@ -252,15 +291,27 @@ pub(crate) fn build_menu<R: tauri::Runtime>(
         true,
         &[
             &toggle_projects_sidebar_item,
+            &toggle_side_panel_item,
             &toggle_git_sidebar_item,
             &PredefinedMenuItem::separator(handle)?,
             &toggle_debug_panel_item,
             &toggle_terminal_item,
             &PredefinedMenuItem::separator(handle)?,
+            &back_item,
+            &forward_item,
+            &PredefinedMenuItem::separator(handle)?,
+            &previous_tab_item,
+            &next_tab_item,
+            &new_browser_tab_item,
+            &PredefinedMenuItem::separator(handle)?,
             &next_agent_item,
             &prev_agent_item,
             &next_workspace_item,
             &prev_workspace_item,
+            &PredefinedMenuItem::separator(handle)?,
+            &zoom_in_item,
+            &zoom_out_item,
+            &zoom_reset_item,
             &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::fullscreen(handle, None)?,
         ],
@@ -358,6 +409,12 @@ pub(crate) fn handle_menu_event<R: tauri::Runtime>(
                 let is_fullscreen = window.is_fullscreen().unwrap_or(false);
                 let _ = window.set_fullscreen(!is_fullscreen);
             }
+        }
+        "view_toggle_side_panel" | "view_back" | "view_forward" | "view_previous_tab"
+        | "view_next_tab" | "view_new_browser_tab" | "view_zoom_in" | "view_zoom_out"
+        | "view_zoom_reset" => {
+            let action = event.id().as_ref().trim_start_matches("view_");
+            let _ = app.emit_to(tauri::EventTarget::webview("main"), "menu-view-action", action);
         }
         "view_toggle_projects_sidebar" => emit_menu_event(app, "menu-toggle-projects-sidebar"),
         "view_toggle_git_sidebar" => emit_menu_event(app, "menu-toggle-git-sidebar"),

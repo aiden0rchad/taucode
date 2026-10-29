@@ -9,7 +9,9 @@ import { SidebarEngine } from "@app/components/SidebarTree";
 import { createContext, useContext, useEffect, useState, type ReactNode, type Dispatch, type SetStateAction } from "react";
 import type { AppMode, AppSettings } from "@/types";
 import { getAppSettings, updateAppSettings, setWindowMode } from "@services/tauri";
-import { notifySetupChanged } from "@services/events";
+import { useTauriEvent } from "@app/hooks/useTauriEvent";
+import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
+import { subscribeMenuToggleProjectsSidebar, notifySetupChanged } from "@services/events";
 import { matchesShortcut } from "@utils/shortcuts";
 import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import { useThemePreference } from "@/features/layout/hooks/useThemePreference";
@@ -58,9 +60,11 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   const [mode, setMode] = useState<AppMode>("code");
   const [settings, setSettings] = useState<AppSettings | null>(null);
   useEffect(() => { diagnosticContext({ mode }); if (settings?.features?.diagnostics) record({ kind: "ux", area: "ui", code: "ui.mode_switch", message: "Mode selected", context: { mode } }); }, [mode, settings]);
+  const { sidebarCollapsed, setSidebarCollapsed } = useSidebarState();
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useTauriEvent(subscribeMenuToggleProjectsSidebar, () => setSidebarCollapsed(!sidebarCollapsed), { enabled: mode !== "code" && !settingsOpen });
   const [setupSection, setSetupSection] = useState<SetupSection>();
   const [setupWorkspace, setSetupWorkspace] = useState<string>();
   useEffect(() => {

@@ -1,3 +1,5 @@
+import { useTauriEvent } from "./useTauriEvent";
+import { subscribeMenuViewAction, type MenuViewAction } from "@services/events";
 import { useFeatures } from "@settings/features";
 import { registerNativeOverlay } from "@/features/design-system/nativeOverlays";
 import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
@@ -198,5 +200,16 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     } catch (e) { setError(String(e)); }
   };
   const navigate = (index: number) => { historyPosition.current = index; setHistoryIndex(index); onNavigate?.(history.current[index]); };
+  useTauriEvent<MenuViewAction>(subscribeMenuViewAction, action => {
+    if (action === "toggle_side_panel") update(s => ({ ...s, open: !s.open }));
+    if (action === "new_browser_tab") void openPage();
+    if (action === "back" && onNavigate && historyIndex > 0) navigate(historyIndex - 1);
+    if (action === "forward" && onNavigate && historyIndex < history.current.length - 1) navigate(historyIndex + 1);
+    if ((action === "previous_tab" || action === "next_tab") && state.tabs.length) {
+      const index = state.tabs.findIndex(tab => tab.id === state.active);
+      const next = (index + (action === "next_tab" ? 1 : -1) + state.tabs.length) % state.tabs.length;
+      update(s => panelReducer(s, { type: "select", id: state.tabs[next].id }));
+    }
+  });
   return { state, update, browser, resize, layout, overlay, panelRef, mainRef, expanded, setExpanded, address, setAddress, error, busy, recent, pending, history, historyIndex, openTool, closeTool, active, openPage, close, navigate };
 }

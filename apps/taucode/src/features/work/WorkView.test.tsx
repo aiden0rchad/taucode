@@ -11,7 +11,7 @@ vi.mock("@services/tauri", () => ({ subscribeBrowser: vi.fn().mockResolvedValue(
   pickWorkspacePath: vi.fn(), pickWorkspacePaths: vi.fn(), pickWorkAttachments: vi.fn(),
   checkpointRequest: vi.fn(),
 }));
-vi.mock("@services/events", () => ({
+vi.mock("@services/events", () => ({ subscribeMenuViewAction: () => () => {},
   subscribeAppServerEvents: (listener: typeof events.listener) => { events.listener = listener; return () => {}; },
   subscribeImportsChanged: (listener: () => void) => { events.importsChanged = listener; return () => {}; },
 }));

@@ -11,7 +11,7 @@ import type { AppSettings } from "@/types";
 
 vi.mock("@services/tauri", () => ({ browserRequest: vi.fn(), subscribeBrowser: vi.fn(), openBrowserDownloads: vi.fn(), browserNativeBounds: vi.fn() }));
 vi.mock("@/features/browser/BrowserAnnotations", () => ({ BrowserAnnotations: ({ onAdd }: { onAdd: (context: { text: string; image?: string }) => void }) => <button onClick={() => onAdd({ text: "Selected heading", image: "data:image/png;base64,cG5n" })}>Attach browser draft</button> }));
-vi.mock("@services/events", () => ({ subscribeAppServerEvents: () => () => {} }));
+vi.mock("@services/events", () => ({ subscribeMenuViewAction: () => () => {}, subscribeAppServerEvents: () => () => {} }));
 let host: BrowserState, callbacks: Set<(state: BrowserState) => void>, frames: Map<number, FrameRequestCallback>, serial: number;
 const tools: PanelTool[] = [
   { id: "terminal", label: "Terminal", content: <input aria-label="Terminal command" defaultValue="" /> },
