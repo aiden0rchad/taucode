@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppSettings, WorkState, WorkTask } from "@/types";
+import type { AppSettings, ReasoningCapability, WorkState, WorkTask } from "@/types";
 import { WorkView } from "./WorkView";
 import { workRequest, workOutput, workAttachment, pickWorkAttachments } from "@services/tauri";
 
@@ -60,7 +60,7 @@ describe("Work mode", () => {
     const input = await screen.findByRole("textbox", { name: "Message task" });
     fireEvent.change(input, { target: { value: "Check the filters" } });
     fireEvent.click(screen.getByRole("button", { name: status === "running" ? "Send instruction" : "Send follow-up" }));
-    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("follow-up", { taskId: "Report", message: "Check the filters", accessMode: "full-access" }));
+    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("follow-up", { taskId: "Report", message: "Check the filters", accessMode: "full-access", ...(status === "running" ? {} : { model: "local/test", effort: null }) }));
     await waitFor(() => expect(input).toHaveProperty("value", ""));
     expect(workRequest).not.toHaveBeenCalledWith("create", expect.anything());
   });
@@ -80,6 +80,58 @@ describe("Work mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send follow-up" }));
     await screen.findByRole("alert");
     expect(screen.getByRole("textbox", { name: "Message task" })).toHaveProperty("value", "Keep my draft");
+  });
+  it("keeps a follow-up's model, reasoning and draft together when switching tasks or retrying a rejected send", async () => {
+    const configured = { ...settings, providers: structuredClone(settings.providers!) };
+    const reasoning: ReasoningCapability = { supported: true, levels: ["low", "medium", "high"], default: "medium", control: "effort", source: "user", detectedAt: 0 };
+    configured.providers[0].models = [{ id: "test", enabled: true, reasoning }];
+    configured.providers.push({ ...configured.providers[0], id: "backup", name: "Backup", models: [{ id: "alternate", displayName: "Alternate", enabled: true, reasoning }] });
+    state.tasks = [{ ...task("First", "failed"), effort: "high" }, task("Second", "done")];
+    const request = vi.mocked(workRequest).getMockImplementation()!;
+    vi.mocked(workRequest).mockImplementation(async (action, params) => {
+      if (action === "follow-up") throw new Error("No available slot");
+      return request(action, params);
+    });
+    render(<WorkView settings={configured} />);
+    fireEvent.click(await screen.findByRole("button", { name: "First" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Message task" }), { target: { value: "Keep my draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "test · High" }));
+    fireEvent.click(screen.getByRole("button", { name: "test" }));
+    fireEvent.click(screen.getByRole("option", { name: "Alternate" }));
+    const slider = await screen.findByRole("slider", { name: "Reasoning level" });
+    fireEvent.keyDown(slider, { key: "Home" });
+    fireEvent.keyDown(slider, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Second" }));
+    expect(screen.getByRole("button", { name: "test · Medium" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "First" }));
+    expect(screen.getByRole("button", { name: "Alternate · Low" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Send follow-up" }));
+    await screen.findByRole("alert");
+    expect(workRequest).toHaveBeenCalledWith("follow-up", { taskId: "First", message: "Keep my draft", accessMode: "ask", model: "backup/alternate", effort: "low" });
+    expect(screen.getByRole("textbox", { name: "Message task" })).toHaveProperty("value", "Keep my draft");
+    expect(screen.getByRole("button", { name: "Alternate · Low" })).toBeTruthy();
+    expect(workRequest).not.toHaveBeenCalledWith("create", expect.anything());
+  });
+  it("clears reasoning when a follow-up switches to a model without it", async () => {
+    const configured = { ...settings, providers: structuredClone(settings.providers!) };
+    configured.providers[0].models.push({ id: "reasoner", enabled: true, reasoning: { supported: true, levels: ["low", "high"], default: "low", control: "effort", source: "user", detectedAt: 0 } });
+    state.tasks = [{ ...task("Report", "done"), model: "local/reasoner", effort: "high" }];
+    render(<WorkView settings={configured} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    fireEvent.click(screen.getByRole("button", { name: "reasoner · High" }));
+    fireEvent.click(screen.getByRole("button", { name: "reasoner" }));
+    fireEvent.click(screen.getByRole("option", { name: "test" }));
+    await screen.findByRole("button", { name: "test · ?" });
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Message task" }), { target: { value: "Continue" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send follow-up" }));
+    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("follow-up", { taskId: "Report", message: "Continue", accessMode: "ask", model: "local/test", effort: null }));
+  });
+  it.each(["queued", "starting", "running", "stopping", "needs-input"] as const)("locks model selection while a task is %s", async status => {
+    state.tasks = [task("Report", status)];
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    expect(await screen.findByRole("button", { name: "test · ?" })).toHaveProperty("disabled", true);
   });
   it("keeps a composer visible but prevents sending around a pending approval", async () => {
     state.tasks = [task("Report", "needs-input")];

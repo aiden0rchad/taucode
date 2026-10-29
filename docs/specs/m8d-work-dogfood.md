@@ -1,7 +1,8 @@
 # M8d — Work dogfood and desktop interaction fixes
 
-Verified on macOS, October 28, 2026, using the signed debug app from `m1-wiring`.
-The dogfood agent used GPT 6.1 Sol with Full access. Fixtures live outside this
+Verified on macOS, October 28–29, 2026, using the signed debug app from `m1-wiring`.
+The latest Work checks use GPT 6.1 Sol (Account 2), Low reasoning, with Full access.
+Account 2 is the saved default, verified after relaunch. Fixtures live outside this
 repository in `~/taucode-dogfood/work-notes`.
 
 ## Changes
@@ -9,6 +10,10 @@ repository in `~/taucode-dogfood/work-notes`.
 - Work has a pinned follow-up composer with bounded width and side padding.
   Follow-ups resume the existing task/thread; running tasks accept steering.
   Drafts survive failed sends. Pending requests and concurrency limits are enforced.
+- Existing Work tasks expose the shared model/reasoning picker for follow-ups.
+  Selections stay with each task's draft and persist when the follow-up is accepted.
+  The backend validates enabled registry models and supported reasoning levels;
+  running tasks accept steering but reject model/reasoning changes mid-turn.
 - New Work tasks honor the default access mode. Full access permits ordinary local
   shell/file work; read-only, child-agent and protected-path restrictions remain.
 - Stop cancels pending Pi questions/approvals before waiting for the abort response.
@@ -28,6 +33,14 @@ repository in `~/taucode-dogfood/work-notes`.
 
 ## Live evidence
 
+- A failed Work task switched from the original Sol account to Account 2/Low and
+  returned `WORK_ACCOUNT2_RECOVERY_OK` in the same conversation. Its model,
+  reasoning, Full access and response survived relaunch.
+- Account 2 created `outputs/review-pack-20261029.html` and its checks document from
+  the existing CSV and brief. A follow-up added Reset filter, completed the plan,
+  and cleaned up its temporary loopback server. Independent Safari checks confirmed
+  P1/P3 each show one item, P2 shows five, and Reset restores all seven. Source
+  SHA-256 hashes remained unchanged. Opening output links and cards worked.
 - Sol read meeting notes and feedback, wrote a weekly brief and seven action items,
   then built `outputs/action-dashboard.html` with owner/priority filters.
 - After the browser schema fix, Sol used native browser evaluation to discover and
@@ -48,10 +61,10 @@ repository in `~/taucode-dogfood/work-notes`.
 ## Verification
 
 - TypeScript typecheck and `cargo check`: passed.
-- Frontend: 220 files / 1,720 tests passed with `vitest run --maxWorkers=2`.
+- Frontend: 225 files / 1,782 tests passed with `vitest run --maxWorkers=2`.
   The unrestricted parallel run hit three theme/settings timing failures;
   the reduced-worker full run passed without changing those tests.
-- Rust: browser 34, Pi 39 (one ignored), Work 6, providers 11 tests passed.
+- Rust: browser 34, Pi 39 (one ignored), Work 7, providers 11 tests passed.
 - Pi runtime/policy: 13 tests passed.
 - Changed-file ESLint: no errors; the earlier broad run reported one existing
   effect-cleanup warning in `useSidePanelState.ts`.
@@ -82,7 +95,10 @@ No account enrollment or payment was performed.
 - Set up and verify Apple-issued signing across rebuilds.
 - Give agent-started preview servers visible lifecycle controls and cleanup.
 - Replace long prompt-derived task titles and raw provider error payloads with
-  concise, actionable UI.
+  concise, actionable UI. Work still duplicates a failed turn's raw error even
+  though Code now uses compact recovery cards.
+- Render formatting in Work plan steps: bold Markdown currently appears literally
+  in the inspector after a model includes it in its checklist.
 - Investigate an earlier process exit when evaluation attempted to create an empty
   native tab. The new no-open-page guard avoids that invalid call; the underlying
   WebKit creation failure was not conclusively diagnosed.

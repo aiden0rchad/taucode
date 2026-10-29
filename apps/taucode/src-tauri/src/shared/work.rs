@@ -452,6 +452,9 @@ impl Work {
                 if matches!(task.status.as_str(), "queued" | "starting" | "stopping") { return Err("Wait for this task to start or finish stopping".into()); }
                 let input = json!([{"type":"text","text":message}]);
                 if task.status == "running" {
+                    if params.get("model").is_some_and(|model| model != &json!(task.model)) || params.get("effort").is_some_and(|effort| effort != &json!(task.effort)) {
+                        return Err("Stop this task before changing its model or reasoning".into());
+                    }
                     return session.pi.request(&space.id, "turn/steer", json!({"threadId":thread,"input":input})).await;
                 }
                 if state.store.tasks.iter().any(|t| t.space_id == space.id && occupied(&t.status)) || state.store.tasks.iter().filter(|t| occupied(&t.status)).count() >= state.store.concurrency {
@@ -459,7 +462,25 @@ impl Work {
                 }
                 let mode = params["accessMode"].as_str().unwrap_or(&task.access_mode);
                 if !["ask", "read-only", "full-access"].contains(&mode) { return Err("Invalid access mode".into()); }
+                let model = match params.get("model") { Some(value) => value.as_str().ok_or("Select a registry model")?, None => &task.model };
+                let effort = match params.get("effort") {
+                    None if model == task.model => task.effort.clone(),
+                    None | Some(Value::Null) => None,
+                    Some(value) => Some(value.as_str().ok_or("Invalid reasoning level")?.to_owned()),
+                };
+                if params.get("model").is_some() || params.get("effort").is_some() {
+                    let (provider, model_id) = model.split_once('/').ok_or("Select a registry model")?;
+                    let selected = state.settings.providers.iter().find(|p| p.enabled && p.id == provider)
+                        .and_then(|p| p.models.iter().find(|m| m.enabled && m.id == model_id)).ok_or("Enable this registry model in Settings")?;
+                    if let Some(level) = &effort {
+                        if !selected.reasoning.as_ref().is_some_and(|r| r.supported && r.levels.contains(level)) {
+                            return Err("Choose a reasoning level supported by this model".into());
+                        }
+                    }
+                }
                 let task = &mut state.store.tasks[index];
+                task.model = model.into();
+                task.effort = effort;
                 task.pending_message = Some(message.into());
                 task.set_status("queued");
                 task.access_mode = mode.into();
@@ -858,17 +879,37 @@ mod tests {
         state.store.tasks.push(rival);
         assert!(service.action(&mut state, "follow-up", json!({"taskId":"one","message":"Continue"})).await.unwrap_err().contains("available task slot"));
         state.store.tasks.pop();
-        service.action(&mut state, "follow-up", json!({"taskId":"one","message":"Check the output","accessMode":"full-access"})).await.unwrap();
+        let mut backup = state.settings.providers[0].clone();
+        backup.id = "backup".into();
+        backup.models[0].reasoning = Some(serde_json::from_value(json!({"supported":true,"levels":["low","high"],"default":"low","control":"effort","source":"manual","detectedAt":0})).unwrap());
+        state.settings.providers.push(backup);
+        for invalid in [json!({"model":"missing/test"}), json!({"model":"backup/missing"}), json!({"model":7}), json!({"model":"backup/test","effort":"ultra"}), json!({"model":"backup/test","effort":4}), json!({"model":"local/test","effort":"low"})] {
+            let mut params = json!({"taskId":"one","message":"Continue"});
+            params.as_object_mut().unwrap().extend(invalid.as_object().unwrap().clone());
+            assert!(service.action(&mut state, "follow-up", params).await.is_err());
+            assert_eq!(state.store.tasks[0].status, "stopped");
+            assert_eq!(state.store.tasks[0].model, "local/test");
+            assert!(state.store.tasks[0].pending_message.is_none());
+        }
+        service.action(&mut state, "follow-up", json!({"taskId":"one","message":"Check the output","accessMode":"full-access","model":"backup/test","effort":"low"})).await.unwrap();
         assert_eq!(state.store.tasks[0].thread_id, thread);
         assert_eq!(state.store.tasks[0].status, "queued");
         assert_eq!(state.store.tasks[0].access_mode, "full-access");
+        assert_eq!(state.store.tasks[0].model, "backup/test");
+        assert_eq!(state.store.tasks[0].effort.as_deref(), Some("low"));
         service.pump(&mut state).await;
         drop(state);
         wait_status(&service, "one", "running").await;
         let mut state = service.state.lock().await;
+        assert!(service.action(&mut state, "follow-up", json!({"taskId":"one","message":"Change now","model":"local/test"})).await.unwrap_err().contains("Stop this task"));
+        assert!(service.action(&mut state, "follow-up", json!({"taskId":"one","message":"Change now","effort":"high"})).await.unwrap_err().contains("Stop this task"));
         service.action(&mut state, "follow-up", json!({"taskId":"one","message":"Also check keyboard controls"})).await.unwrap();
         assert_eq!(state.store.tasks.len(), 3);
         service.stop(&mut state, "one").await.unwrap();
+        service.action(&mut state, "follow-up", json!({"taskId":"one","message":"Continue without reasoning","model":"local/test","effort":null})).await.unwrap();
+        assert_eq!(state.store.tasks[0].model, "local/test");
+        assert_eq!(state.store.tasks[0].effort, None);
+        assert_eq!(state.store.tasks[0].thread_id, thread);
         for session in state.sessions.values() { session.pi.shutdown().await.unwrap(); }
         drop(state);
         std::fs::remove_dir_all(root).unwrap();

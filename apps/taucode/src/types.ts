@@ -805,6 +805,7 @@ export type WorkTask = {
   createdAt?: number; updatedAt?: number;
   importId?: string | null;
   pendingMessage?: string | null;
+  effort?: string | null;
   id: string; spaceId: string; threadId: string | null; title: string; brief: string;
   attachments: string[]; model: string; accessMode: "ask" | "read-only" | "full-access"; status: WorkStatus;
   plan: TurnPlanStep[]; outputs: string[]; pending: WorkRequest[]; error: string | null;

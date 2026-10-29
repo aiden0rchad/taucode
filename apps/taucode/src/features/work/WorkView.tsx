@@ -12,7 +12,7 @@ import { describeTool } from "@/features/messages/utils/messageRenderUtils";
 import { exportMarkdownFile } from "@services/tauri";
 import { WorkConcurrency } from "./WorkConcurrency";
 import { WorkFiles } from "./WorkFiles";
-import { useReasoningSelection } from "@/features/models/reasoning";
+import { clampReasoning, useReasoningSelection } from "@/features/models/reasoning";
 import { SidebarResizeHandle } from "@/features/layout/components/SidebarResizeHandle";
 import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
 import { ComposerDictation } from "@/features/composer/components/ComposerDictation";
@@ -76,6 +76,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [dictating, setDictating] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [followAccess, setFollowAccess] = useState<WorkTask["accessMode"]>("ask");
+  const [followSelections, setFollowSelections] = useState<Record<string, { model: string; effort: string | null }>>({});
 
   const [folder, setFolder] = useState("");
   const [readOnlyFolders, setReadOnlyFolders] = useState<string[]>([]);
@@ -92,6 +93,10 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const reasoning = useReasoningSelection(model, work.active, capability);
   const continuationSpace = writableSpaces.find(s => s.id === spaceId)?.id || writableSpaces.find(s => s.id === task?.spaceId)?.id || writableSpaces[0]?.id || "";
   const active = task != null && ["starting", "running", "stopping", "needs-input"].includes(task.status);
+  const followSelection = task && !active && task.status !== "queued" ? followSelections[task.id] : undefined;
+  const followModel = followSelection?.model ?? task?.model ?? "";
+  const followCapability = models.find(m => m.key === followModel)?.reasoning;
+  const followEffort = clampReasoning(followCapability, followSelection ? followSelection.effort : task?.effort);
   const nativeDrop = useRef<(paths: string[]) => void>(() => {});
   useEffect(() => subscribeWindowDragDrop(event => { setDragOver(event.payload.type === "enter" || event.payload.type === "over"); if (event.payload.type === "drop") nativeDrop.current(event.payload.paths ?? []); }), []);
   const run = async (operation: () => Promise<unknown>) => {
@@ -115,8 +120,9 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     if (!task || followBlocked || !followUp.trim()) return;
     const id = task.id;
     void run(async () => {
-      await work.mutate("follow-up", { taskId: id, message: followUp, accessMode: followAccess });
+      await work.mutate("follow-up", { taskId: id, message: followUp, accessMode: followAccess, ...(!active ? { model: followModel, effort: followEffort } : {}) });
       setDrafts(current => { const next = { ...current }; delete next[id]; return next; });
+      setFollowSelections(current => { const next = { ...current }; delete next[id]; return next; });
     });
   };
   const selectTask = (id: string) => { work.setActive(id); setSpaceId(""); if (window.innerWidth < 760) setSidebarCollapsed(true); };
@@ -228,7 +234,18 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           </section> : null}
         </div></div>
         {!task.importId && <form className="work-follow-up" aria-label="Task conversation" onSubmit={e => { e.preventDefault(); sendFollowUp(); }}>
-          <ComposerShell toolbar={<><ComposerAccessControl value={followAccess} onChange={setFollowAccess} disabled={busy || active || task.status === "queued"} /><span className="chat-muted">{formatModelRef(settings, task.model).name}</span></>} actions={<ComposerSendButton label={task.status === "running" ? "Send instruction" : "Send follow-up"} disabled={followBlocked || !followUp.trim()} disabledReason={task.status === "needs-input" ? "Answer the pending request first" : ["queued", "starting", "stopping"].includes(task.status) ? "Waiting for this task to start or finish stopping" : busy ? "Please wait" : "Write a message"} onSend={sendFollowUp} />}>
+          <ComposerShell
+            toolbar={<ComposerAccessControl value={followAccess} onChange={setFollowAccess} disabled={busy || active || task.status === "queued"} />}
+            reasoning={{
+              modelName: formatModelRef(settings, followModel).name,
+              models: models.map(m => ({ id: m.key, name: m.displayName || m.id, provider: m.provider })),
+              selectedModelId: followModel, defaultModelId: policyModel,
+              onSelectModel: next => setFollowSelections(current => ({ ...current, [task.id]: { model: next, effort: clampReasoning(models.find(m => m.key === next)?.reasoning, followEffort) } })),
+              capability: followCapability, value: followEffort,
+              onChange: effort => setFollowSelections(current => ({ ...current, [task.id]: { model: followModel, effort } })),
+              disabled: busy || active || task.status === "queued", onOpenSettings,
+            }}
+            actions={<ComposerSendButton label={task.status === "running" ? "Send instruction" : "Send follow-up"} disabled={followBlocked || !followUp.trim()} disabledReason={task.status === "needs-input" ? "Answer the pending request first" : ["queued", "starting", "stopping"].includes(task.status) ? "Waiting for this task to start or finish stopping" : busy ? "Please wait" : "Write a message"} onSend={sendFollowUp} />}>
             <textarea aria-label="Message task" placeholder={task.status === "running" ? "Add an instruction…" : "Ask for changes or continue this task…"} rows={2} value={followUp} disabled={busy} onChange={e => setDrafts(current => ({ ...current, [task.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); sendFollowUp(); } }} />
           </ComposerShell>
           {task.status === "needs-input" && <button className="ghost" type="button" onClick={jumpToInput}>Answer the pending request above to continue</button>}
