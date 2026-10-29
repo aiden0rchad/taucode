@@ -89,6 +89,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     try { const items = JSON.parse(localStorage.getItem("taucode.browser.recent") ?? "[]"); return Array.isArray(items) ? items.filter(t => t && typeof t.url === "string" && /^https?:/.test(t.url) && typeof t.title === "string").slice(0, 4) : []; } catch { return []; }
   });
   const latest = useRef<BrowserState>({ tabs: [], active: "" });
+  const receivedBrowserState = useRef(false);
   const pending = useRef<{ id: string; scope: string; previous: Set<string>; tab: PanelTab } | null>(null);
   const toolRef = useRef(tools); toolRef.current = tools;
   const history = useRef([scope]);
@@ -107,7 +108,8 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     void subscribeBrowser(value => {
       if (disposed) return;
       const newPages = value.tabs.filter(page => !latest.current.tabs.some(old => old.id === page.id));
-      const hadSnapshot = latest.current.active !== "";
+      const hadSnapshot = receivedBrowserState.current;
+      receivedBrowserState.current = true;
       const previousActive = latest.current.active;
       latest.current = value;
       const request = pending.current;

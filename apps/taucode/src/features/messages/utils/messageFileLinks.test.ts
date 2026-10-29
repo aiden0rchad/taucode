@@ -11,6 +11,12 @@ function expectResolvedHref(url: string, expected: string | null) {
 }
 
 describe("resolveMessageFileHref", () => {
+  it("resolves short relative file links only with workspace context", () => {
+    expectResolvedHref("outputs/report.md", null);
+    expect(resolveMessageFileHref("outputs/report.md", "/project")).toEqual({ path: "outputs/report.md", line: null, column: null });
+    expect(resolveMessageFileHref("https://example.com/report.md", "/project")).toBeNull();
+    expect(resolveMessageFileHref("/workspace/settings", "/project")).toBeNull();
+  });
   it("ignores non-line file URL fragments", () => {
     expectResolvedHref("file:///tmp/report.md#overview", "/tmp/report.md");
   });

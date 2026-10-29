@@ -22,6 +22,7 @@ pub(super) struct Process {
     pub operation: Mutex<()>,
     pub alive: AtomicBool,
     pub running: AtomicBool,
+    cancelling: AtomicBool,
     pub extensions: Mutex<std::collections::HashSet<String>>,
     child: Mutex<Child>,
     stdin: Mutex<Option<ChildStdin>>,
@@ -64,6 +65,7 @@ impl Process {
             operation: Mutex::new(()),
             alive: AtomicBool::new(true),
             running: AtomicBool::new(false),
+            cancelling: AtomicBool::new(false),
             extensions: Mutex::new(Default::default()),
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),
@@ -195,6 +197,10 @@ impl Process {
                 );
                 return;
             }
+            if self.cancelling.load(Ordering::SeqCst) {
+                let _ = self.write(json!({"type":"extension_ui_response","id":m["id"],"cancelled":true})).await;
+                return;
+            }
             let mut t = self.translator.lock().await;
             // tool_call approval can precede tool_execution_start in pi.
             if let Some(a) = translate::approval(&m) {
@@ -205,8 +211,15 @@ impl Process {
             let request = translate::ui_request(&m, &t.thread, &t.turn_id());
             drop(t);
             let id = request["id"].as_str().unwrap().to_owned();
-            self.dialogs.lock().await.insert(id.clone(), m.clone());
+            let mut dialogs = self.dialogs.lock().await;
+            if self.cancelling.load(Ordering::SeqCst) {
+                drop(dialogs);
+                let _ = self.write(json!({"type":"extension_ui_response","id":m["id"],"cancelled":true})).await;
+                return;
+            }
+            dialogs.insert(id.clone(), m.clone());
             (self.emit)(request);
+            drop(dialogs);
             if let Some(ms) = m["timeout"].as_u64() {
                 let weak = Arc::downgrade(self);
                 tokio::spawn(async move {
@@ -255,6 +268,18 @@ impl Process {
             return Err("Pi process exited; retry to resume the session".into());
         }
         *self.touched.lock().await = Instant::now();
+        if value["type"] == "prompt" { self.cancelling.store(false, Ordering::SeqCst); }
+        if value["type"] == "abort" {
+            self.cancelling.store(true, Ordering::SeqCst);
+            // Pi waits for tool hooks to settle before acknowledging abort. An
+            // unanswered extension dialog otherwise holds that wait forever.
+            let dialogs = std::mem::take(&mut *self.dialogs.lock().await);
+            let thread = self.translator.lock().await.thread.clone();
+            for (id, request) in dialogs {
+                self.write(json!({"type":"extension_ui_response","id":request["id"],"cancelled":true})).await?;
+                (self.emit)(json!({"method":"serverRequest/resolved","params":{"threadId":thread,"requestId":id}}));
+            }
+        }
         let id = format!("tau-{}", self.next_id.fetch_add(1, Ordering::SeqCst));
         value["id"] = json!(id);
         let (tx, rx) = oneshot::channel();

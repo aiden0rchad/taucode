@@ -84,6 +84,17 @@ it("opens Task by default and validates corrupt saved tab data", () => {
   const initial = { tabs: [{ id: "a", kind: "files", title: "Files" }, { id: "b", kind: "git", title: "Changes" }], active: "a", open: true };
   expect(panelReducer(initial, { type: "reorder", id: "a", before: "b", after: true }).tabs.map(tab => tab.id)).toEqual(["b", "a"]);
 });
+it("registers the first agent-created page as a tab without covering Task", async () => {
+  render(shell("work:task", [{ id: "task", label: "Task", content: <p>Plan and outputs</p> }]));
+  await waitFor(() => expect(subscribeBrowser).toHaveBeenCalled());
+  act(() => {
+    host = { backend: "native", tabs: [{ id: "agent-page", title: "Dashboard", url: "http://127.0.0.1:8765/", ready: true, loading: false }], active: "agent-page", agent: true };
+    callbacks.forEach(callback => callback(host));
+  });
+  expect(await screen.findByRole("tab", { name: "Dashboard" })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "Task", selected: true })).toBeTruthy();
+  expect(screen.queryByLabelText("Native browser page")).toBeNull();
+});
 it("resizes with the keyboard and retains mounted tools when the panel is hidden", () => {
   vi.stubGlobal("innerWidth", 1600);
   render(shell()); fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));

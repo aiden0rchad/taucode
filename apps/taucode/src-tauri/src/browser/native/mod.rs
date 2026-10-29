@@ -25,8 +25,7 @@ struct Views {
     live: Vec<String>,
     hook_keys: HashMap<String, String>,
     shown: Option<String>,
-    rect: Option<Rect>,
-    visible: bool,
+    placement: policy::Placement,
     last_poll: Instant,
     private: bool,
 }
@@ -50,8 +49,7 @@ impl NativeBackend {
                 live: vec![],
                 hook_keys: HashMap::new(),
                 shown: None,
-                rect: None,
-                visible: false,
+                placement: policy::Placement::default(),
                 last_poll: Instant::now(),
                 private: false,
             }),
@@ -238,8 +236,8 @@ impl NativeBackend {
             .app
             .get_window("main")
             .ok_or("Main window unavailable")?;
-        let visible = views.visible
-            && views.rect.is_some()
+        let rect = views.placement.rect(&id);
+        let visible = rect.is_some()
             && window.is_visible().unwrap_or(false)
             && !window.is_minimized().unwrap_or(true);
         let ready = self
@@ -256,7 +254,13 @@ impl NativeBackend {
             .tab(&id)
             .is_some_and(|t| t["ready"] == true && t["error"].is_null())
         {
-            let rect = views.rect.unwrap();
+            let mut rect = rect.unwrap();
+            #[cfg(target_os = "macos")]
+            { rect = rect.scaled(macos::ui_zoom(&self.app.get_webview("main").ok_or("Main webview unavailable")?).await?)?; }
+            // Child webviews sit above HTML; leave the window resize gutter reachable.
+            let size = window.inner_size().map_err(|e| e.to_string())?.to_logical::<f64>(window.scale_factor().map_err(|e| e.to_string())?);
+            rect.w = rect.w.min((size.width - 8. - rect.x).max(1.));
+            rect.h = rect.h.min((size.height - 8. - rect.y).max(1.));
             view.set_bounds(tauri::Rect {
                 position: LogicalPosition::new(rect.x, rect.y).into(),
                 size: LogicalSize::new(rect.w, rect.h).into(),
@@ -347,11 +351,12 @@ impl NativeBackend {
             return Ok(Value::Null);
         }
         if action == "detach" {
-            views.visible = false;
+            views.placement.detach();
             self.hide(&mut views).await?;
             return Ok(Value::Null);
         }
         if action == "reset" {
+            views.placement.detach();
             self.hide(&mut views).await?;
             for id in views.live.drain(..) {
                 if let Some(view) = self.app.get_webview(&label(&id)?) {
@@ -394,16 +399,10 @@ impl NativeBackend {
                     return Ok(Value::Null);
                 }
             }
-            if !p["rect"].is_null() {
-                views.rect = Some(
-                    serde_json::from_value::<Rect>(p["rect"].clone())
-                        .map_err(|e| e.to_string())?
-                        .validate()?,
-                );
-            }
-            if let Some(visible) = p["visible"].as_bool() {
-                views.visible = visible;
-            }
+            let rect = if p["rect"].is_null() { None } else {
+                Some(serde_json::from_value::<Rect>(p["rect"].clone()).map_err(|e| e.to_string())?)
+            };
+            views.placement.update(&self.active(), rect, p["visible"].as_bool())?;
             self.place(&mut views).await?;
             return Ok(Value::Null);
         }
@@ -451,6 +450,7 @@ impl NativeBackend {
         if action == "close" {
             let id = id.unwrap_or_else(|| self.active());
             label(&id)?;
+            if id == self.active() { views.placement.detach(); }
             if views.shown.as_deref() == Some(&id) {
                 self.hide(&mut views).await?;
             }
@@ -482,6 +482,9 @@ impl NativeBackend {
             return Ok(Value::Null);
         }
         if self.active().is_empty() {
+            if action != "navigate" {
+                return Err("No browser page is open. Navigate to a URL first.".into());
+            }
             self.add_tab("about:blank");
         }
         let id = self.active();

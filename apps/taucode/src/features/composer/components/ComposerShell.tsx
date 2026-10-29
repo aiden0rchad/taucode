@@ -7,7 +7,7 @@ import { useMenuController } from "@app/hooks/useMenuController";
 import { AnchoredPopover } from "@/features/design-system/components/popover/AnchoredPopover";
 
 export function ComposerShell({ children, menu, toolbar, controls, reasoning, actions, className = "" }: {
-  children: ReactNode; menu: ReactNode; toolbar?: ReactNode; controls?: ReactNode; reasoning?: ReasoningControlProps; actions: ReactNode; className?: string;
+  children: ReactNode; menu?: ReactNode; toolbar?: ReactNode; controls?: ReactNode; reasoning?: ReasoningControlProps; actions: ReactNode; className?: string;
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
@@ -26,10 +26,10 @@ export function ComposerShell({ children, menu, toolbar, controls, reasoning, ac
     {children}
     <div className="composer-shell-toolbar">
       <div className="composer-shell-left">
-      <div className="composer-add" ref={add.containerRef}>
+      {menu && <div className="composer-add" ref={add.containerRef}>
         <IconButton ref={trigger} type="button" aria-haspopup="dialog" className="ghost" title="Add attachments and tools" aria-label="Add attachments and tools" aria-expanded={add.isOpen} onClick={add.toggle}><Plus aria-hidden /></IconButton>
         {add.isOpen && <AnchoredPopover anchorRef={trigger} surfaceRef={popover} role="dialog" aria-label="Attachments and tools" className="composer-add-menu" onClick={event => { if ((event.target as HTMLElement).closest("button")) { add.close(); trigger.current?.focus(); } }}>{menu}</AnchoredPopover>}
-      </div>
+      </div>}
       {toolbar}
       </div>
       <div className="composer-shell-actions">{reasoning && <ReasoningControl {...reasoning} />}{controls}{actions}</div>

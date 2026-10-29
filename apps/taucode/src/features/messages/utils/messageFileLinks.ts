@@ -349,7 +349,7 @@ function isLikelyFileHref(
     return parsedLocation.line !== null || hasLikelyFileName(pathOnly);
   }
   if (hasLikelyFileName(pathOnly)) {
-    return pathSegmentCount(pathOnly) >= 3;
+    return pathSegmentCount(pathOnly) >= (workspacePath ? 2 : 3);
   }
   return false;
 }

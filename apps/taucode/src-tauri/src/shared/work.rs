@@ -133,7 +133,7 @@ impl Work {
             for task in &mut state.store.tasks {
                 if occupied(&task.status) {
                     task.set_status("stopped");
-                    task.error = Some("Interrupted by app restart. Start a new task to continue.".into());
+                    task.error = Some("Interrupted by app restart. Send a message below to continue.".into());
                     task.pending.clear();
                 }
             }
@@ -391,6 +391,34 @@ impl Work {
         let session = self.session(state, &space).await;
         match action {
             "read" => session.pi.request(&space.id, "thread/read", json!({"threadId":thread})).await,
+            "follow-up" => {
+                let message = params["message"].as_str().unwrap_or("").trim();
+                if message.is_empty() || message.len() > 100_000 { return Err("Message must be 1–100000 bytes".into()); }
+                if space.read_only { return Err("This space is read-only".into()); }
+                if task.status == "needs-input" { return Err("Answer the pending request before sending another message".into()); }
+                if task.status == "queued" { return Err("Wait for this task to start".into()); }
+                let input = json!([{"type":"text","text":message}]);
+                if task.status == "running" {
+                    return session.pi.request(&space.id, "turn/steer", json!({"threadId":thread,"input":input})).await;
+                }
+                if state.store.tasks.iter().any(|t| t.space_id == space.id && occupied(&t.status)) || state.store.tasks.iter().filter(|t| occupied(&t.status)).count() >= state.store.concurrency {
+                    return Err("Wait for an available task slot before continuing".into());
+                }
+                let mode = params["accessMode"].as_str().unwrap_or(&task.access_mode);
+                if !["ask", "read-only", "full-access"].contains(&mode) { return Err("Invalid access mode".into()); }
+                let request = json!({"threadId":thread,"accessMode":mode,"model":task.model,"effort":task.effort,"input":input});
+                let checkpoints = session.checkpoints.as_ref().unwrap();
+                if super::engine_registry::features(Some(&self.data)).checkpoints { checkpoints.before(&space.id, thread, "pi", &request).await?; }
+                if let Err(error) = session.pi.request(&space.id, "turn/start", request).await {
+                    if let Some(finish) = checkpoints.complete(&space.id, thread) { let _ = finish.await; }
+                    return Err(error);
+                }
+                let task = &mut state.store.tasks[index];
+                task.set_status("running");
+                task.access_mode = mode.into();
+                task.error = None;
+                Ok(json!({}))
+            }
             "respond" => {
                 let request = task.pending.iter().find(|p| p["id"] == params["requestId"]).ok_or("Input request is no longer pending")?;
                 session.pi.respond_to_server_request(request["id"].clone(), params["answer"].clone()).await?;
@@ -684,6 +712,23 @@ mod tests {
         assert_eq!(state.store.tasks[2].status, "running");
         service.action(&mut state, "stop-all", json!({})).await.unwrap();
         assert!(state.store.tasks.iter().all(|t| t.status == "stopped"));
+        let thread = state.store.tasks[0].thread_id.clone();
+        assert!(service.action(&mut state, "follow-up", json!({"taskId":"one","message":"  "})).await.is_err());
+        state.store.tasks[0].status = "needs-input".into();
+        assert!(service.action(&mut state, "follow-up", json!({"taskId":"one","message":"Continue"})).await.unwrap_err().contains("pending request"));
+        state.store.tasks[0].status = "stopped".into();
+        let mut rival = task("rival", "one", "running");
+        rival.thread_id = None;
+        state.store.tasks.push(rival);
+        assert!(service.action(&mut state, "follow-up", json!({"taskId":"one","message":"Continue"})).await.unwrap_err().contains("available task slot"));
+        state.store.tasks.pop();
+        service.action(&mut state, "follow-up", json!({"taskId":"one","message":"Check the output","accessMode":"full-access"})).await.unwrap();
+        assert_eq!(state.store.tasks[0].thread_id, thread);
+        assert_eq!(state.store.tasks[0].status, "running");
+        assert_eq!(state.store.tasks[0].access_mode, "full-access");
+        service.action(&mut state, "follow-up", json!({"taskId":"one","message":"Also check keyboard controls"})).await.unwrap();
+        assert_eq!(state.store.tasks.len(), 3);
+        service.stop(&mut state, "one").await.unwrap();
         for session in state.sessions.values() { session.pi.shutdown().await.unwrap(); }
         drop(state);
         std::fs::remove_dir_all(root).unwrap();

@@ -258,33 +258,38 @@ fn key_entry(id: &str) -> Result<keyring::Entry, String> {
 // prompt (each read, when the user picks Allow instead of Always Allow).
 static KEY_CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Option<String>>>> =
     std::sync::LazyLock::new(Default::default);
+fn cached_key(cache: &std::sync::Mutex<std::collections::HashMap<String, Option<String>>>, id: &str, read: impl FnOnce() -> Result<Option<String>, String>) -> Result<Option<String>, String> {
+    // Hold the lock during the OS read: concurrent engine starts must share one prompt.
+    let mut cache = cache.lock().map_err(|_| "Provider key cache unavailable")?;
+    if let Some(value) = cache.get(id) { return Ok(value.clone()); }
+    let value = read()?;
+    cache.insert(id.into(), value.clone());
+    Ok(value)
+}
 impl KeyStore for Keychain {
     fn get(&self, id: &str) -> Result<Option<String>, String> {
-        if let Some(cached) = KEY_CACHE.lock().map_err(|e| e.to_string())?.get(id) {
-            return Ok(cached.clone());
-        }
-        let value = match key_entry(id)?.get_password() {
-            Ok(v) => { taucode_diag_mcp::writer::remember_secret(&v); Some(v) },
-            Err(keyring::Error::NoEntry) => None,
-            Err(_) => return Err("Cannot read provider Keychain".into()),
-        };
-        KEY_CACHE.lock().map_err(|e| e.to_string())?.insert(id.into(), value.clone());
-        Ok(value)
+        cached_key(&KEY_CACHE, id, || match key_entry(id)?.get_password() {
+            Ok(v) => { taucode_diag_mcp::writer::remember_secret(&v); Ok(Some(v)) },
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(_) => Err("Cannot read provider Keychain".into()),
+        })
     }
     fn set(&self, id: &str, key: &str) -> Result<(), String> {
+        let mut cache = KEY_CACHE.lock().map_err(|_| "Provider key cache unavailable")?;
         taucode_diag_mcp::writer::remember_secret(key);
         key_entry(id)?
             .set_password(key)
             .map_err(|_| "Cannot save provider key")?;
-        KEY_CACHE.lock().map_err(|e| e.to_string())?.insert(id.into(), Some(key.into()));
+        cache.insert(id.into(), Some(key.into()));
         Ok(())
     }
     fn delete(&self, id: &str) -> Result<(), String> {
+        let mut cache = KEY_CACHE.lock().map_err(|_| "Provider key cache unavailable")?;
         match key_entry(id)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => {}
             Err(_) => return Err("Cannot delete provider key".into()),
         }
-        KEY_CACHE.lock().map_err(|e| e.to_string())?.insert(id.into(), None);
+        cache.insert(id.into(), None);
         Ok(())
     }
 }
@@ -631,6 +636,29 @@ pub(crate) async fn probe(p: &ProviderEntry, model: &ProviderModel, keys: &dyn K
 mod tests {
     use super::*;
     use std::sync::Mutex as StdMutex;
+    #[test]
+    fn concurrent_keychain_reads_share_one_prompt_and_failed_reads_can_retry() {
+        use std::sync::{Barrier, atomic::{AtomicUsize, Ordering}};
+        let cache = StdMutex::default();
+        let reads = AtomicUsize::new(0);
+        let start = Barrier::new(4);
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                scope.spawn(|| {
+                    start.wait();
+                    assert_eq!(cached_key(&cache, "test", || {
+                        reads.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(20));
+                        Ok(Some("fixture-key".into()))
+                    }).unwrap().as_deref(), Some("fixture-key"));
+                });
+            }
+        });
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
+        assert!(cached_key(&cache, "retry", || Err("denied".into())).is_err());
+        assert_eq!(cached_key(&cache, "retry", || Ok(None)).unwrap(), None);
+        assert_eq!(cached_key(&cache, "retry", || panic!("missing credentials are cached")).unwrap(), None);
+    }
     #[derive(Default)]
     struct Keys(StdMutex<BTreeMap<String, String>>);
     impl KeyStore for Keys {

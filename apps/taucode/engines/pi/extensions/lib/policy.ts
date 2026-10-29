@@ -48,8 +48,8 @@ export function safeReadOnlyCommand(command: string): string {
   const [_, sub, ...args] = command.trim().split(/\s+/);
   return ["git", "--no-pager", "--no-optional-locks", "-c", "core.fsmonitor=false", sub, ...(["diff", "log"].includes(sub) ? ["--no-ext-diff", "--no-textconv"] : []), ...args].join(" ");
 }
-// Work boundaries also apply to reads and children. Arbitrary shell programs always
-// need fresh approval, including in full access.
+// Work file boundaries also apply to children. Full access authorizes shell
+// execution; the shared protected-path and child restrictions still apply.
 export function workDecision(access: Access, call: Call, interactive: boolean, child = false): "allow" | "ask" | "block" | undefined {
   if (access.kind !== "work") return;
   if (!access.workspace || !inside(call.cwd, access.workspace)) return "block";
@@ -58,12 +58,15 @@ export function workDecision(access: Access, call: Call, interactive: boolean, c
   if (["read", "ls", "find", "grep"].includes(call.tool)) return readable(path) ? "allow" : "block";
   if (call.tool === "bash") {
     if (readOnlyCommand(call.command ?? "")) return (call.command ?? "").trim().split(/\s+/).slice(1).filter(p => !p.startsWith("-")).every(p => readable(resolve(call.cwd, p))) ? "allow" : "block";
+    if (access.accessMode === "read-only" || child) return "block";
+    if (access.accessMode === "full-access") return;
     return interactive && !child ? "ask" : "block";
   }
   if (!inside(path, access.workspace)) return "block";
+  if (access.accessMode === "read-only") return "block";
   const outputs = resolve(access.workspace, "outputs");
   const inOutputs = canonical(outputs) === resolve(canonical(access.workspace), "outputs") && inside(path, outputs);
-  if (existsSync(path) && !inOutputs) return interactive && !child ? "ask" : "block";
+  if (existsSync(path) && !inOutputs && access.accessMode !== "full-access") return interactive && !child ? "ask" : "block";
 }
 export function decide(access: Access, call: Call, home: string, interactive: boolean, child?: { workspace: string; toolAccess: string }): "allow" | "ask" | "block" {
   const work = workDecision(access, call, interactive, !!child);
@@ -71,8 +74,9 @@ export function decide(access: Access, call: Call, home: string, interactive: bo
   const path = resolve(call.cwd, call.path ?? "");
   const readonly = call.tool === "bash" && readOnlyCommand(call.command ?? "");
   if (access.accessMode === "read-only" || child?.toolAccess === "read-only") return readonly ? "allow" : "block";
+  const command = (call.command ?? "").replace(/\$(?:TAUCODE_WORK_PYTHON\b|\{TAUCODE_WORK_PYTHON\})/g, "");
   const protectedWrite = call.tool === "bash"
-    ? !readonly && /(^|[\s/'"])(\.git(?:[/\s'";]|$)|\.env)|PI_CODING_AGENT_DIR|TAUCODE_|taucode\/threads/.test(call.command ?? "") || (call.command ?? "").includes(home)
+    ? !readonly && /(^|[\s/'"])(\.git(?:[/\s'";]|$)|\.env)|PI_CODING_AGENT_DIR|TAUCODE_|taucode\/threads/.test(command) || command.includes(home)
     : protectedPath(path, home);
   if (protectedWrite) return interactive && !child ? "ask" : "block";
   if (child && access.accessMode === "ask") return readonly || (call.tool !== "bash" && inside(path, child.workspace)) ? "allow" : "block";

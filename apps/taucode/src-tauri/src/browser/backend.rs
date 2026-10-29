@@ -81,6 +81,13 @@ pub fn filter_tools(response: &mut Value, native: bool) {
     if native {
         if let Some(tools) = response.get_mut("result").and_then(|r| r.get_mut("tools")).and_then(Value::as_array_mut) {
             tools.retain(|tool| tool["name"].as_str().is_some_and(|name| supported_tools().contains(&name)));
+            for tool in tools.iter_mut().filter(|tool| tool["name"] == "browser_evaluate") {
+                tool["description"] = json!("Evaluate a JavaScript function in the native page and return its result inline. Omit target (or use null) for a page-level function such as () => document.title.");
+                tool["inputSchema"] = json!({"type":"object","properties":{
+                    "function":{"type":"string","description":"JavaScript function, optionally async; receives the target element when supplied."},
+                    "target":{"type":["string","null"],"description":"Optional snapshot ref or unique selector. Null evaluates at page level."}
+                },"required":["function"],"additionalProperties":false});
+            }
         }
     }
 }
@@ -97,8 +104,9 @@ pub async fn tool(backend: &dyn BrowserBackend, name: &str, args: Value) -> Resu
         "browser_fill_form" => backend.request(json!({"action":"script","op":"fill","fields":args["fields"]})).await?,
         "browser_evaluate" => {
             let function = args["function"].as_str().filter(|s| !s.trim().is_empty() && s.len() <= 200000).ok_or("Invalid JavaScript function")?;
-            if !args["filename"].is_null() { return Err("Native evaluation returns results inline; filename is unsupported".into()); }
-            let target = if args.get("target").or_else(|| args.get("ref")).is_some() { Some(reference(&args)?) } else { None };
+            if !args["filename"].is_null() && args["filename"] != "" { return Err("Native evaluation returns results inline; filename is unsupported".into()); }
+            let target = args.get("target").filter(|v| !v.is_null() && **v != "").or_else(|| args.get("ref").filter(|v| !v.is_null() && **v != ""));
+            let target = target.map(|v| v.as_str().ok_or("Invalid evaluation target")).transpose()?;
             backend.request(json!({"action":"evaluate","function":function,"ref":target})).await?
         },
         "browser_scroll" => backend.scroll(args).await?,
@@ -190,7 +198,11 @@ mod tests {
         assert_eq!(cdp, response);
         let mut native = response.clone();
         filter_tools(&mut native, true);
-        assert_eq!(native["result"]["tools"].as_array().unwrap(), &tools[..supported_tools().len()]);
+        assert_eq!(native["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>(), supported_tools());
+        let evaluate = native["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "browser_evaluate").unwrap();
+        assert_eq!(evaluate["inputSchema"]["required"], json!(["function"]));
+        assert_eq!(evaluate["inputSchema"]["properties"].as_object().unwrap().len(), 2);
+        assert_eq!(evaluate["inputSchema"]["properties"]["target"]["type"], json!(["string", "null"]));
         assert_eq!(native["result"]["nextCursor"], "next");
         assert_eq!(native["id"], 5);
         let mut error = json!({"id":5,"error":{"message":"upstream failed"}});
@@ -245,6 +257,10 @@ mod tests {
             dispatched("browser_evaluate", json!({"function":function})).await,
             json!({"action":"evaluate","function":function,"ref":null})
         );
+        for target in [Value::Null, json!("")] {
+            assert_eq!(dispatched("browser_evaluate", json!({"function":function,"target":target,"filename":""})).await,
+                json!({"action":"evaluate","function":function,"ref":null}));
+        }
         assert_eq!(
             dispatched(
                 "browser_evaluate",

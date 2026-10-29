@@ -728,6 +728,23 @@ async fn fake_crash_fails_turn_and_idle_closes_stdin() {
 }
 
 #[tokio::test]
+async fn interrupt_cancels_pending_ui_before_waiting_for_pi_to_settle() {
+    let dir = temp();
+    let (p, events) = fake(Duration::from_secs(600), &dir.join("eof")).await;
+    p.request(json!({"type":"prompt","message":"approval"})).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !events.lock().unwrap().iter().any(|e| e["method"] == "item/tool/requestUserInput") {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(1), p.request(json!({"type":"abort"}))).await.unwrap().unwrap();
+    assert!(events.lock().unwrap().iter().any(|e| e["method"] == "serverRequest/resolved"));
+    assert!(p.answer("pi:fake-thread:blocked", json!({"decision":"accept"})).await.is_err());
+    p.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
 async fn questions_expire_and_login_requests_never_reach_the_ui() {
     let dir = temp();
     let (p, events) = fake(Duration::from_secs(600), &dir.join("eof")).await;
@@ -1205,7 +1222,8 @@ fn work_spawn_profile_loads_only_bundled_skills_and_preserves_connectors_and_sub
     assert!(args.contains(&"--no-context-files".into()));
     assert!(args.contains(&"--no-skills".into()));
     assert!(args.contains(&WORK_PROMPT.into()));
-    assert!(WORK_PROMPT.contains("outputs/") && WORK_PROMPT.contains("Ask before deleting or overwriting"));
+    assert!(WORK_PROMPT.contains("outputs/") && WORK_PROMPT.contains("In Ask mode, ask before deleting or overwriting"));
+    assert!(WORK_PROMPT.contains("Do not use ask_user to request tool permission"));
     assert!(command.as_std().get_envs().any(|(k, v)| k == "TAUCODE_WORK" && v == Some(std::ffi::OsStr::new("1"))));
 }
 #[test]

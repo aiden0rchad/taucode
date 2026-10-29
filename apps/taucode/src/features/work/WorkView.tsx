@@ -7,6 +7,8 @@ import { Squircle } from "@/features/design-system/components/squircle/Squircle"
 import { SidebarTree } from "@app/components/SidebarTree";
 import { formatRelativeTimeShort } from "@utils/time";
 import { buildThreadTranscript } from "@utils/threadText";
+import type { ParsedFileLocation } from "@utils/fileLinks";
+import { describeTool } from "@/features/messages/utils/messageRenderUtils";
 import { exportMarkdownFile } from "@services/tauri";
 import { WorkConcurrency } from "./WorkConcurrency";
 import { WorkFiles } from "./WorkFiles";
@@ -65,13 +67,15 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [dragOver, setDragOver] = useState(false);
   const [brief, setBrief] = useState("");
   const [spaceId, setSpaceId] = useState("");
-  const [access, setAccess] = useState<WorkTask["accessMode"]>("ask");
+  const [access, setAccess] = useState<WorkTask["accessMode"]>(settings.defaultAccessMode === "full-access" || settings.defaultAccessMode === "read-only" ? settings.defaultAccessMode : "ask");
   const models = (settings.providers ?? []).filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => ({ ...m, provider: p.name, key: p.id + "/" + m.id, label: p.name + " · " + (m.displayName || m.id) })));
   const policyModel = settings.agentPolicy?.defaultModel ? settings.agentPolicy.defaultModel.providerId + "/" + settings.agentPolicy.defaultModel.modelId : "";
   const [model, setModel] = useState(models.find(m => m.key === policyModel)?.key ?? models[0]?.key ?? "");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [dictating, setDictating] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [followAccess, setFollowAccess] = useState<WorkTask["accessMode"]>("ask");
 
   const [folder, setFolder] = useState("");
   const [readOnlyFolders, setReadOnlyFolders] = useState<string[]>([]);
@@ -81,6 +85,9 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const selectedSpace = writableSpaces.find(s => s.id === spaceId)?.id || "";
   const needs = work.state.tasks.filter(t => t.status === "needs-input");
   const task = work.task;
+  useEffect(() => { setFollowAccess(task?.accessMode ?? "ask"); }, [task?.id, task?.accessMode]);
+  const followUp = task ? drafts[task.id] ?? "" : "";
+  const followBlocked = busy || !task?.threadId || task.status === "queued" || task.status === "needs-input";
   const capability = models.find(m => m.key === model)?.reasoning;
   const reasoning = useReasoningSelection(model, work.active, capability);
   const continuationSpace = writableSpaces.find(s => s.id === spaceId)?.id || writableSpaces.find(s => s.id === task?.spaceId)?.id || writableSpaces[0]?.id || "";
@@ -104,6 +111,14 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     const created = await work.mutate<WorkTask>("create", { spaceId: selectedSpace, brief, model, accessMode: access, attachments, runNow, effort: reasoning.level });
     work.setActive(created.id); setBrief(""); setAttachments([]); if (window.innerWidth < 760) setSidebarCollapsed(true);
   });
+  const sendFollowUp = () => {
+    if (!task || followBlocked || !followUp.trim()) return;
+    const id = task.id;
+    void run(async () => {
+      await work.mutate("follow-up", { taskId: id, message: followUp, accessMode: followAccess });
+      setDrafts(current => ({ ...current, [id]: "" }));
+    });
+  };
   const selectTask = (id: string) => { work.setActive(id); setSpaceId(""); if (window.innerWidth < 760) setSidebarCollapsed(true); };
   const jumpToInput = () => {
     const entry = needs[(needs.findIndex(t => t.id === lastInputTask.current) + 1) % needs.length];
@@ -138,7 +153,21 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     const task = tasksRef.current.find(t => t.threadId === params.threadId);
     return workRequest("checkpoint", { taskId: task?.id, request: params });
   }, []);
-  const taskMarkdown = task ? `# ${task.title}\n\n${task.brief}\n\n${buildThreadTranscript(work.items)}` : "";
+  const initialPrompt = work.items.findIndex(item => item.kind === "message" && item.role === "user");
+  const items = work.items.filter((item, index) => {
+    if (!task || index !== initialPrompt || item.kind !== "message") return true;
+    return item.text !== task.brief && (Boolean(task.importId) || !item.text.startsWith(`${task.brief}\n\nAttached files (inside this space):\n`));
+  });
+  const fileLinks = {
+    workspacePath: work.state.spaces.find(space => space.id === task?.spaceId)?.path,
+    onOpenFileLink: ({ path }: ParsedFileLocation) => {
+      if (!task || busy) return;
+      const root = work.state.spaces.find(space => space.id === task.spaceId)?.path;
+      const relative = root && path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path.replace(/^\.\//, "");
+      void run(() => workOutput(task.id, relative, "open"));
+    },
+  };
+  const taskMarkdown = task ? `# ${task.title}\n\n${task.brief}\n\n${buildThreadTranscript(items)}` : "";
   const taskPanel = task ? (<aside className="work-inspector" aria-label="Task details">
           <section aria-label="Plan"><h2>Plan</h2>{task.plan.length ? <><progress className="plan-progress" aria-label="Plan completion" max={task.plan.length} value={task.plan.filter(step => step.status === "completed").length} /><ul className="work-plan">{task.plan.map((step, index) => <li key={index}><span role="checkbox" aria-label={step.step} aria-checked={step.status === "completed"}>{step.status === "completed" ? <CheckCircle2 aria-hidden /> : <Circle aria-hidden />}</span><span>{step.step}</span></li>)}</ul></> : <p className="chat-muted">The task’s checklist will appear here.</p>}</section>
           <section aria-label="Outputs"><h2>Outputs <small>{task.outputs.length}</small></h2>{!task.outputs.length && <p className="chat-muted">Created and modified files will appear here.</p>}
@@ -180,10 +209,10 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       </section>}
       {task ? <div className="work-task-view">
         <div className="chat-scroll" role="log" aria-label="Task progress" aria-live="polite"><div className="chat-column">
-          <article className="message chat-message user"><h2>Task brief</h2><Markdown codeBlockStyle="message" className="markdown" value={task.brief} showFilePath={false} /><ul>{task.attachments.map(path => <li key={path}>{path}</li>)}</ul></article>
+          <article className="message chat-message user"><h2>Task brief</h2><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={task.brief} showFilePath={false} /><ul>{task.attachments.map(path => <li key={path}>{path}</li>)}</ul></article>
           {task.pending.map(request => <InputRequest key={request.id} request={request} busy={busy} respond={answer => { void run(() => work.mutate("respond", { taskId: task.id, requestId: request.id, answer })); }} />)}
           {task.error && <p role="alert">{task.error}</p>}
-          {work.items.map(item => item.kind === "message" ? <article className={"message chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown codeBlockStyle="message" className="markdown" value={item.text} showFilePath={false} /><div className="message-hover-actions"><IconButton className="ghost" title="Copy message" aria-label="Copy message" onClick={() => { void navigator.clipboard.writeText(item.text).catch(() => work.setError("Could not copy message.")); }}><Copy aria-hidden /></IconButton></div></article> : item.kind === "tool" ? <details className={`work-tool${/fail|error/i.test(item.status ?? "") ? " is-error" : ""}`} key={item.id}><summary>{createElement(/fail|error/i.test(item.status ?? "") ? CircleAlert : item.status === "inProgress" ? LoaderCircle : workToolIcons[item.toolType] ?? Search, { "aria-hidden": true, className: item.status === "inProgress" ? "tool-spinner" : undefined })}{item.title} · {item.status}<ChevronDown aria-hidden /></summary><pre>{item.detail}</pre>{item.output && <Markdown codeBlockStyle="message" className="markdown" value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown codeBlockStyle="message" className="markdown" value={item.content || item.summary} showFilePath={false} /></details> : null)}
+          {items.map(item => { const description = item.kind === "tool" ? describeTool(item) : null; return item.kind === "message" ? <article className={"message chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.text} showFilePath={false} /><div className="message-hover-actions"><IconButton className="ghost" title="Copy message" aria-label="Copy message" onClick={() => { void navigator.clipboard.writeText(item.text).catch(() => work.setError("Could not copy message.")); }}><Copy aria-hidden /></IconButton></div></article> : item.kind === "tool" ? <details className={`work-tool${/fail|error/i.test(item.status ?? "") ? " is-error" : ""}`} key={item.id}><summary>{createElement(/fail|error/i.test(item.status ?? "") ? CircleAlert : item.status === "inProgress" ? LoaderCircle : workToolIcons[item.toolType] ?? Search, { "aria-hidden": true, className: item.status === "inProgress" ? "tool-spinner" : undefined })}<span className="work-tool-label" title={item.title}>{description?.verb}{description?.target ? ` ${description.target}` : ""}</span>{/fail|error/i.test(item.status ?? "") && <span>Failed</span>}<ChevronDown aria-hidden /></summary><pre>{item.detail}</pre>{item.output && <Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.content || item.summary} showFilePath={false} /></details> : null; })}
           {task.status === "queued" && <p className="chat-muted">Waiting for an available slot. One task runs in each space at a time.</p>}
           {active && <p className="chat-muted">This task keeps running when you switch modes or hide the window.</p>}
           {task.importId ? <section aria-label="Continue imported task">
@@ -194,9 +223,14 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
               const created = await work.mutate<WorkTask>("continue", { taskId: task.id, spaceId: continuationSpace, model, ...(reasoning.level ? { effort: reasoning.level } : {}) });
               work.setActive(created.id);
             }); }}>Continue</button>
-          </section> : !active && task.status !== "queued" && <button onClick={() => { setBrief("Continue this task:\n" + task.brief + "\n\nReviewed plan:\n" + task.plan.map(p => "- " + p.step).join("\n") + "\n\nAsk before changing any existing files."); setSpaceId(task.spaceId); setAccess("ask"); setModel(task.model); work.setActive(null); }}>Continue as a new task…</button>}
+          </section> : null}
         </div></div>
-
+        {!task.importId && <form className="work-follow-up" aria-label="Task conversation" onSubmit={e => { e.preventDefault(); sendFollowUp(); }}>
+          <ComposerShell toolbar={<><ComposerAccessControl value={followAccess} onChange={setFollowAccess} disabled={busy || active || task.status === "queued"} /><span className="chat-muted">{formatModelRef(settings, task.model).name}</span></>} actions={<ComposerSendButton label={task.status === "running" ? "Send instruction" : "Send follow-up"} disabled={followBlocked || !followUp.trim()} disabledReason={task.status === "needs-input" ? "Answer the pending request first" : task.status === "queued" ? "Waiting for this task to start" : busy ? "Please wait" : "Write a message"} onSend={sendFollowUp} />}>
+            <textarea aria-label="Message task" placeholder={task.status === "running" ? "Add an instruction…" : "Ask for changes or continue this task…"} rows={2} value={followUp} disabled={busy} onChange={e => setDrafts(current => ({ ...current, [task.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); sendFollowUp(); } }} />
+          </ComposerShell>
+          {task.status === "needs-input" && <button className="ghost" type="button" onClick={jumpToInput}>Answer the pending request above to continue</button>}
+        </form>}
       </div> : <div className="chat-scroll"><div className="chat-column">
         <div className="chat-empty work-empty"><DigitalRain /><span className="chat-eyebrow">A space for getting things done</span><h1>What would you like to make?</h1><p>Bring a folder and a brief. Follow the plan, review requests, and find the finished files here.</p>
 

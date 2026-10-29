@@ -6,13 +6,14 @@ import { diagnosticContext, record } from "@/features/diagnostics/client";
 import { FeatureSettings, features, useFeatures } from "@settings/features";
 import { useSidebarDensity } from "@settings/hooks/useSidebarDensity";
 import { SidebarEngine } from "@app/components/SidebarTree";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode, type Dispatch, type SetStateAction } from "react";
 import type { AppMode, AppSettings } from "@/types";
 import { getAppSettings, updateAppSettings, setWindowMode } from "@services/tauri";
 import { notifySetupChanged } from "@services/events";
 import { matchesShortcut } from "@utils/shortcuts";
 import { useWindowLabel } from "@/features/layout/hooks/useWindowLabel";
 import { useThemePreference } from "@/features/layout/hooks/useThemePreference";
+import { useUiScaleShortcuts } from "@/features/layout/hooks/useUiScaleShortcuts";
 import { DEFAULT_THEME_ID } from "@/features/themes/defaults";
 import { WorkView } from "@/features/work/WorkView";
 import { ChatView } from "./ChatView";
@@ -20,6 +21,11 @@ import "./chat.css";
 
 const modes: AppMode[] = ["code", "chat", "work"];
 const ModeContext = createContext<{ mode: AppMode; select: (mode: AppMode) => void; updateSettings: (settings: AppSettings) => void } | null>(null);
+
+function ModeScale({ settings, setSettings }: { settings: AppSettings; setSettings: Dispatch<SetStateAction<AppSettings | null>> }) {
+  useUiScaleShortcuts({ settings, setSettings: update => setSettings(current => current ? typeof update === "function" ? update(current) : update : current), saveSettings: updateAppSettings });
+  return null;
+}
 
 export function ModeSwitcher() {
   const enabled = useFeatures();
@@ -98,6 +104,7 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   useEffect(() => { const enabled = features(settings); if ((mode === "chat" && !enabled.chatMode) || (mode === "work" && !enabled.workMode)) { setMode("code"); void setWindowMode("code").catch(e => setError(String(e))); } }, [mode, settings]);
   if (!loaded) return null;
   return <FeatureSettings.Provider value={settings}>{settings?.features?.diagnostics && <><FeedbackComposer /><DiagnosticsCommands /></>}<ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings }}>
+    {mode !== "code" && !settingsOpen && settings && <ModeScale settings={settings} setSettings={setSettings} />}
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
     {evalsFull && settings && <main className="evals-full"><EvalsView full initialRunId={evalsFull.runId} appSettings={settings} onUpdateAppSettings={async next => { const saved = await updateAppSettings(next); setSettings(saved); return saved; }} onClose={() => setEvalsFull(null)} /></main>}
     <div style={{ display: evalsFull ? "none" : "contents" }}>

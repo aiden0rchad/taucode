@@ -42,6 +42,84 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Work mode", () => {
+  it.each(["done", "failed", "stopped", "running"] as const)("continues a %s task in the same conversation", async status => {
+    state.tasks = [{ ...task("Report", status), accessMode: "full-access" }];
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    const input = await screen.findByRole("textbox", { name: "Message task" });
+    fireEvent.change(input, { target: { value: "Check the filters" } });
+    fireEvent.click(screen.getByRole("button", { name: status === "running" ? "Send instruction" : "Send follow-up" }));
+    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("follow-up", { taskId: "Report", message: "Check the filters", accessMode: "full-access" }));
+    await waitFor(() => expect(input).toHaveProperty("value", ""));
+    expect(workRequest).not.toHaveBeenCalledWith("create", expect.anything());
+  });
+  it("preserves task drafts across selection and failed sends", async () => {
+    state.tasks = [task("First", "done"), task("Second", "done")];
+    const request = vi.mocked(workRequest).getMockImplementation()!;
+    vi.mocked(workRequest).mockImplementation(async (action, params) => {
+      if (action === "follow-up") throw new Error("No available slot");
+      return request(action, params);
+    });
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "First" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Message task" }), { target: { value: "Keep my draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Second" }));
+    expect(screen.getByRole("textbox", { name: "Message task" })).toHaveProperty("value", "");
+    fireEvent.click(screen.getByRole("button", { name: "First" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send follow-up" }));
+    await screen.findByRole("alert");
+    expect(screen.getByRole("textbox", { name: "Message task" })).toHaveProperty("value", "Keep my draft");
+  });
+  it("keeps a composer visible but prevents sending around a pending approval", async () => {
+    state.tasks = [task("Report", "needs-input")];
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Message task" }), { target: { value: "Continue" } });
+    expect(screen.getByRole("button", { name: "Send follow-up" })).toHaveProperty("disabled", true);
+  });
+  it.each([undefined, "imported"])("shows the brief once while preserving later user messages (import: %s)", async importId => {
+    state.tasks = [{ ...task("Report", "done"), importId }];
+    const request = vi.mocked(workRequest).getMockImplementation()!;
+    vi.mocked(workRequest).mockImplementation(async (action, params) => action === "read" ? {
+      result: { thread: { turns: [{ items: [
+        { id: "prompt", type: "userMessage", content: [{ type: "text", text: importId ? "Make a brief" : "Make a brief\n\nAttached files (inside this space):\nnotes.txt\n\nRead-only folders:\n/reference" }] },
+        { id: "answer", type: "agentMessage", text: "Report ready" },
+        { id: "follow-up", type: "userMessage", content: [{ type: "text", text: "Keep this follow-up" }] },
+      ] }] } },
+    } : request(action, params));
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    await screen.findByText("Report ready");
+    expect(screen.getAllByText("Make a brief")).toHaveLength(1);
+    expect(screen.queryByText(/Attached files \(inside this space\)/)).toBeNull();
+    expect(screen.getByText("Keep this follow-up")).toBeTruthy();
+  });
+  it("opens output links from the transcript and surfaces rejected paths", async () => {
+    state.tasks = [{ ...task("Report", "done"), outputs: ["outputs/report.md"] }];
+    const request = vi.mocked(workRequest).getMockImplementation()!;
+    vi.mocked(workRequest).mockImplementation(async (action, params) => action === "read" ? {
+      result: { thread: { turns: [{ items: [{ id: "answer", type: "agentMessage", text: "[Report](outputs/report.md) · [Absolute](/synthetic/outputs/report.md) · [Missing](outputs/missing.md)" }] }] } },
+    } : request(action, params));
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    fireEvent.click(await screen.findByRole("link", { name: "Report" }));
+    await waitFor(() => expect(workOutput).toHaveBeenCalledWith("Report", "outputs/report.md", "open"));
+    vi.mocked(workOutput).mockClear();
+    fireEvent.click(screen.getByRole("link", { name: "Absolute" }));
+    await waitFor(() => expect(workOutput).toHaveBeenCalledWith("Report", "outputs/report.md", "open"));
+    vi.mocked(workOutput).mockRejectedValueOnce(new Error("Unknown task output"));
+    fireEvent.click(screen.getByRole("link", { name: "Missing" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Error: Unknown task output");
+  });
+  it("starts new tasks with the configured full-access default", async () => {
+    render(<WorkView settings={{ ...settings, defaultAccessMode: "full-access" }} />);
+    await screen.findByRole("option", { name: "Research" });
+    expect(screen.getByRole("combobox", { name: "Access mode" })).toHaveProperty("value", "full-access");
+    fireEvent.change(screen.getByRole("combobox", { name: "Space" }), { target: { value: "space" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Task brief" }), { target: { value: "Validate a report" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run now" }));
+    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("create", expect.objectContaining({ accessMode: "full-access" })));
+  });
   it("renders selected space cards and collapses their entire contents", async () => {
     state.spaces.push({ id: "other", kind: "work", name: "Other", path: "/other", readOnlyFolders: [] });
     state.spaces[0].readOnlyFolders = ["/reference"];

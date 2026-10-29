@@ -3,7 +3,8 @@ import { act, fireEvent, render, screen, waitFor, cleanup } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppSettings } from "@/types";
 import { ModeShell, ModeSwitcher, modeShortcut, useModeSettings } from "./ModeShell";
-import { getAppSettings, setWindowMode, windowSetMaterial } from "@services/tauri";
+import { getAppSettings, setWindowMode, windowSetMaterial, updateAppSettings } from "@services/tauri";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { applyTheme } from '@/features/themes/applyTheme';
 import { builtins } from '@/features/themes/builtins';
 vi.mock("@services/tauri", () => ({ getAppSettings: vi.fn(), setWindowMode: vi.fn().mockResolvedValue(undefined), themesList: vi.fn(async () => []), windowSetMaterial: vi.fn(async () => {}), updateAppSettings: vi.fn(async (settings: unknown) => settings) }));
@@ -12,7 +13,25 @@ vi.mock("@/features/work/WorkView", () => ({ WorkView: () => <><ModeSwitcher /><
 vi.mock("./ChatView", () => ({ ChatView: () => <><ModeSwitcher /><p>Chat content</p></> }));
 vi.mock("@/features/evals/EvalsView", () => ({ EvalsView: ({full,initialRunId,onClose}:{full:boolean;initialRunId?:string;onClose:()=>void}) => <section aria-label="Full eval results"><p>{full?initialRunId:"compact"}</p><button onClick={onClose}>Close results</button></section> }));
 vi.mock("@/features/layout/hooks/useWindowLabel", () => ({ useWindowLabel: () => "second-window" }));
+vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: vi.fn(() => ({ setZoom: vi.fn().mockResolvedValue(undefined) })) }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+it.each(["chat", "work"])("supports zoom and reset in %s without duplicating Code handlers", async mode => {
+  const setZoom = vi.fn().mockResolvedValue(undefined);
+  vi.mocked(getCurrentWebview).mockReturnValue({ setZoom } as unknown as ReturnType<typeof getCurrentWebview>);
+  vi.mocked(getAppSettings).mockResolvedValue({ uiScale: 1.2, windowModes: { "second-window": mode } } as unknown as AppSettings);
+  render(<ModeShell><ModeSwitcher /><p>Code content</p></ModeShell>);
+  await screen.findByText(mode === "chat" ? "Chat content" : "Work content");
+  expect(setZoom).toHaveBeenLastCalledWith(1.2);
+  fireEvent.keyDown(window, { key: "-", metaKey: true });
+  await waitFor(() => expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiScale: 1.1 })));
+  fireEvent.keyDown(window, { key: "0", metaKey: true });
+  await waitFor(() => expect(setZoom).toHaveBeenLastCalledWith(1));
+  fireEvent.click(screen.getByRole("button", { name: "Code" }));
+  await screen.findByText("Code content");
+  vi.mocked(updateAppSettings).mockClear();
+  fireEvent.keyDown(window, { key: "+", metaKey: true });
+  expect(updateAppSettings).not.toHaveBeenCalled();
+});
 it('keeps the cached theme while shell and code settings load', async () => {
   applyTheme(builtins.find(t => t.id === 'glass-dark')!);
   await act(async () => {});

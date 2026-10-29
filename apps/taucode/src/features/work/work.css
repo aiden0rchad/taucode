@@ -41,7 +41,9 @@
 .work-brief textarea { display: block; box-sizing: border-box; width: 100%; min-height: 140px; resize: vertical; margin-top: 8px; padding: 12px; background: var(--surface-messages); border: 1px solid var(--border-subtle); border-radius: 8px; line-height: 1.6; }
 .work-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; }
 .work-actions > span:empty { flex: 1; }
-.work-task-view { display: grid; grid-template-columns: minmax(0, 1fr) 290px; min-height: 0; flex: 1; }
+.work-task-view { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: hidden; }
+.work-follow-up { flex-shrink: 0; width: min(780px, calc(100% - 64px)); margin: 12px auto 20px; }
+.work-follow-up textarea { width: 100%; min-height: 56px; max-height: 180px; resize: vertical; border: 0; outline: none; background: transparent; line-height: 1.6; }
 .work-inspector { border-left: 1px solid var(--border-subtle); padding: 22px 18px; overflow: auto; background: var(--surface-card-muted); }
 .work-inspector h2 { font-size: 13px; font-weight: 600; margin: 0 0 16px; }
 .work-inspector section + section { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border-subtle); }
@@ -58,16 +60,18 @@
 .work-add-space { padding: 20px 28px; border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
 .work-error { padding: 12px 28px; color: var(--text-strong); background: var(--surface-card-muted); margin: 0; }
 @media (max-width: 1100px) {
-  .work-task-view { display: flex; flex-direction: column; overflow: auto; }
-  .work-task-view .chat-scroll { flex: none; overflow: visible; }
   .work-inspector { border-left: 0; border-top: 1px solid var(--border-subtle); overflow: visible; }
 }
 @media (max-width: 600px) {
   .work-layout { grid-template-columns: minmax(0, 1fr); }
   .work-templates { grid-template-columns: 1fr; }
   .work-composer { padding: 14px; }
+  .work-follow-up { width: calc(100% - 24px); margin-bottom: 12px; }
 }
 
 
 .work-layout .sidebar .work-attention-needs-input { color: color-mix(in srgb, var(--status-warning) 75%, var(--text-muted)); }
 .work-layout .sidebar .work-attention-failed { color: color-mix(in srgb, var(--status-error) 75%, var(--text-muted)); }
+
+.work-tool-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-tool summary > svg { flex-shrink: 0; }
