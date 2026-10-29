@@ -4,6 +4,18 @@ import { initialState, threadReducer } from "./useThreadsReducer";
 import type { ThreadState } from "./useThreadsReducer";
 
 describe("threadReducer", () => {
+  it("preserves error provenance and the failed request for recovery", () => {
+    const retryMessage = { text: "Inspect this", images: ["data:image/png;base64,AAA"] };
+    const next = threadReducer(initialState, { type: "addAssistantMessage", threadId: "thread", text: "Offline", isError: true, retryMessage });
+    expect(next.itemsByThread.thread[0]).toMatchObject({ kind: "message", role: "assistant", text: "Offline", isError: true, retryMessage });
+  });
+  it("does not duplicate a live failure when its history arrives", () => {
+    const live = threadReducer(initialState, { type: "addAssistantMessage", threadId: "thread", id: "turn-error", text: "Turn failed: offline", isError: true });
+    const history: ConversationItem = { id: "turn-error", kind: "message", role: "assistant", text: "Turn failed: offline", isError: true, retryMessage: { text: "Try this" } };
+    const next = threadReducer(live, { type: "prependThreadHistory", threadId: "thread", items: [history], snapshot: live.itemsByThread.thread, recent: true });
+    expect(next.itemsByThread.thread).toHaveLength(1);
+    expect(next.itemsByThread.thread[0]).toMatchObject({ id: "turn-error", isError: true, retryMessage: { text: "Try this" } });
+  });
   it.each([
     ["turn-1", ["other-turn", "other-thread", "other-workspace", "unscoped"]],
     [undefined, ["other-thread", "other-workspace", "unscoped"]],

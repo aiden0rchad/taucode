@@ -105,6 +105,20 @@ Typing `/plan <task>` or `/goal <outcome>` directly works too. Existing advanced
 commands and custom prompts still work; the default menu stays small. Built-in
 suggestions do not appear for slashes in prose or filesystem paths.
 
+## Recovering from a failed request
+
+Code shows failed requests in a compact card, with the original provider error
+under **Error details**. Only the latest failure offers recovery actions:
+**Change model** opens the composer’s model picker; **Retry** resends the failed
+request and its images using the current model, reasoning and access settings.
+Retry preserves any unsent composer draft and existing file changes. It does not
+rewind work already completed by tools. Older failures remain readable without
+replay buttons. Failed turns are restored from history when reopening a conversation,
+without duplicating errors received live. A failed turn no longer shows a “Done” label.
+
+For a provider-free UI check, open the UI preview with `?failure=quota`, send one
+message, then change models and retry. The first send fails; the retry succeeds.
+
 ## Feature switches
 
 Settings → Features defaults every switch on for existing installations. Controls

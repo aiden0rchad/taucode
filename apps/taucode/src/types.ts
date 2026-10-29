@@ -151,6 +151,8 @@ export type ConversationItem =
       role: "user" | "assistant";
       text: string;
       images?: string[];
+      isError?: boolean;
+      retryMessage?: { text: string; images?: string[] } | null;
     })
   | {
       id: string;

@@ -24,8 +24,9 @@ export type ReasoningControlProps = {
   selectedModelId?: string | null;
   defaultModelId?: string | null;
   onSelectModel?: (id: string) => void | boolean | Promise<void | boolean>;
+  modelPickerRequest?: number;
 };
-export function ReasoningControl({ engine, capability, value, onChange, disabled, unavailable, onOpenSettings, modelName = "Model", models = [], selectedModelId, defaultModelId, onSelectModel }: ReasoningControlProps) {
+export function ReasoningControl({ engine, capability, value, onChange, disabled, unavailable, onOpenSettings, modelName = "Model", models = [], selectedModelId, defaultModelId, onSelectModel, modelPickerRequest = 0 }: ReasoningControlProps) {
   const effects = useFeatures().reasoningEffects;
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
@@ -44,6 +45,18 @@ export function ReasoningControl({ engine, capability, value, onChange, disabled
   const [selecting, setSelecting] = useState(false);
   const [modelError, setModelError] = useState("");
   const menu = useMenuController({ closeOnEscape: view === "slider", popoverRef: popover, onDismiss: () => trigger.current?.focus() });
+  const lastModelPickerRequest = useRef(modelPickerRequest);
+  const openMenu = menu.open;
+  useEffect(() => {
+    if (lastModelPickerRequest.current === modelPickerRequest) return;
+    lastModelPickerRequest.current = modelPickerRequest;
+    if (disabled) return;
+    returning.current = false;
+    setOutgoing(null);
+    setView("models");
+    setModelError("");
+    openMenu();
+  }, [modelPickerRequest, disabled, openMenu]);
   useLayoutEffect(() => {
     if (!menu.isOpen || !outgoing) return;
     const surface = popover.current!;

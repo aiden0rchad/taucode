@@ -103,11 +103,12 @@ describe("useThreadMessaging telemetry", () => {
     if (outcome === "image-error") vi.mocked(convertImagesToDataUrls).mockRejectedValueOnce(new Error("Cannot read image"));
     else vi.mocked(sendUserMessageService).mockImplementationOnce(() => new Promise((resolve, reject) => { settle = resolve; fail = reject; }));
     const dispatch = vi.fn();
+    const pushError = vi.fn();
     const { result } = renderHook(() => useThreadMessaging({
       activeWorkspace: workspace, activeThreadId: "thread-1", steerEnabled: false, customPrompts: [],
       threadStatusById: {}, activeTurnIdByThread: {}, pendingInterruptsRef: { current: new Set() }, dispatch,
       getCustomName: () => undefined, markProcessing: vi.fn(), markReviewing: vi.fn(), setActiveTurnId: vi.fn(),
-      recordThreadActivity: vi.fn(), safeMessageActivity: vi.fn(), pushThreadErrorMessage: vi.fn(),
+      recordThreadActivity: vi.fn(), safeMessageActivity: vi.fn(), pushThreadErrorMessage: pushError,
       ensureThreadForActiveWorkspace: async () => "thread-1", ensureThreadForWorkspace: async () => "thread-1",
       refreshThread: async () => null, forkThreadForWorkspace: async () => null, updateThreadParent: vi.fn(),
     }));
@@ -127,7 +128,10 @@ describe("useThreadMessaging telemetry", () => {
       expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "upsertItem", item: expect.objectContaining({ id: optimistic.item.id, images: ["data:image/png;base64,a"] }) }));
     }
     if (outcome === "sent") expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: "removeItem" }));
-    else expect(dispatch).toHaveBeenCalledWith({ type: "removeItem", threadId: "thread-1", itemId: optimistic.item.id });
+    else {
+      expect(dispatch).toHaveBeenCalledWith({ type: "removeItem", threadId: "thread-1", itemId: optimistic.item.id });
+      expect(pushError).toHaveBeenCalledWith("thread-1", expect.any(String), { text: "Before reply", images: ["image.png"] });
+    }
   });
 
   it("records prompt_sent once for one message send", async () => {
@@ -662,6 +666,7 @@ describe("useThreadMessaging telemetry", () => {
     expect(pushThreadErrorMessage).toHaveBeenCalledWith(
       "thread-1",
       "Turn steer failed: steer network failure",
+      undefined,
     );
   });
 

@@ -26,6 +26,7 @@ import {
   WorkingIndicator,
 } from "./MessageRows";
 import { useMessagesViewState } from "./useMessagesViewState";
+import { isTurnError, TurnErrorCard } from "./TurnErrorCard";
 
 type MessagesProps = {
   items: ConversationItem[];
@@ -58,6 +59,8 @@ type MessagesProps = {
   onSideChat?: (itemId: string) => void;
   sideChatDisabledReason?: string;
   onSendToMain?: (text: string) => void;
+  onRetryMessage?: (text: string, images: string[]) => Promise<boolean>;
+  onChangeModel?: () => void;
 };
 
 export const Messages = memo(function Messages({
@@ -85,10 +88,13 @@ export const Messages = memo(function Messages({
   onPlanSubmitChanges,
   onOpenThreadLink,
   onQuoteMessage, onSideChat, sideChatDisabledReason, onSendToMain,
+  onRetryMessage, onChangeModel,
 }: MessagesProps) {
   const features = useFeatures();
   if (!features.sideChats) onSideChat = undefined;
   const lastUserId = [...items].reverse().find((item) => item.kind === "message" && item.role === "user")?.id;
+  const latestItem = items[items.length - 1];
+  const latestFailed = isTurnError(latestItem);
   const checkpointWarnings = useCheckpointWarnings(workspaceId, threadId, lastUserId);
   const activeUserInputRequestId =
     threadId && userInputRequests.length
@@ -169,6 +175,14 @@ export const Messages = memo(function Messages({
 
   const renderItem = (item: ConversationItem) => {
     if (item.kind === "message") {
+      if (isTurnError(item)) {
+        const isLatest = item === latestItem;
+        const user = items.find(candidate => candidate.id === lastUserId);
+        const retryMessage = item.retryMessage !== undefined ? item.retryMessage : /^Turn failed[:.]/.test(item.text) && user?.kind === "message" ? user : null;
+        return <TurnErrorCard key={item.id} message={item.text} disabled={isThinking || isLoadingMessages}
+          onRetry={isLatest && retryMessage && onRetryMessage ? () => onRetryMessage(retryMessage.text, retryMessage.images ?? []) : undefined}
+          onChangeModel={isLatest ? onChangeModel : undefined} />;
+      }
       const isCopied = copiedMessageId === item.id;
       return (
         <MessageRow
@@ -316,7 +330,7 @@ export const Messages = memo(function Messages({
         <WorkingIndicator
           isThinking={isThinking}
           processingStartedAt={processingStartedAt}
-          lastDurationMs={lastDurationMs}
+          lastDurationMs={latestFailed ? null : lastDurationMs}
           hasItems={items.length > 0}
           reasoningLabel={latestReasoningLabel}
           showPollingFetchStatus={showPollingFetchStatus}

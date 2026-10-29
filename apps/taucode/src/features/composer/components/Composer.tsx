@@ -72,6 +72,7 @@ type ComposerProps = {
   selectedModelId: string | null;
   defaultModelId?: string | null;
   onSelectModel: (id: string) => void;
+  modelPickerRequest?: number;
   reasoningOptions: string[];
   selectedEffort: string | null;
   onSelectEffort: (effort: string) => void;
@@ -185,6 +186,7 @@ export const Composer = memo(function Composer({
   models,
   selectedModelId, defaultModelId,
   onSelectModel,
+  modelPickerRequest,
   selectedEffort,
   onSelectEffort,
   selectedServiceTier,
@@ -623,6 +625,7 @@ export const Composer = memo(function Composer({
       <ComposerInput
         toolbar={<ComposerAccessControl value={accessMode === "current" ? "ask" : accessMode} disabled={disabled} onChange={mode => onSelectAccessMode(mode === "ask" ? "current" : mode)} />}
         controls={<ComposerMetaBar
+        modelPickerRequest={modelPickerRequest}
         disabled={disabled}
         engine={engine}
         onSelectEngine={onSelectEngine}

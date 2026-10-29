@@ -60,17 +60,25 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
     if (!warned.has(command)) { warned.add(command); console.warn(`[uiPreview] Unhandled IPC: ${command}`); }
     return /^(list_|get_.*s$)/.test(command) ? [] : null;
   };
+  let failNextSend = query.get("failure") === "quota";
   const send = (thread: PreviewThread | undefined, text: string) => {
     if (!thread) return { result: { turn: { id: "missing", status: "completed" } } };
     const turn = { id: id("turn"), status: "completed" as const, items: [
       userMessage(id("user"), text), assistantMessage(id("assistant"), `Preview response: **${text || "Message received"}**\n\nThis conversation is stored in memory. No provider was contacted.`),
     ] };
     thread.turns.push(turn);
+    const fail = failNextSend;
+    failNextSend = false;
+    if (fail) turn.items.pop();
     thread.updatedAt = Math.floor(Date.now() / 1000);
     // Deliver after the invoke resolves, as the real asynchronous backend does.
     setTimeout(() => {
       publish(thread.workspaceId, "turn/started", { threadId: thread.id, turn: { id: turn.id } });
       for (const item of turn.items) publish(thread.workspaceId, "item/completed", { threadId: thread.id, turnId: turn.id, item });
+      if (fail) {
+        publish(thread.workspaceId, "error", { threadId: thread.id, turnId: turn.id, willRetry: false, error: { message: "Provider requested 1800000ms wait, exceeds retry.maxDelayMs (300000ms). Original error: 429 ChatGPT Account 1 requests are paused to preserve the final 10% of weekly allowance. This prompt was not processed. ChatGPT Account 1 requests are paused to preserve the final 10% of weekly allowance. This prompt was not processed. (type=chatgpt_quota_paused param=429)" } });
+        return;
+      }
       publish(thread.workspaceId, "turn/completed", { threadId: thread.id, turn });
     }, 30);
     return { result: { turn: { id: turn.id, status: "inProgress" } } };

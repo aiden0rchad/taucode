@@ -34,7 +34,7 @@ type UseThreadTurnEventsOptions = {
   setActiveTurnId: (threadId: string, turnId: string | null) => void;
   getActiveTurnId: (threadId: string) => string | null;
   pendingInterruptsRef: MutableRefObject<Set<string>>;
-  pushThreadErrorMessage: (threadId: string, message: string) => void;
+  pushThreadErrorMessage: (threadId: string, message: string, retryMessage?: { text: string; images?: string[] }, id?: string) => void;
   safeMessageActivity: () => void;
   recordThreadActivity: (workspaceId: string, threadId: string, timestamp?: number) => void;
 };
@@ -425,7 +425,7 @@ export function useThreadTurnEvents({
       const message = payload.message
         ? `Turn failed: ${payload.message}`
         : "Turn failed.";
-      pushThreadErrorMessage(threadId, message);
+      pushThreadErrorMessage(threadId, message, undefined, turnId ? `${turnId}-error` : undefined);
       safeMessageActivity();
     },
     [
@@ -434,6 +434,7 @@ export function useThreadTurnEvents({
       markProcessing,
       markReviewing,
       pushThreadErrorMessage,
+      pendingInterruptsRef,
       safeMessageActivity,
       setActiveTurnId,
     ],

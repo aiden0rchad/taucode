@@ -78,7 +78,7 @@ type UseThreadMessagingOptions = {
   ) => void;
   safeMessageActivity: () => void;
   onDebug?: (entry: DebugEntry) => void;
-  pushThreadErrorMessage: (threadId: string, message: string) => void;
+  pushThreadErrorMessage: (threadId: string, message: string, retryMessage?: { text: string; images?: string[] }) => void;
   ensureThreadForActiveWorkspace: () => Promise<string | null>;
   ensureThreadForWorkspace: (workspaceId: string) => Promise<string | null>;
   refreshThread: (workspaceId: string, threadId: string) => Promise<string | null>;
@@ -285,7 +285,7 @@ export function useThreadMessaging({
           if (requestMode !== "steer") {
             markProcessing(threadId, false);
             setActiveTurnId(threadId, null);
-            pushThreadErrorMessage(threadId, `Turn failed to start: ${rpcError}`);
+            pushThreadErrorMessage(threadId, `Turn failed to start: ${rpcError}`, { text: finalText, images });
             safeMessageActivity();
             return { status: "blocked" };
           }
@@ -317,7 +317,7 @@ export function useThreadMessaging({
           removeOptimisticMessage();
           markProcessing(threadId, false);
           setActiveTurnId(threadId, null);
-          pushThreadErrorMessage(threadId, "Turn failed to start.");
+          pushThreadErrorMessage(threadId, "Turn failed to start.", { text: finalText, images });
           safeMessageActivity();
           return { status: "blocked" };
         }
@@ -345,6 +345,7 @@ export function useThreadMessaging({
           requestMode === "steer"
             ? `Turn steer failed: ${errorMessage}`
             : errorMessage,
+          requestMode === "steer" ? undefined : { text: finalText, images },
         );
         safeMessageActivity();
         return { status: requestMode === "steer" ? "steer_failed" : "blocked" };

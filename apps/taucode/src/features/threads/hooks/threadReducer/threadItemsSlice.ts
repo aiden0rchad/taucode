@@ -49,16 +49,17 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
     case "addAssistantMessage": {
       const list = state.itemsByThread[action.threadId] ?? [];
       const message: ConversationItem = {
-        id: `${Date.now()}-assistant`,
+        id: action.id ?? `${Date.now()}-assistant`,
         kind: "message",
         role: "assistant",
         text: action.text,
+        ...(action.isError ? { isError: true, retryMessage: action.retryMessage } : {}),
       };
       return {
         ...state,
         itemsByThread: {
           ...state.itemsByThread,
-          [action.threadId]: prepareThreadItems([...list, message], { maxItemsPerThread }),
+          [action.threadId]: prepareThreadItems(action.id ? upsertItem(list, message) : [...list, message], { maxItemsPerThread }),
         },
       };
     }

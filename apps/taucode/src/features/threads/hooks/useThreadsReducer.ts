@@ -64,7 +64,7 @@ export type ThreadAction =
   | { type: "markReviewing"; threadId: string; isReviewing: boolean }
   | { type: "markUnread"; threadId: string; hasUnread: boolean }
   | { type: "removeItem"; threadId: string; itemId: string }
-  | { type: "addAssistantMessage"; threadId: string; text: string }
+  | { type: "addAssistantMessage"; threadId: string; text: string; id?: string; isError?: boolean; retryMessage?: { text: string; images?: string[] } }
   | { type: "setThreadName"; workspaceId: string; threadId: string; name: string }
   | {
       type: "mergeThreadSummary";

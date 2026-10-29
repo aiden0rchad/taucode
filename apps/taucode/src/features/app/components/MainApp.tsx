@@ -276,6 +276,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     onExpandRightPanel: expandRightPanel,
   };
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [modelPickerRequest, setModelPickerRequest] = useState(0);
   const workspaceHomeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const getWorkspaceName = useCallback(
@@ -1791,6 +1792,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
       ...layoutSurfaces.primary,
       composerProps: layoutSurfaces.primary.composerProps ? {
         ...layoutSurfaces.primary.composerProps,
+        modelPickerRequest,
         onSideChat: features.sideChats && activeThreadId ? () => void sideChats.create() : undefined,
         sideChatDisabledReason: !features.sideChats ? "Enable side chats in Settings to use /sidechat." : sideChats.disabledReason ?? (sideChats.creating ? "Creating side chat…" : null),
       } : null,
@@ -1817,6 +1819,12 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
       } : null,
       messagesProps: {
         ...layoutSurfaces.primary.messagesProps,
+        onChangeModel: layoutSurfaces.primary.composerProps ? () => setModelPickerRequest(request => request + 1) : undefined,
+        onRetryMessage: async (text, images) => {
+          if (!activeWorkspace || !activeThreadId || threadStatusById[activeThreadId]?.isProcessing) return false;
+          const result = await sendUserMessageToThread(activeWorkspace, activeThreadId, text, images, { skipPromptExpansion: true, sendIntent: "default" });
+          return result.status === "sent";
+        },
         onSideChat: features.sideChats ? itemId => void sideChats.create(itemId) : undefined,
         sideChatDisabledReason: sideChats.messageDisabledReason ?? (sideChats.creating ? "Creating side chat…" : undefined),
         hasOlderHistory: Boolean(activeThreadId && historyCursorByThread[activeThreadId]),

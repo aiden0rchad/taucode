@@ -11,6 +11,19 @@ import { createPreviewHandler } from '@/dev/uiPreview/handler';
 import { builtins, resolveTheme } from '@/features/themes/builtins';
 
 const cap: ReasoningCapability = { supported: true, levels: ["low", "high", "max"], default: "low", control: "effort", source: "api", detectedAt: 1 };
+it("opens the model list directly for recovery without changing model or reasoning", () => {
+  const onChange = vi.fn(), onSelectModel = vi.fn();
+  const props = { capability: cap, value: "low", onChange, onSelectModel, models: Array.from({ length: 9 }, (_, i) => ({ id: `sol-${i}`, name: `GPT 6.1 Sol ${i}` })), selectedModelId: "sol-0" };
+  const { rerender } = render(<ReasoningControl {...props} modelPickerRequest={0} />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  rerender(<ReasoningControl {...props} modelPickerRequest={1} />);
+  expect(screen.getByRole("dialog", { name: "Select model" })).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByPlaceholderText("Search models"));
+  expect(onChange).not.toHaveBeenCalled();
+  expect(onSelectModel).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+  expect(screen.getByRole("dialog", { name: "Model and reasoning" })).toBeTruthy();
+});
 beforeEach(() => localStorage.clear());
 afterEach(() => { cleanup(); document.documentElement.removeAttribute("style"); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 it.each(builtins)('keeps Max heat, particles and embers with default preview features in $name', theme => {

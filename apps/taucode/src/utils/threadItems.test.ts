@@ -3,6 +3,7 @@ import type { ConversationItem } from "../types";
 import {
   buildConversationItem,
   buildConversationItemFromThreadItem,
+  buildItemsFromThread,
   getThreadCreatedTimestamp,
   getThreadTimestamp,
   mergeThreadItems,
@@ -12,6 +13,17 @@ import {
 } from "./threadItems";
 
 describe("threadItems", () => {
+  it("restores failed turns with their original error and request, but not interrupted turns", () => {
+    const thread = { turns: [
+      { id: "failed-turn", status: "failed", error: { message: "429 requests are paused" }, items: [{ type: "userMessage", id: "user", content: [{ type: "text", text: "Check this" }, { type: "image", url: "data:image/png;base64,AAA" }] }] },
+      { id: "stopped-turn", status: "interrupted", error: null, items: [] },
+      { id: "compaction", status: "failed", error: "Compaction failed", items: [] },
+    ] };
+    const items = buildItemsFromThread(thread);
+    expect(items).toHaveLength(3);
+    expect(items[1]).toMatchObject({ id: "failed-turn-error", isError: true, text: "Turn failed: 429 requests are paused", retryMessage: { text: "Check this", images: ["data:image/png;base64,AAA"] } });
+    expect(items[2]).toMatchObject({ id: "compaction-error", isError: true, retryMessage: null });
+  });
   it("truncates long message text in normalizeItem", () => {
     const text = "a".repeat(21000);
     const item: ConversationItem = {

@@ -782,6 +782,8 @@ describe("useThreadTurnEvents", () => {
     expect(pushThreadErrorMessage).toHaveBeenCalledWith(
       "thread-1",
       "Turn failed: boom",
+      undefined,
+      "turn-1-error",
     );
     expect(safeMessageActivity).toHaveBeenCalled();
   });
@@ -844,7 +846,7 @@ describe("useThreadTurnEvents", () => {
     expect(markProcessing).toHaveBeenLastCalledWith("thread-1", false);
     expect(markReviewing).toHaveBeenCalledWith("thread-1", false);
     expect(setActiveTurnId).toHaveBeenLastCalledWith("thread-1", null);
-    expect(pushThreadErrorMessage).toHaveBeenCalledWith("thread-1", "Turn failed: boom");
+    expect(pushThreadErrorMessage).toHaveBeenCalledWith("thread-1", "Turn failed: boom", undefined, "turn-new-error");
   });
 
   it("handles errors after reducer active turn changes externally", () => {
@@ -878,7 +880,7 @@ describe("useThreadTurnEvents", () => {
     expect(markReviewing).toHaveBeenCalledWith("thread-1", false);
     expect(setActiveTurnId).toHaveBeenNthCalledWith(1, "thread-1", "turn-local");
     expect(setActiveTurnId).toHaveBeenNthCalledWith(2, "thread-1", null);
-    expect(pushThreadErrorMessage).toHaveBeenCalledWith("thread-1", "Turn failed: boom");
+    expect(pushThreadErrorMessage).toHaveBeenCalledWith("thread-1", "Turn failed: boom", undefined, "turn-resumed-error");
   });
 
   it("ignores turn errors that will retry", () => {
