@@ -570,14 +570,15 @@ impl Work {
         self.initialize(&mut state).await?;
         state.settings = settings.clone();
         let task = state.store.tasks.iter().find(|t| t.id == task_id).ok_or("Unknown task")?;
-        if !task.outputs.iter().any(|p| p == path) { return Err("Unknown task output".into()); }
         if let Some(id) = &task.import_id {
+            if !task.outputs.iter().any(|p| p == path) { return Err("Unknown task output".into()); }
             let root = self.data.canonicalize().map_err(|e| e.to_string())?.join("imports/attachments");
             let folder = root.join(id).canonicalize().map_err(|e| e.to_string())?;
             if !folder.starts_with(&root) { return Err("Output must be inside imported copies".into()); }
             return contained(&folder.to_string_lossy(), path);
         }
-        let space = state.store.spaces.iter().find(|s| s.id == task.space_id).unwrap();
+        // Explicit local file links may refer to inputs or unchanged outputs, too.
+        let space = state.store.spaces.iter().find(|s| s.id == task.space_id).ok_or("This task's space is unavailable")?;
         contained(&space.path, path)
     }
 }
@@ -697,6 +698,9 @@ mod tests {
         let reference = root.join("reference");
         std::fs::create_dir_all(&folder).unwrap();
         std::fs::create_dir_all(&reference).unwrap();
+        std::fs::create_dir(folder.join("outputs")).unwrap();
+        std::fs::write(folder.join("outputs/existing.html"), "Existing dashboard").unwrap();
+        std::fs::write(folder.join("notes.txt"), "Source notes").unwrap();
         let service = Work::new(root.join("data"), Sink::default());
         let settings = AppSettings::default();
         let space = service.request(&settings, "add-space", json!({"path":folder,"readOnlyFolders":[reference]})).await.unwrap();
@@ -721,9 +725,19 @@ mod tests {
         let list = restarted.request(&settings, "list", json!({})).await.unwrap();
         assert_eq!(list["spaces"][0]["readOnlyFolders"][0], json!(reference.canonicalize().unwrap()));
         assert_eq!(list["tasks"][1]["status"], "stopped");
+        for path in ["outputs/existing.html", "notes.txt", attachment.as_str()] {
+            assert_eq!(restarted.output(&settings, "queued", path).await.unwrap(), folder.join(path).canonicalize().unwrap());
+        }
+        assert!(restarted.state.lock().await.store.tasks[0].outputs.is_empty(), "Opening an existing file must not report a task change");
+        for path in ["../reference/brief.pdf", source.to_str().unwrap(), "outputs", "missing.html"] {
+            assert!(restarted.output(&settings, "queued", path).await.is_err(), "{path}");
+        }
+        assert!(restarted.output(&settings, "unknown-task", "notes.txt").await.is_err());
         assert!(restarted.request(&settings, "concurrency", json!({"count":0})).await.is_err());
         assert!(restarted.request(&settings, "create", json!({"spaceId":id,"brief":"x","model":"none","attachments":["../../escape"]})).await.is_err());
         #[cfg(unix)] {
+            std::os::unix::fs::symlink(&source, folder.join("outputs/escape.pdf")).unwrap();
+            assert!(restarted.output(&settings, "queued", "outputs/escape.pdf").await.is_err());
             let outside = root.join("outside");
             std::fs::create_dir(&outside).unwrap();
             std::fs::remove_dir_all(folder.join(".taucode")).unwrap();

@@ -21,8 +21,10 @@ repository in `~/taucode-dogfood/work-notes`.
 - New Work tasks honor the default access mode. Full access permits ordinary local
   shell/file work; read-only, child-agent and protected-path restrictions remain.
 - Stop cancels pending Pi questions/approvals before waiting for the abort response.
-- Work tool rows use concise descriptions, output links open registered files, and
-  the initial task brief is no longer rendered twice.
+- Work tool rows use concise descriptions and the initial task brief is no longer
+  rendered twice. Local file links open inputs and unchanged outputs inside the
+  task's space without listing them as changed outputs. Imported histories still
+  open only registered copies; traversal and symlink escapes remain blocked.
 - Native browser placement belongs to its mounted tab. Stale bounds cannot float a
   newly created page over another panel. Bounds include the main WebKit page zoom;
   Chat and Work now install the same zoom shortcuts as Code.
@@ -45,6 +47,10 @@ repository in `~/taucode-dogfood/work-notes`.
   and removed its temporary preview server/log. All seven baseline files and an
   unsent composer draft were preserved. Error details expanded/collapsed correctly;
   the review task's plan showed bold text without literal Markdown markers.
+- After rebuilding, that task's `Open action-dashboard.html` link opened the
+  existing dashboard in Safari without "Unknown task output". Its Outputs count
+  stayed at zero because validation did not change files. Account 2/Low and Full
+  access remained selected after relaunch.
 - Account 2 created `outputs/review-pack-20261029.html` and its checks document from
   the existing CSV and brief. A follow-up added Reset filter, completed the plan,
   and cleaned up its temporary loopback server. Independent Safari checks confirmed
@@ -74,6 +80,8 @@ repository in `~/taucode-dogfood/work-notes`.
   The unrestricted parallel run hit three theme/settings timing failures;
   the reduced-worker full run passed without changing those tests.
 - Rust: browser 34, Pi 39 (one ignored), Work 7, providers 11 tests passed.
+  Work's file-opening regression covers existing inputs/outputs, persistence,
+  traversal, outside absolute paths, symlink escapes, missing files and folders.
 - Pi runtime/policy: 13 tests passed.
 - Changed-file ESLint: no errors; the earlier broad run reported one existing
   effect-cleanup warning in `useSidePanelState.ts`.
@@ -104,8 +112,6 @@ No account enrollment or payment was performed.
 - Set up and verify Apple-issued signing across rebuilds.
 - Give agent-started preview servers visible lifecycle controls and cleanup.
 - Shorten long prompt-derived task titles.
-- Work links to unchanged, existing files fail with "Unknown task output" when the
-  selected task has not created or modified that file.
 - Investigate an earlier process exit when evaluation attempted to create an empty
   native tab. The new no-open-page guard avoids that invalid call; the underlying
   WebKit creation failure was not conclusively diagnosed.
