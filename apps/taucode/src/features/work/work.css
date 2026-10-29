@@ -50,6 +50,10 @@
 .work-plan { padding: 0; list-style: none; }
 .work-plan li { display: flex; align-items: start; gap: 9px; margin-bottom: 14px; font-size: 12px; line-height: 1.6; }
 .work-plan input { flex-shrink: 0; margin-top: 3px; }
+.work-plan [role="checkbox"] { flex-shrink: 0; }
+.work-plan li > div { min-width: 0; }
+.work-plan .markdown { font-size: inherit; line-height: inherit; }
+.work-plan .markdown p { margin: 0; }
 .work-output { margin: 18px 0; }
 .work-output strong { display: block; overflow-wrap: anywhere; font-size: 12px; font-weight: 500; margin-bottom: 8px; }
 .work-output button { font-size: 11px; padding: 5px 7px; }

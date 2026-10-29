@@ -25,6 +25,7 @@ import type { AppSettings, WorkRequest, WorkTask } from "@/types";
 import { checkpointRequest, pickWorkspacePath, pickWorkspacePaths, pickWorkAttachments, workAttachment, workOutput, workRequest } from "@services/tauri";
 import { subscribeWindowDragDrop } from "@services/dragDrop";
 import { Markdown } from "@/features/messages/components/Markdown";
+import { isTurnError, TurnErrorCard } from "@/features/messages/components/TurnErrorCard";
 import { Checkpoints, RewindAction } from "@/features/checkpoints/Checkpoints";
 import { ModeSwitcher } from "@/features/chat/ModeShell";
 import { templates, useWork, workGroups } from "./useWork";
@@ -77,6 +78,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [followAccess, setFollowAccess] = useState<WorkTask["accessMode"]>("ask");
   const [followSelections, setFollowSelections] = useState<Record<string, { model: string; effort: string | null }>>({});
+  const [modelPickerRequest, setModelPickerRequest] = useState(0);
 
   const [folder, setFolder] = useState("");
   const [readOnlyFolders, setReadOnlyFolders] = useState<string[]>([]);
@@ -101,7 +103,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   useEffect(() => subscribeWindowDragDrop(event => { setDragOver(event.payload.type === "enter" || event.payload.type === "over"); if (event.payload.type === "drop") nativeDrop.current(event.payload.paths ?? []); }), []);
   const run = async (operation: () => Promise<unknown>) => {
     setBusy(true); work.setError("");
-    try { await operation(); } catch (error) { work.setError(String(error)); } finally { setBusy(false); }
+    try { await operation(); return true; } catch (error) { work.setError(String(error)); return false; } finally { setBusy(false); }
   };
   const attach = (paths: string[]) => run(async () => {
     if (!selectedSpace) throw new Error("Choose a space first.");
@@ -116,15 +118,16 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     const created = await work.mutate<WorkTask>("create", { spaceId: selectedSpace, brief, model, accessMode: access, attachments, runNow, effort: reasoning.level });
     work.setActive(created.id); setBrief(""); setAttachments([]); if (window.innerWidth < 760) setSidebarCollapsed(true);
   });
-  const sendFollowUp = () => {
-    if (!task || followBlocked || !followUp.trim()) return;
+  const continueTask = async (message: string, clearDraft: boolean) => {
+    if (!task || followBlocked || !message.trim()) return false;
     const id = task.id;
-    void run(async () => {
-      await work.mutate("follow-up", { taskId: id, message: followUp, accessMode: followAccess, ...(!active ? { model: followModel, effort: followEffort } : {}) });
-      setDrafts(current => { const next = { ...current }; delete next[id]; return next; });
+    return run(async () => {
+      await work.mutate("follow-up", { taskId: id, message, accessMode: followAccess, ...(!active ? { model: followModel, effort: followEffort } : {}) });
+      if (clearDraft) setDrafts(current => { const next = { ...current }; delete next[id]; return next; });
       setFollowSelections(current => { const next = { ...current }; delete next[id]; return next; });
     });
   };
+  const sendFollowUp = () => { void continueTask(followUp, true); };
   const selectTask = (id: string) => { work.setActive(id); setSpaceId(""); if (window.innerWidth < 760) setSidebarCollapsed(true); };
   const jumpToInput = () => {
     const entry = needs[(needs.findIndex(t => t.id === lastInputTask.current) + 1) % needs.length];
@@ -164,6 +167,21 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     if (!task || index !== initialPrompt || item.kind !== "message") return true;
     return item.text !== task.brief && (Boolean(task.importId) || !item.text.startsWith(`${task.brief}\n\nAttached files (inside this space):\n`));
   });
+  const lastItem = work.items[work.items.length - 1];
+  const lastError = lastItem?.kind === "message" && isTurnError(lastItem) ? lastItem : undefined;
+  const errorMessage = task?.error || (task?.status === "failed" ? lastError?.text : undefined);
+  const originalError = lastError?.text.replace(/^Turn failed(?: to start)?[:.]\s*/, "").trim();
+  const duplicateError = lastError && (errorMessage === lastError.text || errorMessage === originalError || (originalError && errorMessage?.startsWith(`${originalError}\n`))) ? lastError : undefined;
+  const lastUser = [...work.items].reverse().find(item => item.kind === "message" && item.role === "user");
+  const historyRequest = duplicateError?.retryMessage !== undefined ? duplicateError.retryMessage?.text
+    : (!lastError || (duplicateError && /^Turn failed[:.]/.test(duplicateError.text))) && lastUser?.kind === "message" ? lastUser.text : undefined;
+  const requestText = task?.pendingMessage ?? historyRequest;
+  const contextFolders = work.state.spaces.find(space => space.id === task?.spaceId)?.readOnlyFolders ?? [];
+  // Work appends this context on every turn; keep retries from appending it twice.
+  const contextSuffix = (task?.attachments.length ? `\n\nAttached files (inside this space):\n${task.attachments.join("\n")}` : "")
+    + (contextFolders.length ? `\n\nRead-only folders:\n${contextFolders.join("\n")}` : "");
+  const retryText = contextSuffix && requestText?.endsWith(contextSuffix) ? requestText.slice(0, -contextSuffix.length) : requestText;
+  const canRecover = task?.status === "failed" && Boolean(task.threadId) && !task.importId;
   const fileLinks = {
     workspacePath: work.state.spaces.find(space => space.id === task?.spaceId)?.path,
     onOpenFileLink: ({ path }: ParsedFileLocation) => {
@@ -175,7 +193,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   };
   const taskMarkdown = task ? `# ${task.title}\n\n${task.brief}\n\n${buildThreadTranscript(items)}` : "";
   const taskPanel = task ? (<aside className="work-inspector" aria-label="Task details">
-          <section aria-label="Plan"><h2>Plan</h2>{task.plan.length ? <><progress className="plan-progress" aria-label="Plan completion" max={task.plan.length} value={task.plan.filter(step => step.status === "completed").length} /><ul className="work-plan">{task.plan.map((step, index) => <li key={index}><span role="checkbox" aria-label={step.step} aria-checked={step.status === "completed"}>{step.status === "completed" ? <CheckCircle2 aria-hidden /> : <Circle aria-hidden />}</span><span>{step.step}</span></li>)}</ul></> : <p className="chat-muted">The task’s checklist will appear here.</p>}</section>
+          <section aria-label="Plan"><h2>Plan</h2>{task.plan.length ? <><progress className="plan-progress" aria-label="Plan completion" max={task.plan.length} value={task.plan.filter(step => step.status === "completed").length} /><ul className="work-plan">{task.plan.map((step, index) => <li key={index}><span role="checkbox" aria-labelledby={`work-plan-${index}`} aria-readonly="true" aria-checked={step.status === "completed"}>{step.status === "completed" ? <CheckCircle2 aria-hidden /> : <Circle aria-hidden />}</span><div id={`work-plan-${index}`}><Markdown {...fileLinks} value={step.step} className="markdown" showFilePath={false} /></div></li>)}</ul></> : <p className="chat-muted">The task’s checklist will appear here.</p>}</section>
           <section aria-label="Outputs"><h2>Outputs <small>{task.outputs.length}</small></h2>{!task.outputs.length && <p className="chat-muted">Created and modified files will appear here.</p>}
             {task.outputs.map(path => <div className="work-output" key={path}><img className="file-type-icon" src={getFileTypeIconUrl(path)} alt="" /><strong title={path}>{path.split("/").pop()}</strong><div className="work-actions">{(["open", "reveal", ...(/\.(png|jpe?g|gif|webp|pdf)$/i.test(path) ? ["preview"] : [])] as const).map(action => <IconButton className="ghost" key={action} aria-label={action === "open" ? "Open" : action === "reveal" ? "Reveal in Finder" : "Quick Look"} title={action === "open" ? "Open" : action === "reveal" ? "Reveal in Finder" : "Quick Look"} disabled={busy} onClick={() => { void run(() => workOutput(task.id, path, action as "open" | "reveal" | "preview")); }}>{action === "open" ? <ExternalLink aria-hidden /> : action === "reveal" ? <FolderOpen aria-hidden /> : <Eye aria-hidden />}</IconButton>)}</div></div>)}
           </section>
@@ -217,8 +235,13 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
         <div className="chat-scroll" role="log" aria-label="Task progress" aria-live="polite"><div className="chat-column">
           <article className="message chat-message user"><h2>Task brief</h2><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={task.brief} showFilePath={false} /><ul>{task.attachments.map(path => <li key={path}>{path}</li>)}</ul></article>
           {task.pending.map(request => <InputRequest key={request.id} request={request} busy={busy} respond={answer => { void run(() => work.mutate("respond", { taskId: task.id, requestId: request.id, answer })); }} />)}
-          {task.error && <p role="alert">{task.error}</p>}
-          {items.map(item => { const description = item.kind === "tool" ? describeTool(item) : null; return item.kind === "message" ? <article className={"message chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.text} showFilePath={false} /><div className="message-hover-actions"><IconButton className="ghost" title="Copy message" aria-label="Copy message" onClick={() => { void navigator.clipboard.writeText(item.text).catch(() => work.setError("Could not copy message.")); }}><Copy aria-hidden /></IconButton></div></article> : item.kind === "tool" ? <details className={`work-tool${/fail|error/i.test(item.status ?? "") ? " is-error" : ""}`} key={item.id}><summary>{createElement(/fail|error/i.test(item.status ?? "") ? CircleAlert : item.status === "inProgress" ? LoaderCircle : workToolIcons[item.toolType] ?? Search, { "aria-hidden": true, className: item.status === "inProgress" ? "tool-spinner" : undefined })}<span className="work-tool-label" title={item.title}>{description?.verb}{description?.target ? ` ${description.target}` : ""}</span>{/fail|error/i.test(item.status ?? "") && <span>Failed</span>}<ChevronDown aria-hidden /></summary><pre>{item.detail}</pre>{item.output && <Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.content || item.summary} showFilePath={false} /></details> : null; })}
+          {items.map(item => {
+            if (item === duplicateError) return null;
+            if (item.kind === "message" && isTurnError(item)) return <TurnErrorCard key={item.id} message={item.text} />;
+            const description = item.kind === "tool" ? describeTool(item) : null; return item.kind === "message" ? <article className={"message chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.text} showFilePath={false} /><div className="message-hover-actions"><IconButton className="ghost" title="Copy message" aria-label="Copy message" onClick={() => { void navigator.clipboard.writeText(item.text).catch(() => work.setError("Could not copy message.")); }}><Copy aria-hidden /></IconButton></div></article> : item.kind === "tool" ? <details className={`work-tool${/fail|error/i.test(item.status ?? "") ? " is-error" : ""}`} key={item.id}><summary>{createElement(/fail|error/i.test(item.status ?? "") ? CircleAlert : item.status === "inProgress" ? LoaderCircle : workToolIcons[item.toolType] ?? Search, { "aria-hidden": true, className: item.status === "inProgress" ? "tool-spinner" : undefined })}<span className="work-tool-label" title={item.title}>{description?.verb}{description?.target ? ` ${description.target}` : ""}</span>{/fail|error/i.test(item.status ?? "") && <span>Failed</span>}<ChevronDown aria-hidden /></summary><pre>{item.detail}</pre>{item.output && <Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.content || item.summary} showFilePath={false} /></details> : null; })}
+          {errorMessage && <TurnErrorCard key={task.id} message={errorMessage} disabled={followBlocked}
+            onRetry={canRecover && retryText ? () => continueTask(retryText, false) : undefined}
+            onChangeModel={canRecover ? () => setModelPickerRequest(current => current + 1) : undefined} />}
           {task.status === "queued" && <p className="chat-muted">Waiting for an available slot. One task runs in each space at a time.</p>}
           {task.status === "starting" && <p role="status" className="chat-muted">Starting the model. If macOS requests Keychain access, respond to its prompt. You can stop this launch and keep your message.</p>}
           {task.status === "stopping" && <p role="status" className="chat-muted">Stopping the launch… Your message is kept for retry.</p>}
@@ -240,6 +263,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
               modelName: formatModelRef(settings, followModel).name,
               models: models.map(m => ({ id: m.key, name: m.displayName || m.id, provider: m.provider })),
               selectedModelId: followModel, defaultModelId: policyModel,
+              modelPickerRequest,
               onSelectModel: next => setFollowSelections(current => ({ ...current, [task.id]: { model: next, effort: clampReasoning(models.find(m => m.key === next)?.reasoning, followEffort) } })),
               capability: followCapability, value: followEffort,
               onChange: effort => setFollowSelections(current => ({ ...current, [task.id]: { model: followModel, effort } })),

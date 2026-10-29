@@ -23,6 +23,11 @@ let state: WorkState;
 function task(id: string, status: WorkTask["status"]): WorkTask {
   return { id, spaceId: "space", threadId: id, title: id, brief: "Make a brief", attachments: [], model: "local/test", accessMode: "ask", status, plan: [], outputs: [], pending: [], error: null };
 }
+function readHistory(turns: Record<string, unknown>[]) {
+  const request = vi.mocked(workRequest).getMockImplementation()!;
+  vi.mocked(workRequest).mockImplementation((action, params) => action === "read"
+    ? Promise.resolve({ result: { thread: { turns } } }) : request(action, params));
+}
 beforeEach(() => {
   localStorage.clear();
   Element.prototype.scrollIntoView = vi.fn();
@@ -42,6 +47,79 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Work mode", () => {
+  it("shows one compact error and retries the failed request with a new model while preserving the draft", async () => {
+    const error = 'API error (429): {"type":"chatgpt_quota_paused"}';
+    state.spaces[0].readOnlyFolders = ["/reference"];
+    state.tasks = [{ ...task("Report", "failed"), error, attachments: ["notes.txt"] }];
+    const configured = { ...settings, providers: [...settings.providers!, { ...settings.providers![0], id: "backup", name: "Backup", models: [{ id: "alternate", displayName: "Alternate", enabled: true }] }] };
+    readHistory([
+      { id: "first", items: [{ id: "original", type: "userMessage", content: [{ type: "text", text: "Make a brief" }] }] },
+      { id: "failed", status: "failed", error: { message: error }, items: [{ id: "follow", type: "userMessage", content: [{ type: "text", text: "Check the output\n\nAttached files (inside this space):\nnotes.txt\n\nRead-only folders:\n/reference" }] }] },
+    ]);
+    render(<WorkView settings={configured} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    await screen.findByRole("button", { name: "Retry" });
+    const card = screen.getByRole("region", { name: "Account usage limit reached" });
+    expect(card.querySelector("details")).toHaveProperty("open", false);
+    expect(screen.getAllByText(error, { exact: true })).toHaveLength(1);
+    expect(screen.queryByText(`Turn failed: ${error}`)).toBeNull();
+    const draft = screen.getByRole("textbox", { name: "Message task" });
+    fireEvent.change(draft, { target: { value: "Keep this unsent note" } });
+    fireEvent.click(within(card).getByRole("button", { name: "Change model" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Alternate" }));
+    await screen.findByRole("button", { name: "Alternate · ?" });
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    fireEvent.click(within(card).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("follow-up", { taskId: "Report", message: "Check the output", accessMode: "ask", model: "backup/alternate", effort: null }));
+    expect(draft).toHaveProperty("value", "Keep this unsent note");
+    expect(workRequest).not.toHaveBeenCalledWith("create", expect.anything());
+  });
+  it("retries a startup failure's pending message instead of an older failed turn", async () => {
+    state.tasks = [{ ...task("Report", "failed"), error: "Connection failed", pendingMessage: "The new request" }];
+    readHistory([{ id: "old", status: "failed", error: { message: "Old error" }, items: [{ id: "old-user", type: "userMessage", content: [{ type: "text", text: "The old request" }] }] }]);
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    await screen.findByText("Turn failed: Old error");
+    expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("follow-up", expect.objectContaining({ message: "The new request" })));
+  });
+  it("does not retry an older request when the failed turn had no user message", async () => {
+    state.tasks = [{ ...task("Report", "failed"), error: "Compaction failed" }];
+    readHistory([
+      { id: "old", items: [{ id: "old-user", type: "userMessage", content: [{ type: "text", text: "An unrelated request" }] }] },
+      { id: "compact", status: "failed", error: { message: "Compaction failed" }, items: [] },
+    ]);
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    await screen.findByText("An unrelated request");
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getAllByRole("region", { name: "Request couldn’t complete" })).toHaveLength(1);
+  });
+  it("keeps the request and unsent draft available after a retry is rejected", async () => {
+    state.tasks = [{ ...task("Report", "failed"), error: "Connection failed", pendingMessage: "Retry this request" }];
+    const request = vi.mocked(workRequest).getMockImplementation()!;
+    vi.mocked(workRequest).mockImplementation((action, params) => action === "follow-up" ? Promise.reject(new Error("No available slot")) : request(action, params));
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Message task" }), { target: { value: "Unsent draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("Couldn’t restart the request. Your message is still available.");
+    expect(screen.getByRole("textbox", { name: "Message task" })).toHaveProperty("value", "Unsent draft");
+    expect(state.tasks[0].pendingMessage).toBe("Retry this request");
+  });
+  it("renders plan formatting and accessible step names without Markdown markers", async () => {
+    state.tasks = [{ ...task("Report", "done"), plan: [{ step: "Verify **filters** and `count`.", status: "completed" }] }];
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    const step = await screen.findByRole("checkbox", { name: "Verify filters and count." });
+    expect(step.getAttribute("aria-checked")).toBe("true");
+    expect(step.getAttribute("aria-readonly")).toBe("true");
+    const plan = screen.getByRole("region", { name: "Plan" });
+    expect(within(plan).getByText("filters").tagName).toBe("STRONG");
+    expect(within(plan).getByText("count").tagName).toBe("CODE");
+    expect(plan.textContent).not.toContain("**");
+  });
   it("keeps a starting task cancellable and preserves its pending message", async () => {
     state.tasks = [{ ...task("Starting report", "starting"), pendingMessage: "Check the report" }];
     render(<WorkView settings={settings} />);

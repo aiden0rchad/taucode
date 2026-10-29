@@ -14,6 +14,10 @@ repository in `~/taucode-dogfood/work-notes`.
   Selections stay with each task's draft and persist when the follow-up is accepted.
   The backend validates enabled registry models and supported reasoning levels;
   running tasks accept steering but reject model/reasoning changes mid-turn.
+- Work failures use a single compact recovery card with expandable original details.
+  Retry resends the failed request using the current model and keeps unsent drafts;
+  failed turns without a user request cannot replay an unrelated older message.
+- Plan steps render Markdown formatting with readable accessibility labels.
 - New Work tasks honor the default access mode. Full access permits ordinary local
   shell/file work; read-only, child-agent and protected-path restrictions remain.
 - Stop cancels pending Pi questions/approvals before waiting for the abort response.
@@ -36,6 +40,11 @@ repository in `~/taucode-dogfood/work-notes`.
 - A failed Work task switched from the original Sol account to Account 2/Low and
   returned `WORK_ACCOUNT2_RECOVERY_OK` in the same conversation. Its model,
   reasoning, Full access and response survived relaunch.
+- The quota-failed dashboard task recovered through the native Retry button after
+  selecting Account 2/Low. It validated the existing dashboard, completed its plan,
+  and removed its temporary preview server/log. All seven baseline files and an
+  unsent composer draft were preserved. Error details expanded/collapsed correctly;
+  the review task's plan showed bold text without literal Markdown markers.
 - Account 2 created `outputs/review-pack-20261029.html` and its checks document from
   the existing CSV and brief. A follow-up added Reset filter, completed the plan,
   and cleaned up its temporary loopback server. Independent Safari checks confirmed
@@ -61,7 +70,7 @@ repository in `~/taucode-dogfood/work-notes`.
 ## Verification
 
 - TypeScript typecheck and `cargo check`: passed.
-- Frontend: 225 files / 1,782 tests passed with `vitest run --maxWorkers=2`.
+- Frontend: 225 files / 1,787 tests passed with `vitest run --maxWorkers=2`.
   The unrestricted parallel run hit three theme/settings timing failures;
   the reduced-worker full run passed without changing those tests.
 - Rust: browser 34, Pi 39 (one ignored), Work 7, providers 11 tests passed.
@@ -94,11 +103,9 @@ No account enrollment or payment was performed.
 
 - Set up and verify Apple-issued signing across rebuilds.
 - Give agent-started preview servers visible lifecycle controls and cleanup.
-- Replace long prompt-derived task titles and raw provider error payloads with
-  concise, actionable UI. Work still duplicates a failed turn's raw error even
-  though Code now uses compact recovery cards.
-- Render formatting in Work plan steps: bold Markdown currently appears literally
-  in the inspector after a model includes it in its checklist.
+- Shorten long prompt-derived task titles.
+- Work links to unchanged, existing files fail with "Unknown task output" when the
+  selected task has not created or modified that file.
 - Investigate an earlier process exit when evaluation attempted to create an empty
   native tab. The new no-open-page guard avoids that invalid call; the underlying
   WebKit creation failure was not conclusively diagnosed.
