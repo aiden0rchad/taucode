@@ -37,6 +37,7 @@ beforeEach(() => {
     if (action === "create") { const created = { ...task("new-task", "queued"), ...params, threadId: null } as WorkTask; state.tasks.push(created); return created; }
     if (action === "read") return { result: { thread: { id: params?.taskId, turns: [] } } };
     if (action === "respond") { state.tasks[0].status = "running"; state.tasks[0].pending = []; }
+    if (action === "rename") state.tasks.find(t => t.id === params?.taskId)!.title = String(params?.title).trim();
     if (action === "stop-all") state.tasks.forEach(t => { t.status = "stopped"; });
     return {};
   });
@@ -47,6 +48,66 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Work mode", () => {
+  it("renames a sidebar task without navigating away or losing an unsent draft", async () => {
+    state.tasks = [task("Report", "done"), { ...task("Queued", "queued"), threadId: null }];
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    const draft = screen.getByRole("textbox", { name: "Message task" });
+    fireEvent.change(draft, { target: { value: "Keep this draft" } });
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Queued" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const dialog = screen.getByRole("dialog", { name: "Rename task" });
+    const input = within(dialog).getByRole("textbox", { name: "New name" });
+    expect(input).toBe(document.activeElement);
+    expect(input).toHaveProperty("selectionEnd", "Queued".length);
+    fireEvent.change(input, { target: { value: "Dashboard review" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await screen.findByRole("button", { name: "Dashboard review" });
+    expect(workRequest).toHaveBeenCalledWith("rename", { taskId: "Queued", title: "Dashboard review" });
+    expect(screen.queryByRole("dialog", { name: "Rename task" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Report" }).getAttribute("aria-current")).toBe("page");
+    expect(draft).toHaveProperty("value", "Keep this draft");
+    expect(workRequest).not.toHaveBeenCalledWith("create", expect.anything());
+    expect(workRequest).not.toHaveBeenCalledWith("follow-up", expect.anything());
+  });
+  it("keeps failed renames editable and updates the selected task through the header menu", async () => {
+    state.tasks = [task("Report", "done")];
+    const request = vi.mocked(workRequest).getMockImplementation()!;
+    let rejectRename = true;
+    vi.mocked(workRequest).mockImplementation((action, params) => action === "rename" && rejectRename ? Promise.reject("Could not save task name") : request(action, params));
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actions for thread" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const input = screen.getByRole("textbox", { name: "New name" });
+    fireEvent.change(input, { target: { value: "Weekly review" } });
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    const error = await screen.findByRole("alert");
+    expect(error.textContent).toBe("Could not save task name");
+    expect(error.closest('[role="dialog"]')).not.toBeNull();
+    expect(input).toHaveProperty("value", "Weekly review");
+    rejectRename = false;
+    fireEvent.keyDown(input, { key: "Enter" });
+    await screen.findByRole("button", { name: "Weekly review" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Rename task" })).toBeNull());
+    expect(screen.getByRole("button", { name: "Weekly review" }).getAttribute("aria-current")).toBe("page");
+    expect(state.tasks[0].brief).toBe("Make a brief");
+  });
+  it("cancels renaming with Escape and keeps imported names read-only", async () => {
+    state.tasks = [task("Report", "done"), { ...task("Imported", "done"), importId: "copy" }];
+    render(<WorkView settings={settings} />);
+    fireEvent.contextMenu(await screen.findByRole("button", { name: "Report" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "New name" }), { target: { value: "Discard this" } });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "New name" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(workRequest).not.toHaveBeenCalledWith("rename", expect.anything());
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Imported" }));
+    expect(screen.queryByRole("menuitem", { name: "Rename" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open task" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actions for thread" }));
+    expect(screen.queryByRole("menuitem", { name: "Rename" })).toBeNull();
+  });
   it("shows one compact error and retries the failed request with a new model while preserving the draft", async () => {
     const error = 'API error (429): {"type":"chatgpt_quota_paused"}';
     state.spaces[0].readOnlyFolders = ["/reference"];

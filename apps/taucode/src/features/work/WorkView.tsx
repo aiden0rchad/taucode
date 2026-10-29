@@ -35,6 +35,7 @@ import Plus from "lucide-react/dist/esm/icons/plus";
 import { WorkspaceShell } from "@/features/panels/SidePanel";
 import { SidebarBottomRail } from "@app/components/SidebarBottomRail";
 import { RowMenu } from "@/features/chat/RowMenu";
+import { RenameThreadPrompt } from "@threads/components/RenameThreadPrompt";
 
 const templateIcons = { "Organize a folder": FolderTree, "Research brief": FileSearch, "Spreadsheet from documents": Table, "Slide deck from notes": Presentation, "Clean up downloads": Trash2 };
 const workToolIcons: Record<string, typeof Terminal> = { commandExecution: Terminal, fileChange: FilePenLine, webSearch: Globe, collabToolCall: Bot, subAgentActivity: Bot, plan: ListChecks };
@@ -74,6 +75,8 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [model, setModel] = useState(models.find(m => m.key === policyModel)?.key ?? models[0]?.key ?? "");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [rename, setRename] = useState<{ id: string; title: string } | null>(null);
+  const [taskName, setTaskName] = useState("");
   const [dictating, setDictating] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [followAccess, setFollowAccess] = useState<WorkTask["accessMode"]>("ask");
@@ -104,6 +107,11 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const run = async (operation: () => Promise<unknown>) => {
     setBusy(true); work.setError("");
     try { await operation(); return true; } catch (error) { work.setError(String(error)); return false; } finally { setBusy(false); }
+  };
+  const openRename = (entry: WorkTask) => {
+    work.setError("");
+    setTaskName(entry.title);
+    setRename({ id: entry.id, title: entry.title });
   };
   const attach = (paths: string[]) => run(async () => {
     if (!selectedSpace) throw new Error("Choose a space first.");
@@ -156,6 +164,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     return <RowMenu key={entry.id} label={entry.title} actions={[
     { label: "Open task", onClick: () => selectTask(entry.id) },
     ...(["starting", "running", "needs-input", "queued"].includes(entry.status) ? [{ label: "Stop task", disabled: busy, onClick: () => { void run(() => work.mutate("stop", { taskId: entry.id })); } }] : []),
+    ...(!entry.importId ? [{ label: "Rename", disabled: busy, onClick: () => openRename(entry) }] : []),
   ]}><button className={`thread-row work-task-row is-nested${work.active === entry.id ? " active" : ""}`} data-task-id={entry.id} data-depth={1} title={title} aria-label={entry.title} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}><span className={`thread-status work-status-${entry.status}`} aria-label={status} /><span className="thread-name">{entry.title}</span>{(attention || timestamp != null) && <span className={`thread-time${attention ? ` work-attention-${entry.status}` : ""}`}>{attention ? status : formatRelativeTimeShort(timestamp! * 1000)}</span>}</button></RowMenu>;
   };
   const checkpoints = useCallback<typeof checkpointRequest>((_space, params) => {
@@ -204,7 +213,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           {task.threadId && !task.importId && <RewindAction workspaceId={task.spaceId} threadId={task.threadId} running={active} />}
         </div>}
         {work.state.tasks.some(t => ["starting", "running", "needs-input"].includes(t.status)) && <IconButton className="ghost main-header-action" aria-label="Stop all tasks" title="Stop all tasks" disabled={busy} onClick={() => { void run(() => work.mutate("stop-all")); }}><Square size={14} aria-hidden /></IconButton>}
-      </>} reservedShortcuts={Object.entries(settings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`work:${work.active ?? "new"}`} title={task?.title || "New task"} actions={task ? [{ label: "Copy", onClick: () => { void run(() => navigator.clipboard.writeText(taskMarkdown)); } }, { label: "Export", onClick: () => { void run(() => exportMarkdownFile(taskMarkdown, "task.md", "Export task")); } }] : []} onNavigate={scope => work.setActive(scope.slice(5) === "new" ? null : scope.slice(5))} tools={task ? [{ id: "task", label: "Task", content: taskPanel }, { id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={task.spaceId} /> }] : selectedSpace ? [{ id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={selectedSpace} /> }] : []} searchUrl={settings.browser?.searchUrl} onInterrupt={() => work.active ? workRequest("stop", { taskId: work.active }).then(() => {}) : undefined}><div className={"chat-layout work-layout" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
+      </>} reservedShortcuts={Object.entries(settings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`work:${work.active ?? "new"}`} title={task?.title || "New task"} actions={task ? [...(!task.importId ? [{ label: "Rename", disabled: busy, onClick: () => openRename(task) }] : []), { label: "Copy", onClick: () => { void run(() => navigator.clipboard.writeText(taskMarkdown)); } }, { label: "Export", onClick: () => { void run(() => exportMarkdownFile(taskMarkdown, "task.md", "Export task")); } }] : []} onNavigate={scope => work.setActive(scope.slice(5) === "new" ? null : scope.slice(5))} tools={task ? [{ id: "task", label: "Task", content: taskPanel }, { id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={task.spaceId} /> }] : selectedSpace ? [{ id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={selectedSpace} /> }] : []} searchUrl={settings.browser?.searchUrl} onInterrupt={() => work.active ? workRequest("stop", { taskId: work.active }).then(() => {}) : undefined}><div className={"chat-layout work-layout" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
     <SidebarResizeHandle />
     <aside className="sidebar chat-sidebar" aria-label="Spaces and tasks">
       <ModeSwitcher />
@@ -224,7 +233,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     </aside>
     <main className={`chat-main${task ? "" : " is-empty"}`}>
 
-      {work.error && <p role="alert" className="work-error">{work.error}</p>}
+      {work.error && !rename && <p role="alert" className="work-error">{work.error}</p>}
       {folder && <section className="work-add-space" aria-label="New space"><h2>New space</h2><p>{folder}</p><p className="chat-muted">This is the folder where tasks can create files. Add other folders for reading only.</p>
         {readOnlyFolders.map(path => <p key={path}>{path}<button onClick={() => setReadOnlyFolders(current => current.filter(p => p !== path))}>Remove</button></p>)}
         <div className="work-actions"><button disabled={busy} onClick={() => { void run(async () => { const paths = await pickWorkspacePaths(); setReadOnlyFolders(current => [...new Set([...current, ...paths])]); }); }}>Add read-only folders…</button>
@@ -293,6 +302,10 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       </div></div>}
     </main>
     {features.checkpoints && <Checkpoints requestCheckpoint={checkpoints} running={Object.fromEntries(work.state.tasks.filter(t => t.threadId).map(t => [t.threadId!, { isProcessing: ["starting","stopping","running","needs-input"].includes(t.status) }]))} onChanged={async (_space, thread) => { const task = tasksRef.current.find(t => t.threadId === thread); if (task) await work.read(task); await work.refresh(); }} />}
+    {rename && <RenameThreadPrompt title="Rename task" currentName={rename.title} name={taskName} onChange={setTaskName} maxLength={200} busy={busy} error={work.error} onCancel={() => { if (!busy) { setRename(null); work.setError(""); } }} onConfirm={() => {
+      if (busy || !taskName.trim()) return;
+      void run(() => work.mutate("rename", { taskId: rename.id, title: taskName })).then(success => { if (success) setRename(null); });
+    }} />}
   </div></WorkspaceShell>;
 }
 

@@ -1,6 +1,6 @@
 import { useNativeOverlay } from "../../nativeOverlays";
 import { Squircle } from "@/features/design-system/components/squircle/Squircle";
-import type { MouseEventHandler, ReactNode } from "react";
+import type { KeyboardEventHandler, MouseEventHandler, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { joinClassNames } from "../classNames";
 
@@ -10,6 +10,7 @@ type ModalShellProps = {
   cardClassName?: string;
   squircle?: boolean;
   onBackdropClick?: MouseEventHandler<HTMLDivElement>;
+  onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   ariaLabel?: string;
   ariaLabelledBy?: string;
   ariaDescribedBy?: string;
@@ -21,6 +22,7 @@ export function ModalShell({
   cardClassName,
   squircle = false,
   onBackdropClick,
+  onKeyDown,
   ariaLabel,
   ariaLabelledBy,
   ariaDescribedBy,
@@ -35,6 +37,7 @@ export function ModalShell({
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
       aria-describedby={ariaDescribedBy}
+      onKeyDown={onKeyDown}
     >
       <div className="ds-modal-backdrop" onClick={onBackdropClick} />
       <Card className={joinClassNames("ds-modal-card", cardClassName)}>{children}</Card>

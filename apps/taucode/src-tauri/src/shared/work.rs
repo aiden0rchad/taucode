@@ -367,7 +367,7 @@ impl Work {
         self.save(&state.store)?;
         if !matches!(action, "list" | "read" | "checkpoint") { self.publish(&state, None, None); }
         // Launch after returning to the caller; the queue belongs to Rust, not a view.
-        if next_task(&state.store).is_some() {
+        if action != "rename" && next_task(&state.store).is_some() {
             let this = self.clone();
             tokio::spawn(async move { let mut state = this.state.lock().await; this.pump(&mut state).await; });
         }
@@ -438,6 +438,14 @@ impl Work {
                 let history = self.imported_history(&task)?;
                 Ok(json!({"result":{"thread":{"id":task.thread_id,"turns":history["turns"]}}}))
             } else { Err("Imported tasks are read-only. Continue as a new task.".into()) };
+        }
+        if action == "rename" {
+            let title = params["title"].as_str().ok_or("Enter a task name")?.split_whitespace().collect::<Vec<_>>().join(" ");
+            if title.is_empty() || title.chars().count() > 200 || title.chars().any(char::is_control) {
+                return Err("Task name must be 1–200 characters without control characters".into());
+            }
+            state.store.tasks[index].title = title;
+            return Ok(json!({}));
         }
         let space = state.store.spaces.iter().find(|s| s.id == task.space_id).unwrap().clone();
         let thread = task.thread_id.as_deref().ok_or("Task is queued")?;
@@ -690,6 +698,52 @@ mod tests {
         assert_eq!(next_task(&store), None);
         store.tasks[2].status = "stopped".into();
         assert_eq!(next_task(&store), Some(1));
+    }
+    #[tokio::test]
+    async fn renaming_is_persisted_metadata_only_for_local_tasks() {
+        let root = temp();
+        let sink = Sink::default();
+        let service = Work::new(root.join("data"), sink.clone());
+        let settings = AppSettings::default();
+        let statuses = ["queued", "starting", "running", "stopping", "needs-input", "done", "failed", "stopped"];
+        {
+            let mut state = service.state.lock().await;
+            service.initialize(&mut state).await.unwrap();
+            for status in statuses {
+                let mut entry = task(status, "space", status);
+                if status == "queued" { entry.thread_id = None; }
+                state.store.tasks.push(entry);
+            }
+        }
+        for status in statuses {
+            let before = json!(service.state.lock().await.store.tasks.iter().find(|t| t.id == status).unwrap());
+            service.request(&settings, "rename", json!({"taskId":status,"title":"  Dashboard\n review  🐕 "})).await.unwrap();
+            tokio::task::yield_now().await;
+            let state = service.state.lock().await;
+            let after = json!(state.store.tasks.iter().find(|t| t.id == status).unwrap());
+            let mut expected = before;
+            expected["title"] = json!("Dashboard review 🐕");
+            assert_eq!(after, expected, "Renaming must preserve task identity, status, timestamps and content");
+            assert!(state.sessions.is_empty(), "Renaming must not initialize an engine or start queued work");
+        }
+        for title in [Value::Null, json!(42), json!(" \n\t "), json!("🐕".repeat(201)), json!("bad\u{0000}name")] {
+            assert!(service.request(&settings, "rename", json!({"taskId":"done","title":title})).await.is_err());
+        }
+        assert!(service.request(&settings, "rename", json!({"taskId":"missing","title":"New name"})).await.is_err());
+        {
+            let mut state = service.state.lock().await;
+            let mut imported = task("imported", "space", "done");
+            imported.import_id = Some("copy".into());
+            state.store.tasks.push(imported);
+        }
+        assert!(service.request(&settings, "rename", json!({"taskId":"imported","title":"Changed"})).await.is_err());
+        assert!(sink.0.lock().unwrap().iter().all(|event| event.message["params"]["notify"] == false));
+        let restarted = Work::new(service.data.clone(), Sink::default());
+        let mut state = restarted.state.lock().await;
+        restarted.initialize(&mut state).await.unwrap();
+        assert!(state.store.tasks.iter().all(|t| t.title == "Dashboard review 🐕"));
+        assert_eq!(state.store.tasks.len(), statuses.len());
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[tokio::test]
     async fn spaces_attachments_queue_and_restart_are_persisted_with_boundaries() {

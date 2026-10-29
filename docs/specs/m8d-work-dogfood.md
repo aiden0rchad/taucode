@@ -18,6 +18,11 @@ repository in `~/taucode-dogfood/work-notes`.
   Retry resends the failed request using the current model and keeps unsent drafts;
   failed turns without a user request cannot replay an unrelated older message.
 - Plan steps render Markdown formatting with readable accessibility labels.
+- Local Work tasks can be renamed from the header or sidebar menu, including
+  queued tasks. Names persist without starting an engine, changing task status or
+  losing composer drafts. Imported histories remain read-only. The shared rename
+  dialog keeps keyboard focus inside, restores it on close, and retains failed
+  edits with an inline error.
 - New Work tasks honor the default access mode. Full access permits ordinary local
   shell/file work; read-only, child-agent and protected-path restrictions remain.
 - Stop cancels pending Pi questions/approvals before waiting for the abort response.
@@ -39,6 +44,12 @@ repository in `~/taucode-dogfood/work-notes`.
 
 ## Live evidence
 
+- Renamed two completed tasks through the header and sidebar menus. Both names
+  survived relaunch; the active task and unsent draft stayed intact while renaming
+  another task. Search found the new name. Escape from Cancel discarded an edit,
+  Tab/Shift-Tab stayed inside the dialog, and focus returned to its menu trigger.
+  The dialog covered the native browser snapshot. Only the two title fields changed
+  across all six tasks; all seven fixture files remained unchanged.
 - A failed Work task switched from the original Sol account to Account 2/Low and
   returned `WORK_ACCOUNT2_RECOVERY_OK` in the same conversation. Its model,
   reasoning, Full access and response survived relaunch.
@@ -76,12 +87,14 @@ repository in `~/taucode-dogfood/work-notes`.
 ## Verification
 
 - TypeScript typecheck and `cargo check`: passed.
-- Frontend: 225 files / 1,787 tests passed with `vitest run --maxWorkers=2`.
+- Frontend: 225 files / 1,792 tests passed with `vitest run --maxWorkers=2`.
   The unrestricted parallel run hit three theme/settings timing failures;
   the reduced-worker full run passed without changing those tests.
-- Rust: browser 34, Pi 39 (one ignored), Work 7, providers 11 tests passed.
+- Rust: browser 34, Pi 39 (one ignored), Work 8, providers 11 tests passed.
   Work's file-opening regression covers existing inputs/outputs, persistence,
   traversal, outside absolute paths, symlink escapes, missing files and folders.
+  Rename coverage checks every local status, persistence, input validation and
+  rejection of imported-history edits without initializing an engine.
 - Pi runtime/policy: 13 tests passed.
 - Changed-file ESLint: no errors; the earlier broad run reported one existing
   effect-cleanup warning in `useSidePanelState.ts`.
@@ -111,7 +124,7 @@ No account enrollment or payment was performed.
 
 - Set up and verify Apple-issued signing across rebuilds.
 - Give agent-started preview servers visible lifecycle controls and cleanup.
-- Shorten long prompt-derived task titles.
+- Generate concise default task titles; manual naming is available.
 - Investigate an earlier process exit when evaluation attempted to create an empty
   native tab. The new no-open-page guard avoids that invalid call; the underlying
   WebKit creation failure was not conclusively diagnosed.
