@@ -42,6 +42,8 @@
 .work-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; }
 .work-actions > span:empty { flex: 1; }
 .work-task-view { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: hidden; }
+.work-progress { position: relative; display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.work-jump-latest { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); border: 1px solid var(--border-strong); }
 .work-follow-up { flex-shrink: 0; width: min(780px, calc(100% - 64px)); margin: 12px auto 20px; }
 .work-follow-up textarea { width: 100%; min-height: 56px; max-height: 180px; resize: vertical; border: 0; outline: none; background: transparent; line-height: 1.6; }
 .work-inspector { border-left: 1px solid var(--border-subtle); padding: 22px 18px; overflow: auto; background: var(--surface-card-muted); }

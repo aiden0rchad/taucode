@@ -48,6 +48,55 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Work mode", () => {
+  it("opens loaded history at the latest result and follows output only while near the bottom", async () => {
+    state.tasks = [task("First", "running"), task("Second", "done")];
+    const request = vi.mocked(workRequest).getMockImplementation()!;
+    let resolveHistory!: (value: unknown) => void;
+    const history = new Promise(resolve => { resolveHistory = resolve; });
+    vi.mocked(workRequest).mockImplementation((action, params) => action === "read" && params?.taskId === "First" ? history : request(action, params));
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "First" }));
+    const progress = screen.getByRole("log", { name: "Task progress" });
+    Object.defineProperties(progress, { scrollHeight: { configurable: true, writable: true, value: 2000 }, clientHeight: { configurable: true, value: 500 } });
+    await act(async () => { resolveHistory({ result: { thread: { turns: [{ id: "turn", items: [{ id: "answer", type: "agentMessage", text: "Latest result" }] }] } } }); });
+    expect(await screen.findByText("Latest result")).toBeTruthy();
+    expect(progress.scrollTop).toBe(2000);
+    progress.scrollTop = 300;
+    fireEvent.scroll(progress);
+    expect(screen.getByRole("button", { name: "Jump to latest" })).toBeTruthy();
+    Object.defineProperty(progress, "scrollHeight", { value: 2500 });
+    act(() => events.listener({ workspace_id: "space", message: { method: "item/agentMessage/delta", params: { threadId: "First", itemId: "answer", delta: " More output." } } }));
+    expect(progress.scrollTop).toBe(300);
+    fireEvent.click(screen.getByRole("button", { name: "Jump to latest" }));
+    expect(progress.scrollTop).toBe(2500);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    Object.defineProperty(progress, "scrollHeight", { value: 2800 });
+    act(() => events.listener({ workspace_id: "space", message: { method: "item/agentMessage/delta", params: { threadId: "First", itemId: "answer", delta: " Finished." } } }));
+    expect(progress.scrollTop).toBe(2800);
+    progress.scrollTop = 300;
+    fireEvent.scroll(progress);
+    fireEvent.click(screen.getByRole("button", { name: "Second" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Second" }).getAttribute("aria-current")).toBe("page"));
+    expect(progress.scrollTop).toBe(2800);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+  });
+  it("places pending requests after progress and jumps to them from the input callout", async () => {
+    state.tasks = [{ ...task("Approval", "needs-input"), pending: [{ id: "approval", method: "item/commandExecution/requestApproval", params: { command: "test-command" } }] }];
+    readHistory([{ id: "turn", items: [{ id: "answer", type: "agentMessage", text: "Please review this command." }] }]);
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Approval" }));
+    const message = await screen.findByText("Please review this command.");
+    const approval = screen.getByRole("region", { name: "Approval required" });
+    expect(message.compareDocumentPosition(approval) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const progress = screen.getByRole("log", { name: "Task progress" });
+    Object.defineProperties(progress, { scrollHeight: { configurable: true, value: 2000 }, clientHeight: { configurable: true, value: 500 } });
+    progress.scrollTop = 100;
+    fireEvent.scroll(progress);
+    fireEvent.click(screen.getByRole("button", { name: "1 task needs your input" }));
+    expect(progress.scrollTop).toBe(2000);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    expect(workRequest).not.toHaveBeenCalledWith("respond", expect.anything());
+  });
   it("renames a sidebar task without navigating away or losing an unsent draft", async () => {
     state.tasks = [task("Report", "done"), { ...task("Queued", "queued"), threadId: null }];
     render(<WorkView settings={settings} />);

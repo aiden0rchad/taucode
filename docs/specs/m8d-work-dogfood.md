@@ -18,6 +18,10 @@ repository in `~/taucode-dogfood/work-notes`.
   Retry resends the failed request using the current model and keeps unsent drafts;
   failed turns without a user request cannot replay an unrelated older message.
 - Plan steps render Markdown formatting with readable accessibility labels.
+- Work conversations open at their latest result and follow new output while the
+  reader stays near the bottom. Scrolling up pauses following; Jump to latest
+  resumes it. Pending questions and approvals follow the progress they concern,
+  and the input callout returns to them even when that task is already selected.
 - Local Work tasks can be renamed from the header or sidebar menu, including
   queued tasks. Names persist without starting an engine, changing task status or
   losing composer drafts. Imported histories remain read-only. The shared rename
@@ -44,6 +48,11 @@ repository in `~/taucode-dogfood/work-notes`.
 
 ## Live evidence
 
+- The rebuilt app opened Weekly action review at its final answer. Scrolling back
+  kept older progress visible and exposed Jump to latest; clicking it restored the
+  final answer and hid the button. Switching from older messages to Validate action
+  dashboard opened its finished result instead of its historical quota error.
+  The composer stayed pinned, with Account 2/Low and Full access still selected.
 - Renamed two completed tasks through the header and sidebar menus. Both names
   survived relaunch; the active task and unsent draft stayed intact while renaming
   another task. Search found the new name. Escape from Cancel discarded an edit,
@@ -87,7 +96,7 @@ repository in `~/taucode-dogfood/work-notes`.
 ## Verification
 
 - TypeScript typecheck and `cargo check`: passed.
-- Frontend: 225 files / 1,792 tests passed with `vitest run --maxWorkers=2`.
+- Frontend: 225 files / 1,794 tests passed with `vitest run --maxWorkers=2`.
   The unrestricted parallel run hit three theme/settings timing failures;
   the reduced-worker full run passed without changing those tests.
 - Rust: browser 34, Pi 39 (one ignored), Work 8, providers 11 tests passed.

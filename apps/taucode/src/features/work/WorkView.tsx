@@ -20,7 +20,7 @@ import { NewConversationRow } from "@/features/chat/NewConversationRow";
 import { Folder, FolderLock, X, FolderTree, FileSearch, Table, Presentation, Trash2, CheckCircle2, Circle, ExternalLink, FolderOpen, Eye, Copy, Terminal, LoaderCircle, Search, ChevronDown, FilePenLine, Globe, Bot, ListChecks, CircleAlert } from "lucide-react";
 import { ComposerShell, ComposerSendButton, ComposerAccessControl } from "@/features/composer/components/ComposerShell";
 import { getFileTypeIconUrl } from "@utils/fileTypeIcons";
-import { createElement, useCallback, useEffect, useRef, useState } from "react";
+import { createElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AppSettings, WorkRequest, WorkTask } from "@/types";
 import { checkpointRequest, pickWorkspacePath, pickWorkspacePaths, pickWorkAttachments, workAttachment, workOutput, workRequest } from "@services/tauri";
 import { subscribeWindowDragDrop } from "@services/dragDrop";
@@ -91,6 +91,26 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const selectedSpace = writableSpaces.find(s => s.id === spaceId)?.id || "";
   const needs = work.state.tasks.filter(t => t.status === "needs-input");
   const task = work.task;
+  const progressRef = useRef<HTMLDivElement>(null);
+  const progressContentRef = useRef<HTMLDivElement>(null);
+  const followProgress = useRef(true);
+  const [showLatest, setShowLatest] = useState(false);
+  const scrollToLatest = useCallback(() => {
+    followProgress.current = true;
+    if (progressRef.current) progressRef.current.scrollTop = progressRef.current.scrollHeight;
+    setShowLatest(false);
+  }, []);
+  useLayoutEffect(scrollToLatest, [task?.id, scrollToLatest]);
+  useLayoutEffect(() => {
+    if (followProgress.current) scrollToLatest();
+  }, [work.items, task?.status, task?.pending, task?.error, scrollToLatest]);
+  useEffect(() => {
+    if (!progressRef.current || !progressContentRef.current || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => { if (followProgress.current) scrollToLatest(); });
+    observer.observe(progressRef.current);
+    observer.observe(progressContentRef.current);
+    return () => observer.disconnect();
+  }, [task?.id, scrollToLatest]);
   useEffect(() => { setFollowAccess(task?.accessMode ?? "ask"); }, [task?.id, task?.accessMode]);
   const followUp = task ? drafts[task.id] ?? task.pendingMessage ?? "" : "";
   const followBlocked = busy || !task?.threadId || ["queued", "starting", "stopping", "needs-input"].includes(task.status);
@@ -146,6 +166,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     work.setActive(entry.id);
     setSpaceId("");
     setScrollTask(entry.id);
+    if (work.active === entry.id) scrollToLatest();
   };
   useEffect(() => {
     if (!scrollTask) return;
@@ -241,9 +262,12 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           <button onClick={() => setFolder("")}>Cancel</button></div>
       </section>}
       {task ? <div className="work-task-view">
-        <div className="chat-scroll" role="log" aria-label="Task progress" aria-live="polite"><div className="chat-column">
+        <div className="work-progress"><div ref={progressRef} className="chat-scroll" role="log" aria-label="Task progress" aria-live="polite" onScroll={event => {
+          const node = event.currentTarget;
+          followProgress.current = node.scrollHeight - node.scrollTop - node.clientHeight <= 64;
+          setShowLatest(!followProgress.current);
+        }}><div ref={progressContentRef} className="chat-column">
           <article className="message chat-message user"><h2>Task brief</h2><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={task.brief} showFilePath={false} /><ul>{task.attachments.map(path => <li key={path}>{path}</li>)}</ul></article>
-          {task.pending.map(request => <InputRequest key={request.id} request={request} busy={busy} respond={answer => { void run(() => work.mutate("respond", { taskId: task.id, requestId: request.id, answer })); }} />)}
           {items.map(item => {
             if (item === duplicateError) return null;
             if (item.kind === "message" && isTurnError(item)) return <TurnErrorCard key={item.id} message={item.text} />;
@@ -251,6 +275,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           {errorMessage && <TurnErrorCard key={task.id} message={errorMessage} disabled={followBlocked}
             onRetry={canRecover && retryText ? () => continueTask(retryText, false) : undefined}
             onChangeModel={canRecover ? () => setModelPickerRequest(current => current + 1) : undefined} />}
+          {task.pending.map(request => <InputRequest key={request.id} request={request} busy={busy} respond={answer => { void run(() => work.mutate("respond", { taskId: task.id, requestId: request.id, answer })); }} />)}
           {task.status === "queued" && <p className="chat-muted">Waiting for an available slot. One task runs in each space at a time.</p>}
           {task.status === "starting" && <p role="status" className="chat-muted">Starting the model. If macOS requests Keychain access, respond to its prompt. You can stop this launch and keep your message.</p>}
           {task.status === "stopping" && <p role="status" className="chat-muted">Stopping the launch… Your message is kept for retry.</p>}
@@ -264,7 +289,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
               work.setActive(created.id);
             }); }}>Continue</button>
           </section> : null}
-        </div></div>
+        </div></div>{showLatest && <button className="secondary work-jump-latest" onClick={scrollToLatest}>Jump to latest</button>}</div>
         {!task.importId && <form className="work-follow-up" aria-label="Task conversation" onSubmit={e => { e.preventDefault(); sendFollowUp(); }}>
           <ComposerShell
             toolbar={<ComposerAccessControl value={followAccess} onChange={setFollowAccess} disabled={busy || active || task.status === "queued"} />}
