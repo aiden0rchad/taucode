@@ -22,6 +22,11 @@ repository in `~/taucode-dogfood/work-notes`.
   reader stays near the bottom. Scrolling up pauses following; Jump to latest
   resumes it. Pending questions and approvals follow the progress they concern,
   and the input callout returns to them even when that task is already selected.
+- Transcript-only events no longer rewrite the full Work task store or trigger
+  metadata refreshes. Checkpoint observation and raw event forwarding still run;
+  status, approvals, questions, plans and outputs persist immediately. Additional
+  pending requests refresh the UI even when the task already needs input. Queue
+  settings are read only when a task has capacity to start.
 - Local Work tasks can be renamed from the header or sidebar menu, including
   queued tasks. Names persist without starting an engine, changing task status or
   losing composer drafts. Imported histories remain read-only. The shared rename
@@ -48,6 +53,12 @@ repository in `~/taucode-dogfood/work-notes`.
 
 ## Live evidence
 
+- Streaming persistence build: signed and relaunched successfully. The follow-up
+  in Startup recovery check is waiting in macOS Keychain access, confirmed by a
+  process sample; live streaming/relaunch verification remains pending approval.
+  Its message requests a read-only 40-line checklist and an explicit user question.
+  All nine current fixture files remain unchanged. Do not report this live check
+  as passed until the turn completes and its transcript survives relaunch.
 - The rebuilt app opened Weekly action review at its final answer. Scrolling back
   kept older progress visible and exposed Jump to latest; clicking it restored the
   final answer and hid the button. Switching from older messages to Validate action
@@ -99,11 +110,15 @@ repository in `~/taucode-dogfood/work-notes`.
 - Frontend: 225 files / 1,794 tests passed with `vitest run --maxWorkers=2`.
   The unrestricted parallel run hit three theme/settings timing failures;
   the reduced-worker full run passed without changing those tests.
-- Rust: browser 34, Pi 39 (one ignored), Work 8, providers 11 tests passed.
+- Rust: browser 34, Pi 39 (one ignored), Work 9, providers 11 tests passed.
   Work's file-opening regression covers existing inputs/outputs, persistence,
   traversal, outside absolute paths, symlink escapes, missing files and folders.
   Rename coverage checks every local status, persistence, input validation and
   rejection of imported-history edits without initializing an engine.
+  Streaming coverage forwards 303 transcript events unchanged without touching the
+  state file's modification time. Metadata persistence, multiple pending requests
+  and checkpoint user/turn bindings are checked separately. All 10 checkpoint
+  lifecycle tests passed after the persistence change.
 - Pi runtime/policy: 13 tests passed.
 - Changed-file ESLint: no errors; the earlier broad run reported one existing
   effect-cleanup warning in `useSidePanelState.ts`.

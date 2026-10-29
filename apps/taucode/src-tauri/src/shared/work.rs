@@ -228,8 +228,8 @@ impl Work {
     }
     fn pump<'a>(self: &'a Arc<Self>, state: &'a mut State) -> super::providers::BoxFuture<'a, ()> {
         Box::pin(async move {
-            if !super::engine_registry::features(Some(&self.data)).work_mode { return; }
             while let Some(index) = next_task(&state.store) {
+                if !super::engine_registry::features(Some(&self.data)).work_mode { return; }
                 let space = state.store.spaces.iter().find(|s| s.id == state.store.tasks[index].space_id).unwrap().clone();
                 let session = self.session(state, &space).await;
                 let task = &mut state.store.tasks[index];
@@ -310,10 +310,17 @@ impl Work {
         let Some(index) = state.store.tasks.iter().position(|t| t.space_id == event.workspace_id && t.thread_id.as_deref() == params["threadId"].as_str()) else { return Ok(()) };
         let session = state.sessions.get(&event.workspace_id).ok_or("Missing work session")?;
         if let Some(finish) = session.checkpoints.as_ref().unwrap().observe(event) { let _ = finish.await; }
+        let method = event.message["method"].as_str().unwrap_or("");
+        // Transcripts are owned by Pi. Only metadata events need the Work store;
+        // checkpoint binding above and forwarding to the UI still see every event.
+        if !matches!(method, "turn/started" | "turn/completed" | "serverRequest/resolved" | "item/tool/requestUserInput")
+            && !method.ends_with("/requestApproval")
+            && !(matches!(method, "item/started" | "item/completed") && params["item"]["type"] == "plan")
+            && !(method == "item/completed" && params["item"]["type"] == "fileChange" && params["item"]["status"] == "completed")
+        { return Ok(()); }
         let space = state.store.spaces.iter().find(|s| s.id == event.workspace_id).unwrap().clone();
         let task = &mut state.store.tasks[index];
         let previous = task.status.clone();
-        let method = event.message["method"].as_str().unwrap_or("");
         if occupied(&task.status) && task.status != "stopping" {
             if method == "turn/started" { task.set_status("running"); task.pending_message = None; }
             if method.ends_with("/requestApproval") || method == "item/tool/requestUserInput" {
@@ -344,9 +351,7 @@ impl Work {
             }
         }
         self.save(&state.store)?;
-        if previous != state.store.tasks[index].status || matches!(method, "item/completed" | "turn/completed") {
-            self.publish(state, Some(&state.store.tasks[index]), Some(&previous));
-        }
+        self.publish(state, Some(&state.store.tasks[index]), Some(&previous));
         Ok(())
     }
     pub async fn request(self: &Arc<Self>, settings: &AppSettings, action: &str, params: Value) -> Result<Value, String> {
@@ -802,6 +807,49 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
     #[tokio::test]
+    async fn transcript_events_are_forwarded_without_rewriting_work_state() {
+        let root = temp();
+        let folder = root.join("space");
+        std::fs::create_dir(&folder).unwrap();
+        let sink = Sink::default();
+        let service = Work::new(root.join("data"), sink.clone());
+        {
+            let mut state = service.state.lock().await;
+            service.initialize(&mut state).await.unwrap();
+            let space = Space { id: "space".into(), name: "Space".into(), path: folder.to_string_lossy().into_owned(), kind: WorkspaceKind::Work, read_only_folders: vec![], read_only: false, imported: false };
+            state.store.spaces.push(space.clone());
+            state.store.tasks.push(task("thread", "space", "running"));
+            service.session(&mut state, &space).await;
+            service.save(&state.store).unwrap();
+        }
+        let path = service.data.join("work/state.json");
+        let before = std::fs::read(&path).unwrap();
+        let marker = std::time::UNIX_EPOCH + std::time::Duration::from_secs(946684800);
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(marker).unwrap();
+        sink.0.lock().unwrap().clear();
+        let mut messages = vec![json!({"method":"item/started","params":{"item":{"id":"user","type":"userMessage","content":[{"type":"inputText","text":"Hello"}]}}})];
+        for method in ["item/agentMessage/delta", "item/reasoning/textDelta", "item/commandExecution/outputDelta"] {
+            for _ in 0..100 { messages.push(json!({"method":method,"params":{"itemId":"answer","delta":"chunk"}})); }
+        }
+        messages.push(json!({"method":"item/completed","params":{"item":{"id":"answer","type":"agentMessage","text":"Finished"}}}));
+        messages.push(json!({"method":"thread/tokenUsage/updated","params":{"tokenUsage":{"total":123}}}));
+        for message in &mut messages {
+            message["params"]["threadId"] = json!("thread");
+            service.tx.send(AppServerEvent { workspace_id: "space".into(), message: message.clone() }).unwrap();
+        }
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if sink.0.lock().unwrap().last().is_some_and(|e| e.message == *messages.last().unwrap()) { break; }
+                tokio::task::yield_now().await;
+            }
+        }).await.unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), marker, "Transcript-only events must not rewrite work/state.json");
+        let forwarded: Vec<_> = sink.0.lock().unwrap().iter().map(|e| e.message.clone()).collect();
+        assert_eq!(forwarded, messages, "Transcript events must arrive unchanged without metadata refreshes");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
     async fn progress_approvals_outputs_checkpoint_diff_and_notifications() {
         let root = temp();
         let folder = root.join("space");
@@ -812,35 +860,62 @@ mod tests {
         let space = Space { id: "space".into(), name: "Space".into(), path: folder.canonicalize().unwrap().to_string_lossy().into_owned(), kind: WorkspaceKind::Work, read_only_folders: vec![], read_only: false, imported: false };
         let mut state = service.state.lock().await;
         state.store.spaces.push(space.clone());
-        state.store.tasks.push(task("thread", "space", "running"));
+        let mut entry = task("thread", "space", "starting");
+        entry.pending_message = Some("Start this task".into());
+        state.store.tasks.push(entry);
         let session = service.session(&mut state, &space).await;
         session.checkpoints.as_ref().unwrap().before("space", "thread", "pi", &json!({"input":[]})).await.unwrap();
         let event = |method: &str, params: Value| AppServerEvent { workspace_id: "space".into(), message: json!({"id":"pi:thread:dialog","method":method,"params":params}) };
+        let persisted = || serde_json::from_slice::<Value>(&std::fs::read(service.data.join("work/state.json")).unwrap()).unwrap();
+        service.observe(&mut state, &event("turn/started", json!({"threadId":"thread","turnId":"turn"}))).await.unwrap();
+        assert_eq!(persisted()["tasks"][0]["status"], "running");
+        assert!(persisted()["tasks"][0]["pendingMessage"].is_null());
+        service.observe(&mut state, &event("item/started", json!({"threadId":"thread","turnId":"turn","item":{"type":"userMessage","id":"user"}}))).await.unwrap();
         service.observe(&mut state, &event("item/fileChange/requestApproval", json!({"threadId":"thread","reason":"Overwrite"}))).await.unwrap();
         assert_eq!(state.store.tasks[0].status, "needs-input");
         assert_eq!(state.store.tasks[0].pending.len(), 1);
         assert!(sink.0.lock().unwrap().iter().any(|e| e.message["params"]["notify"] == true && e.message["params"]["needsInput"] == 1));
+        let mut question = event("item/tool/requestUserInput", json!({"threadId":"thread","questions":[{"id":"choice","question":"Which format?"}]}));
+        question.message["id"] = json!("pi:thread:question");
+        service.observe(&mut state, &question).await.unwrap();
+        assert_eq!(persisted()["tasks"][0]["pending"].as_array().unwrap().len(), 2);
+        assert_eq!(sink.0.lock().unwrap().last().unwrap().message["params"]["task"]["pending"].as_array().unwrap().len(), 2);
         service.observe(&mut state, &event("serverRequest/resolved", json!({"threadId":"thread","requestId":"pi:thread:dialog"}))).await.unwrap();
+        assert_eq!(persisted()["tasks"][0]["status"], "needs-input");
+        assert_eq!(sink.0.lock().unwrap().last().unwrap().message["params"]["task"]["pending"].as_array().unwrap().len(), 1);
+        service.observe(&mut state, &event("serverRequest/resolved", json!({"threadId":"thread","requestId":"pi:thread:question"}))).await.unwrap();
         assert_eq!(state.store.tasks[0].status, "running");
         assert!(state.store.tasks[0].pending.is_empty());
+        assert_eq!(persisted()["tasks"][0]["status"], "running");
+        service.observe(&mut state, &event("item/started", json!({"threadId":"thread","item":{"type":"plan","plan":[{"step":"Produce brief","status":"inProgress"}]}}))).await.unwrap();
+        assert_eq!(persisted()["tasks"][0]["plan"][0]["status"], "inProgress");
+        assert_eq!(sink.0.lock().unwrap().last().unwrap().message["params"]["task"]["plan"][0]["status"], "inProgress");
         service.observe(&mut state, &event("item/completed", json!({"threadId":"thread","item":{"type":"plan","plan":[{"step":"Produce brief","status":"completed"}]}}))).await.unwrap();
         assert_eq!(state.store.tasks[0].plan[0]["status"], "completed");
+        assert_eq!(persisted()["tasks"][0]["plan"][0]["status"], "completed");
         std::fs::write(folder.join("outputs/report.md"), "report").unwrap();
         std::fs::write(folder.join("existing.txt"), "after").unwrap();
         std::fs::write(folder.join("outputs/from-shell.csv"), "shell-created").unwrap();
         service.observe(&mut state, &event("item/completed", json!({"threadId":"thread","item":{"type":"fileChange","status":"completed","changes":[{"path":"outputs/report.md"},{"path":"../escape"}]}}))).await.unwrap();
         assert_eq!(state.store.tasks[0].outputs, vec!["outputs/report.md"]);
+        assert_eq!(persisted()["tasks"][0]["outputs"], json!(["outputs/report.md"]));
         service.observe(&mut state, &event("turn/completed", json!({"threadId":"thread","turn":{"status":"completed"}}))).await.unwrap();
         assert_eq!(state.store.tasks[0].status, "done");
         assert_eq!(state.store.tasks[0].outputs, vec!["existing.txt", "outputs/from-shell.csv", "outputs/report.md"]);
+        assert_eq!(persisted()["tasks"][0], json!(state.store.tasks[0]));
+        let checkpoints = session.checkpoints.as_ref().unwrap().request(&session, "space", json!({"action":"list","threadId":"thread"})).await.unwrap();
+        assert_eq!(checkpoints["checkpoints"][0]["metadata"]["userItemId"], "user");
+        assert_eq!(checkpoints["checkpoints"][0]["metadata"]["turnId"], "turn");
         assert!(sink.0.lock().unwrap().iter().any(|e| e.message["params"]["notify"] == true && e.message["params"]["task"]["status"] == "done"));
         state.store.tasks[0].status = "running".into();
         service.observe(&mut state, &event("turn/completed", json!({"threadId":"thread","turn":{"status":"failed","error":{"message":"Provider failed"}}}))).await.unwrap();
         assert_eq!(state.store.tasks[0].status, "failed");
+        assert_eq!(persisted()["tasks"][0]["error"], "Provider failed");
         assert!(sink.0.lock().unwrap().iter().any(|e| e.message["params"]["notify"] == true && e.message["params"]["task"]["status"] == "failed"));
         state.store.tasks[0].status = "stopped".into();
         service.observe(&mut state, &event("turn/completed", json!({"threadId":"thread","turn":{"status":"completed"}}))).await.unwrap();
         assert_eq!(state.store.tasks[0].status, "stopped");
+        assert_eq!(persisted()["tasks"][0]["status"], "stopped");
         drop(state);
         assert!(service.output(&AppSettings::default(), "thread", "../escape").await.is_err());
         std::fs::remove_dir_all(root).unwrap();
