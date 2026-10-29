@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { ProviderEntry } from "@/types";
-import { codexReady, defaultAgentPolicy, formatModelRef, policyError, providerSlug, setAgentMode } from "./registry";
+import { codexReady, commandRolePresets, defaultAgentPolicy, formatModelRef, isCommandRole, policyError, providerSlug, setAgentMode } from "./registry";
 
 const provider: ProviderEntry = { id: "setup-old-id", name: "LiteLLM", kind: "openai-compatible", apiStyle: "responses", enabled: true, auth: { type: "none" }, models: [{ id: "org/opus", displayName: "Claude Opus 5.5", enabled: true }] };
 it("switches command modes without discarding custom roles or model choices", () => {
@@ -26,6 +26,21 @@ it("formats existing IDs, nested model IDs, missing models and removed providers
   expect(formatModelRef(settings, "setup-old-id/new").title).toBe("LiteLLM · new");
   expect(formatModelRef(settings, "removed/org/model").name).toBe("org/model");
   expect(formatModelRef(settings, "legacy-model").name).toBe("legacy-model");
+});
+it("preserves preset roles across mode changes and validates their ranks and models", () => {
+  const policy = structuredClone(setAgentMode(defaultAgentPolicy, "chain-of-command"));
+  policy.subagents.roles.push(...structuredClone(commandRolePresets));
+  expect(policyError(policy, [])).toBeNull();
+  expect(policy.subagents.roles.filter(isCommandRole)).toHaveLength(9);
+  expect(setAgentMode(setAgentMode(policy, "single"), "chain-of-command").subagents.roles).toEqual(policy.subagents.roles);
+  const extra = policy.subagents.roles[policy.subagents.roles.length - 1];
+  extra.model = { providerId: provider.id, modelId: "org/opus" };
+  expect(policyError(policy, [])).toMatch(/Enable provider/);
+  expect(policyError(policy, [provider])).toBeNull();
+  for (const name of ["commander", "colonel", "major"]) {
+    extra.name = name;
+    expect(policyError(policy, [provider])).toMatch(/core ranks cannot be changed/);
+  }
 });
 it("makes readable, unique provider slugs without changing existing IDs", () => {
   expect(providerSlug(" LiteLLM ", [provider])).toBe("litellm");

@@ -174,6 +174,15 @@ pub(crate) fn validate(providers: &[ProviderEntry], policy: &AgentPolicy) -> Res
     }
     let mut names = HashSet::new();
     for role in &s.roles {
+        if role.command_rank.is_some_and(|rank| match role.name.as_str() {
+            "commander" => true,
+            "colonel" => rank != CommandRank::Colonel,
+            "major" => rank != CommandRank::Major,
+            "enlisted" => rank != CommandRank::Enlisted,
+            _ => false,
+        }) {
+            return Err("Core command ranks cannot be changed".into());
+        }
         if !valid_slug(&role.name) || !names.insert(&role.name) {
             return Err("Role names must be unique slugs".into());
         }
@@ -919,6 +928,25 @@ mod tests {
         policy.subagents.enabled = false;
         assert!(validate(&[], &policy).is_ok());
         assert!(serde_json::from_value::<AgentPolicy>(json!({"subagents":{"mode":"unknown"}})).is_err());
+    }
+    #[test]
+    fn command_specialists_preserve_ranks_and_reject_core_overrides() {
+        let mut policy = AgentPolicy::default();
+        let role: AgentRole = serde_json::from_value(json!({"name":"researcher","description":"Research","model":null,"toolAccess":"read-only","instructions":"Cite files","commandRank":"enlisted"})).unwrap();
+        policy.subagents.roles.push(role);
+        assert!(validate(&[], &policy).is_ok());
+        let saved = serde_json::to_value(&policy).unwrap();
+        assert_eq!(saved["subagents"]["roles"][3]["commandRank"], "enlisted");
+        let restored: AgentPolicy = serde_json::from_value(saved).unwrap();
+        assert_eq!(restored.subagents.roles[3].command_rank, Some(CommandRank::Enlisted));
+        assert_eq!(restored.subagents.roles[0].command_rank, None);
+        for name in ["commander", "colonel", "major"] {
+            policy.subagents.roles[3].name = name.into();
+            assert!(validate(&[], &policy).unwrap_err().contains("Core command ranks"));
+        }
+        let mut invalid = serde_json::to_value(&restored.subagents.roles[3]).unwrap();
+        invalid["commandRank"] = json!("commander");
+        assert!(serde_json::from_value::<AgentRole>(invalid).is_err());
     }
     #[test]
     fn catalog_flags_only_the_policy_default_model() {

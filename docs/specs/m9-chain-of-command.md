@@ -20,6 +20,21 @@ Settings → Agents → Defaults exposes three choices:
 | Major | Independently verify artifacts and report evidence | None |
 | Enlisted | Implement a bounded task and run relevant checks | None |
 
+Team models → **Add role** offers Researcher, Designer, Frontend engineer,
+Backend engineer, Test engineer and Documentation presets. Each adds a separate
+model selector and editable description, tool access and instructions in Roles.
+Repeated presets receive unique names (for example, Researcher 2). Added roles
+can be removed; the three core ranks cannot. Additions/removals stay in the draft
+until Save changes; Cancel discards them. Roles uses a selector for larger teams.
+
+Specialists carry an optional `commandRank` (`colonel`, `major` or `enlisted`).
+Test engineer is a major; the other presets are enlisted. Researcher starts with
+read-only tools. Commanders and colonels can delegate to these specialists by name,
+using the same hierarchy, model restrictions, shared budget and access rules.
+Core names retain their canonical rank, and saved policies cannot override it or
+assign a child the commander role. Legacy custom roles without a rank stay outside
+the command tree; switching modes retains their settings.
+
 The hierarchy and role model assignments are enforced before child processes launch.
 In Chain of Command, a tool call cannot override the configured role model. Model
 selection is role → default subagent model → parent model. Only enabled registry
@@ -99,8 +114,9 @@ without discarding role choices. Code saves the effective project policy; Chat
 and Work do not expose the controls. Unsupported engines cannot enable Chain from the
 picker. Saves are acknowledged before the toggle changes, and failures remain
 visible. The editor loads on demand and supports keyboard focus and Escape.
-Its Team models tab connects the conversation commander to three compact,
-color-coded role rows. Limits groups concurrency, turn budget and depth, with
+Its Team models tab connects the conversation commander to compact,
+color-coded role rows, with an inline preset picker for adding specialists.
+Limits groups concurrency, turn budget and depth, with
 model defaults/restrictions under a disclosure. Roles edits one specialist at a
 time, keeping draft values while switching roles or tabs. The fixed header and
 footer frame a scrollable body on smaller windows; light and dark themes use the
@@ -110,6 +126,10 @@ Changing tabs starts the new panel at the top without losing role drafts.
 Regression tests cover mode visibility, successful activation, failed saves, role
 preservation, keyboard role navigation, cancelled drafts, limit validation, and
 Chat/Work runtime normalization without changing saved policy.
+Preset regressions cover duplicates, independent models, guidance, removal and
+cancel/save persistence. Extension tests run a specialist child with read-only
+tools, configured model and instructions, and enforce its rank and shared budget.
+Rust tests cover rank persistence, policy-file delivery and invalid core overrides.
 
 The rebuilt, signed app was verified live in Code with GPT 6.1 Sol: the smaller
 icon, sequential star illumination, settled glow, keyboard toggle, conditional
@@ -126,6 +146,16 @@ The original policy, window dimensions and 100% zoom were restored after testing
 at 960×650 and enlarged text. Light/dark previews passed. Validation: 1,733
 frontend tests, final focused regressions, typecheck, changed-file lint, app build
 and signature verification passed.
+
+Preset roles were verified in the signed macOS app: adding roles, independent
+model choices, custom instructions surviving relaunch, duplicate names, cancelled
+removals, saved removals and scrolling at 100–200% zoom. A fresh Code conversation
+on OMP used GPT 6.1 Sol and Full access to delegate a README inspection to
+Researcher and independent verification to Test engineer; both returned the expected
+evidence. Temporary roles were removed and the original team and zoom restored.
+Validation: 1,735 frontend tests, 20 extension tests, 55 provider/Pi Rust tests
+(one unrelated live OMP test ignored), typecheck, changed-file lint, cargo check,
+app build and signature verification passed.
 
 ## Work still required for the full product goal
 

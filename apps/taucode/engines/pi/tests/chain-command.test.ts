@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commandInstructions, resolveTask, type Policy } from "../extensions/lib/policy.ts";
+import { commandInstructions, commandTargets, resolveTask, type Policy } from "../extensions/lib/policy.ts";
 import subagents from "../extensions/taucode-subagents.ts";
 
 const policy: Policy = {
@@ -88,6 +88,62 @@ test("nested subprocesses share one turn budget, reset it, route models and fail
   writeFileSync(join(home, "taucode/policy.json"), JSON.stringify({ ...policy, enabled: false }));
   assert.match((await tool.execute("single", { agent: "enlisted", task: "work" }, undefined, undefined, ctx)).details.results[0].stderr, /disabled/);
   assert.deepEqual(readdirSync(join(home, "taucode")), ["policy.json"]);
+});
+
+test("specialists use their configured models and rank without adding delegation privileges", () => {
+  const specialists: Policy = { ...policy, roles: [...policy.roles,
+    { name: "researcher", description: "Research", commandRank: "enlisted", model: "cloud/mid", toolAccess: "read-only", instructions: "Cite files" },
+    { name: "test-engineer", description: "Test", commandRank: "major", model: "cloud/strong", toolAccess: "full", instructions: "Verify" },
+    { name: "lead", description: "Coordinate", commandRank: "colonel", toolAccess: "full", instructions: "Delegate" },
+    { name: "commander", description: "Invalid", commandRank: "colonel", toolAccess: "full", instructions: "" },
+  ] };
+  assert.deepEqual(commandTargets("commander", specialists.roles), ["colonel", "major", "enlisted", "researcher", "test-engineer", "lead"]);
+  assert.deepEqual(commandTargets("lead", specialists.roles), ["major", "enlisted", "researcher", "test-engineer"]);
+  for (const parent of ["commander", "colonel", "lead"]) {
+    const resolved = resolveTask(specialists, { agent: "researcher" }, undefined, parent);
+    assert.equal(resolved.model, "cloud/mid");
+    assert.equal(resolved.role.toolAccess, "read-only");
+    assert.throws(() => resolveTask(specialists, { agent: "researcher", model: "local/small" }, undefined, parent), /configured researcher model/);
+  }
+  for (const parent of ["researcher", "test-engineer", "custom"]) {
+    assert.deepEqual(commandTargets(parent, specialists.roles), []);
+    assert.throws(() => resolveTask(specialists, { agent: "enlisted" }, undefined, parent), /cannot delegate/);
+  }
+  assert.match(commandInstructions("test-engineer", specialists.roles), /test-engineer, with major rank/);
+  assert.match(commandInstructions("researcher", specialists.roles), /cannot delegate/);
+  assert.throws(() => resolveTask({ ...specialists, allowedModels: ["local/small"] }, { agent: "researcher" }), /not allowed/);
+  assert.throws(() => resolveTask({ ...specialists, models: {} }, { agent: "researcher" }), /not enabled/);
+});
+
+test("a preset reaches child processes with its instructions, read-only tools and shared budget", async t => {
+  const root = mkdtempSync(join(tmpdir(), "taucode-specialist-"));
+  const home = join(root, "agent"), cli = join(root, "fake-cli.mjs");
+  mkdirSync(join(home, "taucode"), { recursive: true });
+  const variables = { PI_CODING_AGENT_DIR: home, TAUCODE_WORKSPACE: root, TAUCODE_PI_CLI: cli, TAUCODE_SUBAGENT_DEPTH: "0", TAUCODE_SUBAGENT_ROLE: "", TAUCODE_SUBAGENT_BUDGET: "", TAUCODE_TOOL_ACCESS: "full", TAUCODE_OMP: "1" };
+  const previous = Object.fromEntries(Object.keys(variables).map(key => [key, process.env[key]]));
+  Object.assign(process.env, variables);
+  const events: Record<string, (...args: any[]) => any> = {};
+  t.after(() => { events.agent_end?.(); for (const [key, value] of Object.entries(previous)) if (value === undefined) delete process.env[key]; else process.env[key] = value; rmSync(root, { recursive: true, force: true }); });
+  const researcher = { name: "researcher", description: "Research", commandRank: "enlisted", model: "cloud/mid", toolAccess: "read-only", instructions: "Cite exact files" };
+  writeFileSync(join(home, "taucode/policy.json"), JSON.stringify({ ...policy, maxPerTurn: 1, roles: [...policy.roles, researcher] }));
+  writeFileSync(cli, `import subagents from ${JSON.stringify(new URL("../extensions/taucode-subagents.ts", import.meta.url).href)};
+    const args = process.argv.slice(2), events = {}; subagents({on(name, fn) {events[name] = fn;},registerTool() {}});
+    console.log(JSON.stringify({type:"message_end",message:{role:"assistant",content:[{type:"text",text:JSON.stringify({args,role:process.env.TAUCODE_SUBAGENT_ROLE,access:process.env.TAUCODE_TOOL_ACCESS,prompt:events.before_agent_start().message.content})}],stopReason:"stop"}}));`);
+  let tool: any;
+  subagents({ on: (name: string, fn: any) => { events[name] = fn; }, registerTool: (value: any) => { tool = value; } } as any);
+  events.agent_start();
+  assert.match(events.before_agent_start().message.content, /"name":"researcher"/);
+  const ctx = { cwd: root, model: { provider: "taucode-cloud", id: "strong" } };
+  const result = await tool.execute("research", { agent: "researcher", task: "Inspect code" }, undefined, undefined, ctx);
+  assert.equal(result.isError, false);
+  const child = JSON.parse(result.details.results[0].messages[0].content[0].text);
+  assert.equal(child.role, "researcher"); assert.equal(child.access, "read-only");
+  assert.equal(child.args[child.args.indexOf("--tools") + 1], "read,grep,glob");
+  assert.equal(child.args[child.args.indexOf("--model") + 1], "mid");
+  assert.equal(child.args[child.args.indexOf("--append-system-prompt") + 1], researcher.instructions);
+  assert.match(child.prompt, /researcher, with enlisted rank/);
+  assert.match(child.prompt, /"roles":\[\]/);
+  assert.match((await tool.execute("extra", { agent: "researcher", task: "Again" }, undefined, undefined, ctx)).details.results[0].stderr, /max per turn/);
 });
 
 for (const { detached, depth } of [{ detached: false, depth: 0 }, { detached: true, depth: 0 }, { detached: true, depth: 1 }]) test(`abort at depth ${depth} kills a ${detached ? "detached" : "grouped"} stubborn descendant without killing its parent or starting queued work`, { skip: process.platform === "win32", timeout: 10000 }, async t => {

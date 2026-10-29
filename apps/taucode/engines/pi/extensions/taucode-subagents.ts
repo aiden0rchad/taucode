@@ -30,8 +30,9 @@ export default function (pi: ExtensionAPI) {
     const current: Policy = JSON.parse(readFileSync(join(process.env.PI_CODING_AGENT_DIR!, "taucode/policy.json"), "utf8"));
     const role = Number(process.env.TAUCODE_SUBAGENT_DEPTH ?? 0) === 0 ? "commander" : process.env.TAUCODE_SUBAGENT_ROLE ?? "unknown";
     const chain = current.enabled !== false && current.mode === "chain-of-command";
-    const visible = { ...current, models: undefined, ...(chain ? { roles: current.roles.filter(r => commandTargets(role).includes(r.name)) } : {}) };
-    return { message: { customType: "taucode-subagent-policy", display: false, content: `${chain ? commandInstructions(role) + "\n" : ""}Subagent policy: ${JSON.stringify(visible)}` } };
+    const targets = commandTargets(role, current.roles);
+    const visible = { ...current, models: undefined, ...(chain ? { roles: current.roles.filter(r => targets.includes(r.name)) } : {}) };
+    return { message: { customType: "taucode-subagent-policy", display: false, content: `${chain ? commandInstructions(role, current.roles) + "\n" : ""}Subagent policy: ${JSON.stringify(visible)}` } };
   });
   pi.registerTool({
     name: "subagent",

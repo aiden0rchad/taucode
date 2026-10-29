@@ -53,6 +53,24 @@
 .command-role-card { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) minmax(180px, 42%); align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-card); }
 .command-role-card::before { content: ""; position: absolute; width: 18px; left: -19px; top: 50%; border-top: 1px solid var(--border-strong); }
 .command-role-card h3 > span { display: block; margin: 4px 0 0; font-size: 11px; }
+.command-team-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 0 49px; font-size: 12px; color: var(--text-muted); }
+.command-team-toolbar small { margin-left: 5px; font-variant-numeric: tabular-nums; color: var(--text-subtle); }
+.command-editor.settings-page .command-add-role { display: flex; align-items: center; gap: 6px; padding: 7px 10px; font-size: 12px; }
+.command-add-role[aria-expanded="true"] { color: var(--text-accent); border-color: var(--text-accent); }
+.command-presets { margin-top: 14px; padding: 14px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-card); }
+.command-presets > p { margin: 0 0 12px; color: var(--text-subtle); font-size: 12px; }
+.command-presets > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.command-editor.settings-page .command-preset { display: flex; align-items: flex-start; gap: 10px; padding: 12px; text-align: left; white-space: normal; background: var(--surface-control); }
+.command-preset > svg { flex-shrink: 0; margin-top: 2px; color: var(--text-accent); }
+.command-preset > svg:last-child { margin-left: auto; color: var(--text-subtle); }
+.command-preset strong, .command-preset small { display: block; }
+.command-preset strong { font-size: 12px; font-weight: 550; }
+.command-preset small { margin-top: 4px; font-size: 11px; line-height: 1.45; color: var(--text-subtle); }
+.command-role-model { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.command-role-model > .settings-select-control { flex: 1; min-width: 0; }
+.command-editor.settings-page .command-remove-role { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 30px; padding: 0; color: var(--text-subtle); border-color: transparent; background: transparent; }
+.command-editor.settings-page .command-remove-role:hover { color: var(--text-error); background: var(--surface-control); }
+.command-role-selector { margin-bottom: 14px; }
 .command-editor .settings-select-value { background: var(--surface-control); border-color: var(--border-strong); font-size: 12px; }
 .command-hint { margin: 14px 0 0 49px; font-size: 11px; color: var(--text-subtle); }
 .command-section-heading { margin-bottom: 18px; }
@@ -85,11 +103,13 @@
   .command-commander { flex-wrap: wrap; }
   .command-model-source { margin-left: 44px; }
   .command-role-card { grid-template-columns: 32px minmax(0, 1fr); }
-  .command-role-card > .settings-select-control { grid-column: 1 / -1; }
+  .command-role-model { grid-column: 1 / -1; }
   .command-role-card h3 > span { display: inline; margin-left: 8px; }
   .command-team-list { margin-left: 16px; padding-left: 12px; }
   .command-role-card::before { width: 12px; left: -13px; }
   .command-hint { margin-left: 29px; }
+  .command-team-toolbar { margin-left: 29px; }
+  .command-presets > div { grid-template-columns: minmax(0, 1fr); }
   .command-limit-grid { grid-template-columns: minmax(0, 1fr); }
   .command-limit-card .settings-field-row { grid-template-columns: minmax(0, 1fr) 80px; }
   .command-role-fields { grid-template-columns: minmax(0, 1fr); }

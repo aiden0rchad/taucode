@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync } from "node:fs";
 import { dirname, basename, resolve, relative, isAbsolute, sep } from "node:path";
 
-export type Role = { name: string; description: string; model?: string; toolAccess: "read-only" | "full"; instructions: string };
+export type Role = { name: string; description: string; model?: string; toolAccess: "read-only" | "full"; instructions: string; commandRank?: "colonel" | "major" | "enlisted" | null };
 export type Policy = { enabled?: boolean; mode?: "custom" | "chain-of-command"; maxConcurrent: number; maxPerTurn: number; maxDepth: number; allowedModels: string[]; defaultModel?: string; roles: Role[]; models?: Record<string, string> };
 export type Rule = { tool: string; command?: string; path?: string; cwd?: string };
 export type Access = { accessMode: "read-only" | "ask" | "full-access"; sessionAllow: Rule[]; kind?: "work"; workspace?: string; readOnlyFolders?: string[]; skillRoot?: string };
@@ -86,17 +86,25 @@ export function decide(access: Access, call: Call, home: string, interactive: bo
   if (access.sessionAllow.some(r => JSON.stringify(r) === rule)) return "allow";
   return interactive ? "ask" : "block";
 }
-export function commandTargets(role: string): string[] {
-  return role === "commander" ? ["colonel", "major", "enlisted"] : role === "colonel" ? ["major", "enlisted"] : [];
+export function commandRank(name: string, roles: Role[]): string | undefined {
+  if (["colonel", "major", "enlisted"].includes(name)) return name;
+  const rank = roles.find(role => role.name === name)?.commandRank;
+  return name !== "commander" && rank && ["colonel", "major", "enlisted"].includes(rank) ? rank : undefined;
 }
-export function commandInstructions(role: string): string {
+export function commandTargets(role: string, roles: Role[]): string[] {
+  const rank = role === "commander" ? role : commandRank(role, roles);
+  const allowed = rank === "commander" ? ["colonel", "major", "enlisted"] : rank === "colonel" ? ["major", "enlisted"] : [];
+  return roles.filter(role => allowed.includes(commandRank(role.name, roles) ?? "")).map(role => role.name);
+}
+export function commandInstructions(role: string, roles: Role[] = []): string {
   const instructions: Record<string, string> = {
-    commander: "You are the commander in Chain of Command mode. Define the goal, constraints and acceptance criteria. Delegate bounded implementation to colonels or enlisted agents using their configured models. Use a major for independent verification before reporting completion; give the major the acceptance criteria and artifact paths. If the agent budget prevents QA, report that limitation instead of claiming verification. Keep handoffs concise and include paths and evidence; avoid repeating whole transcripts. You own integration and the final response.",
-    colonel: "You are a colonel. Break the assigned goal into bounded, non-overlapping tasks for enlisted agents. Reserve budget for a major to verify the result, or explicitly return unverified work to the commander. Integrate results and report artifacts, checks and remaining risks. Do not delegate recursively to another colonel.",
+    commander: "You are the commander in Chain of Command mode. Define the goal, constraints and acceptance criteria. Delegate bounded work to colonels or enlisted agents using their configured models. Prefer a configured specialist when its description matches the task. Use a major-rank role for independent verification before reporting completion; give it the acceptance criteria and artifact paths. If the agent budget prevents QA, report that limitation instead of claiming verification. Keep handoffs concise and include paths and evidence; avoid repeating whole transcripts. You own integration and the final response.",
+    colonel: "You are a colonel. Break the assigned goal into bounded, non-overlapping tasks for enlisted agents. Prefer a configured specialist when its description matches the task. Reserve budget for a major-rank role to verify the result, or explicitly return unverified work to the commander. Integrate results and report artifacts, checks and remaining risks. Do not delegate recursively to another colonel.",
     major: "You are a QA major. Independently check the supplied acceptance criteria against the actual artifacts. Run the available checks within your tool permissions. Report pass/fail evidence and unresolved risks. Do not claim a check ran when it did not. You cannot delegate; return necessary fixes to your commander or colonel.",
     enlisted: "You are an enlisted implementation agent. Complete only the bounded assigned task, preserve unrelated work, and run relevant checks. Return concise artifact paths, changes, evidence and blockers. You cannot delegate.",
   };
-  return instructions[role] ?? "Unknown Chain of Command role. Delegation is blocked.";
+  const rank = role === "commander" ? role : commandRank(role, roles);
+  return (rank && instructions[rank] ? (role !== rank ? `Your role is ${role}, with ${rank} rank. ` : "") + instructions[rank] : "Unknown Chain of Command role. Delegation is blocked.");
 }
 // Atomic directory creation shares a finite budget across independent child processes.
 export function reserveSubagent(directory: string, limit: number): void {
@@ -107,7 +115,7 @@ export function reserveSubagent(directory: string, limit: number): void {
   throw new Error(`Subagent max per turn (${limit}) reached across the command tree`);
 }
 export function resolveTask(policy: Policy, task: { agent: string; model?: string | null }, parent?: string, parentRole = "commander") {
-  if (policy.mode === "chain-of-command" && !commandTargets(parentRole).includes(task.agent)) throw new Error(`${parentRole} cannot delegate to ${task.agent} in Chain of Command mode`);
+  if (policy.mode === "chain-of-command" && !commandTargets(parentRole, policy.roles).includes(task.agent)) throw new Error(`${parentRole} cannot delegate to ${task.agent} in Chain of Command mode`);
   const role = policy.roles.find(r => r.name === task.agent);
   if (!role) throw new Error(`Unknown role ${task.agent}. Available: ${policy.roles.map(r => r.name).join(", ")}`);
   const configured = role.model || policy.defaultModel || parent;

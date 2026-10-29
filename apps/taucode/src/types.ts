@@ -12,7 +12,8 @@ export type ProviderEntry = {
   apiStyle?: "chat-completions" | "responses" | null; auth: ProviderAuth;
   models: ProviderModel[]; modelsFetchedAt?: number | null; enabled: boolean; extraHeaders?: Record<string, string>;
 };
-export type AgentRole = { name: string; description: string; model: ModelRef | null; toolAccess: "read-only" | "full"; instructions: string };
+export type CommandRank = "colonel" | "major" | "enlisted";
+export type AgentRole = { name: string; description: string; model: ModelRef | null; toolAccess: "read-only" | "full"; instructions: string; commandRank?: CommandRank | null };
 export type AgentPolicy = {
   defaultEngine: EngineKind; defaultModel: ModelRef | null;
   subagents: { enabled: boolean; mode?: "custom" | "chain-of-command"; maxConcurrent: number; maxPerTurn: number; maxDepth: number; allowedModels: ModelRef[]; defaultModel: ModelRef | null; roles: AgentRole[] };

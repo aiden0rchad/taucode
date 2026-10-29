@@ -614,8 +614,10 @@ fn managed_policy_and_access_files_update_and_preserve_session_rules() {
     config::write_policy(&home, &[], &policy).unwrap();
     assert_eq!(read(&home.join("taucode/policy.json"))["maxConcurrent"], 2);
     policy.subagents.mode = crate::types::SubagentMode::ChainOfCommand;
+    policy.subagents.roles[0].command_rank = Some(crate::types::CommandRank::Enlisted);
     config::write_policy(&home, &[], &policy).unwrap();
     assert_eq!(read(&home.join("taucode/policy.json"))["mode"], "chain-of-command");
+    assert_eq!(read(&home.join("taucode/policy.json"))["roles"][0]["commandRank"], "enlisted");
     config::write_access(&home, "thread", Some("current")).unwrap();
     let file = home.join("taucode/threads/thread.json");
     assert_eq!(read(&file)["accessMode"], "ask");

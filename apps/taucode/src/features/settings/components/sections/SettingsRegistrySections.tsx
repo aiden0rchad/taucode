@@ -8,7 +8,7 @@ import "./registry.css";
 import { useEffect, useState } from "react";
 import type { AppSettings, ProviderEntry, ProviderKind, ProviderAuth, AgentPolicy, WorkspaceInfo, WorkspaceSettings } from "@/types";
 import { providerSetApiKey, providerHasApiKey, providerDeleteApiKey, providerTestAndFetch } from "@services/tauri";
-import { commandRoles, defaultAgentPolicy, mergePolicy, modelKey, modelRef, policyError, providerEngines, setAgentMode } from "../../registry";
+import { commandRoles, commandRoleTitle, defaultAgentPolicy, isCommandRole, mergePolicy, modelKey, modelRef, policyError, providerEngines, setAgentMode } from "../../registry";
 
 type Props = { appSettings: AppSettings; onUpdateAppSettings: (s: AppSettings) => Promise<void> };
 const kinds: ProviderKind[] = ["openai", "anthropic", "google", "openrouter", "groq", "mistral", "xai", "deepseek", "zai", "ollama", "lmstudio", "openai-compatible"];
@@ -138,22 +138,19 @@ export function AgentPolicyEditor({ policy, providers, onChange, tab }: { tab?: 
     {modelSelect("Default subagent model", modelKey(sub.defaultModel), v => onChange({ ...policy, subagents: { ...sub, defaultModel: modelRef(v) } }))}
     </SettingsGroup>}
     {chain && tab === "defaults" && <SettingsGroup title="Team models" subtitle="Choose smaller cloud or local models where suitable. Inherit uses the default subagent model, then the parent's model. Edit tools and instructions in Roles.">
-      {commandRoles.map(({ name }) => {
-        const role = sub.roles.find(r => r.name === name);
-        return role && <div key={name}>{modelSelect(`${name[0].toUpperCase() + name.slice(1)} model`, modelKey(role.model), value => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.map(r => r.name === name ? { ...r, model: modelRef(value) } : r) } }))}</div>;
-      })}
+      {sub.roles.filter(isCommandRole).map(role => <div key={role.name}>{modelSelect(`${commandRoleTitle(role.name)} model`, modelKey(role.model), value => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.map(r => r.name === role.name ? { ...r, model: modelRef(value) } : r) } }))}</div>)}
     </SettingsGroup>}
     {(!tab || tab === "roles") && <SettingsGroup title="Roles" subtitle="Named specialists with their own model, tools and instructions.">
     {sub.roles.map((role, index) => {
-      if (chain && !commandRoles.some(r => r.name === role.name)) return null;
+      if (chain && !isCommandRole(role)) return null;
       const change = (patch: Partial<typeof role>) => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.map((r, i) => i === index ? { ...r, ...patch } : r) } });
-      return <SettingsGroup key={index} title={chain ? role.name === "enlisted" ? "Enlisted · Implementation" : role.name === "major" ? "Major · Quality assurance" : "Colonel · Delegation" : <>Role {index + 1}</>}>
+      return <SettingsGroup key={index} title={chain ? commandRoleTitle(role.name) : <>Role {index + 1}</>}>
         <SettingsFieldRow  title={<>Name</>}><SettingsTextField readOnly={chain} value={role.name} onChange={e => change({ name: e.target.value })} /></SettingsFieldRow>
         <SettingsFieldRow  title={<>Description</>}><SettingsTextField value={role.description} onChange={e => change({ description: e.target.value })} /></SettingsFieldRow>
-        {modelSelect(chain ? `${role.name[0].toUpperCase() + role.name.slice(1)} model` : "Role model", modelKey(role.model), v => change({ model: modelRef(v) }))}
+        {modelSelect(chain ? `${commandRoleTitle(role.name)} model` : "Role model", modelKey(role.model), v => change({ model: modelRef(v) }))}
         <SettingsFieldRow  title={<>Tool access</>}><SettingsSelect value={role.toolAccess} onChange={e => change({ toolAccess: e.target.value as "read-only" | "full" })}><option value="read-only">Read only</option><option value="full">Full</option></SettingsSelect></SettingsFieldRow>
         <SettingsFieldRow title={<>Instructions</>} className="settings-field-row-long"><SettingsTextArea value={role.instructions} onChange={e => change({ instructions: e.target.value })} /></SettingsFieldRow>
-        {!chain && <SettingsButton type="button" onClick={() => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.filter((_, i) => i !== index) } })}>Remove role</SettingsButton>}
+        {(!chain || !commandRoles.some(core => core.name === role.name)) && <SettingsButton type="button" onClick={() => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.filter((_, i) => i !== index) } })}>Remove role</SettingsButton>}
       </SettingsGroup>;
     })}
     {!chain && <SettingsButton type="button" onClick={() => onChange({ ...policy, subagents: { ...sub, roles: [...sub.roles, { name: "role-" + (sub.roles.length + 1), description: "", model: null, toolAccess: "read-only", instructions: "" }] } })}>Add role</SettingsButton>}

@@ -106,6 +106,60 @@ it("leaves the toggle off and reports failed saves", async () => {
   expect(screen.getByRole("button", { name: "Chain of Command" }).getAttribute("aria-pressed")).toBe("false");
   expect(screen.getByRole("button", { name: "Chain of Command" }).classList.contains("is-activating")).toBe(false);
 });
+it("adds preset teammates with independent models, saves their guidance, and supports removable duplicates", async () => {
+  const save = vi.fn().mockResolvedValue(undefined);
+  render(<Picker save={save} />);
+  const open = async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Commander · Low" }));
+    const toggle = screen.getByRole("button", { name: "Chain of Command" });
+    if (toggle.getAttribute("aria-pressed") !== "true") {
+      fireEvent.click(toggle);
+      await waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("true"));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Configure Chain of Command" }));
+    await screen.findByLabelText("Colonel model");
+  };
+  await open();
+  expect(screen.queryByRole("button", { name: "Remove Colonel" })).toBeNull();
+  for (const title of ["Researcher", "Designer", "Frontend engineer", "Backend engineer", "Test engineer", "Documentation", "Researcher"]) {
+    fireEvent.click(screen.getByRole("button", { name: "Add role" }));
+    const presets = screen.getByRole("group", { name: "Role presets" });
+    expect(within(presets).getAllByRole("button")).toHaveLength(6);
+    fireEvent.click(within(presets).getByRole("button", { name: new RegExp(`^${title} `) }));
+    expect(screen.queryByRole("group", { name: "Role presets" })).toBeNull();
+  }
+  expect(document.activeElement).toBe(screen.getByLabelText("Researcher 2 model"));
+  fireEvent.change(screen.getByLabelText("Researcher model"), { target: { value: "local/small" } });
+  expect(screen.getByLabelText("Researcher 2 model")).toHaveProperty("value", "");
+  fireEvent.click(screen.getByRole("tab", { name: "Roles" }));
+  expect(screen.getByLabelText("Agent role")).toHaveProperty("value", "researcher-2");
+  expect(screen.getByLabelText("Tool access")).toHaveProperty("value", "read-only");
+  expect(screen.getByLabelText("Instructions")).toHaveProperty("value", expect.stringContaining("Do not modify files"));
+  fireEvent.change(screen.getByLabelText("Instructions"), { target: { value: "Inspect accessibility and cite file paths." } });
+  fireEvent.change(screen.getByLabelText("Agent role"), { target: { value: "test-engineer" } });
+  expect(screen.getByLabelText("Instructions")).toHaveProperty("value", expect.stringContaining("Independently verify"));
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ subagents: expect.objectContaining({ roles: expect.arrayContaining([
+    expect.objectContaining({ name: "researcher", model: { providerId: "local", modelId: "small" }, commandRank: "enlisted", toolAccess: "read-only" }),
+    expect.objectContaining({ name: "researcher-2", model: null, instructions: "Inspect accessibility and cite file paths." }),
+    expect.objectContaining({ name: "test-engineer", commandRank: "major" }),
+    expect.objectContaining({ name: "scout" }),
+  ]) }) }));
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "Remove Researcher 2" }));
+  expect(screen.queryByLabelText("Researcher 2 model")).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add role" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await open();
+  expect(screen.getByLabelText("Researcher 2 model")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Remove Researcher 2" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(save.mock.lastCall![0].subagents.roles.some((role: { name: string }) => role.name === "researcher-2")).toBe(false);
+  await open();
+  expect(screen.getByLabelText("Researcher model")).toHaveProperty("value", "local/small");
+});
 it("offers the controls for models without reasoning and keeps unsupported engines disabled", () => {
   const view = render(<Picker reasoning={false} engine="codex" />);
   fireEvent.click(screen.getByRole("button", { name: "Commander" }));

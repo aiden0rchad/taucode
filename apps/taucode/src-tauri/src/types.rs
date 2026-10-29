@@ -1641,6 +1641,9 @@ pub(crate) enum ToolAccess {
     ReadOnly,
     Full,
 }
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum CommandRank { Colonel, Major, Enlisted }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AgentRole {
@@ -1649,6 +1652,8 @@ pub(crate) struct AgentRole {
     pub model: Option<ModelRef>,
     pub tool_access: ToolAccess,
     pub instructions: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_rank: Option<CommandRank>,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default, rename_all = "camelCase")]
@@ -1684,6 +1689,7 @@ impl Default for SubagentPolicy {
                 tool_access,
                 model: None,
                 instructions: String::new(),
+                command_rank: None,
             })
             .collect(),
         }
