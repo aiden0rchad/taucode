@@ -15,7 +15,7 @@ export type ProviderEntry = {
 export type AgentRole = { name: string; description: string; model: ModelRef | null; toolAccess: "read-only" | "full"; instructions: string };
 export type AgentPolicy = {
   defaultEngine: EngineKind; defaultModel: ModelRef | null;
-  subagents: { enabled: boolean; maxConcurrent: number; maxPerTurn: number; maxDepth: number; allowedModels: ModelRef[]; defaultModel: ModelRef | null; roles: AgentRole[] };
+  subagents: { enabled: boolean; mode?: "custom" | "chain-of-command"; maxConcurrent: number; maxPerTurn: number; maxDepth: number; allowedModels: ModelRef[]; defaultModel: ModelRef | null; roles: AgentRole[] };
 };
 export type AgentPolicyOverride = Partial<Omit<AgentPolicy, "subagents">> & { subagents?: Partial<AgentPolicy["subagents"]> };
 export type WorkspaceSettings = {

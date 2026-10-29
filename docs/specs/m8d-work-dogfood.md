@@ -66,8 +66,9 @@ stable designated requirement alone does not fix this partition check. This patc
 does not alter Keychain ACLs or bypass macOS protection.
 
 Only the local `taucode Dev` certificate was installed; no Apple-issued signing
-identity, Xcode installation, or saved Xcode account was found. That does not
-establish whether the user has an online Apple Developer account.
+identity, Xcode installation, or saved Xcode account was found. The signed-in Apple
+Developer account page shows a free account and offers paid enrollment; no paid
+membership is shown for that account.
 
 [Apple permits free account/Xcode development and personal testing](https://developer.apple.com/help/account/membership/programs-overview/).
 [Developer ID distribution signing requires Developer Program membership](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/),

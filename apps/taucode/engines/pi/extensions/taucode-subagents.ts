@@ -1,16 +1,17 @@
 // Derived from pi's examples/extensions/subagent (MIT, Copyright Mario Zechner).
 // Keeps single/parallel/chain JSON streaming; roles come only from taucode policy.
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { checkLimits, inside, resolveTask, type Policy } from "./lib/policy.ts";
+import { checkLimits, commandInstructions, commandTargets, inside, reserveSubagent, resolveTask, type Policy } from "./lib/policy.ts";
 
-const taskFields = { agent: Type.String(), task: Type.String(), model: Type.Optional(Type.String()), cwd: Type.Optional(Type.String()) };
+const optionalString = Type.Optional(Type.Union([Type.String(), Type.Null()]));
+const taskFields = { agent: Type.String(), task: Type.String(), model: optionalString, cwd: optionalString };
 const Task = Type.Object(taskFields);
-type TaskInput = { agent: string; task: string; model?: string; cwd?: string };
+type TaskInput = { agent: string; task: string; model?: string | null; cwd?: string | null };
 type Message = { role: string; toolCallId?: string; toolName?: string; content?: { type: string; text?: string }[]; stopReason?: string; errorMessage?: string; usage?: Record<string, any> };
 type Result = TaskInput & { exitCode: number; status: string; messages: Message[]; stderr: string; stopReason?: string; usage: Record<string, number> };
 const output = (r: Result) => r.messages.filter(m => m.role === "assistant").at(-1)?.content?.filter(c => c.type === "text").map(c => c.text).join("\n") || r.stderr;
@@ -18,26 +19,35 @@ const output = (r: Result) => r.messages.filter(m => m.role === "assistant").at(
 export default function (pi: ExtensionAPI) {
   let count = 0;
   let active = 0;
+  let turnBudget: string | undefined;
+  const clearBudget = () => { if (turnBudget) rmSync(turnBudget, { recursive: true, force: true }); turnBudget = undefined; };
   const waiters = new Set<() => void>();
   pi.on("session_start", (_event, ctx) => { ctx.ui.setStatus("taucode-subagents", "ready"); });
-  pi.on("agent_start", () => { count = 0; });
+  pi.on("agent_start", () => { count = 0; clearBudget(); });
+  pi.on("agent_end", clearBudget);
+  pi.on("session_shutdown", clearBudget);
   pi.on("before_agent_start", () => {
     const current: Policy = JSON.parse(readFileSync(join(process.env.PI_CODING_AGENT_DIR!, "taucode/policy.json"), "utf8"));
-    return { message: { customType: "taucode-subagent-policy", display: false, content: `Subagent policy: ${JSON.stringify(current)}` } };
+    const role = Number(process.env.TAUCODE_SUBAGENT_DEPTH ?? 0) === 0 ? "commander" : process.env.TAUCODE_SUBAGENT_ROLE ?? "unknown";
+    const chain = current.enabled !== false && current.mode === "chain-of-command";
+    const visible = { ...current, models: undefined, ...(chain ? { roles: current.roles.filter(r => commandTargets(role).includes(r.name)) } : {}) };
+    return { message: { customType: "taucode-subagent-policy", display: false, content: `${chain ? commandInstructions(role) + "\n" : ""}Subagent policy: ${JSON.stringify(visible)}` } };
   });
   pi.registerTool({
     name: "subagent",
     label: "Subagent",
-    description: "Delegate using taucode policy roles only (no user/project agent directories). Single: agent + task; parallel: tasks; chain: chain with {previous} substitution. Optional model per task is provider/model. Policy enforces concurrent, per-turn, depth and model limits. Children inherit thread access and are non-interactive: read-only stays read-only; in ask mode full roles may write only inside the workspace, bash only on the read-only allowlist. Protected paths require interactive approval and are blocked in children.",
-    parameters: Type.Object({ agent: Type.Optional(taskFields.agent), task: Type.Optional(taskFields.task), model: taskFields.model, cwd: taskFields.cwd, tasks: Type.Optional(Type.Array(Task)), chain: Type.Optional(Type.Array(Task)) }),
+    description: "Delegate using taucode policy roles only (no user/project agent directories). Single: agent + task; parallel: tasks; chain: chain with {previous} substitution. Optional model per task is provider/model. Chain of Command fixes each role's model and shares a per-turn budget across the command tree; commanders and colonels delegate, majors verify, enlisted implement. Concurrency limits each delegator's immediate children. Children inherit thread access and are non-interactive: read-only stays read-only; in ask mode full roles may write only inside the workspace, bash only on the read-only allowlist. Protected paths require interactive approval and are blocked in children.",
+    parameters: Type.Object({ agent: optionalString, task: optionalString, model: taskFields.model, cwd: taskFields.cwd, tasks: Type.Optional(Type.Union([Type.Array(Task), Type.Null()])), chain: Type.Optional(Type.Union([Type.Array(Task), Type.Null()])) }),
     async execute(_id, params, signal, onUpdate, ctx) {
       const home = process.env.PI_CODING_AGENT_DIR!;
       const policy: Policy = JSON.parse(readFileSync(join(home, "taucode/policy.json"), "utf8"));
       const depth = Number(process.env.TAUCODE_SUBAGENT_DEPTH ?? 0);
-      const modes = [!!(params.agent && params.task), !!params.tasks?.length, !!params.chain?.length];
+      // Strict-schema providers send empty arrays/nulls for unused optional modes.
+      const modes = [!!(params.agent || params.task), !!params.tasks?.length, !!params.chain?.length];
       if (modes.filter(Boolean).length !== 1 || "agentScope" in params) throw new Error("Provide exactly one of agent + task, tasks, or chain. Agent directories are disabled.");
-      const mode = params.chain ? "chain" : params.tasks ? "parallel" : "single";
-      const tasks = (params.chain ?? params.tasks ?? [params]) as TaskInput[];
+      const mode = modes[2] ? "chain" : modes[1] ? "parallel" : "single";
+      const tasks = (mode === "chain" ? params.chain : mode === "parallel" ? params.tasks : [params]) as TaskInput[];
+      if (!tasks.length || tasks.some(task => !task.agent?.trim() || !task.task?.trim())) throw new Error("Provide at least one task with a non-empty agent and task");
       const results: Result[] = tasks.map(task => ({ ...task, exitCode: -1, status: "pending", messages: [], stderr: "", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 } }));
       const snapshot = () => ({ content: [{ type: "text" as const, text: results.map(r => `${r.agent}: ${output(r) || r.status}`).join("\n\n") }], details: { mode, results } });
       const update = () => onUpdate?.(structuredClone(snapshot()));
@@ -47,10 +57,18 @@ export default function (pi: ExtensionAPI) {
         let acquired = false;
         try {
           checkLimits(policy, depth, count);
-          const { role, model, provider, modelId } = resolveTask(policy, r, parent);
+          const parentRole = depth === 0 ? "commander" : process.env.TAUCODE_SUBAGENT_ROLE ?? "unknown";
+          const { role, model, provider, modelId } = resolveTask(policy, r, parent, parentRole);
           const workspace = process.env.TAUCODE_WORKSPACE ?? ctx.cwd;
-          const cwd = r.cwd ?? ctx.cwd;
+          const cwd = r.cwd || ctx.cwd;
           if (!inside(cwd, workspace)) throw new Error("Subagent cwd must be inside the workspace");
+          if (signal?.aborted) throw new Error("Subagent aborted");
+          let budget: string | undefined;
+          if (policy.mode === "chain-of-command") {
+            budget = depth === 0 ? turnBudget ??= mkdtempSync(join(home, "taucode/subagent-turn-")) : process.env.TAUCODE_SUBAGENT_BUDGET;
+            if (!budget || !inside(budget, join(home, "taucode"))) throw new Error("Missing managed Chain of Command budget");
+            reserveSubagent(budget, policy.maxPerTurn);
+          }
           count++;
           while (active >= policy.maxConcurrent) {
             if (signal?.aborted) throw new Error("Subagent aborted");
@@ -71,7 +89,7 @@ export default function (pi: ExtensionAPI) {
           if (role.instructions) args.push("--append-system-prompt", role.instructions);
           args.push(`Task: ${r.task}`);
           r.exitCode = await new Promise<number>((resolve, reject) => {
-            const child = spawn(process.execPath, args, { cwd, env: { ...process.env, TAUCODE_SUBAGENT_DEPTH: String(depth + 1), TAUCODE_WORKSPACE: workspace, TAUCODE_TOOL_ACCESS: toolAccess }, stdio: ["ignore", "pipe", "pipe"], detached: depth === 0 && process.platform !== "win32" });
+            const child = spawn(process.execPath, args, { cwd, env: { ...process.env, TAUCODE_SUBAGENT_DEPTH: String(depth + 1), TAUCODE_SUBAGENT_ROLE: role.name, TAUCODE_SUBAGENT_BUDGET: budget, TAUCODE_WORKSPACE: workspace, TAUCODE_TOOL_ACCESS: toolAccess }, stdio: ["ignore", "pipe", "pipe"], detached: depth === 0 && process.platform !== "win32" });
             let timer: ReturnType<typeof setTimeout> | undefined;
             const kill = (sig: NodeJS.Signals) => { try { if (depth === 0 && process.platform !== "win32" && child.pid) process.kill(-child.pid, sig); else child.kill(sig); } catch { /* already exited */ } };
             const abort = () => { kill("SIGTERM"); timer = setTimeout(() => kill("SIGKILL"), 1000); };

@@ -1654,6 +1654,7 @@ pub(crate) struct AgentRole {
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct SubagentPolicy {
     pub enabled: bool,
+    pub mode: SubagentMode,
     pub max_concurrent: u8,
     pub max_per_turn: u8,
     pub max_depth: u8,
@@ -1665,6 +1666,7 @@ impl Default for SubagentPolicy {
     fn default() -> Self {
         Self {
             enabled: true,
+            mode: SubagentMode::Custom,
             max_concurrent: 4,
             max_per_turn: 8,
             max_depth: 1,
@@ -1687,6 +1689,13 @@ impl Default for SubagentPolicy {
         }
     }
 }
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum SubagentMode {
+    #[default]
+    Custom,
+    ChainOfCommand,
+}
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct AgentPolicy {
@@ -1699,6 +1708,7 @@ impl Default for AgentPolicy { fn default() -> Self { Self { default_model: None
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct SubagentPolicyOverride {
     pub enabled: Option<bool>,
+    pub mode: Option<SubagentMode>,
     pub max_concurrent: Option<u8>,
     pub max_per_turn: Option<u8>,
     pub max_depth: Option<u8>,

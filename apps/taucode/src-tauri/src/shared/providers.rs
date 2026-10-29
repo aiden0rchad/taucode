@@ -137,6 +137,14 @@ pub(crate) fn validate(providers: &[ProviderEntry], policy: &AgentPolicy) -> Res
         }
     }
     let s = &policy.subagents;
+    if s.enabled && s.mode == SubagentMode::ChainOfCommand {
+        if s.max_depth < 2 || s.max_per_turn < 3 {
+            return Err("Chain of Command requires depth at least 2 and at least 3 agents per turn".into());
+        }
+        if ["colonel", "major", "enlisted"].iter().any(|name| !s.roles.iter().any(|r| r.name == *name)) {
+            return Err("Chain of Command requires colonel, major and enlisted roles".into());
+        }
+    }
     if !(1..=16).contains(&s.max_concurrent)
         || !(1..=32).contains(&s.max_per_turn)
         || !(1..=3).contains(&s.max_depth)
@@ -201,6 +209,7 @@ pub(crate) fn effective_policy(
             macro_rules! merge { ($($field:ident),*) => { $(if let Some(v) = &s.$field { p.subagents.$field = v.clone(); })* }; }
             merge!(
                 enabled,
+                mode,
                 max_concurrent,
                 max_per_turn,
                 max_depth,
@@ -884,6 +893,32 @@ mod tests {
         assert!(validate(&[p], &policy)
             .unwrap_err()
             .contains("Enable provider"));
+    }
+    #[test]
+    fn command_policy_round_trips_and_merges_without_changing_legacy_defaults() {
+        let base = AgentPolicy::default();
+        assert_eq!(base.subagents.mode, SubagentMode::Custom);
+        let over: AgentPolicyOverride = serde_json::from_value(json!({"subagents": {
+            "mode":"chain-of-command", "maxDepth":2,
+            "roles":[
+                {"name":"colonel","description":"Delegate","model":null,"toolAccess":"full","instructions":""},
+                {"name":"major","description":"QA","model":null,"toolAccess":"full","instructions":""},
+                {"name":"enlisted","description":"Work","model":null,"toolAccess":"full","instructions":""}
+            ]
+        }})).unwrap();
+        let mut policy = effective_policy(&base, Some(&over));
+        assert!(validate(&[], &policy).is_ok());
+        let saved = serde_json::to_value(&policy).unwrap();
+        assert_eq!(saved["subagents"]["mode"], "chain-of-command");
+        assert_eq!(serde_json::from_value::<AgentPolicy>(saved).unwrap().subagents.mode, SubagentMode::ChainOfCommand);
+        policy.subagents.max_per_turn = 2;
+        assert!(validate(&[], &policy).unwrap_err().contains("at least 3"));
+        policy.subagents.max_per_turn = 8;
+        policy.subagents.roles.pop();
+        assert!(validate(&[], &policy).unwrap_err().contains("enlisted"));
+        policy.subagents.enabled = false;
+        assert!(validate(&[], &policy).is_ok());
+        assert!(serde_json::from_value::<AgentPolicy>(json!({"subagents":{"mode":"unknown"}})).is_err());
     }
     #[test]
     fn catalog_flags_only_the_policy_default_model() {

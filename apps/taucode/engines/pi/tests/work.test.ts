@@ -24,6 +24,9 @@ test("Work access modes govern shell and overwrites while file boundaries remain
       assert.equal(decide(access, { tool: "read", cwd, path: extra }, home, true), "allow");
       assert.equal(decide(access, { tool: "read", cwd, path: root }, home, true), "block");
       const deletion = decide(access, { tool: "bash", cwd, command: "rm notes.md" }, home, true);
+      const child = { workspace: cwd, toolAccess: "full" };
+      assert.equal(decide(access, { tool: "bash", cwd, command: "python check_report.py" }, home, false, child), accessMode === "full-access" ? "allow" : "block");
+      assert.equal(decide(access, { tool: "bash", cwd, command: "echo key > .env" }, home, false, child), "block");
       assert.equal(deletion, accessMode === "full-access" ? "allow" : accessMode === "read-only" ? "block" : "ask");
       if (accessMode === "read-only") assert.equal(decide({ accessMode, sessionAllow: [] }, { tool: "bash", cwd, command: "rm notes.md" }, home, true), "block");
       if (accessMode === "full-access") {

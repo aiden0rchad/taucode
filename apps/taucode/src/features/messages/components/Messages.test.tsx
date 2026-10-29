@@ -5,7 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import type { ConversationItem } from "../../../types";
 import { expectOpenedFileTarget } from "../test/fileLinkAssertions";
 import { Messages } from "./Messages";
-import { prepareThreadItems } from "@utils/threadItems";
+import { buildConversationItem, prepareThreadItems } from "@utils/threadItems";
 
 const useFileLinkOpenerMock = vi.fn(
   (_workspacePath: string | null, _openTargets: unknown[], _selectedOpenAppId: string) => ({
@@ -38,6 +38,17 @@ vi.mock("@services/tauri", async () => {
 });
 
 describe("Messages", () => {
+  it("shows the actual delegation error when a failed spawn is expanded", () => {
+    const item = buildConversationItem({
+      type: "collabAgentToolCall", id: "spawn", tool: "spawnAgent", status: "failed",
+      error: { message: "Delegation budget exhausted" }, agentsStates: {}, agentsTree: [],
+    });
+    expect(item).not.toBeNull();
+    render(<Messages items={[item!]} threadId="thread" workspaceId="workspace" isThinking={false} openTargets={[]} selectedOpenAppId="" />);
+    fireEvent.click(screen.getByRole("button", { name: /spawn failed/i }));
+    expect(screen.getByText("Delegation budget exhausted")).toBeTruthy();
+  });
+
   it("renders a stored virtual subagent write as a tool instead of a file edit", () => {
     const items = prepareThreadItems([{ id: "old-subagent", kind: "tool", toolType: "fileChange", title: "File changes", detail: "A xd://subagent", status: "failed", output: "Call failed", changes: [{ path: "xd://subagent", kind: "add" }] }]);
     render(<Messages items={items} threadId="thread" workspaceId="workspace" isThinking={false} openTargets={[]} selectedOpenAppId="" />);

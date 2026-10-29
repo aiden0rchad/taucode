@@ -300,6 +300,29 @@ fn replay_groups_user_blocks_and_keeps_turn_identity() {
     assert_eq!(t.turn_id(), "thread:turn:2");
 }
 #[tokio::test]
+async fn single_model_policy_disables_acp_delegation_and_reloads_when_changed() {
+    let data = temp();
+    let engine = engine(&data);
+    let provider = provider("anthropic");
+    let mut policy = AgentPolicy::default();
+    policy.subagents.enabled = false;
+    engine.configure("workspace", vec![provider.clone()], policy.clone()).await;
+    let start = engine.request("workspace", "thread/start", json!({})).await.unwrap();
+    let id = start["result"]["thread"]["id"].as_str().unwrap();
+    let params = engine.session_params("workspace", id, data.to_str().unwrap(), "model").await.unwrap();
+    let disabled = params["_meta"]["claudeCode"]["options"]["disallowedTools"].as_array().unwrap();
+    assert!(disabled.contains(&json!("Task")) && disabled.contains(&json!("Agent")));
+    let previous = engine.runtimes.lock().await["workspace"].client.id.clone();
+    policy.subagents.enabled = true;
+    engine.configure("workspace", vec![provider.clone()], policy).await;
+    let client = engine.spawn("workspace", data.to_str().unwrap(), &provider, "model").await.unwrap();
+    assert_ne!(client.id, previous);
+    let params = engine.session_params("workspace", id, data.to_str().unwrap(), "model").await.unwrap();
+    assert!(!params["_meta"]["claudeCode"]["options"]["disallowedTools"].as_array().unwrap().contains(&json!("Task")));
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(data).unwrap();
+}
+#[tokio::test]
 async fn fake_agent_stream_approval_resume_cancel_auth_and_fork() {
     let data = temp();
     let engine = engine(&data);

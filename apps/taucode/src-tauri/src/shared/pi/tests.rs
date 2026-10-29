@@ -256,6 +256,26 @@ async fn gate_approvals_use_canonical_items_decisions_and_resolve() {
 }
 
 #[test]
+fn subagent_validation_failure_keeps_error_and_single_agent_with_empty_modes() {
+    let mut t = Translator::new("parent", "/tmp");
+    t.apply(&json!({"type":"agent_start"}));
+    t.apply(&json!({"type":"tool_execution_start","toolCallId":"spawn","toolName":"subagent",
+        "args":{"agent":"colonel","task":"delegate","tasks":[],"chain":[],"model":null}}));
+    let item = &t.turns[0]["items"][0];
+    assert_eq!(item["prompt"], "delegate");
+    assert_eq!(item["agentsTree"][0]["agent"], "colonel");
+    assert_eq!(item["agentsStates"].as_object().unwrap().len(), 1);
+    let events = t.apply(&json!({"type":"tool_execution_end","toolCallId":"spawn","toolName":"subagent",
+        "isError":true,"result":{"content":[{"type":"text","text":"Delegation budget exhausted"}]}}));
+    let item = &t.turns[0]["items"][0];
+    assert_eq!(item["status"], "failed");
+    assert_eq!(item["error"]["message"], "Delegation budget exhausted");
+    assert_eq!(item["agentsTree"][0]["status"], "failed");
+    assert!(events.iter().any(|e| e["method"] == "item/completed"
+        && e["params"]["item"]["error"]["message"] == "Delegation budget exhausted"));
+}
+
+#[test]
 fn recorded_subagents_stream_states_outputs_and_usage_without_double_counting() {
     let (mut t, events) = replay("rpc_subagents.jsonl");
     let item = t
@@ -540,6 +560,9 @@ fn managed_policy_and_access_files_update_and_preserve_session_rules() {
     policy.subagents.max_concurrent = 2;
     config::write_policy(&home, &[], &policy).unwrap();
     assert_eq!(read(&home.join("taucode/policy.json"))["maxConcurrent"], 2);
+    policy.subagents.mode = crate::types::SubagentMode::ChainOfCommand;
+    config::write_policy(&home, &[], &policy).unwrap();
+    assert_eq!(read(&home.join("taucode/policy.json"))["mode"], "chain-of-command");
     config::write_access(&home, "thread", Some("current")).unwrap();
     let file = home.join("taucode/threads/thread.json");
     assert_eq!(read(&file)["accessMode"], "ask");

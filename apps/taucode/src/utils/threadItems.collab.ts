@@ -359,6 +359,9 @@ export function parseCollabToolCallItem(
     receiverAgents,
   );
   const prompt = asString(item.prompt ?? "");
+  const error = item.error && typeof item.error === "object"
+    ? asString((item.error as Record<string, unknown>).message ?? "")
+    : asString(item.error ?? "");
   const primaryReceiver = receiverFromInteraction ?? receiverFromSpawn ?? receiverAgents[0];
   return {
     id: asString(item.id),
@@ -367,7 +370,7 @@ export function parseCollabToolCallItem(
     title: tool ? `Collab: ${tool}` : "Collab tool call",
     detail: buildCollabDetail(sender ?? undefined, receiverAgents),
     status,
-    output: buildCollabOutput(prompt, collabStatuses),
+    output: [error, buildCollabOutput(prompt, collabStatuses)].filter(Boolean).join("\n\n"),
     collabSender: sender ?? undefined,
     collabReceiver: primaryReceiver ?? undefined,
     collabReceivers: receiverAgents.length > 0 ? receiverAgents : undefined,

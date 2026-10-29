@@ -1,7 +1,7 @@
 import type { AgentPolicy, AppSettings, ModelRef, ProviderEntry } from "@/types";
 export const defaultAgentPolicy: AgentPolicy = {
   defaultEngine: "pi", defaultModel: null,
-  subagents: { enabled: true, maxConcurrent: 4, maxPerTurn: 8, maxDepth: 1, allowedModels: [], defaultModel: null,
+  subagents: { enabled: true, mode: "custom", maxConcurrent: 4, maxPerTurn: 8, maxDepth: 1, allowedModels: [], defaultModel: null,
     roles: [
       { name: "scout", description: "Explore quickly", model: null, toolAccess: "read-only", instructions: "" },
       { name: "planner", description: "Plan changes", model: null, toolAccess: "read-only", instructions: "" },
@@ -9,6 +9,18 @@ export const defaultAgentPolicy: AgentPolicy = {
     ],
   },
 };
+export const commandRoles = [
+  { name: "colonel", description: "Break the commander's goal into bounded tasks and delegate", model: null, toolAccess: "full" as const, instructions: "" },
+  { name: "major", description: "Verify acceptance criteria and report failures with evidence", model: null, toolAccess: "full" as const, instructions: "" },
+  { name: "enlisted", description: "Implement one bounded task and report changes and checks", model: null, toolAccess: "full" as const, instructions: "" },
+];
+export function setAgentMode(policy: AgentPolicy, mode: "single" | "custom" | "chain-of-command"): AgentPolicy {
+  const sub = policy.subagents;
+  return { ...policy, subagents: { ...sub, enabled: mode !== "single", mode: mode === "single" ? sub.mode : mode,
+    ...(mode === "chain-of-command" ? { maxDepth: Math.max(2, sub.maxDepth), maxPerTurn: Math.max(3, sub.maxPerTurn),
+      roles: [...sub.roles, ...commandRoles.filter(role => !sub.roles.some(r => r.name === role.name)).map(role => ({ ...role }))] } : {}),
+  } };
+}
 export const modelKey = (m: ModelRef | null | undefined) => m ? m.providerId + "/" + m.modelId : "";
 export function modelRef(key: string): ModelRef | null {
   const slash = key.indexOf("/");
@@ -36,6 +48,10 @@ export function providerEngines(p: ProviderEntry) {
 }
 export function policyError(p: AgentPolicy, providers: ProviderEntry[]): string | null {
   const s = p.subagents;
+  if (s.enabled && s.mode === "chain-of-command") {
+    if (s.maxDepth < 2 || s.maxPerTurn < 3) return "Chain of Command requires depth at least 2 and at least 3 agents per turn.";
+    if (commandRoles.some(role => !s.roles.some(r => r.name === role.name))) return "Chain of Command requires colonel, major and enlisted roles.";
+  }
   if (!Number.isInteger(s.maxConcurrent) || s.maxConcurrent < 1 || s.maxConcurrent > 16 || !Number.isInteger(s.maxPerTurn) || s.maxPerTurn < 1 || s.maxPerTurn > 32 || !Number.isInteger(s.maxDepth) || s.maxDepth < 1 || s.maxDepth > 3) return "Limits: concurrent 1–16, per turn 1–32, depth 1–3.";
   const enabled = new Set(providers.filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => p.id + "/" + m.id)));
   for (const m of [p.defaultModel, s.defaultModel, ...s.allowedModels, ...s.roles.map(r => r.model)]) {

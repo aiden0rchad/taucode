@@ -1,8 +1,8 @@
-import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync } from "node:fs";
 import { dirname, basename, resolve, relative, isAbsolute, sep } from "node:path";
 
 export type Role = { name: string; description: string; model?: string; toolAccess: "read-only" | "full"; instructions: string };
-export type Policy = { enabled?: boolean; maxConcurrent: number; maxPerTurn: number; maxDepth: number; allowedModels: string[]; defaultModel?: string; roles: Role[]; models?: Record<string, string> };
+export type Policy = { enabled?: boolean; mode?: "custom" | "chain-of-command"; maxConcurrent: number; maxPerTurn: number; maxDepth: number; allowedModels: string[]; defaultModel?: string; roles: Role[]; models?: Record<string, string> };
 export type Rule = { tool: string; command?: string; path?: string; cwd?: string };
 export type Access = { accessMode: "read-only" | "ask" | "full-access"; sessionAllow: Rule[]; kind?: "work"; workspace?: string; readOnlyFolders?: string[]; skillRoot?: string };
 export type Call = { tool: string; command?: string; path?: string; cwd: string };
@@ -58,7 +58,7 @@ export function workDecision(access: Access, call: Call, interactive: boolean, c
   if (["read", "ls", "find", "grep"].includes(call.tool)) return readable(path) ? "allow" : "block";
   if (call.tool === "bash") {
     if (readOnlyCommand(call.command ?? "")) return (call.command ?? "").trim().split(/\s+/).slice(1).filter(p => !p.startsWith("-")).every(p => readable(resolve(call.cwd, p))) ? "allow" : "block";
-    if (access.accessMode === "read-only" || child) return "block";
+    if (access.accessMode === "read-only") return "block";
     if (access.accessMode === "full-access") return;
     return interactive && !child ? "ask" : "block";
   }
@@ -86,10 +86,33 @@ export function decide(access: Access, call: Call, home: string, interactive: bo
   if (access.sessionAllow.some(r => JSON.stringify(r) === rule)) return "allow";
   return interactive ? "ask" : "block";
 }
-export function resolveTask(policy: Policy, task: { agent: string; model?: string }, parent?: string) {
+export function commandTargets(role: string): string[] {
+  return role === "commander" ? ["colonel", "major", "enlisted"] : role === "colonel" ? ["major", "enlisted"] : [];
+}
+export function commandInstructions(role: string): string {
+  const instructions: Record<string, string> = {
+    commander: "You are the commander in Chain of Command mode. Define the goal, constraints and acceptance criteria. Delegate bounded implementation to colonels or enlisted agents using their configured models. Use a major for independent verification before reporting completion; give the major the acceptance criteria and artifact paths. If the agent budget prevents QA, report that limitation instead of claiming verification. Keep handoffs concise and include paths and evidence; avoid repeating whole transcripts. You own integration and the final response.",
+    colonel: "You are a colonel. Break the assigned goal into bounded, non-overlapping tasks for enlisted agents. Reserve budget for a major to verify the result, or explicitly return unverified work to the commander. Integrate results and report artifacts, checks and remaining risks. Do not delegate recursively to another colonel.",
+    major: "You are a QA major. Independently check the supplied acceptance criteria against the actual artifacts. Run the available checks within your tool permissions. Report pass/fail evidence and unresolved risks. Do not claim a check ran when it did not. You cannot delegate; return necessary fixes to your commander or colonel.",
+    enlisted: "You are an enlisted implementation agent. Complete only the bounded assigned task, preserve unrelated work, and run relevant checks. Return concise artifact paths, changes, evidence and blockers. You cannot delegate.",
+  };
+  return instructions[role] ?? "Unknown Chain of Command role. Delegation is blocked.";
+}
+// Atomic directory creation shares a finite budget across independent child processes.
+export function reserveSubagent(directory: string, limit: number): void {
+  for (let i = 0; i < limit; i++) {
+    try { mkdirSync(resolve(directory, String(i))); return; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+  }
+  throw new Error(`Subagent max per turn (${limit}) reached across the command tree`);
+}
+export function resolveTask(policy: Policy, task: { agent: string; model?: string | null }, parent?: string, parentRole = "commander") {
+  if (policy.mode === "chain-of-command" && !commandTargets(parentRole).includes(task.agent)) throw new Error(`${parentRole} cannot delegate to ${task.agent} in Chain of Command mode`);
   const role = policy.roles.find(r => r.name === task.agent);
   if (!role) throw new Error(`Unknown role ${task.agent}. Available: ${policy.roles.map(r => r.name).join(", ")}`);
-  const model = task.model || role.model || policy.defaultModel || parent;
+  const configured = role.model || policy.defaultModel || parent;
+  if (policy.mode === "chain-of-command" && task.model && task.model !== configured) throw new Error(`Chain of Command uses the configured ${task.agent} model (${configured ?? "not set"}); change it in agent policy`);
+  const model = task.model || configured;
   if (!model || !/^[^/]+\/.+$/.test(model)) throw new Error("Select a provider/model for the subagent");
   if (policy.allowedModels.length && !policy.allowedModels.includes(model)) throw new Error(`Model ${model} is not allowed. Allowed models: ${policy.allowedModels.join(", ")}`);
   if (policy.models && !policy.models[model]) throw new Error(`Model ${model} is not enabled in the provider registry`);

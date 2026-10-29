@@ -285,7 +285,8 @@ impl Translator {
             "subagent" => {
                 let tasks = a["tasks"]
                     .as_array()
-                    .or(a["chain"].as_array())
+                    .filter(|tasks| !tasks.is_empty())
+                    .or_else(|| a["chain"].as_array().filter(|tasks| !tasks.is_empty()))
                     .cloned()
                     .unwrap_or_else(|| vec![a.clone()]);
                 let states: serde_json::Map<String, Value> = tasks.iter().enumerate().map(|(i, task)| (format!("{id}:agent:{i}"), json!({"status":"running","message":task["task"],"task":task["task"],"agent":task["agent"],"model":task["model"],"usage":null}))).collect();
@@ -447,6 +448,7 @@ impl Translator {
                     item["status"] = json!("failed");
                 }
                 if done && failed {
+                    item["error"] = json!({"message":text(&result["content"])});
                     super::agents::settle(&mut item["agentsTree"], "failed");
                     for state in item["agentsStates"].as_object_mut().into_iter().flat_map(|states| states.values_mut()) {
                         if state["status"] == "running" { state["status"] = json!("errored"); }

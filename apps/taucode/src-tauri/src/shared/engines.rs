@@ -446,6 +446,12 @@ impl WorkspaceSession {
         let engine = definition.id.clone();
         let mutating = matches!(method, "turn/start" | "turn/steer" | "thread/start" | "thread/fork" | "thread/compact/start" | "thread/accessMode/set");
         if !definition.enabled && mutating { return Err(format!("Enable {} to continue", definition.name)); }
+        if policy.subagents.enabled && policy.subagents.mode == SubagentMode::ChainOfCommand
+            && definition.protocol != EngineProtocol::PiRpc
+            && matches!(method, "thread/start" | "turn/start" | "turn/steer")
+        {
+            return Err("Chain of Command requires a pi-RPC engine (Pi or OMP). Select one for this task, or use Single model / Custom delegation in agent policy.".into());
+        }
         let method = if !definition.enabled && method == "thread/resume" { "thread/read" } else { method };
         if definition.protocol != EngineProtocol::CodexAppServer && method != "thread/list" {
             let mut response = match definition.protocol {
@@ -1128,6 +1134,19 @@ mod tests {
             .is_empty());
         session.shutdown().await;
         assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+    #[tokio::test]
+    async fn command_mode_rejects_unsupported_engines_before_launch() {
+        let mut policy = AgentPolicy::default();
+        policy.subagents.mode = SubagentMode::ChainOfCommand;
+        let session = WorkspaceSession::lazy(Box::new(|| Box::pin(async { panic!("Unsupported engine must not launch") })), vec![], policy, None, None, "workspace".into());
+        for engine in ["codex", "claude"] {
+            let error = session.send_request_for_workspace("workspace", "thread/start", json!({"engine":engine})).await.unwrap_err();
+            assert!(error.contains("Chain of Command requires a pi-RPC engine"), "{error}");
+        }
+        let error = session.send_request_for_workspace("workspace", "thread/start", json!({"engine":"pi"})).await.unwrap_err();
+        assert_eq!(error, "Add and enable a provider and model in Settings");
+        session.shutdown().await;
     }
     #[tokio::test]
     async fn list_tags_and_sorts_threads_and_records_ownership() {
