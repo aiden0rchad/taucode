@@ -88,6 +88,18 @@ An explicit `TAUCODE_SIGNING_IDENTITY` overrides it. An empty local file fails
 signing. This preference applies only to the development signer; release signing
 still uses the explicit environment configuration above.
 
+After switching signing identities, an existing provider key may need one macOS
+approval. Choose **Always Allow** on taucode's Keychain prompt to save access;
+**Allow** authorizes only that read ([Apple's explanation](https://support.apple.com/en-ie/guide/keychain-access/kyca1243/mac)).
+Verify a real provider request after quitting and relaunching, then again after
+rebuilding with the same signing identity. A successful response alone does not
+prove prompt-free access if someone approved a prompt during the check.
+
+macOS may separately ask whether **codesign** can use the **Apple Development**
+private key while building. That prompt controls signing-tool access, not taucode's
+provider key. Approve it in macOS; choosing Always Allow saves access for future
+signing operations.
+
 The release script builds app + DMG, signs every Mach-O under Resources and MacOS,
 then the app, with hardened runtime. Developer ID signatures use secure timestamps.
 It verifies the sealed app (`codesign --verify --deep --strict`), runs the bundle

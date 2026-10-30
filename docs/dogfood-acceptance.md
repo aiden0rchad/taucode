@@ -12,7 +12,7 @@ No merge is authorized for this batch.
 | Conversation teams | Overrides, project isolation, fork/side-chat copying and restart persistence passed. CoC stays in Code. | Native coverage is Pi-RPC/OMP on this Mac. |
 | Work polish | Interactive agent transcripts, concise titles and preview Open/Stop/Restart controls passed live checks; stopping preserved the follow-up draft and closed owned ports. | Historical Work CoC records remain readable; new Work turns do not enable CoC. |
 | Browser stability | Failure-state cleanup and Retry have regression coverage. Native blank-page navigation, close/reopen, zoom, focus and ten repeated create/close cycles passed. | Earlier empty-tab process exit remains unreproduced. Actual native creation failure/Retry has not been fault-injected. |
-| Signing / Keychain | Free Xcode Personal Team setup produced a valid Apple Development identity. Two different binaries with that identity passed strict signature checks and real provider requests after fresh launches. Another fresh launch also completed a confirmed Keychain read and provider request. | The user did not notice whether the first two launches prompted; prompt-free access remains unconfirmed. Certificate renewal, another Mac and release notarization are outside this check. |
+| Signing / Keychain | Free Xcode Personal Team signing plus the user's Always Allow approval added Apple-team trust to the provider key. Fresh-process provider requests passed both on relaunch and after rebuilding to a different code hash. | Verified on this Mac and provider key. Certificate renewal, another Mac and release notarization are outside this check. |
 | Final acceptance | Code recovery/team tasks, Chat checks, Work artifacts/previews, browser interactions, settings keyboard flows and responsive Evals checks have passed within the recorded scope. | User review before merge remains required. No claim of a full VoiceOver audit, cross-platform acceptance or release notarization. |
 
 ## Recovery-message acceptance
@@ -81,15 +81,46 @@ A further fresh launch of the changed binary (PID 60729) returned
 `APPLE_SIGNING_FRESH_LAUNCH_OK` using GPT 6.1 Sol (Account 2), Low. The old app had
 exited completely. A one-second process sample captured the real
 `keyring::Entry::get_password` / `SecKeychainFindGenericPassword` path; the request
-then completed. This confirms a successful cold-process credential read, not
-whether macOS briefly displayed a prompt. The user was asked about this latest
-check separately. No additional binary change was made for this relaunch.
+then completed. The user confirmed that a prompt appeared and they chose **Allow**.
+That approves one read; it is not persistent access. No additional binary change
+was made for this relaunch.
 Screenshot: `taucode-apple-signing-fresh-launch.png` in the task's visualization folder.
 
 The original metadata probe still reported six build-hash partitions after the
 baseline request; it does not independently prove trust for the new identity.
-Evidence is the changed-binary credential checks and the additional fresh launch;
-prompt visibility remains unconfirmed.
+On the next fresh launch (PID 61010), the user confirmed choosing **Always Allow**;
+the request returned `APPLE_SIGNING_SAVED_ACCESS_OK`. Read-only inspection then
+found seven partitions: the original six build hashes and a new `teamid:` entry
+matching the Apple-signed app. macOS saved this through the user's approval; no
+script rewrote the item's access rules or retrieved its secret.
+
+After quitting that process, PID 77732 returned `APPLE_SIGNING_RELAUNCH_OK` using
+GPT 6.1 Sol (Account 2), Low. The user was asked to leave any new prompt untouched
+during verification. A rebuild from the same source with a different Rust compiler
+metadata value changed the executable bytes and code hash without adding product
+code solely for the test:
+
+```sh
+cargo rustc --features custom-protocol --bin codex-monitor -- -C metadata=keychain-acceptance-20261030
+```
+
+The normal bundler and saved development signing identity produced a new app;
+`codesign --verify --deep --strict` passed. During signing, the user separately
+approved **Always Allow** for Apple's `codesign` tool to use the Apple Development
+private key. This is distinct from taucode's provider-key access.
+
+| Check after saved approval | App PID | CDHash | Provider response |
+| --- | --- | --- | --- |
+| Relaunch | 77732 | `f06a1b0f1ff9a9b2dc950735d01381f0668211b5` | `APPLE_SIGNING_RELAUNCH_OK` |
+| Rebuilt executable | 18916 | `0aea05f5efe4587b2e943ecbf4f3ac2a55c424a7` | `APPLE_SIGNING_REBUILT_TRUST_OK` |
+
+Both requests completed without another provider-key approval step in the session.
+The partition list still contained the same seven entries after the rebuilt app's
+request; its new code hash was absent while the matching Apple-team entry remained.
+Together, these checks verify saved access across this relaunch and changed build.
+They do not guarantee access after certificate/team changes or on another Mac.
+Screenshot: `taucode-keychain-rebuilt-trust.png` in the task's visualization folder.
+
 [Free Personal Team development](https://developer.apple.com/help/account/basics/about-your-developer-account)
 does not replace the separate Developer ID distribution/notarization workflow in
 [packaging](packaging.md). Renew the configured identity before its expiry.
