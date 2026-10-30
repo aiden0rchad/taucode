@@ -223,7 +223,7 @@ Artifacts will be in `src-tauri/target/release/bundle/` (platform-specific subfo
 
 ### Windows x64
 
-The **Windows x64** GitHub Actions workflow builds `.exe` and `.msi` installers on pushes to `main` and manual runs. Download `taucode-windows-x64` from the completed run's Artifacts section. Installers include Node, npm, uv and helper executables; they are unsigned.
+The **Windows x64** GitHub Actions workflow builds an `.exe` installer on pushes to `main` and manual runs. Download `taucode-windows-x64` from the completed run's Artifacts section. The installer includes Node, npm, uv and helper executables; it is unsigned.
 
 To build locally on Windows x64, install Node >=22.19, Rust, Visual Studio C++ Build Tools, LLVM/Clang and CMake. Set `LIBCLANG_PATH` to the LLVM `bin` directory and `TAUCODE_BUNDLE_UV` to a directory containing Windows x64 `uv.exe`, `LICENSE-APACHE` and `LICENSE-MIT` from the uv distribution. Then run:
 
@@ -231,13 +231,10 @@ To build locally on Windows x64, install Node >=22.19, Rust, Visual Studio C++ B
 npm ci
 $env:CARGO_NET_OFFLINE = "false"
 cargo fetch --manifest-path src-tauri/Cargo.toml --locked
-npm run tauri:build:win -- --bundles nsis,msi
+npm run tauri:build:win
 ```
 
-Artifacts will be in:
-
-- `src-tauri/target/release/bundle/nsis/` (installer exe)
-- `src-tauri/target/release/bundle/msi/` (msi)
+The installer will be in `src-tauri/target/release/bundle/nsis/`.
  
 Note: building from source on Windows requires LLVM/Clang (for `bindgen` / `libclang`) in addition to CMake.
 
