@@ -47,8 +47,28 @@ jobs:
           "TAUCODE_BUNDLE_UV=$dest" >> $env:GITHUB_ENV
       - run: npm ci
       - run: npm run typecheck
+      - name: Fetch Rust dependencies
+        working-directory: apps/taucode/src-tauri
+        env:
+          CARGO_NET_OFFLINE: "false"
+        run: cargo fetch --locked
       - name: Build installer
         run: npm run tauri:build:win -- --bundles nsis,msi
+      - name: Smoke test installer
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName
+          $dest = Join-Path $env:RUNNER_TEMP 'taucode-smoke'
+          $setup = Start-Process $installer -ArgumentList '/S', "/D=$dest" -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "Installer exited with $($setup.ExitCode)" }
+          & "$dest/node/bin/node.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled Node failed' }
+          & "$dest/uv/uv.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled uv failed' }
+          $app = Start-Process "$dest/codex-monitor.exe" -PassThru
+          Start-Sleep -Seconds 10
+          if ($app.HasExited) { throw "App exited during startup: $($app.ExitCode)" }
+          Stop-Process -Id $app.Id
       - uses: actions/upload-artifact@v4
         with:
           name: taucode-windows-x64

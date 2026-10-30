@@ -229,6 +229,7 @@ To build locally on Windows x64, install Node >=22.19, Rust, Visual Studio C++ B
 
 ```bash
 npm ci
+CARGO_NET_OFFLINE=false cargo fetch --manifest-path src-tauri/Cargo.toml --locked
 npm run tauri:build:win -- --bundles nsis,msi
 ```
 
