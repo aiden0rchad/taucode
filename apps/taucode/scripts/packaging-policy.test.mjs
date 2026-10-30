@@ -1,9 +1,32 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { buildEnvironment } from "./release-build.mjs";
 import { entitlementProfile, entitlementsFile, expectedEntitlements, matchEntitlements } from "./entitlements.mjs";
+
+test("development signing retains a local identity and lets an explicit identity override it", t => {
+  const root = mkdtempSync(join(tmpdir(), "taucode-signing-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "scripts"));
+  const script = join(root, "scripts/sign-dev.sh");
+  copyFileSync(new URL("./sign-dev.sh", import.meta.url), script);
+  writeFileSync(join(root, "scripts/sign-macos.sh"), 'printf "%s\\n%s" "${TAUCODE_SIGNING_IDENTITY:-taucode Dev}" "$1"\n');
+  const env = { ...process.env };
+  delete env.TAUCODE_SIGNING_IDENTITY;
+  const sign = (extra = {}) => execFileSync("bash", [script, "test app.app"], { env: { ...env, ...extra }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  assert.equal(sign(), "taucode Dev\ntest app.app");
+  const local = join(root, ".signing-identity.local");
+  writeFileSync(local, "Apple Development: Test (TEAM)\n");
+  assert.equal(sign(), "Apple Development: Test (TEAM)\ntest app.app");
+  assert.equal(sign({ TAUCODE_SIGNING_IDENTITY: "explicit" }), "explicit\ntest app.app");
+  writeFileSync(local, "$(printf not-executed)\n");
+  assert.equal(sign(), "$(printf not-executed)\ntest app.app");
+  writeFileSync(local, "\n");
+  assert.throws(() => sign(), /local signing identity is empty/);
+});
 
 test("debug builds retain the original environment and Cargo configuration", () => {
   const env = { PATH: "/bin", CC: "custom-cc", CXX: "custom-cxx", RUSTFLAGS: "-C debuginfo=2" };
