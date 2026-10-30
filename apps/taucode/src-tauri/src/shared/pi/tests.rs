@@ -384,7 +384,43 @@ fn recorded_subagents_stream_states_outputs_and_usage_without_double_counting() 
     assert!(updated
         .iter()
         .any(|e| e["method"] == "thread/tokenUsage/updated"
-            && e["params"]["tokenUsage"]["total"]["cost"] == t.cost));
+            && e["params"]["tokenUsage"]["total"]["knownCost"] == t.cost
+            && e["params"]["tokenUsage"]["total"]["cost"].is_null()));
+}
+
+#[test]
+fn unknown_costs_survive_aggregation_without_hiding_known_subtotals() {
+    let mut t = Translator::new("cost", "/workspace");
+    t.apply(&json!({"type":"agent_start"}));
+    t.apply(&json!({"type":"tool_execution_start","toolCallId":"team","toolName":"subagent","args":{"agent":"colonel","task":"Check"}}));
+    let mut result = json!({"details":{"results":[{"agent":"colonel","status":"running","usage":{"input":10,"cost":0.25},"messages":[{"role":"toolResult","toolCallId":"child","details":{"results":[
+        {"agent":"major","status":"completed","usage":{"input":5,"cost":0.125}},
+        {"agent":"enlisted","status":"running","usage":{"input":3,"cost":0}}
+    ]}}]}]}});
+    t.apply(&json!({"type":"tool_execution_update","toolCallId":"team","partialResult":result}));
+    let usage = &t.turns[0]["items"][0]["agentsTree"][0]["usage"];
+    assert_eq!(usage["cost"], Value::Null);
+    assert_eq!(usage["knownCost"], 0.375);
+    assert_eq!(usage["input"], 18);
+    assert_eq!(t.total["cost"], Value::Null);
+    assert_eq!(t.total["knownCost"], 0.375);
+    // A later complete snapshot resolves that source's uncertainty without double counting.
+    result["details"]["results"][0]["messages"][0]["details"]["results"][1]["usage"]["cost"] = json!(0.5);
+    t.apply(&json!({"type":"tool_execution_end","toolCallId":"team","result":result}));
+    assert_eq!(t.total["cost"], 0.875);
+    let total = t.total.clone();
+    t.apply(&json!({"type":"tool_execution_end","toolCallId":"team","result":result}));
+    assert_eq!(t.total, total);
+    // Explicitly known zero is different from the old unpriced zero placeholder.
+    let zero = agents::tree("free", &[json!({"agent":"major","usage":{"input":2,"cost":0,"costKnown":true}})], &Value::Null, true, None, &mut Default::default());
+    assert_eq!(zero[0]["usage"]["cost"], 0.0);
+    // A separate unpriced commander response keeps the whole conversation total unknown.
+    t.apply(&json!({"type":"message_start","message":{"role":"assistant","timestamp":1}}));
+    t.apply(&json!({"type":"message_end","message":{"role":"assistant","content":[],"usage":{"input":7,"cost":{"total":0}}}}));
+    t.apply(&json!({"type":"message_start","message":{"role":"assistant","timestamp":2}}));
+    t.apply(&json!({"type":"message_end","message":{"role":"assistant","content":[],"usage":{"input":4,"cost":{"total":0.125}}}}));
+    assert_eq!(t.total["cost"], Value::Null);
+    assert_eq!(t.total["knownCost"], 1.0);
 }
 
 #[test]
@@ -609,7 +645,8 @@ fn virtual_subagent_results_keep_nested_progress_usage_and_history() {
         assert!(node["endedAt"].is_number());
         assert_eq!(node["usage"]["input"], 33);
         assert_eq!(node["usage"]["output"], 5);
-        assert_eq!(node["usage"]["cost"], 0.75);
+        assert_eq!(node["usage"]["cost"], Value::Null);
+        assert_eq!(node["usage"]["knownCost"], 0.75);
         assert_eq!(node["children"][0]["id"], "call:agent:0/nested:agent:0");
         assert_eq!(node["children"][0]["status"], "completed");
         assert_eq!(node["children"][0]["model"], "local/worker");
@@ -751,6 +788,17 @@ fn crashed_delegation_recovers_only_unfinished_calls_on_the_current_branch() {
     entries.push(json!({"type":"message","id":"next","parentId":"call","message":{"role":"user","timestamp":10000,"content":"Continue"}}));
     write(&entries);
     assert_eq!(read_session(&file, &[]).unwrap().1.turns.len(), 2);
+    entries.pop();
+    // OMP may persist only a generic abort result when its desktop parent exits.
+    entries.push(json!({"type":"message","id":"abort","parentId":"call","message":{"role":"toolResult","toolCallId":"delegate","toolName":"subagent","isError":true,"content":[{"type":"text","text":"Aborted: The operation was aborted."}]}}));
+    write(&entries);
+    let (_, aborted) = read_session(&file, &[]).unwrap();
+    assert_eq!(aborted.turns[0]["status"], "interrupted");
+    let node = &aborted.turns[0]["items"][1]["agentsTree"][0];
+    assert_eq!(node["children"][0]["status"], "aborted");
+    assert_eq!(node["children"][1]["status"], "completed");
+    assert_eq!(node["children"][1]["endedAt"], 6000);
+    assert!(aborted.transcripts.values().any(|v| v.to_string().contains("Partial crash evidence")));
     entries.pop();
     // Durable final results always supersede a leftover checkpoint.
     entries.push(json!({"type":"message","id":"done","parentId":"call","message":{"role":"toolResult","toolCallId":"delegate","toolName":"subagent","details":{"results":[{"agent":"colonel","status":"completed","startedAt":1000,"endedAt":10000,"messages":[]}]}}}));

@@ -260,7 +260,7 @@ Screenshots: `taucode-stopped-team-restored.png` and
 in the task's visualization directory.
 
 Known limits: old cancelled runs cannot recover evidence never saved by earlier
-builds. Unknown registry pricing can still display zero cost.
+builds. Pricing corrections are documented below.
 
 ## Active delegation crash recovery
 
@@ -270,11 +270,11 @@ per second; final evidence is flushed immediately. Normal turn completion remove
 its temporary snapshots. Interrupted snapshots remain available across later runs.
 They are outside model context and do not append a full tree for every update.
 
-History restores checkpoints only for unfinished calls on the selected branch.
-Durable tool results take precedence; malformed or mismatched checkpoints are
+History restores checkpoints only for calls lacking saved agent results on the
+selected branch. Durable agent results take precedence; malformed or mismatched checkpoints are
 ignored. Unfinished nodes become aborted, completed children retain their results,
 and exact end times remain unavailable where no completion was observed. Recovery
-does not request credentials, start an engine or rerun a command. POSIX child
+through Pi/OMP thread resume does not request credentials, start an engine or rerun a command. POSIX child
 engines detect a lost parent and abort their owned nested work.
 
 Automated verification covers atomic replacement, coalescing, private permissions,
@@ -289,11 +289,40 @@ In the signed native build, an OMP commander was killed while one Account 2 Sol
 major was running a foreground timer and another had completed. The checkpoint
 retained both states and their messages; the test agents and timer exited. The
 remaining CodeGraph helpers also exited. Relaunch did not restart the test engine.
-Visual verification of the restored conversation and a full app force-quit check
-are pending: computer use currently reports that the Mac is locked.
+Native restoration verified the stopped/completed states, unavailable end time
+for the interrupted major, and the saved README transcript. Screenshots:
+`taucode-crash-agents-restored.png` and `taucode-crash-transcript-restored.png` in
+the task's visualization directory.
+
+A subsequent full app force-quit stopped the test engine, agents and foreground
+timer. It exposed OMP's shutdown behavior: a generic abort tool result was saved
+without agent details and hid the richer checkpoint. The precedence rule now
+keeps recovery evidence in that case, with a regression test covering the retained
+completed child and partial transcript. Final native verification is pending
+unlock/Keychain approval; the Mac locked before the final build could relaunch.
+A sampled stack traced the startup prompt to Codex thread
+listing (`prepare_codex`), separate from offline Pi/OMP thread resume.
 Remaining crash scope includes root assistant streaming, nondelegated tools,
 cross-engine recovery and Windows process cleanup. The last second of unflushed
 progress may be unavailable after an abrupt kill.
+
+## Unknown model costs
+
+Unpriced custom-model catalog zeros no longer imply free usage. Delegated results
+retain token counts, report unavailable total cost when any response is unpriced,
+and keep a separate known subtotal. A zero backed by a nonzero pricing table is
+distinguished from a placeholder zero. This does not infer free pricing for an
+all-zero local/custom catalog.
+
+Nested agent totals and conversation usage preserve uncertainty. Later complete
+snapshots can resolve a delegation's cost without counting usage twice. Evaluation
+and diagnostic normalization cannot replace an explicitly unknown total with the
+last paid response. Historical placeholder zeros also display as unavailable.
+
+Validation: 1,797 frontend tests, typecheck and changed-file lint; 47 Pi backend
+tests passed (one unrelated live test ignored), cargo check; all 29 extension tests;
+all 19 diagnostics tests. Final signed native verification is pending. This establishes
+honest missing-price handling, not measured cloud/local quality or billing accuracy.
 
 ## Work still required for the full product goal
 

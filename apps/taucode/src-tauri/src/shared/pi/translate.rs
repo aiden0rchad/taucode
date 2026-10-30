@@ -43,6 +43,7 @@ pub(super) struct Translator {
     pub access_mode: String,
     pub total: Value,
     pub cost: f64,
+    unknown_costs: std::collections::HashSet<String>,
     pub queue: Value,
     pub transcripts: HashMap<String, Value>,
     message: String,
@@ -72,6 +73,7 @@ impl Translator {
             access_mode: "ask".into(),
             total: json!({"totalTokens":0,"inputTokens":0,"cachedInputTokens":0,"cacheWriteInputTokens":0,"outputTokens":0,"reasoningOutputTokens":0}),
             cost: 0.0,
+            unknown_costs: Default::default(),
             queue: json!({}),
             transcripts: HashMap::new(),
             message: String::new(),
@@ -195,10 +197,7 @@ impl Translator {
         let id = format!("{}:{index}", self.message);
         self.find(&id).unwrap_or_else(||if thinking {json!({"type":"reasoning","id":id,"summary":[],"content":[""]})}else{json!({"type":"agentMessage","id":id,"text":"","phase":null,"memoryCitation":null,"delivery":null,"questions":null})})
     }
-    fn usage(&mut self, u: &Value, out: &mut Vec<Value>) {
-        if !u.is_object() {
-            return;
-        }
+    fn usage(&mut self, u: &Value, source: &str, out: &mut Vec<Value>) {
         let mut last = json!({});
         for (pi, canonical) in [
             ("totalTokens", "totalTokens"),
@@ -212,11 +211,14 @@ impl Translator {
             last[canonical] = json!(n);
             self.total[canonical] = json!(self.total[canonical].as_u64().unwrap_or(0) + n);
         }
-        let cost = u["cost"]["total"]
-            .as_f64()
-            .or(u["cost"].as_f64());
-        self.cost += cost.unwrap_or(0.0);
-        self.total["cost"] = json!(self.cost);
+        // Raw runtime catalogs default unknown prices to zero. Numeric costs here
+        // are normalized delegation deltas; their explicit zero is trustworthy.
+        let cost = u["cost"].as_f64().filter(|n| *n >= 0.0)
+            .or_else(|| u["cost"]["total"].as_f64().filter(|n| *n > 0.0));
+        self.cost += u["knownCost"].as_f64().filter(|n| *n >= 0.0).or(cost).unwrap_or(0.0);
+        if cost.is_some() { self.unknown_costs.remove(source); } else { self.unknown_costs.insert(source.into()); }
+        self.total["cost"] = if self.unknown_costs.is_empty() { json!(self.cost) } else { Value::Null };
+        self.total["knownCost"] = json!(self.cost);
         last["cost"] = json!(cost);
         out.push(self.event("thread/tokenUsage/updated",json!({"turnId":self.turn_id(),"tokenUsage":{"last":last,"total":self.total,"modelContextWindow":self.model["contextWindow"]}})));
     }
@@ -263,7 +265,7 @@ impl Translator {
                 if m["stopReason"] == "aborted" {
                     self.aborted = true;
                 }
-                self.usage(&m["usage"], out);
+                self.usage(&m["usage"], &self.message.clone(), out);
             }
             _ => (),
         }
@@ -436,11 +438,10 @@ impl Translator {
                         .iter()
                         .map(|k| delta[k].as_u64().unwrap_or(0))
                         .sum::<u64>());
-                    delta["cost"] = json!((usage["cost"].as_f64().unwrap_or(0.0)
-                        - old["cost"].as_f64().unwrap_or(0.0))
-                    .max(0.0));
-                    if delta["totalTokens"] != 0 || delta["cost"].as_f64().unwrap_or(0.0) > 0.0 {
-                        self.usage(&delta, out);
+                    delta["cost"] = json!(usage["cost"].as_f64().map(|cost| (cost - old["cost"].as_f64().unwrap_or(0.0)).max(0.0)));
+                    delta["knownCost"] = json!((usage["knownCost"].as_f64().unwrap_or(0.0) - old["knownCost"].as_f64().unwrap_or(0.0)).max(0.0));
+                    if delta["totalTokens"] != 0 || delta["knownCost"].as_f64().unwrap_or(0.0) > 0.0 || usage["cost"].is_number() != old["cost"].is_number() {
+                        self.usage(&delta, &agent_id, out);
                     }
                     item["agentsStates"][&agent_id] = json!({"status":status,"message":message.chars().take(300).collect::<String>(),"agent":r["agent"],"task":r["task"],"model":r["model"],"usage":r["usage"]});
                 }

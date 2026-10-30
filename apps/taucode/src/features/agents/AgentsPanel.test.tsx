@@ -25,6 +25,13 @@ describe("Agents panel", () => {
     render(view([item([{ ...node, status: "aborted", endedAt: null }])]));
     expect(screen.getByText("aborted · elapsed unavailable")).toBeTruthy();
   });
+  it("distinguishes unavailable cost from a known zero", () => {
+    const { rerender } = render(view([item([{ ...node, usage: { input: 10, output: 2, cost: null } }])]));
+    expect(screen.getByText("12 tokens · cost unavailable")).toBeTruthy();
+    expect(screen.queryByText(/\$0\.0000/)).toBeNull();
+    rerender(view([item([{ ...node, usage: { input: 10, output: 2, cost: 0 } }])]));
+    expect(screen.getByText("12 tokens · $0.0000")).toBeTruthy();
+  });
   it("updates nested nodes and badges and loads only the selected transcript", async () => {
     const child = { ...node, id: "call:agent:0/nested:agent:0", agent: "Reviewer" };
     const { rerender } = render(view([item([{ ...node, children: [child] }])]));

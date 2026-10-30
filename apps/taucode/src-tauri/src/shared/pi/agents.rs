@@ -88,7 +88,11 @@ pub(super) fn tree(
         for key in ["input", "output", "cacheRead", "cacheWrite"] {
             usage.insert(key.into(), json!(r["usage"][key].as_u64().unwrap_or(0) + nested.iter().map(|n|n["usage"][key].as_u64().unwrap_or(0)).sum::<u64>()));
         }
-        usage.insert("cost".into(), json!(r["usage"]["cost"].as_f64().unwrap_or(0.0) + nested.iter().map(|n|n["usage"]["cost"].as_f64().unwrap_or(0.0)).sum::<f64>()));
+        let own_cost = r["usage"]["cost"].as_f64().filter(|n| *n > 0.0 || *n == 0.0 && r["usage"]["costKnown"] == true);
+        let cost = own_cost.and_then(|own| nested.iter().try_fold(own, |total, n| Some(total + n["usage"]["cost"].as_f64()?)));
+        usage.insert("knownCost".into(), json!(r["usage"]["knownCost"].as_f64().filter(|n| *n >= 0.0).or(own_cost).unwrap_or(0.0) + nested.iter().map(|n|n["usage"]["knownCost"].as_f64().unwrap_or(0.0)).sum::<f64>()));
+        usage.insert("cost".into(), json!(cost));
+        usage.insert("costKnown".into(), json!(cost.is_some()));
         json!({"id":id,"agent":r["agent"],"model":r["model"],"task":r["task"],"status":status,
             "startedAt":if status == "pending" || (r["endedAt"].is_number() && r["startedAt"].is_null()) {Value::Null} else {json!(r["startedAt"].as_i64().or(old["startedAt"].as_i64()).or(now))},
             "endedAt":if matches!(status,"running"|"pending") {Value::Null} else {json!(ended)},

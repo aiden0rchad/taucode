@@ -135,6 +135,32 @@ test("OMP virtual MCP writes use only the inner connector gate and retain denial
   assert.equal(prompts, 4);
 });
 
+test("subagent costs distinguish missing pricing, priced zero and incomplete totals", async () => {
+  process.env.PI_CODING_AGENT_DIR = home;
+  process.env.TAUCODE_WORKSPACE = cwd;
+  const cli = join(root, "cost-cli.mjs");
+  writeFileSync(cli, `for (const cost of JSON.parse(process.argv.at(-1).slice(6))) console.log(JSON.stringify({type:"message_end",message:{role:"assistant",content:[{type:"text",text:"Checked"}],stopReason:"stop",usage:{input:2,output:3,cost:cost===null?undefined:{total:cost}}}}));`);
+  process.env.TAUCODE_PI_CLI = cli;
+  writeFileSync(join(home, "taucode/policy.json"), JSON.stringify(policy));
+  let tool: any, reset: any;
+  subagents({ on: (name: string, fn: any) => { if (name === "agent_start") reset = fn; }, registerTool: (t: any) => { tool = t; } } as any);
+  for (const [costs, priced, expected, knownCost] of [
+    [[0], false, null, 0], [[null], false, null, 0], [[-1], true, null, 0],
+    [[0], true, 0, 0], [[0.25, 0.125], false, 0.375, 0.375],
+    [[0.25, null], true, null, 0.25], [[null, 0.25], true, null, 0.25],
+  ] as const) {
+    reset();
+    const ctx = { cwd, model: { provider: "local", id: "small" }, modelRegistry: { find: () => ({ cost: { input: priced ? 1 : 0, output: 0, cacheRead: 0, cacheWrite: 0 } }) } };
+    const result = await tool.execute("cost", { agent: "worker", task: JSON.stringify(costs) }, undefined, undefined, ctx);
+    assert.equal(result.isError, false);
+    const usage = result.details.results[0].usage;
+    assert.equal(usage.cost, expected, JSON.stringify({ costs, priced }));
+    assert.equal(usage.knownCost, knownCost);
+    assert.equal(usage.costKnown, expected !== null);
+    assert.equal(usage.input + usage.output, costs.length * 5);
+  }
+});
+
 test("subagents single, parallel, chain, concurrency, per-run limit, depth and abort without providers", async () => {
   process.env.PI_CODING_AGENT_DIR = home;
   process.env.TAUCODE_WORKSPACE = cwd;

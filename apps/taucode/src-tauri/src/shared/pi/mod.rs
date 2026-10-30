@@ -1223,9 +1223,11 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
     }
     branch.reverse();
     let finished_calls: std::collections::HashSet<_> = branch.iter().filter_map(|entry| {
-        if entry["type"] == "message" && entry["message"]["role"] == "toolResult" {
+        if entry["type"] == "message" && entry["message"]["role"] == "toolResult"
+            && agents::results(&entry["message"]["details"]).is_some() {
             entry["message"]["toolCallId"].as_str()
-        } else if entry["customType"] == "taucode-subagent-result" {
+        } else if entry["customType"] == "taucode-subagent-result"
+            && agents::results(&entry["data"]["result"]["details"]).is_some() {
             entry["data"]["toolCallId"].as_str()
         } else { None }
     }).collect();

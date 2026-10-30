@@ -335,7 +335,7 @@ pub fn normalize_usage(total: &Value, last: &Value, baseline: &Value, zero_cost:
     for (dest, source) in [("tokensIn","inputTokens"),("tokensOut","outputTokens"),("cachedTokens","cachedInputTokens"),("costUsd","cost")] {
         let amount = total[source].as_f64().map(|n|(n-baseline[source].as_f64().unwrap_or(0.)).max(0.)).or(last[source].as_f64());
         value[dest] = if dest == "costUsd" {
-            json!(amount.filter(|n| !last.get(source).is_some_and(Value::is_null) && (*n > 0. || (*n == 0. && zero_cost))))
+            json!(amount.filter(|n| !total.get(source).is_some_and(Value::is_null) && !last.get(source).is_some_and(Value::is_null) && (*n > 0. || (*n == 0. && zero_cost))))
         } else { json!(amount.unwrap_or(0.) as u64) };
     }
     value

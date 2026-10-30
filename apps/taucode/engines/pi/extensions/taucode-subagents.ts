@@ -14,7 +14,7 @@ const taskFields = { agent: Type.String(), task: Type.String(), model: optionalS
 const Task = Type.Object(taskFields);
 type TaskInput = { agent: string; task: string; model?: string | null; cwd?: string | null };
 type Message = { role: string; toolCallId?: string; toolName?: string; content?: { type: string; text?: string }[]; stopReason?: string; errorMessage?: string; usage?: Record<string, any> };
-type Result = TaskInput & { exitCode: number; status: string; startedAt?: number; endedAt?: number; messages: Message[]; stderr: string; stopReason?: string; usage: Record<string, number> };
+type Result = TaskInput & { exitCode: number; status: string; startedAt?: number; endedAt?: number; messages: Message[]; stderr: string; stopReason?: string; usage: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number | null; knownCost: number; costKnown: boolean; contextTokens: number; turns: number } };
 const output = (r: Result) => r.messages.filter(m => m.role === "assistant").at(-1)?.content?.filter(c => c.type === "text").map(c => c.text).join("\n") || r.stderr;
 
 export default function (pi: ExtensionAPI) {
@@ -67,7 +67,7 @@ export default function (pi: ExtensionAPI) {
       const mode = modes[2] ? "chain" : modes[1] ? "parallel" : "single";
       const tasks = (mode === "chain" ? params.chain : mode === "parallel" ? params.tasks : [params]) as TaskInput[];
       if (!tasks.length || tasks.some(task => !task.agent?.trim() || !task.task?.trim())) throw new Error("Provide at least one task with a non-empty agent and task");
-      const results: Result[] = tasks.map(task => ({ ...task, exitCode: -1, status: "pending", messages: [], stderr: "", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 } }));
+      const results: Result[] = tasks.map(task => ({ ...task, exitCode: -1, status: "pending", messages: [], stderr: "", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null, knownCost: 0, costKnown: false, contextTokens: 0, turns: 0 } }));
       const snapshot = () => ({ content: [{ type: "text" as const, text: results.map(r => `${r.agent}: ${output(r) || r.status}`).join("\n\n") }], details: { mode, results } });
       const checkpoint = subagentCheckpoint(depth === 0 ? ctx.sessionManager?.getSessionFile() : undefined, _id);
       const update = () => { const result = structuredClone(snapshot()); checkpoint.update(result); onUpdate?.(result); };
@@ -82,6 +82,8 @@ export default function (pi: ExtensionAPI) {
           checkLimits(policy, depth, count);
           const parentRole = depth === 0 ? "commander" : process.env.TAUCODE_SUBAGENT_ROLE ?? "unknown";
           const { role, model, provider, modelId } = resolveTask(policy, r, parent, parentRole);
+          const prices = ctx.modelRegistry?.find(provider, modelId)?.cost;
+          const priced = prices && [prices.input, prices.output, prices.cacheRead, prices.cacheWrite].every(n => Number.isFinite(n) && n >= 0) && Object.values(prices).some(n => typeof n === "number" && n > 0);
           const workspace = process.env.TAUCODE_WORKSPACE ?? ctx.cwd;
           const cwd = r.cwd || ctx.cwd;
           if (!inside(cwd, workspace)) throw new Error("Subagent cwd must be inside the workspace");
@@ -169,8 +171,13 @@ export default function (pi: ExtensionAPI) {
                 else r.messages.push(msg);
                 if (msg.role === "assistant") {
                   r.usage.turns++;
-                  for (const key of ["input", "output", "cacheRead", "cacheWrite"]) r.usage[key] += msg.usage?.[key] ?? 0;
-                  r.usage.cost += msg.usage?.cost?.total ?? 0;
+                  for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) r.usage[key] += msg.usage?.[key] ?? 0;
+                  // Custom-model catalogs use zero prices as placeholders, not proof of free usage.
+                  const cost = msg.usage?.cost?.total ?? msg.usage?.cost;
+                  const known = typeof cost === "number" && Number.isFinite(cost) && (cost > 0 || cost === 0 && priced);
+                  r.usage.knownCost += known ? cost : 0;
+                  r.usage.costKnown = !!known && (r.usage.turns === 1 || r.usage.costKnown);
+                  r.usage.cost = r.usage.costKnown ? r.usage.knownCost : null;
                   r.usage.contextTokens = msg.usage?.totalTokens ?? 0;
                   r.stopReason = msg.stopReason;
                   if (msg.errorMessage) r.stderr = msg.errorMessage;

@@ -57,6 +57,13 @@ fn high_tokens_uses_cached_input_and_both_strict_thresholds() {
 
 #[test]
 fn efficiency_distinguishes_unknown_paid_and_free_costs() {
+    for (total, last, expected) in [
+        (json!({"cost":null}), json!({"cost":0.25}), Value::Null),
+        (json!({"cost":0.25}), json!({"cost":null}), Value::Null),
+        (json!({}), json!({"cost":0.25}), json!(0.25)),
+    ] {
+        assert_eq!(crate::observe::normalize_usage(&total, &last, &json!({}), false)["costUsd"], expected);
+    }
     for (cost, free, expected) in [(Value::Null, false, "cost unknown"), (json!(0), false, "cost unknown"), (Value::Null, true, "cost unknown"), (json!(0), true, "$0"), (json!(0.125), false, "$0.1250")] {
         let t = signals::Turn { context: json!({"engine":"pi","model":"m","zeroCost":free}), ..Default::default() };
         let out = t.finish(json!({"tokensIn":900000,"cachedTokens":100000,"tokensOut":1200,"costUsd":cost}), &mut BTreeMap::new());

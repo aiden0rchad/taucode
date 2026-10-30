@@ -125,7 +125,7 @@ export type AgentNode = {
   status: "pending" | "running" | "completed" | "failed" | "aborted";
   startedAt?: number | null;
   endedAt?: number | null;
-  usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number } | null;
+  usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number | null } | null;
   lastMessage?: string;
   errorMessage?: string | null;
   children: AgentNode[];
