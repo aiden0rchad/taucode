@@ -55,9 +55,13 @@ approvals can be necessary despite signing each rebuild with the same local iden
 The item metadata and macOS trust settings were not modified.
 
 Only the self-signed `taucode Dev` identity was found; it is unexpired but reports
-`CSSMERR_TP_NOT_TRUSTED`. No Apple-issued identity or Xcode installation was found
-in `/Applications` or `~/Applications`. This does not establish whether the user
-has an Apple Developer membership elsewhere.
+`CSSMERR_TP_NOT_TRUSTED`. No Apple-issued identity was found. This does not establish
+whether the user has an Apple Developer membership elsewhere.
+
+The user authorized free Xcode signing setup. The Mac App Store installed Xcode
+26.6 at `/Applications/Xcode.app`; its minimum macOS version is 26.2, compatible
+with this Mac's 26.5.1. First launch is waiting at the Xcode and Apple SDKs Agreement
+for the user's acceptance. Account setup and certificate creation remain pending.
 
 Next: obtain an Apple-issued signing identity through the user's Xcode account,
 configure `TAUCODE_SIGNING_IDENTITY`, then validate two changed binaries with actual
@@ -66,6 +70,13 @@ credential reads. Do not treat certificate installation alone as acceptance.
 its suitability for this bundle must be verified. Distribution/notarization uses
 the separate Developer ID setup in [packaging](packaging.md). Account sign-in and
 accepting Apple's agreements require the user.
+
+## Additional Chat acceptance
+
+GPT 6.1 Sol (Account 2), Low, correctly converted supplied fictional meeting notes
+into three action items with the specified owners and dates, without tools. The
+model picker retained Low, omitted Chain of Command, and returned keyboard focus
+to its trigger on Escape. Message editing has not yet passed a live check.
 
 ## Detailed evidence
 
