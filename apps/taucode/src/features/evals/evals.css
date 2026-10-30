@@ -144,6 +144,6 @@
 
 @container(max-width:700px) { .evals-fields { grid-template-columns: 1fr; } }
 
-.evals-full .evals-windowbar { position: sticky; top: 0; z-index: calc(var(--z-sticky) + 1); background: var(--evals-background); }
-.evals-full .evals-header { position: sticky; top: 44px; z-index: calc(var(--z-sticky) + 1); padding: 12px 0 16px; background: var(--evals-background); }
+.evals-full .evals-windowbar { position: sticky; top: 0; z-index: var(--z-panel); background: var(--evals-background); }
+.evals-full .evals-header { position: sticky; top: 44px; z-index: var(--z-panel); padding: 12px 0 16px; background: var(--evals-background); }
 .evals-full .evals-run-heading h3 { scroll-margin-top: 180px; }

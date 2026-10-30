@@ -60,8 +60,11 @@ whether the user has an Apple Developer membership elsewhere.
 
 The user authorized free Xcode signing setup. The Mac App Store installed Xcode
 26.6 at `/Applications/Xcode.app`; its minimum macOS version is 26.2, compatible
-with this Mac's 26.5.1. First launch is waiting at the Xcode and Apple SDKs Agreement
-for the user's acceptance. Account setup and certificate creation remain pending.
+with this Mac's 26.5.1. The user accepted the agreement and signed into Xcode; their
+account has a Personal Team. Direct Apple Development certificate creation is
+disabled in Manage Certificates. An unsigned temporary macOS project at
+`/private/tmp/TaucodeSigningCheck` is ready for automatic signing. Assigning its
+Personal Team and creating signing credentials await the user's confirmation.
 
 Next: obtain an Apple-issued signing identity through the user's Xcode account,
 configure `TAUCODE_SIGNING_IDENTITY`, then validate two changed binaries with actual
@@ -76,7 +79,16 @@ accepting Apple's agreements require the user.
 GPT 6.1 Sol (Account 2), Low, correctly converted supplied fictional meeting notes
 into three action items with the specified owners and dates, without tools. The
 model picker retained Low, omitted Chain of Command, and returned keyboard focus
-to its trigger on Escape. Message editing has not yet passed a live check.
+to its trigger on Escape. Native message editing and Cancel loaded and cleared
+the composer without changing the displayed conversation, but left keyboard focus
+outside the composer. Edit and Cancel now focus the composer; the changed behavior
+passed regression and WebKit checks. Signed-native verification remains pending.
+
+The full frontend suite found an Evals header using an ad hoc layer calculation.
+It now uses the shared panel token above the sticky table columns. The WebKit Evals
+layout fixture passed at 1280px with opaque headers at layer 20. All 1,830 frontend
+tests, TypeScript and changed-file ESLint passed. These changes await inclusion in
+the Apple-signing rebuild checks; the currently running native app predates them.
 
 ## Detailed evidence
 
