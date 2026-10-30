@@ -9,3 +9,5 @@ dist/
 .codegraph-taucode/
 .cargo-home/
 .playwright-mcp/
+docs/.vitepress/cache/
+docs/.vitepress/dist/

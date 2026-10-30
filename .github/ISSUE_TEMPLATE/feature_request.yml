@@ -1,0 +1,22 @@
+name: Feature request
+description: Describe a workflow taucode could support better.
+title: "[Feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the workflow and what currently gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Desired behavior
+      description: Include an example and platform or engine constraints.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or current workaround

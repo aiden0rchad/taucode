@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation and troubleshooting
+    url: https://aiden0rchad.github.io/taucode/
+    about: Installation, guides, known limits, and troubleshooting.
+  - name: Private security report
+    url: https://github.com/aiden0rchad/taucode/security/advisories/new
+    about: Report vulnerabilities without posting sensitive details publicly.

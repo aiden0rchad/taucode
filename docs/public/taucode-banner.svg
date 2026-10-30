@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="440" viewBox="0 0 1400 440" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">taucode — Your models. Your workspace.</title>
+  <desc id="desc">A desktop workspace connecting Code, Chat and Work with your chosen models and engines.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1400" y2="440" gradientUnits="userSpaceOnUse"><stop stop-color="#141321"/><stop offset="1" stop-color="#10191c"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#907bea" stop-opacity=".2"/><stop offset="1" stop-color="#907bea" stop-opacity="0"/></radialGradient>
+    <linearGradient id="line" x1="805" y1="100" x2="1250" y2="350" gradientUnits="userSpaceOnUse"><stop stop-color="#b5aaff"/><stop offset="1" stop-color="#79dac8"/></linearGradient>
+    <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M36 0H0V36" stroke="#c8c4ff" stroke-opacity=".035"/></pattern>
+  </defs>
+  <rect width="1400" height="440" rx="24" fill="url(#bg)"/>
+  <rect width="1400" height="440" rx="24" fill="url(#grid)"/>
+  <ellipse cx="1010" cy="210" rx="420" ry="300" fill="url(#glow)"/>
+  <rect x=".5" y=".5" width="1399" height="439" rx="23.5" stroke="#b9b2ff" stroke-opacity=".18"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif">
+    <text x="76" y="100" fill="#c0b4ff" font-size="14" font-weight="600" letter-spacing="4">BRING YOUR OWN INTELLIGENCE</text>
+    <text x="70" y="196" fill="#f3f1ff" font-size="88" font-weight="700" letter-spacing="-5">taucode</text>
+    <text x="76" y="260" fill="#eeeafc" font-size="30" font-weight="500">Your models. Your workspace.</text>
+    <text x="76" y="304" fill="#a2a0b5" font-size="20">Code, conversations, and document work in one desktop app.</text>
+    <rect x="76" y="353" width="106" height="30" rx="15" stroke="#b5aaff" stroke-opacity=".35"/><text x="96" y="373" fill="#c8bfff" font-size="13">Open source</text>
+    <rect x="194" y="353" width="138" height="30" rx="15" stroke="#79dac8" stroke-opacity=".35"/><text x="214" y="373" fill="#96dcca" font-size="13">Provider agnostic</text>
+    <path d="M900 128h130v91h82M900 219h212M900 310h130v-91" stroke="url(#line)" stroke-opacity=".5" stroke-width="2"/>
+    <g fill="#1c1b2a" stroke="#b5aaff" stroke-opacity=".25">
+      <rect x="768" y="90" width="164" height="76" rx="16"/>
+      <rect x="768" y="181" width="164" height="76" rx="16"/>
+      <rect x="768" y="272" width="164" height="76" rx="16"/>
+      <rect x="1108" y="159" width="208" height="120" rx="22"/>
+    </g>
+    <g fill="#f2eeff" font-size="23" font-weight="600"><text x="827" y="137">Code</text><text x="827" y="228">Chat</text><text x="827" y="319">Work</text></g>
+    <g stroke="#b5aaff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m803 120-8 8 8 8m10-16 8 8-8 8"/><path d="M795 210h24v15h-14l-7 5v-5h-3v-15Z"/><path d="M797 300h22v22h-22zm5-5h12v5"/></g>
+    <circle cx="1108" cy="219" r="4" fill="#91e0cd"/>
+    <text x="1140" y="204" fill="#eeeaff" font-size="19" font-weight="600">Your model</text>
+    <text x="1140" y="239" fill="#a7a2bc" font-size="15">Your engine</text>
+    <text x="804" y="389" fill="#827e98" font-size="12" letter-spacing="2">ONE WORKSPACE. MORE POSSIBILITIES.</text>
+  </g>
+</svg>

@@ -1,0 +1,19 @@
+{
+  "name": "taucode-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev .",
+    "build": "vitepress build .",
+    "preview": "vitepress preview ."
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  },
+  "overrides": {
+    "vite": "6.4.5"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

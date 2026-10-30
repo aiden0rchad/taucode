@@ -15,7 +15,7 @@ model/engine multiplier, and a token estimate from prior completed runs when ava
 **Start run → Confirm start** spends provider tokens.
 
 Pending runtimes install once before any cells are scheduled; the UI and CLI show
-“Preparing <engine>…”. A preparation failure saves a failed run without model calls.
+`Preparing <engine>…`. A preparation failure saves a failed run without model calls.
 Disabled, missing and errored engines are rejected with their name and state.
 
 Progress updates arrive through `eval/progress`. Cancel stops active sessions and

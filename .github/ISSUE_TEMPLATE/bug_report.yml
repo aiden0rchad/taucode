@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible problem in taucode.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "Remove keys, tokens, private paths, and personal content from attachments. Report vulnerabilities privately."
+  - type: input
+    id: build
+    attributes:
+      label: App version or source commit
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS version and architecture
+      placeholder: macOS / Windows / Linux / iOS; arm64 or x64
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Where does it happen?
+      options:
+        - Native desktop app
+        - Offline browser UI preview
+        - Remote daemon or mobile client
+        - Build or installation
+        - Documentation
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Engine and provider type
+      description: Include a model ID if safe to share. Never include credentials.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Give the smallest sequence and sample input that reproduces it.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and relevant error
+      description: Attach only reviewed, sanitized screenshots or diagnostics.
+    validations:
+      required: true

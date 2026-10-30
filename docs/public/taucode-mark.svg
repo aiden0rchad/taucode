@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none" role="img" aria-labelledby="title">
+  <title id="title">taucode mark</title>
+  <defs><linearGradient id="bg" x1="12" y1="8" x2="116" y2="125" gradientUnits="userSpaceOnUse"><stop stop-color="#b4a8ff"/><stop offset="1" stop-color="#7361ca"/></linearGradient></defs>
+  <rect x="4" y="4" width="120" height="120" rx="34" fill="url(#bg)"/>
+  <rect x="4.5" y="4.5" width="119" height="119" rx="33.5" stroke="#fff" stroke-opacity=".25"/>
+  <path d="M33 40h64v13H70v26c0 9 4 13 13 13v13c-18 0-28-10-28-26V53H33V40Z" fill="#fff"/>
+  <circle cx="96" cy="95" r="7" fill="#9aead7"/>
+</svg>

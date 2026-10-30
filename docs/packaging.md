@@ -7,7 +7,6 @@ uses the installed Tauri CLI and offline Cargo. Build natively on the target Mac
 
 ```sh
 export PATH="$HOME/.cargo/bin:$PATH"
-export CARGO_HOME=/Users/rolandleyco/taucode-m5p/.cargo-home
 bash scripts/release-macos.sh
 ```
 
@@ -165,12 +164,12 @@ and rejects checkout paths. It starts a temporary daemon with only
 Only socket-binding permission failures skip the daemon smoke step; missing
 resources, bad signatures, crashes and RPC failures remain fatal.
 
-For the full repository verification, use the M3 command with this worktree's
-`CARGO_HOME`, then `npm run build -- --mode uipreview`. The permitted sandbox
-exclusion is `cargo test -- --skip tailscale::tests::listen_addr_preflight_fails_when_port_is_in_use`.
-Keep `TMPDIR`, `CLANG_MODULE_CACHE_PATH` and `SWIFT_MODULECACHE_PATH` under this
-workspace in restricted environments. SwiftPM may additionally need its own
-package sandbox disabled when the outer execution sandbox forbids nested sandboxes.
+For application-wide checks, follow the [development guide](development.md).
+The offline UI preview provides a separate way to check the interface without
+packaging or contacting a provider; it does not validate native permissions,
+signatures, or installed runtime behavior. Restricted build environments may need
+writable temporary and compiler-cache directories; document any skipped native
+check instead of treating it as a successful result.
 
 The first-launch checklist is dismissible, persists Skip/Done locally, refreshes
 when the window gains focus, and reopens from Settings → About → Setup checklist.
