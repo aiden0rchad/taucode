@@ -634,6 +634,86 @@ fn virtual_subagent_results_keep_nested_progress_usage_and_history() {
     }
 }
 
+#[test]
+fn cancelled_subagent_history_restores_timing_and_evidence_on_its_branch() {
+    let dir = temp();
+    let file = dir.join("session.jsonl");
+    let result = json!({"isError":true,"content":[],"details":{"results":[{
+        "agent":"colonel","status":"failed","stopReason":"aborted","startedAt":1000,"endedAt":9000,"usage":{"input":10},
+        "messages":[{"role":"toolResult","toolCallId":"nested","details":{"xdev":{"tool":"subagent","inner":{"results":[
+            {"agent":"enlisted","status":"running","startedAt":2000,"usage":{"input":4},"messages":[{"role":"assistant","content":[{"type":"text","text":"Partial worker evidence"}]}]},
+            {"agent":"major","status":"completed","startedAt":3000,"endedAt":6000,"messages":[]},
+            {"agent":"enlisted","status":"pending","messages":[]}
+        ]}}}}]
+    }]}});
+    let mut entries = vec![
+        json!({"type":"session","id":"timing","cwd":"/workspace"}),
+        json!({"type":"message","id":"user","parentId":null,"message":{"role":"user","timestamp":1,"content":"Delegate"}}),
+        json!({"type":"message","id":"call","parentId":"user","message":{"role":"assistant","timestamp":2,"stopReason":"toolUse","content":[{"type":"toolCall","id":"delegate","name":"write","arguments":{"path":"xd://subagent","content":"{\"agent\":\"colonel\",\"task\":\"Delegate\"}"}}]}}),
+        json!({"type":"custom","customType":"taucode-subagent-result","id":"saved","parentId":"call","data":{"toolCallId":"delegate","result":result}}),
+        json!({"type":"message","id":"cancelled","parentId":"saved","message":{"role":"toolResult","toolCallId":"delegate","toolName":"write","isError":true,"content":[{"type":"text","text":"Operation aborted"}],"details":{}}}),
+    ];
+    let write = |entries: &[Value]| std::fs::write(&file, entries.iter().map(|e| format!("{e}\n")).collect::<String>()).unwrap();
+    write(&entries);
+    let (_, restored) = read_session(&file, &[]).unwrap();
+    let node = &restored.turns[0]["items"][1]["agentsTree"][0];
+    assert_eq!(node["status"], "aborted");
+    assert_eq!(node["startedAt"], 1000);
+    assert_eq!(node["endedAt"], 9000);
+    assert_eq!(node["children"][0]["status"], "aborted");
+    assert_eq!(node["children"][0]["startedAt"], 2000);
+    assert_eq!(node["children"][0]["endedAt"], 9000);
+    assert_eq!(node["children"][1]["status"], "completed");
+    assert_eq!(node["children"][1]["endedAt"], 6000);
+    assert_eq!(node["children"][2]["startedAt"], Value::Null);
+    assert_eq!(node["usage"]["input"], 14);
+    assert_eq!(restored.turns[0]["status"], "interrupted");
+    assert!(restored.transcripts["delegate:agent:0/nested:agent:0"].to_string().contains("Partial worker evidence"));
+    // OMP may persist its generic cancellation before extension cleanup finishes.
+    entries[3]["parentId"] = json!("cancelled");
+    entries[4]["parentId"] = json!("call");
+    entries.swap(3, 4);
+    write(&entries);
+    let (_, late) = read_session(&file, &[]).unwrap();
+    assert_eq!(late.turns[0]["status"], restored.turns[0]["status"]);
+    assert_eq!(late.turns[0]["items"][1]["agentsTree"], restored.turns[0]["items"][1]["agentsTree"]);
+    assert_eq!(late.total, restored.total);
+    assert_eq!(late.transcripts, restored.transcripts);
+    // Rewinding before the tool call must not pull abandoned evidence into the branch.
+    entries.push(json!({"type":"message","id":"fork","parentId":"user","message":{"role":"assistant","timestamp":3,"stopReason":"stop","content":[{"type":"text","text":"Alternative"}]}}));
+    write(&entries);
+    let (_, branch) = read_session(&file, &[]).unwrap();
+    assert!(branch.transcripts.is_empty());
+    assert!(!json!(branch.turns).to_string().contains("Partial worker evidence"));
+    entries.push(json!({"type":"custom","customType":"taucode-subagent-result","id":"unmatched","parentId":"fork","data":{"toolCallId":"delegate","result":result}}));
+    write(&entries);
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns, branch.turns, "ignore checkpoints without a matching delegation on this branch");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn stopping_a_team_preserves_completed_children_without_reporting_a_failure() {
+    let mut t = Translator::new("thread", "/workspace");
+    t.apply(&json!({"type":"agent_start"}));
+    t.apply(&json!({"type":"tool_execution_start","toolCallId":"call","toolName":"subagent","args":{"agent":"colonel","task":"Delegate"}}));
+    let update = json!({"type":"tool_execution_update","toolCallId":"call","partialResult":{"details":{"results":[{"agent":"colonel","status":"running","messages":[{"role":"toolResult","toolCallId":"nested","details":{"results":[{"agent":"enlisted","status":"running"},{"agent":"major","status":"completed","startedAt":1000,"endedAt":2000}]}}]}]}}});
+    t.apply(&update);
+    t.apply(&json!({"type":"abort_requested"}));
+    t.apply(&json!({"type":"tool_execution_end","toolCallId":"call","result":{"isError":true,"content":[{"type":"text","text":"Operation aborted"}]}}));
+    t.apply(&update); // Late progress cannot reopen stopped nodes.
+    t.apply(&json!({"type":"agent_settled"}));
+    let node = &t.turns[0]["items"][0]["agentsTree"][0];
+    assert_eq!(node["status"], "aborted");
+    assert_eq!(node["children"][0]["status"], "aborted");
+    assert_eq!(node["children"][1]["status"], "completed");
+    assert_eq!(node["children"][1]["endedAt"], 2000);
+    assert_eq!(t.turns[0]["status"], "interrupted");
+    let never_started = json!([{"agent":"enlisted","status":"failed","stopReason":"aborted","endedAt":9000}]);
+    let queued = agents::tree("queued", never_started.as_array().unwrap(), &Value::Null, true, Some(10000), &mut t.transcripts);
+    assert_eq!(queued[0]["startedAt"], Value::Null, "a cancelled queue entry never acquires a synthetic start time");
+    assert_eq!(queued[0]["endedAt"], 9000);
+}
+
 #[tokio::test]
 async fn native_tool_gate_approvals_are_decisions_instead_of_user_questions() {
     let dir = temp();

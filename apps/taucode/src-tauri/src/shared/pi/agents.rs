@@ -28,9 +28,9 @@ pub(super) fn tree(
     results: &[Value],
     previous: &Value,
     done: bool,
+    now: Option<i64>,
     transcripts: &mut HashMap<String, Value>,
 ) -> Value {
-    let now = chrono::Utc::now().timestamp_millis();
     json!(results.iter().enumerate().map(|(i, r)| {
         let id = format!("{prefix}:agent:{i}");
         let old = &previous[i];
@@ -39,6 +39,7 @@ pub(super) fn tree(
             else if r["status"] == "pending" && done { "aborted" }
             else if r["status"] == "completed" || done || r["stopReason"] == "stop" { "completed" }
             else if r["status"] == "pending" { "pending" } else { "running" };
+        let ended = r["endedAt"].as_i64().or(old["endedAt"].as_i64()).or(now);
         let messages = r["messages"].as_array().cloned().unwrap_or_default();
         let mut nested = Vec::new();
         let mut calls = Vec::<(&str, &Value)>::new();
@@ -51,8 +52,8 @@ pub(super) fn tree(
         for (call, message) in calls {
             let child_prefix = format!("{id}/{call}");
             let prior = json!(old["children"].as_array().into_iter().flatten().filter(|n| n["id"].as_str().is_some_and(|s| s.starts_with(&format!("{child_prefix}:agent:")))).cloned().collect::<Vec<_>>());
-            let mut children = tree(&child_prefix, self::results(&message["details"]).unwrap(), &prior, done && !matches!(status, "aborted" | "failed"), transcripts);
-            if matches!(status, "aborted" | "failed") { settle(&mut children, status); }
+            let mut children = tree(&child_prefix, self::results(&message["details"]).unwrap(), &prior, done && !matches!(status, "aborted" | "failed"), now, transcripts);
+            if matches!(status, "aborted" | "failed") { settle(&mut children, status, ended); }
             nested.extend(children.as_array().unwrap().iter().cloned());
         }
         let last = messages.iter().rev().find(|m| m["role"] == "assistant")
@@ -70,19 +71,19 @@ pub(super) fn tree(
         }
         usage.insert("cost".into(), json!(r["usage"]["cost"].as_f64().unwrap_or(0.0) + nested.iter().map(|n|n["usage"]["cost"].as_f64().unwrap_or(0.0)).sum::<f64>()));
         json!({"id":id,"agent":r["agent"],"model":r["model"],"task":r["task"],"status":status,
-            "startedAt":if status == "pending" {Value::Null} else {json!(old["startedAt"].as_i64().or(r["startedAt"].as_i64()).unwrap_or(now))},
-            "endedAt":if matches!(status,"running"|"pending") {Value::Null} else {json!(old["endedAt"].as_i64().unwrap_or(now))},
+            "startedAt":if status == "pending" || (r["endedAt"].is_number() && r["startedAt"].is_null()) {Value::Null} else {json!(r["startedAt"].as_i64().or(old["startedAt"].as_i64()).or(now))},
+            "endedAt":if matches!(status,"running"|"pending") {Value::Null} else {json!(ended)},
             "usage":usage,"lastMessage":last.chars().take(300).collect::<String>(),
             "errorMessage":r["stderr"].as_str().filter(|s|!s.is_empty()).or(r["errorMessage"].as_str()),"children":nested})
     }).collect::<Vec<_>>())
 }
 
-pub(super) fn settle(nodes: &mut Value, status: &str) {
+pub(super) fn settle(nodes: &mut Value, status: &str, ended: Option<i64>) {
     for node in nodes.as_array_mut().into_iter().flatten() {
         if node["status"] == "running" || node["status"] == "pending" {
             node["status"] = json!(status);
-            node["endedAt"] = json!(chrono::Utc::now().timestamp_millis());
+            node["endedAt"] = json!(ended);
         }
-        settle(&mut node["children"], status);
+        settle(&mut node["children"], status, ended);
     }
 }

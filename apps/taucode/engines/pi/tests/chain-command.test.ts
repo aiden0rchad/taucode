@@ -69,6 +69,7 @@ test("nested subprocesses share one turn budget, reset it, route models and fail
   assert.match(children.find((r: any) => r.status === "failed").stderr, /across the command tree/);
   for (const child of children.filter((r: any) => r.status === "completed")) {
     assert.deepEqual(JSON.parse(child.messages[0].content[0].text), { role: "enlisted", provider: "taucode-local", model: "small", thinking: "low" });
+    assert.ok(child.startedAt > 0 && child.endedAt >= child.startedAt, "persist actual child timing");
   }
   assert.match((await tool.execute("qa", { agent: "major", task: "review" }, undefined, undefined, ctx)).details.results[0].stderr, /across the command tree/);
   events.agent_end();
@@ -265,6 +266,7 @@ for (const { detached, depth, nested = false } of [{ detached: false, depth: 0 }
   Object.assign(process.env, variables);
   let pids: number[] = [];
   let tool: any;
+  const saved: any[] = [];
   const events: Record<string, () => void> = {};
   t.after(() => {
     controller.abort();
@@ -289,7 +291,7 @@ for (const { detached, depth, nested = false } of [{ detached: false, depth: 0 }
       spawn(process.execPath, ['--input-type=module', '-e', ${JSON.stringify(stubborn)}], {stdio:'ignore',detached:${detached}});
       setInterval(() => {}, 1000);
     } else writeFileSync(${JSON.stringify(queued)}, 'started');`);
-  subagents({ on: (name: string, fn: any) => { events[name] = fn; }, registerTool: (value: any) => { tool = value; } } as any);
+  subagents({ on: (name: string, fn: any) => { events[name] = fn; }, registerTool: (value: any) => { tool = value; }, appendEntry: (customType: string, data: any) => saved.push({ customType, data: structuredClone(data) }) } as any);
   events.agent_start();
   const ctx = { cwd, model: { provider: "taucode-cloud", id: "strong" } };
   const running = tool.execute("cancel-tree", { tasks: [{ agent: depth ? "enlisted" : "colonel", task: "wait for stop" }, { agent: "major", task: "queued" }] }, controller.signal, undefined, ctx);
@@ -301,6 +303,14 @@ for (const { detached, depth, nested = false } of [{ detached: false, depth: 0 }
   const result = await running;
   assert.equal(result.isError, true);
   assert.ok(result.details.results.every((r: any) => r.status === "failed" && r.stopReason === "aborted"));
+  assert.ok(result.details.results[0].startedAt > 0);
+  assert.ok(result.details.results[0].endedAt >= result.details.results[0].startedAt);
+  assert.equal(result.details.results[1].startedAt, undefined, "queued work has no invented start time");
+  assert.equal(saved.length, depth === 0 ? 1 : 0, "persist one root cancellation result outside model context");
+  if (depth === 0) {
+    assert.equal(saved[0].customType, "taucode-subagent-result");
+    assert.deepEqual(saved[0].data, { toolCallId: "cancel-tree", result });
+  }
   assert.ok(!existsSync(queued), "queued work must not start after cancellation");
   // An orphan can briefly remain a zombie until the OS reaps it; it cannot run.
   const alive = (pid: number) => {

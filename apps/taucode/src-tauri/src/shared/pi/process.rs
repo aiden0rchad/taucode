@@ -271,6 +271,7 @@ impl Process {
         if value["type"] == "prompt" { self.cancelling.store(false, Ordering::SeqCst); }
         if value["type"] == "abort" {
             self.cancelling.store(true, Ordering::SeqCst);
+            self.translator.lock().await.apply(&json!({"type":"abort_requested"}));
             // Pi waits for tool hooks to settle before acknowledging abort. An
             // unanswered extension dialog otherwise holds that wait forever.
             let dialogs = std::mem::take(&mut *self.dialogs.lock().await);

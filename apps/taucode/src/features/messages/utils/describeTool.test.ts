@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationItem } from "../../../types";
-import { describeTool, summarizeToolGroup } from "./messageRenderUtils";
+import { describeTool, summarizeToolGroup, toolStatusTone } from "./messageRenderUtils";
 
 type Tool = Extract<ConversationItem, { kind: "tool" }>;
 const tool = (patch: Partial<Tool>): Tool => ({ id: Math.random().toString(36), kind: "tool", toolType: "mcpToolCall", title: "", detail: "", status: "completed", ...patch } as Tool);
 
 describe("describeTool", () => {
+  it("shows a stopped delegation neutrally without hiding an actual child failure", () => {
+    const item = tool({ toolType: "collabToolCall", title: "collab: spawnAgent", status: "failed", agentsTree: [{ id: "colonel", agent: "colonel", status: "aborted", children: [{ id: "major", agent: "major", status: "completed", children: [] }] }] });
+    expect(describeTool(item).verb).toBe("Stopped");
+    expect(toolStatusTone(item, false)).toBe("unknown");
+    expect(summarizeToolGroup([item])).toBe("1 sub-agent call · 1 stopped");
+    item.agentsTree![0].children![0].status = "failed";
+    expect(describeTool(item).verb).toBe("Spawn failed");
+    expect(toolStatusTone(item, false)).toBe("failed");
+    expect(summarizeToolGroup([item])).toBe("1 sub-agent call · 1 failed");
+  });
   it("gives every call a short verb and target instead of raw tool names", () => {
     const cases: Array<[Partial<Tool>, string, string]> = [
       [{ toolType: "commandExecution", title: "Command: /bin/zsh -lc 'node --test'" }, "Ran", "node --test"],

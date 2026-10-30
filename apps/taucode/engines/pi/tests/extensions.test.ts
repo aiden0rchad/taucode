@@ -150,7 +150,7 @@ test("subagents single, parallel, chain, concurrency, per-run limit, depth and a
   process.env.TAUCODE_PI_CLI = cli;
   writeFileSync(join(home, "taucode/policy.json"), JSON.stringify(policy));
   let tool: any, reset: any;
-  subagents({ on: (name: string, fn: any) => { if (name === "agent_start") reset = fn; }, registerTool: (t: any) => { tool = t; } } as any);
+  subagents({ on: (name: string, fn: any) => { if (name === "agent_start") reset = fn; }, registerTool: (t: any) => { tool = t; }, appendEntry() {} } as any);
   const ctx = { cwd, model: { provider: "local", id: "small" } };
   const task = { agent: "scout", task: "read" };
   let peak = 0;

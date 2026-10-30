@@ -1243,6 +1243,7 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
             }
             Some("session_info") => thread["name"] = entry["name"].clone(),
             Some("compaction") => messages.push(json!({"role":"taucodeCompaction","result":entry})),
+            Some("custom") if entry["customType"] == "taucode-subagent-result" => messages.push(json!({"role":"taucodeSubagentResult","toolCallId":entry["data"]["toolCallId"],"result":entry["data"]["result"]})),
             _ => (),
         }
     }

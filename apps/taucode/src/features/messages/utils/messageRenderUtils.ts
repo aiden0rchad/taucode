@@ -96,6 +96,14 @@ function formatCollabAgentLabel(agent: {
   return agent.threadId;
 }
 
+function stoppedDelegation(item: Extract<ConversationItem, { kind: "tool" }>) {
+  if (item.toolType !== "collabToolCall") return false;
+  const nodes = [...(item.agentsTree ?? [])];
+  for (let i = 0; i < nodes.length; i++) nodes.push(...(nodes[i].children ?? []));
+  return nodes.some(node => node.status === "aborted")
+    && nodes.every(node => node.status === "aborted" || node.status === "completed");
+}
+
 function summarizeCollabLabel(title: string, status?: string) {
   const tool = title.replace(/^collab:\s*/i, "").trim().toLowerCase();
   const tone = statusToneFromText(status);
@@ -390,7 +398,7 @@ export function describeTool(item: Extract<ConversationItem, { kind: "tool" }>):
   if (item.toolType === "webSearch") return { verb: "Searched", target: item.detail || "the web", category: "search" };
   if (item.toolType === "imageView") return { verb: "Viewed", target: basename(item.detail || "") || "image", category: "read" };
   if (item.toolType === "collabToolCall") {
-    const label = summarizeCollabLabel(item.title, item.status);
+    const label = stoppedDelegation(item) ? "stopped" : summarizeCollabLabel(item.title, item.status);
     return { verb: label.charAt(0).toUpperCase() + label.slice(1), target: summarizeCollabReceiver(item), category: "agent" };
   }
   if (item.toolType === "hook") return { verb: "Hook", target: item.title.replace(/^Hook:\s*/i, "").trim(), category: "other" };
@@ -417,13 +425,15 @@ export function describeTool(item: Extract<ConversationItem, { kind: "tool" }>):
 export function summarizeToolGroup(items: ToolGroupItem[]) {
   const counts = new Map<ToolCategory, number>();
   let failed = 0;
+  let stopped = 0;
   let explored = 0;
   for (const item of items) {
     if (item.kind === "explore") { explored += item.entries.length; continue; }
     if (item.kind !== "tool") continue;
     const { category } = describeTool(item);
     counts.set(category, (counts.get(category) ?? 0) + 1);
-    if (statusToneFromText(item.status) === "failed") failed += 1;
+    if (stoppedDelegation(item)) stopped += 1;
+    else if (statusToneFromText(item.status) === "failed") failed += 1;
   }
   const n = (category: ToolCategory) => counts.get(category) ?? 0;
   const parts = [
@@ -437,6 +447,7 @@ export function summarizeToolGroup(items: ToolGroupItem[]) {
     n("plan") && "Updated plan",
     n("other") && formatCount(n("other"), "other tool", "other tools"),
     failed && `${failed} failed`,
+    stopped && `${stopped} stopped`,
   ].filter(Boolean);
   return parts.join(" · ");
 }
@@ -481,7 +492,7 @@ export function buildToolSummary(
 
   if (item.toolType === "collabToolCall") {
     return {
-      label: summarizeCollabLabel(item.title, item.status),
+      label: stoppedDelegation(item) ? "stopped" : summarizeCollabLabel(item.title, item.status),
       value: summarizeCollabReceiver(item),
       detail: item.detail || "",
       output: item.output || "",
@@ -552,6 +563,7 @@ export function toolStatusTone(
   item: Extract<ConversationItem, { kind: "tool" }>,
   hasChanges: boolean,
 ): StatusTone {
+  if (stoppedDelegation(item)) return "unknown";
   const fromStatus = statusToneFromText(item.status);
   if (fromStatus !== "unknown") {
     return fromStatus;

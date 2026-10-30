@@ -156,7 +156,7 @@ impl Translator {
         for mut item in open {
             if !self.completed.contains(item["id"].as_str().unwrap()) {
                 if item.get("agentsTree").is_some() {
-                    super::agents::settle(&mut item["agentsTree"], if aborted { "aborted" } else if self.failure.is_some() { "failed" } else { "completed" });
+                    super::agents::settle(&mut item["agentsTree"], if aborted { "aborted" } else if self.failure.is_some() { "failed" } else { "completed" }, Some(chrono::Utc::now().timestamp_millis()));
                 }
                 if item.get("status").is_some() {
                     item["status"] = json!(if aborted || self.failure.is_some() {
@@ -290,7 +290,7 @@ impl Translator {
                     .cloned()
                     .unwrap_or_else(|| vec![a.clone()]);
                 let states: serde_json::Map<String, Value> = tasks.iter().enumerate().map(|(i, task)| (format!("{id}:agent:{i}"), json!({"status":"running","message":task["task"],"task":task["task"],"agent":task["agent"],"model":task["model"],"usage":null}))).collect();
-                json!({"type":"collabAgentToolCall","id":id,"tool":"spawnAgent","status":"inProgress","senderThreadId":self.thread,"receiverThreadIds":states.keys().collect::<Vec<_>>(),"prompt":tasks.iter().filter_map(|t|t["task"].as_str()).collect::<Vec<_>>().join("\n\n"),"model":a["model"],"reasoningEffort":null,"agentsTree":super::agents::tree(id, &tasks, &Value::Null, false, &mut self.transcripts),"agentsStates":states})
+                json!({"type":"collabAgentToolCall","id":id,"tool":"spawnAgent","status":"inProgress","senderThreadId":self.thread,"receiverThreadIds":states.keys().collect::<Vec<_>>(),"prompt":tasks.iter().filter_map(|t|t["task"].as_str()).collect::<Vec<_>>().join("\n\n"),"model":a["model"],"reasoningEffort":null,"agentsTree":super::agents::tree(id, &tasks, &Value::Null, false, (m["replay"] != true).then(|| chrono::Utc::now().timestamp_millis()), &mut self.transcripts),"agentsStates":states})
             }
             "bash" => {
                 json!({"type":"commandExecution","id":id,"pluginId":null,"scriptPath":null,"command":a["command"].as_str().unwrap_or(""),"cwd":self.cwd,"processId":null,"source":"agent","status":"inProgress","commandActions":[],"aggregatedOutput":"","exitCode":null,"durationMs":null})
@@ -391,7 +391,7 @@ impl Translator {
             "collabAgentToolCall" => {
                 let previous_tree = item["agentsTree"].clone();
                 if let Some(results) = super::agents::results(&result["details"]) {
-                    item["agentsTree"] = super::agents::tree(id, results, &item["agentsTree"], done, &mut self.transcripts);
+                    item["agentsTree"] = super::agents::tree(id, results, &item["agentsTree"], done, (m["replay"] != true).then(|| chrono::Utc::now().timestamp_millis()), &mut self.transcripts);
                 }
                 for (i, r) in super::agents::results(&result["details"])
                     .into_iter()
@@ -453,7 +453,7 @@ impl Translator {
                 }
                 if done && failed {
                     item["error"] = json!({"message":text(&result["content"])});
-                    super::agents::settle(&mut item["agentsTree"], "failed");
+                    super::agents::settle(&mut item["agentsTree"], if self.aborted { "aborted" } else { "failed" }, Some(chrono::Utc::now().timestamp_millis()));
                     for state in item["agentsStates"].as_object_mut().into_iter().flat_map(|states| states.values_mut()) {
                         if state["status"] == "running" { state["status"] = json!("errored"); }
                     }
@@ -577,6 +577,7 @@ impl Translator {
             return out;
         }
         match m["type"].as_str().unwrap_or("") {
+            "abort_requested"=>self.aborted=true,
             "agent_start"=>self.start(&mut out),
             "agent_settled"=>{if let Some(error)=m["errorMessage"].as_str().or(m["error"].as_str()){self.failure=Some(error.into());}self.settle(m["aborted"]==true || self.aborted,&mut out);},
             "message_start"=>{
@@ -642,6 +643,14 @@ impl Translator {
         let mut end = 0u64;
         let mut last_stop = String::new();
         for m in messages {
+            if m["role"] == "taucodeSubagentResult" {
+                if t.find(m["toolCallId"].as_str().unwrap_or("")).is_some_and(|item| item["type"] == "collabAgentToolCall")
+                    && super::agents::results(&m["result"]["details"]).is_some() {
+                    t.apply(&json!({"type":"tool_execution_end","replay":true,"toolCallId":m["toolCallId"],"result":m["result"]}));
+                    t.aborted = true;
+                }
+                continue;
+            }
             if m["role"] == "taucodeCompaction" {
                 if last_stop != "toolUse" {
                     t.apply(&json!({"type":"agent_settled","aborted":t.aborted}));
@@ -668,11 +677,11 @@ impl Translator {
                     .flatten()
                     .filter(|p| p["type"] == "toolCall")
                 {
-                    t.apply(&json!({"type":"tool_execution_start","toolCallId":p["id"],"toolName":p["name"],"args":p["arguments"]}));
+                    t.apply(&json!({"type":"tool_execution_start","replay":true,"toolCallId":p["id"],"toolName":p["name"],"args":p["arguments"]}));
                 }
             }
             if m["role"] == "toolResult" {
-                t.apply(&json!({"type":"tool_execution_end","toolCallId":m["toolCallId"],"toolName":m["toolName"],"result":m,"isError":m["isError"],"durationMs":m["durationMs"]}));
+                t.apply(&json!({"type":"tool_execution_end","replay":true,"toolCallId":m["toolCallId"],"toolName":m["toolName"],"result":m,"isError":m["isError"],"durationMs":m["durationMs"]}));
             }
         }
         t.apply(&json!({"type":"agent_settled","aborted":t.aborted}));

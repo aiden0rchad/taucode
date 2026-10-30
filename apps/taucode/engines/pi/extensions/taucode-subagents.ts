@@ -13,7 +13,7 @@ const taskFields = { agent: Type.String(), task: Type.String(), model: optionalS
 const Task = Type.Object(taskFields);
 type TaskInput = { agent: string; task: string; model?: string | null; cwd?: string | null };
 type Message = { role: string; toolCallId?: string; toolName?: string; content?: { type: string; text?: string }[]; stopReason?: string; errorMessage?: string; usage?: Record<string, any> };
-type Result = TaskInput & { exitCode: number; status: string; messages: Message[]; stderr: string; stopReason?: string; usage: Record<string, number> };
+type Result = TaskInput & { exitCode: number; status: string; startedAt?: number; endedAt?: number; messages: Message[]; stderr: string; stopReason?: string; usage: Record<string, number> };
 const output = (r: Result) => r.messages.filter(m => m.role === "assistant").at(-1)?.content?.filter(c => c.type === "text").map(c => c.text).join("\n") || r.stderr;
 
 export default function (pi: ExtensionAPI) {
@@ -90,7 +90,7 @@ export default function (pi: ExtensionAPI) {
           if (signal?.aborted) throw new Error("Subagent aborted");
           active++; acquired = true;
           if (budget) slot = await acquireSubagentSlot(budget, signal);
-          r.model = model; r.status = "running"; update();
+          r.model = model; r.status = "running"; r.startedAt = Date.now(); update();
           const cli = process.env.TAUCODE_PI_CLI ?? process.argv[1];
           if (!cli) throw new Error("Missing managed pi CLI");
           const args = [...process.execArgv, cli, "--mode", "json", "-p", "--no-session", ...(process.env.TAUCODE_OMP === "1" ? ["--no-lsp", "--no-pty", "--no-title", "--no-skills", "--no-rules"] : ["--no-approve"]), "--no-extensions", "-e", join(home, "extensions/taucode-gate.ts"), "-e", join(home, "extensions/taucode-subagents.ts"), "--provider", provider, "--model", modelId];
@@ -194,6 +194,7 @@ export default function (pi: ExtensionAPI) {
           r.stderr = String(e); r.exitCode = 1; r.status = "failed";
         } finally {
           if (signal?.aborted) r.stopReason = "aborted";
+          r.endedAt = Date.now();
           try { releaseSubagentSlot(slot); }
           catch (error) { r.stderr += `\nConcurrency cleanup failed: ${error}`; r.status = "failed"; r.exitCode = 1; }
           if (acquired) { active--; for (const wake of [...waiters]) wake(); }
@@ -216,7 +217,11 @@ export default function (pi: ExtensionAPI) {
           previous = output(r);
         }
       } else await Promise.all(results.map(run));
-      return { ...snapshot(), isError: results.some(r => r.status === "failed") };
+      const result = { ...snapshot(), isError: results.some(r => r.status === "failed") };
+      // OMP can replace a cancelled tool's result with a generic abort error.
+      // Keep one branch-aware recovery entry, outside the model's context.
+      if (depth === 0 && signal?.aborted) pi.appendEntry("taucode-subagent-result", { toolCallId: _id, result });
+      return result;
       } finally {
         if (inheritedSlot && --delegating === 0 && !signal?.aborted) {
           try { ownSlot = await acquireSubagentSlot(inheritedBudget!, signal); }

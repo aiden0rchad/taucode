@@ -226,10 +226,42 @@ Screenshots: `taucode-agents-stuck-before.png`,
 `taucode-agents-restored-after.png`, `taucode-agents-progress-live.png`, and
 `taucode-agents-completed-live.png` in the task's visualization directory.
 
-Known limits: historical results without stored timestamps display zero elapsed
-time; unknown registry pricing can display zero cost. The earlier cancelled run
-restores its failed parent without the transient children absent from its saved
-result. Persisting timing and interrupted-tree evidence remains follow-up work.
+## Stop and timing recovery
+
+Subagent results now store actual start/end times. Queued work has no invented
+start time; older results without timestamps show elapsed time as unavailable.
+On cancellation, the root extension writes one branch-aware custom session entry
+outside model context. This preserves the final available tree, usage and partial
+transcripts when OMP replaces its tool result with a generic abort error.
+Reopening a stopped run restores aborted descendants while retaining completed
+children and their original duration. Rewound branches exclude abandoned results.
+
+Stop is recorded before the backend cancellation request, so the live tree also
+settles as aborted. Delegation rows and groups display a neutral `Stopped` label;
+an actual child failure still displays as a failure. Late progress cannot reopen
+stopped agents.
+
+Validation: 1,795 frontend tests, 24 extension tests, 45 Pi Rust tests (one
+unrelated live test ignored), both TypeScript checks, changed-file lint, cargo
+check, signed debug build. Regressions cover real subprocess cleanup, timestamp
+preservation, never-started queued work, cancellation entry ordering, branch
+isolation, usage/transcripts and neutral stop labels without hiding real failures.
+
+Live verification used OMP, GPT 6.1 Sol (Account 2), Low reasoning and Full access.
+A colonel delegated a foreground 60-second timer to an enlisted worker and an
+independent README check to a major. Stop preserved the completed major, marked
+the running agents aborted and left no timer or child-agent processes. Relaunch
+restored elapsed time and partial tool evidence from the saved cancellation.
+A fresh major delegation then returned `TIMING_RECOVERY_OK`; another relaunch
+preserved its seven-second duration, model and README evidence. Original project
+team models were restored. No Keychain prompt appeared during these checks.
+Screenshots: `taucode-stopped-team-restored.png` and
+`taucode-agents-stopped-live.png`, plus `taucode-agents-recovery-restored.png`,
+in the task's visualization directory.
+
+Known limits: old cancelled runs cannot recover evidence never saved by earlier
+builds. A force-quit/crash before the cancellation checkpoint remains separate
+work. Unknown registry pricing can still display zero cost.
 
 ## Work still required for the full product goal
 
