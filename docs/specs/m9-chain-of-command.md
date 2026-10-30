@@ -306,6 +306,24 @@ Remaining crash scope includes root assistant streaming, nondelegated tools,
 cross-engine recovery and Windows process cleanup. The last second of unflushed
 progress may be unavailable after an abrupt kill.
 
+## Credential-free history loading
+
+Codex `thread/list` and `thread/read` now start a history-only backend without
+reading provider keys, running command authentication or loading MCP connectors.
+Execution replaces it with a fully configured backend and resumes saved threads
+before sending new turns. Later history reads reuse the authenticated backend.
+Credential or policy changes still wait for active turns to finish; this does not
+change model access, approval policies or how credentials are stored.
+
+Validation: 545 backend tests passed (two explicit live tests ignored), typecheck
+and cargo check. The installed Codex CLI also passed an explicit offline history
+test with command authentication set to fail if invoked. Regression tests cover
+no Keychain calls for history, credential promotion, thread resume before a new
+turn, and no downgrade after authentication. The debug app rebuilt and passed
+signature verification with the same designated requirement as the previous
+build. Native verification is pending the Mac unlock. This removes an unnecessary startup credential read; it does not yet
+establish Keychain trust across rebuilds when execution needs a credential.
+
 ## Unknown model costs
 
 Unpriced custom-model catalog zeros no longer imply free usage. Delegated results

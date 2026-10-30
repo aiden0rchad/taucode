@@ -543,7 +543,7 @@ async fn router_checkpoints_sidechats_and_task_transcripts() {
     let checkpoints = Checkpoints::with_limits(data.clone(), "workspace".into(), root.to_string_lossy().into(), Arc::new(move |e| captured.lock().unwrap().push(e)), crate::shared::checkpoints::CheckpointLimits::testing());
     let (tx, mut completed) = tokio::sync::mpsc::unbounded_channel();
     let observer = checkpoints.clone();
-    let mut session = WorkspaceSession::lazy(Box::new(|| Box::pin(async { Err("Codex must not be used".into()) })), vec![provider("anthropic")], AgentPolicy::default(), None, None, "workspace".into());
+    let mut session = WorkspaceSession::lazy(Box::new(|_| Box::pin(async { Err("Codex must not be used".into()) })), vec![provider("anthropic")], AgentPolicy::default(), None, None, "workspace".into());
     session.checkpoints = Some(checkpoints.clone());
     session.pi = crate::shared::pi::PiEngine::new(data.clone(), "workspace".into(), root.to_string_lossy().into(), None, Arc::new(|_, _| {}));
     session.claude = engine(&data);

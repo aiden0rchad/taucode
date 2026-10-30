@@ -1003,11 +1003,19 @@ mod tests {
         let keys = Keys::default();
         keys.set("test", "super-secret").unwrap();
         let home = std::env::temp_dir().join(format!("taucode-registry-{}", uuid::Uuid::new_v4()));
+        struct Locked;
+        impl KeyStore for Locked {
+            fn get(&self, _: &str) -> Result<Option<String>, String> { panic!("History must not request Keychain access") }
+            fn set(&self, _: &str, _: &str) -> Result<(), String> { panic!("History must not write credentials") }
+            fn delete(&self, _: &str) -> Result<(), String> { panic!("History must not delete credentials") }
+        }
+        assert!(crate::shared::engines::prepare_codex(&home, &[p.clone()], &AgentPolicy::default(), &Locked, false).unwrap().is_empty());
         let env = crate::shared::engines::prepare_codex(
             &home,
             &[p.clone()],
             &AgentPolicy::default(),
             &keys,
+            true,
         )
         .unwrap();
         assert_eq!(

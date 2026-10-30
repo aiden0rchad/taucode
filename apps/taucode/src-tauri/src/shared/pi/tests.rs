@@ -1615,7 +1615,7 @@ async fn side_chat_current_blocks_mutations_and_two_turn_checkpoints_bind_real_i
     let observer = checkpoints.clone();
     let (tx, mut completions) = tokio::sync::mpsc::unbounded_channel();
     let providers = vec![serde_json::from_value(json!({"id":"first","name":"First","kind":"ollama","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"fake","enabled":true}]})).unwrap()];
-    let mut session = WorkspaceSession::lazy(Box::new(|| Box::pin(async { Err("Codex must not be used".into()) })),
+    let mut session = WorkspaceSession::lazy(Box::new(|_| Box::pin(async { Err("Codex must not be used".into()) })),
         providers, AgentPolicy::default(), None, None, "workspace".into());
     session.checkpoints = Some(checkpoints.clone());
     session.pi = PiEngine::new(dir.clone(), "workspace".into(), root.to_string_lossy().into(), None,

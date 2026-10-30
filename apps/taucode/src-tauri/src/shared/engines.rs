@@ -146,12 +146,12 @@ pub(crate) use super::pi::PiEngine;
 pub(crate) struct WorkspaceSession {
     pub checkpoints: Option<Arc<super::checkpoints::Checkpoints>>,
     pub codex: Mutex<Option<Arc<CodexEngine>>>,
-    configuration: Mutex<Option<String>>,
+    configuration: Mutex<Option<(String, bool)>>,
     reload_threads: Mutex<HashSet<String>>,
     #[cfg(test)]
     test_backend: Option<Arc<CodexEngine>>,
     factory:
-        Option<Box<dyn Fn() -> BoxFuture<'static, Result<Arc<CodexEngine>, String>> + Send + Sync>>,
+        Option<Box<dyn Fn(bool) -> BoxFuture<'static, Result<Arc<CodexEngine>, String>> + Send + Sync>>,
     pub codegraph: Option<crate::codegraph::CodegraphSetup>,
     pub codex_args: Option<String>,
     pub owner_workspace_id: String,
@@ -200,7 +200,7 @@ impl WorkspaceSession {
     }
     pub fn lazy(
         factory: Box<
-            dyn Fn() -> BoxFuture<'static, Result<Arc<CodexEngine>, String>> + Send + Sync,
+            dyn Fn(bool) -> BoxFuture<'static, Result<Arc<CodexEngine>, String>> + Send + Sync,
         >,
         providers: Vec<ProviderEntry>,
         policy: AgentPolicy,
@@ -270,15 +270,15 @@ impl WorkspaceSession {
         Ok(())
     }
     pub async fn codex_backend(&self) -> Result<Arc<CodexEngine>, String> {
-        self.backend(false).await
+        self.backend(false, true).await
     }
     pub async fn credentials_changed(&self) {
         // Reload child environment on the next request, after active turns finish.
-        *self.configuration.lock().await = Some(String::new());
+        if let Some((fingerprint, _)) = self.configuration.lock().await.as_mut() { fingerprint.clear(); }
         self.pi.credentials_changed().await;
         self.claude.credentials_changed().await;
     }
-    async fn backend(&self, refresh: bool) -> Result<Arc<CodexEngine>, String> {
+    async fn backend(&self, refresh: bool, credentials: bool) -> Result<Arc<CodexEngine>, String> {
         let mut backend = self.codex.lock().await;
         let mut fingerprint = self.configuration.lock().await;
         let connectors = crate::codex::home::resolve_default_codex_home()
@@ -289,7 +289,7 @@ impl WorkspaceSession {
             .transpose()?;
         let current = serde_json::to_string(&(self.current_configuration(), connectors))
             .map_err(|e| e.to_string())?;
-        if refresh && self.factory.is_some() && fingerprint.as_ref().is_some_and(|v| *v != current)
+        if self.factory.is_some() && fingerprint.as_ref().is_some_and(|(v, loaded)| refresh && *v != current || credentials && !loaded)
         {
             if let Some(c) = backend.as_ref() {
                 if !c.active_threads.lock().await.is_empty() {
@@ -308,8 +308,8 @@ impl WorkspaceSession {
                 .collect();
         }
         if backend.is_none() {
-            *backend = Some((self.factory.as_ref().ok_or("Missing codex backend")?)().await?);
-            *fingerprint = Some(current);
+            *backend = Some((self.factory.as_ref().ok_or("Missing codex backend")?)(credentials).await?);
+            *fingerprint = Some((current, credentials));
         }
         Ok(backend.as_ref().unwrap().clone())
     }
@@ -523,7 +523,7 @@ impl WorkspaceSession {
                 current
             } else {
                 let response = self
-                    .backend(true)
+                    .backend(true, true)
                     .await?
                     .read_thread(workspace, json!({"threadId":id}))
                     .await?;
@@ -569,7 +569,7 @@ impl WorkspaceSession {
                         current
                     } else {
                         let response = self
-                            .backend(true)
+                            .backend(true, true)
                             .await?
                             .read_thread(workspace, json!({"threadId":id}))
                             .await?;
@@ -624,7 +624,7 @@ impl WorkspaceSession {
             return Ok(response);
         }
         let backend = self
-            .backend(!matches!(method, "turn/interrupt" | "turn/steer"))
+            .backend(!matches!(method, "turn/interrupt" | "turn/steer"), !matches!(method, "thread/list" | "thread/read"))
             .await?;
         if method == "subagent/transcript" {
             let node = params["nodeId"].as_str().ok_or("Missing node ID")?;
@@ -871,6 +871,7 @@ pub(crate) fn prepare_codex(
     providers: &[ProviderEntry],
     policy: &AgentPolicy,
     keys: &dyn KeyStore,
+    credentials: bool,
 ) -> Result<Vec<(String, String)>, String> {
     let (config, files) = codex_config(providers, policy, home)?;
     if home.join(".credentials.json").exists() {
@@ -889,6 +890,7 @@ pub(crate) fn prepare_codex(
         write_config_file(&path, &content)?;
     }
     let mut env = vec![];
+    if !credentials { return Ok(env); }
     for p in providers
         .iter()
         .filter(|p| p.enabled && providers::codex_usable(p))
@@ -999,12 +1001,59 @@ mod tests {
     use crate::backend::app_server::protocol_tests::make_session;
     use std::sync::atomic::{AtomicUsize, Ordering};
     #[tokio::test]
+    async fn codex_history_defers_credentials_until_execution_and_reloads_owned_threads() {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let launches = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = launches.clone();
+        let provider: ProviderEntry = serde_json::from_value(json!({"id":"test","name":"Test","kind":"openai","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"model","enabled":true}]})).unwrap();
+        let session = WorkspaceSession::lazy(Box::new(move |credentials| {
+            seen.lock().unwrap().push(credentials);
+            Box::pin(async { make_session().codex_backend().await })
+        }), vec![provider], AgentPolicy::default(), None, None, "fixture".into());
+        let history = session.backend(true, false).await.unwrap();
+        let stdout = history.child.lock().await.stdout.take().unwrap();
+        let responder = history.clone();
+        let server = tokio::spawn(async move {
+            let mut lines = BufReader::new(stdout).lines();
+            for method in ["thread/list", "thread/read"] {
+                let request: Value = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+                assert_eq!(request["method"], method);
+                let result = if method == "thread/list" { json!({"data":[{"id":"saved","updatedAt":1}]}) } else { json!({"thread":{"id":"saved","modelProvider":"test"}}) };
+                responder.pending.lock().await.remove(&request["id"].as_u64().unwrap()).unwrap().send(json!({"result":result})).unwrap();
+            }
+        });
+        session.send_request_for_workspace("fixture", "thread/list", json!({})).await.unwrap();
+        session.send_request_for_workspace("fixture", "thread/read", json!({"threadId":"saved"})).await.unwrap();
+        server.await.unwrap();
+        assert_eq!(*launches.lock().unwrap(), [false]);
+        let execution = session.backend(true, true).await.unwrap();
+        assert!(!Arc::ptr_eq(&history, &execution));
+        assert_eq!(*launches.lock().unwrap(), [false, true]);
+        assert!(session.reload_threads.lock().await.contains("saved"));
+        assert!(Arc::ptr_eq(&execution, &session.backend(true, false).await.unwrap()), "history must not downgrade an authenticated engine");
+        assert_eq!(*launches.lock().unwrap(), [false, true]);
+        let stdout = execution.child.lock().await.stdout.take().unwrap();
+        let server = tokio::spawn(async move {
+            let mut lines = BufReader::new(stdout).lines();
+            for method in ["thread/resume", "turn/start"] {
+                let request: Value = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+                assert_eq!(request["method"], method);
+                assert_eq!(request["params"]["threadId"], "saved");
+                execution.pending.lock().await.remove(&request["id"].as_u64().unwrap()).unwrap().send(json!({"result":{}})).unwrap();
+            }
+        });
+        session.send_request_for_workspace("fixture", "turn/start", json!({"threadId":"saved","input":[]})).await.unwrap();
+        server.await.unwrap();
+        assert!(!session.reload_threads.lock().await.contains("saved"));
+        session.shutdown().await;
+    }
+    #[tokio::test]
     async fn key_replacement_preserves_turns_and_restores_threads() {
         use tokio::io::{AsyncBufReadExt, BufReader};
         let calls = Arc::new(AtomicUsize::new(0));
         let counter = calls.clone();
         let session = WorkspaceSession::lazy(
-            Box::new(move || {
+            Box::new(move |_| {
                 counter.fetch_add(1, Ordering::SeqCst);
                 Box::pin(async { make_session().codex_backend().await })
             }),
@@ -1014,7 +1063,7 @@ mod tests {
             None,
             "workspace".into(),
         );
-        let first = session.backend(true).await.unwrap();
+        let first = session.backend(true, true).await.unwrap();
         session
             .owners
             .lock()
@@ -1022,10 +1071,10 @@ mod tests {
             .insert("running".into(), "codex".to_owned());
         first.active_threads.lock().await.insert("running".into());
         session.credentials_changed().await;
-        assert!(session.backend(true).await.is_err());
-        assert!(Arc::ptr_eq(&first, &session.backend(false).await.unwrap()));
+        assert!(session.backend(true, true).await.is_err());
+        assert!(Arc::ptr_eq(&first, &session.backend(false, true).await.unwrap()));
         first.active_threads.lock().await.clear();
-        let next = session.backend(true).await.unwrap();
+        let next = session.backend(true, true).await.unwrap();
         assert!(!Arc::ptr_eq(&first, &next));
         let stdout = next.child.lock().await.stdout.take().unwrap();
         let responder = tokio::spawn(async move {
@@ -1066,7 +1115,7 @@ mod tests {
         custom.command = Some("python3".into());
         settings.engines.push(custom.clone());
         std::fs::write(dir.join("settings.json"), serde_json::to_vec(&settings).unwrap()).unwrap();
-        let mut session = WorkspaceSession::lazy(Box::new(|| Box::pin(async { panic!("Must not start Codex") })), vec![], AgentPolicy::default(), None, None, "workspace".into());
+        let mut session = WorkspaceSession::lazy(Box::new(|_| Box::pin(async { panic!("Must not start Codex") })), vec![], AgentPolicy::default(), None, None, "workspace".into());
         session.pi = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_,_| {}));
         let error = session.send_request_for_workspace("workspace", "thread/start", json!({"engine":"fork"})).await.unwrap_err();
         assert_eq!(error, "Add and enable a provider and model in Settings");
@@ -1091,7 +1140,7 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let counter = calls.clone();
         let session = WorkspaceSession::lazy(
-            Box::new(move || {
+            Box::new(move |_| {
                 counter.fetch_add(1, Ordering::SeqCst);
                 Box::pin(async { Err("must not start".into()) })
             }),
@@ -1139,7 +1188,7 @@ mod tests {
     async fn command_mode_rejects_unsupported_engines_before_launch() {
         let mut policy = AgentPolicy::default();
         policy.subagents.mode = SubagentMode::ChainOfCommand;
-        let session = WorkspaceSession::lazy(Box::new(|| Box::pin(async { panic!("Unsupported engine must not launch") })), vec![], policy, None, None, "workspace".into());
+        let session = WorkspaceSession::lazy(Box::new(|_| Box::pin(async { panic!("Unsupported engine must not launch") })), vec![], policy, None, None, "workspace".into());
         for engine in ["codex", "claude"] {
             let error = session.send_request_for_workspace("workspace", "thread/start", json!({"engine":engine})).await.unwrap_err();
             assert!(error.contains("Chain of Command requires a pi-RPC engine"), "{error}");

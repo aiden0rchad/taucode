@@ -207,7 +207,7 @@ impl Work {
             return session.clone();
         }
         let mut session = WorkspaceSession::lazy(
-            Box::new(|| Box::pin(async { Err("Work tasks use pi".into()) })),
+            Box::new(|_| Box::pin(async { Err("Work tasks use pi".into()) })),
             state.settings.providers.clone(), state.settings.agent_policy.clone(), None, None, space.id.clone(),
         );
         let tx = self.tx.clone();
