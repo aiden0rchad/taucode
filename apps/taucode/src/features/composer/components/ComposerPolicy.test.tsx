@@ -10,10 +10,10 @@ import { ReasoningControl } from "./ReasoningControl";
 
 afterEach(cleanup);
 const initial = setAgentMode(defaultAgentPolicy, "single");
-function Picker({ save = async () => {}, engine = "pi", reasoning = true, enabled = true }: { save?: (policy: AgentPolicy) => Promise<void>; engine?: EngineKind; reasoning?: boolean; enabled?: boolean }) {
+function Picker({ save = async () => {}, engine = "pi", reasoning = true, enabled = true, conversation = false, reset, loading = false, loadError }: { loadError?: string; conversation?: boolean; reset?: () => Promise<void>; loading?: boolean; save?: (policy: AgentPolicy) => Promise<void>; engine?: EngineKind; reasoning?: boolean; enabled?: boolean }) {
   const [policy, setPolicy] = useState(initial);
   return <FeatureSettings.Provider value={{ agentPolicy: policy, features: { subagents: enabled }, providers: [{ id: "local", name: "Local", enabled: true, kind: "ollama", auth: { type: "none" }, models: [{ id: "small", enabled: true }] }] } as AppSettings}>
-    <ComposerPolicyProvider scope="Project · Demo" policy={policy} onChange={async next => { await save(next); setPolicy(next); }}>
+    <ComposerPolicyProvider scope="Project · Demo" policy={policy} conversation={conversation} onReset={reset} loading={loading} loadError={loadError} onChange={async next => { await save(next); setPolicy(next); }}>
       <ReasoningControl engine={engine} modelName="Commander" capability={{ supported: reasoning, levels: reasoning ? ["low", "high"] : [], default: "low", source: "api", control: "effort", detectedAt: 1 }} onChange={() => {}} />
     </ComposerPolicyProvider>
   </FeatureSettings.Provider>;
@@ -172,4 +172,37 @@ it("offers the controls for models without reasoning and keeps unsupported engin
   expect(screen.getByRole("button", { name: "Chain of Command" })).toHaveProperty("disabled", false);
   view.rerender(<Picker reasoning={false} enabled={false} />);
   expect(screen.queryByRole("button", { name: "Chain of Command" })).toBeNull();
+});
+
+it("resets a disabled conversation team and keeps the project token allowance read only", async () => {
+  const reset = vi.fn().mockResolvedValue(undefined);
+  render(<Picker conversation reset={reset} />);
+  fireEvent.click(screen.getByRole("button", { name: "Commander · Low" }));
+  fireEvent.click(screen.getByRole("button", { name: "Use project team" }));
+  await waitFor(() => expect(reset).toHaveBeenCalledOnce());
+  const toggle = screen.getByRole("button", { name: "Chain of Command" });
+  await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("true"));
+  fireEvent.click(screen.getByRole("button", { name: "Configure Chain of Command" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Limits" }));
+  expect((await screen.findByLabelText("Daily team tokens") as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByLabelText("Run time (minutes)") as HTMLInputElement).disabled).toBe(false);
+});
+
+it("prevents edits while the conversation team is loading", () => {
+  render(<Picker loading />);
+  fireEvent.click(screen.getByRole("button", { name: "Commander · Low" }));
+  expect((screen.getByRole("button", { name: "Chain of Command" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("offers reset after a failed team read without allowing an accidental overwrite", async () => {
+  const reset = vi.fn().mockResolvedValue(undefined), save = vi.fn();
+  render(<Picker conversation reset={reset} save={save} loadError="Cannot read conversation team" />);
+  fireEvent.click(screen.getByRole("button", { name: "Commander · Low" }));
+  expect((screen.getByRole("button", { name: "Chain of Command" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByRole("alert").textContent).toContain("Cannot read conversation team");
+  fireEvent.click(screen.getByRole("button", { name: "Use project team" }));
+  await waitFor(() => expect(reset).toHaveBeenCalledOnce());
+  expect(save).not.toHaveBeenCalled();
 });

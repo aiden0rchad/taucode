@@ -12,6 +12,107 @@ fn fixture(name: &str) -> String {
 }
 
 #[tokio::test]
+async fn conversation_teams_persist_fork_and_keep_project_allowances() {
+    for profile in ["pi", "omp"] {
+        let dir = temp();
+        let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_, _| {}));
+        engine.profile.definition = crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), profile).unwrap().0;
+        let mut base = AgentPolicy::default();
+        base.subagents.daily_token_limit = 10000;
+        engine.configure("workspace", vec![], base.clone()).await;
+        let sessions = engine.directory("workspace").unwrap();
+        std::fs::create_dir_all(&sessions).unwrap();
+        for id in ["one", "two"] {
+            std::fs::write(sessions.join(format!("{id}.jsonl")), format!("{}\n", json!({"type":"session","version":3,"id":id,"engine":profile,"cwd":dir}))).unwrap();
+        }
+        let mut team = base.subagents.clone();
+        team.max_run_minutes = 7;
+        team.daily_token_limit = 0;
+        let set = engine.request("workspace", "thread/agentPolicy", json!({"threadId":"one","action":"set","policy":team})).await.unwrap();
+        assert_eq!(set["overridden"], true);
+        assert_eq!(set["policy"]["subagents"]["dailyTokenLimit"], 10000);
+        assert_eq!(set["policy"]["subagents"]["maxRunMinutes"], 7);
+        let other = engine.request("workspace", "thread/agentPolicy", json!({"threadId":"two","action":"get"})).await.unwrap();
+        assert_eq!(other["overridden"], false);
+        assert_eq!(other["policy"]["subagents"]["maxRunMinutes"], 0);
+        assert!(engine.sessions.lock().await.values().all(|s| s.process.is_none()), "editing teams must not start models or read credentials");
+        assert!(engine.request("wrong-workspace", "thread/agentPolicy", json!({"threadId":"one","action":"get"})).await.is_err());
+        team.max_run_minutes = 1441;
+        assert!(engine.request("workspace", "thread/agentPolicy", json!({"threadId":"one","action":"set","policy":team})).await.is_err());
+        assert!(engine.request("workspace", "thread/agentPolicy", json!({"threadId":"one","action":"unknown"})).await.is_err());
+        let fork = engine.request("workspace", "thread/fork", json!({"threadId":"one","sideOf":{"threadId":"one","workspaceId":"workspace"}})).await.unwrap();
+        let fork_id = fork["result"]["thread"]["id"].as_str().unwrap();
+        let home = dir.join(format!("{profile}/agent/workspace"));
+        assert_eq!(config::read_team(&home, fork_id).unwrap().unwrap().max_run_minutes, 7);
+        engine.sessions.lock().await.clear();
+        base.subagents.daily_token_limit = 5000;
+        engine.configure("workspace", vec![], base).await;
+        let persisted = engine.request("workspace", "thread/agentPolicy", json!({"threadId":"one","action":"get"})).await.unwrap();
+        assert_eq!(persisted["policy"]["subagents"]["maxRunMinutes"], 7);
+        assert_eq!(persisted["policy"]["subagents"]["dailyTokenLimit"], 5000);
+        std::fs::write(home.join("taucode/teams/one.json"), "invalid json").unwrap();
+        assert!(engine.request("workspace", "thread/agentPolicy", json!({"threadId":"one","action":"get"})).await.is_err());
+        let reset = engine.request("workspace", "thread/agentPolicy", json!({"threadId":"one","action":"reset"})).await.unwrap();
+        assert_eq!(reset["overridden"], false);
+        assert_eq!(reset["policy"]["subagents"]["maxRunMinutes"], 0);
+        assert_eq!(config::read_team(&home, fork_id).unwrap().unwrap().max_run_minutes, 7);
+        assert!(config::write_team(&home, "../escape", None).is_err());
+        assert!(config::read_team(&home, "").is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn conversation_teams_snapshot_each_engine_session_until_next_spawn() {
+    let dir = temp();
+    let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_, _| {}));
+    engine.fake = true;
+    engine.keys = Arc::new(Keys);
+    let providers = serde_json::from_value(json!([{"id":"first","name":"First","kind":"ollama","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"fake","enabled":true}]}])).unwrap();
+    let base = AgentPolicy::default();
+    engine.configure("workspace", providers, base.clone()).await;
+    let first = engine.request("workspace", "thread/start", json!({"model":"first/fake"})).await.unwrap();
+    let one = first["result"]["thread"]["id"].as_str().unwrap();
+    let second = engine.request("workspace", "thread/start", json!({"model":"first/fake"})).await.unwrap();
+    let two = second["result"]["thread"]["id"].as_str().unwrap();
+    let home = dir.join("pi/agent/workspace");
+    let snapshot = |id: &str| -> Value { serde_json::from_slice(&std::fs::read(home.join("taucode/policies").join(format!("{id}.json"))).unwrap()).unwrap() };
+    let mut team = base.subagents.clone(); team.max_run_minutes = 7;
+    engine.request("workspace", "thread/agentPolicy", json!({"threadId":one,"action":"set","policy":team})).await.unwrap();
+    assert_eq!(snapshot(one)["maxRunMinutes"], 0, "saving must not alter a running session's policy");
+    engine.request("workspace", "turn/start", json!({"threadId":one,"input":[{"type":"text","text":"hello"}]})).await.unwrap();
+    assert_eq!(snapshot(one)["maxRunMinutes"], 7);
+    assert_eq!(snapshot(two)["maxRunMinutes"], 0);
+    team.max_run_minutes = 9; team.enabled = true;
+    engine.request("workspace", "thread/agentPolicy", json!({"threadId":one,"action":"set","policy":team})).await.unwrap();
+    config::write_policy(&home, &[], &base).unwrap();
+    assert_eq!(snapshot(one)["maxRunMinutes"], 7, "project and team edits apply to subsequent turns");
+    std::fs::write(home.join("taucode/teams").join(format!("{one}.json")), "broken").unwrap();
+    engine.request("workspace", "turn/interrupt", json!({"threadId":one})).await.unwrap();
+    config::write_team(&home, one, Some(&team)).unwrap();
+    std::fs::write(dir.join("settings.json"), json!({"features":{"subagents":false}}).to_string()).unwrap();
+    engine.request("workspace", "turn/start", json!({"threadId":one,"input":[{"type":"text","text":"hello"}]})).await.unwrap();
+    assert_eq!(snapshot(one)["enabled"], false, "conversation overrides must respect the global feature switch");
+    assert_eq!(snapshot(one)["maxConcurrent"], 0);
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn conversation_teams_reject_chat_and_work() {
+    let dir = temp();
+    for engine in [PiEngine::chat(dir.clone(), Arc::new(|_, _| {})), PiEngine::work(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), Arc::new(|_, _| {}))] {
+        let workspace = if engine.chat { "chats" } else { "workspace" };
+        engine.configure(workspace, vec![], AgentPolicy::default()).await;
+        let sessions = engine.directory(workspace).unwrap();
+        std::fs::create_dir_all(&sessions).unwrap();
+        std::fs::write(sessions.join("one.jsonl"), format!("{}\n", json!({"type":"session","version":3,"id":"one","cwd":dir}))).unwrap();
+        assert!(engine.request(workspace, "thread/agentPolicy", json!({"threadId":"one","action":"get"})).await.unwrap_err().contains("only in Code"));
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
 async fn chain_of_command_is_code_only_and_does_not_change_saved_policy() {
     let dir = temp();
     let mut policy = AgentPolicy::default();

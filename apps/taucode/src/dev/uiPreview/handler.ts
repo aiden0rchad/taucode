@@ -3,10 +3,11 @@ import { createDiagnosticsFixture } from "./diagnostics";
 import { builtinIds, parseTheme, type ThemeFile, type ThemeManifest } from "@/features/themes/validate";
 import customTheme from "@/features/themes/fixtures/valid-custom.json";
 import { defaultFeatures, type Features } from '@settings/features';
+import { defaultAgentPolicy, mergePolicy } from '@settings/registry';
 import type { EngineRuntimeStatus } from "@services/tauri";
 import type { ManagedTask } from "@/features/tasks/useManagedTasks";
 import type { BrowserState } from "@/features/browser/browser";
-import type { AppSettings, ImportLog, WorkTask, WorkspaceInfo } from "@/types";
+import type { AgentPolicy, AppSettings, ImportLog, WorkTask, WorkspaceInfo } from "@/types";
 import { assistantMessage, createFixtures, diff, makeThread, userMessage, type PreviewThread } from "./fixtures";
 
 type Params = Record<string, unknown>;
@@ -37,6 +38,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const warned = new Set<string>();
   const logs: ImportLog[] = [];
   const managedTasks = new Map<string, ManagedTask[]>();
+  const conversationTeams = new Map<string, AgentPolicy["subagents"]>();
   let sequence = 0;
   const previewSnapshot = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700"><rect width="1000" height="700" fill="#f7f7f5"/><text x="60" y="100" font-family="system-ui" font-size="40" fill="#202020">Example Domain</text><text x="60" y="160" font-family="system-ui" font-size="20" fill="#555">Native browser preview</text></svg>')}`;
   const browser: BrowserState = { backend: "native", capabilities: { screenshot: true, evaluate: true }, tabs: query.get("panel") === "browser" ? [{ id: "preview-page", title: "Example", url: "https://example.com/", loading: false, ready: true, snapshot: previewSnapshot }] : [], active: query.get("panel") === "browser" ? "preview-page" : "" };
@@ -186,6 +188,17 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "read_thread":
       case "resume_thread": return response(findThread(args.threadId));
       case "list_thread_history": return { turns: [], nextCursor: null };
+      case "thread_agent_policy": {
+        const thread = findThread(args.threadId);
+        const workspace = state.workspaces.find(w => w.id === args.workspaceId);
+        if (!thread || !workspace || thread.workspaceId !== workspace.id) throw new Error("Unknown conversation");
+        const base = mergePolicy(state.settings.agentPolicy ?? defaultAgentPolicy, workspace.settings.agentPolicy);
+        if (args.action === "set") conversationTeams.set(thread.id, structuredClone(args.policy as AgentPolicy["subagents"]));
+        else if (args.action === "reset") conversationTeams.delete(thread.id);
+        else if (args.action !== "get") throw new Error("Unknown conversation team action");
+        const team = conversationTeams.get(thread.id);
+        return { overridden: !!team, policy: { ...base, subagents: team ? { ...team, dailyTokenLimit: base.subagents.dailyTokenLimit } : base.subagents } };
+      }
       case "start_thread":
       case "fork_thread":
       case "create_side_chat": {
@@ -193,6 +206,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
         const thread = makeThread(id("thread"), String(args.workspaceId), command === "create_side_chat" ? "Side chat" : "New conversation");
         thread.cwd = state.workspaces.find(w => w.id === args.workspaceId)?.path ?? thread.cwd;
         if (command === "fork_thread" && parent) thread.turns = structuredClone(parent.turns);
+        if (parent && conversationTeams.has(parent.id)) conversationTeams.set(thread.id, structuredClone(conversationTeams.get(parent.id)!));
         if (command === "create_side_chat" && parent) thread.sideOf = { workspaceId: parent.workspaceId, threadId: parent.id, atItemId: typeof args.atItemId === "string" ? args.atItemId : null };
         state.threads.unshift(thread); return response(thread);
       }

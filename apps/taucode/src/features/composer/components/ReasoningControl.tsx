@@ -13,6 +13,7 @@ import "./reasoning.css";
 
 export type ReasoningControlProps = {
   engine?: EngineKind;
+  teamControls?: boolean;
   capability?: ReasoningCapability | null;
   value?: string | null;
   onChange: (value: string) => void;
@@ -26,7 +27,7 @@ export type ReasoningControlProps = {
   onSelectModel?: (id: string) => void | boolean | Promise<void | boolean>;
   modelPickerRequest?: number;
 };
-export function ReasoningControl({ engine, capability, value, onChange, disabled, unavailable, onOpenSettings, modelName = "Model", models = [], selectedModelId, defaultModelId, onSelectModel, modelPickerRequest = 0 }: ReasoningControlProps) {
+export function ReasoningControl({ engine, teamControls = true, capability, value, onChange, disabled, unavailable, onOpenSettings, modelName = "Model", models = [], selectedModelId, defaultModelId, onSelectModel, modelPickerRequest = 0 }: ReasoningControlProps) {
   const effects = useFeatures().reasoningEffects;
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
@@ -119,9 +120,9 @@ export function ReasoningControl({ engine, capability, value, onChange, disabled
     </button>
     {menu.isOpen && <AnchoredPopover anchorRef={trigger} surfaceRef={popover} className={`reasoning-popover${effects ? "" : " effects-off"}${burning ? " burning" : warm ? " warm" : ""}${drag !== null ? " dragging" : ""}`} style={sliderStyle} role="dialog" aria-label={view === "models" ? "Select model" : "Model and reasoning"} onKeyDown={event => { if (event.key === "Escape" && view === "models") { event.preventDefault(); event.stopPropagation(); switchView("slider"); } }}>
       {(["slider", "models"] as const).filter(panel => panel === view || panel === outgoing).map(panel => <div key={panel} className={`reasoning-view${outgoing ? ` ${view === "models" ? "forward" : "back"} ${panel === outgoing ? "outgoing" : "incoming"}` : ""}`} aria-hidden={panel === outgoing || undefined} inert={panel === outgoing ? true : undefined}>
-      {panel === "models" ? <><div className="reasoning-model-heading"><IconButton type="button" aria-label="Back to reasoning" onClick={() => switchView("slider")}><ChevronLeft size={16} aria-hidden /></IconButton><strong>Select model</strong><ChainOfCommandControls engine={engine} disabled={disabled} onConfigure={() => { menu.close(); trigger.current?.focus(); }} /></div><ComposerModelList models={models} selectedId={selectedModelId} defaultId={defaultModelId} disabled={disabled || selecting} onSelect={selectModel} />{modelError && <p role="alert">{modelError}</p>}</> : <>
+      {panel === "models" ? <><div className="reasoning-model-heading"><IconButton type="button" aria-label="Back to reasoning" onClick={() => switchView("slider")}><ChevronLeft size={16} aria-hidden /></IconButton><strong>Select model</strong>{teamControls && <ChainOfCommandControls engine={engine} disabled={disabled} onConfigure={() => { menu.close(); trigger.current?.focus(); }} />}</div><ComposerModelList models={models} selectedId={selectedModelId} defaultId={defaultModelId} disabled={disabled || selecting} onSelect={selectModel} />{modelError && <p role="alert">{modelError}</p>}</> : <>
         <div className="reasoning-heading">
-          <ChainOfCommandControls engine={engine} disabled={disabled} onConfigure={() => { menu.close(); trigger.current?.focus(); }} />
+          {teamControls && <ChainOfCommandControls engine={engine} disabled={disabled} onConfigure={() => { menu.close(); trigger.current?.focus(); }} />}
           <div className="reasoning-heading-center">
             <span className="reasoning-level">{noReasoning ? "Model" : label}</span>
             <button type="button" className="reasoning-model" title={modelName} disabled={!onSelectModel || disabled} onClick={() => switchView("models")}><span>{modelName}</span><ChevronRight size={12} aria-hidden /></button>

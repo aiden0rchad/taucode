@@ -97,6 +97,8 @@
 .command-role-fields > :has(.command-wide-field) { grid-column: 1 / -1; }
 .command-editor .settings-textarea { min-height: 76px; font-family: inherit; line-height: 1.5; }
 @media (max-width: 660px) {
+  .command-editor footer { flex-wrap: wrap; }
+  .command-editor .command-save-note { flex-basis: 100%; }
   .command-editor header { padding: 18px; }
   .command-editor-navigation { padding: 0 18px; }
   .command-editor-body, .command-editor footer { padding: 16px 18px; }

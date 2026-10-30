@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { acquireSubagentSlot, commandInstructions, commandTargets, createSubagentBudget, releaseSubagentSlot, resolveTask, type Policy } from "../extensions/lib/policy.ts";
+import { acquireSubagentSlot, commandInstructions, commandTargets, createSubagentBudget, releaseSubagentSlot, resolveTask, readPolicy, type Policy } from "../extensions/lib/policy.ts";
 import subagents from "../extensions/taucode-subagents.ts";
 
 const policy: Policy = {
@@ -372,4 +372,32 @@ for (const runner of [process.execPath, new URL("../../omp/node_modules/.bin/bun
   for (let i = 0; i < 200 && pids.some(alive); i++) await delay(20);
   assert.ok(pids.every(pid => !alive(pid)), "coordinator, worker and detached command must stop after losing their parent");
   assert.match(readFileSync(join(folder, readdirSync(folder)[0]), "utf8"), /CRASH_PARTIAL_EVIDENCE/);
+});
+
+test("conversation snapshots isolate team models from other conversations and project edits", (t) => {
+  const home = mkdtempSync(join(tmpdir(), "taucode-policy-"));
+  const previousHome = process.env.PI_CODING_AGENT_DIR, previousId = process.env.TAUCODE_SESSION_KEY;
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousHome;
+    if (previousId === undefined) delete process.env.TAUCODE_SESSION_KEY; else process.env.TAUCODE_SESSION_KEY = previousId;
+    rmSync(home, { recursive: true, force: true });
+  });
+  process.env.PI_CODING_AGENT_DIR = home;
+  mkdirSync(join(home, "taucode/policies"), { recursive: true });
+  writeFileSync(join(home, "taucode/policy.json"), JSON.stringify(policy));
+  writeFileSync(join(home, "taucode/policies/one.json"), JSON.stringify({ ...policy, defaultModel: "cloud/mid" }));
+  writeFileSync(join(home, "taucode/policies/two.json"), JSON.stringify({ ...policy, defaultModel: "local/small" }));
+  for (const [id, model] of [["one", "cloud/mid"], ["two", "local/small"]]) {
+    process.env.TAUCODE_SESSION_KEY = id;
+    assert.equal(readPolicy().defaultModel, model);
+    writeFileSync(join(home, "taucode/policy.json"), JSON.stringify({ ...policy, defaultModel: "cloud/strong" }));
+    assert.equal(readPolicy().defaultModel, model);
+  }
+  delete process.env.TAUCODE_SESSION_KEY;
+  assert.equal(readPolicy().defaultModel, "cloud/strong");
+  process.env.TAUCODE_SESSION_KEY = "../escape";
+  assert.throws(readPolicy, /Invalid conversation ID/);
+  process.env.TAUCODE_SESSION_KEY = "one";
+  writeFileSync(join(home, "taucode/policies/one.json"), "broken");
+  assert.throws(readPolicy, /JSON/);
 });

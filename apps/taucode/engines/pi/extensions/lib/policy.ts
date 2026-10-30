@@ -9,6 +9,15 @@ export type Rule = { tool: string; command?: string; path?: string; cwd?: string
 export type Access = { accessMode: "read-only" | "ask" | "full-access"; sessionAllow: Rule[]; kind?: "work"; workspace?: string; readOnlyFolders?: string[]; skillRoot?: string };
 export type Call = { tool: string; command?: string; path?: string; cwd: string };
 
+export function readPolicy(): Policy {
+  const home = process.env.PI_CODING_AGENT_DIR;
+  if (!home) throw new Error("Missing managed agent home");
+  const id = process.env.TAUCODE_SESSION_KEY;
+  if (id && !/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error("Invalid conversation ID");
+  const file = id && resolve(home, "taucode/policies", `${id}.json`);
+  return JSON.parse(readFileSync(file && existsSync(file) ? file : resolve(home, "taucode/policy.json"), "utf8"));
+}
+
 // Resolve existing ancestors too: a new file below a symlink must not escape the workspace.
 export function canonical(path: string): string {
   path = resolve(path);

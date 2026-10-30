@@ -1278,6 +1278,11 @@ export function createSideChat(workspaceId: string, threadId: string, atItemId?:
   return invoke<{ result: { thread: Record<string, unknown> & { id: string } } }>("create_side_chat", { workspaceId, threadId, atItemId });
 }
 
+export type ConversationPolicy = { policy: import("@/types").AgentPolicy; overridden: boolean };
+export function threadAgentPolicy(workspaceId: string, threadId: string, action: "get" | "set" | "reset", policy?: import("@/types").AgentPolicy["subagents"]): Promise<ConversationPolicy> {
+  return invoke("thread_agent_policy", { workspaceId, threadId, action, policy });
+}
+
 export async function workRequest<T = unknown>(action: string, params: Record<string, unknown> = {}): Promise<T> {
   return invoke<T>("work_request", { action, params });
 }

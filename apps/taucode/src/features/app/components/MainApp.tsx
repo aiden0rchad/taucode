@@ -7,6 +7,8 @@ import { AgentsContext, agentThreadDetails } from "@/features/agents/agents";
 import { useSideChats, sideChatQuote } from "@/features/sidechats/useSideChats";
 import { SideChatPane, SideChatSplit } from "@/features/sidechats/SideChatPane";
 import { ComposerPolicyProvider } from "@/features/composer/components/ComposerPolicy";
+import { useConversationPolicy } from "@/features/composer/hooks/useConversationPolicy";
+import { useEngines } from "@settings/engines";
 import { defaultAgentPolicy, mergePolicy, modelKey } from "@/features/settings/registry";
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import successSoundUrl from "@/assets/success-notification.mp3";
@@ -1758,6 +1760,10 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
 
   threadEngines.current = threadsByWorkspace;
   const parentEngine = threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.engine ?? selectedEngine ?? activeWorkspace?.settings.agentPolicy?.defaultEngine ?? appSettings.agentPolicy?.defaultEngine ?? "pi";
+  const teamEngines = useEngines();
+  const conversationTeam = features.subagents && !!activeThreadId && teamEngines.some(engine => engine.id === parentEngine && engine.protocol === "pi-rpc");
+  const projectPolicy = useMemo(() => mergePolicy(appSettings.agentPolicy ?? defaultAgentPolicy, activeWorkspace?.settings.agentPolicy), [appSettings.agentPolicy, activeWorkspace?.settings.agentPolicy]);
+  const team = useConversationPolicy(conversationTeam ? activeWorkspaceId : null, conversationTeam ? activeThreadId : null, !!activeWorkspace?.connected, projectPolicy);
   const sideChats = useSideChats({
     workspace: activeWorkspace, threadId: activeThreadId,
     threads: threadsByWorkspace[activeWorkspaceId ?? ""] ?? [],
@@ -1994,11 +2000,14 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     tasks={managedTasks} tasksEnabled={features.terminal} onOpenSettings={modalActions.openSettings} onEditLaunchScripts={launchScriptsState.onOpenNew}
   /> : null;
   if (settingsOnly) return <div className="mode-settings-host" style={mainAppShellProps.appStyle}><AppModals {...mainAppShellProps.appModalsProps} settingsOpen settingsSection={initialSettingsSection ?? mainAppShellProps.appModalsProps.settingsSection} onCloseSettings={onCloseModeSettings ?? mainAppShellProps.appModalsProps.onCloseSettings} /></div>;
-  return <ComposerPolicyProvider policy={mergePolicy(appSettings.agentPolicy ?? defaultAgentPolicy, activeWorkspace?.settings.agentPolicy)} scope={activeWorkspace ? `Project · ${activeWorkspace.name}` : "App policy"} onChange={async agentPolicy => {
-    if (activeWorkspace) await updateWorkspaceSettings(activeWorkspace.id, { agentPolicy });
+  return <ComposerPolicyProvider policy={team.policy} conversation={conversationTeam} loading={team.loading} loadError={team.error}
+    scopeKey={`${activeWorkspaceId}:${activeThreadId}:${parentEngine}`} scope={conversationTeam ? `This conversation · ${team.overridden ? "Custom team" : "Project team"}` : activeWorkspace ? `Project defaults · ${activeWorkspace.name}` : "App defaults"}
+    onReset={conversationTeam && (team.overridden || team.error) ? () => team.change() : undefined} onChange={async agentPolicy => {
+    if (conversationTeam) await team.change(agentPolicy);
+    else if (activeWorkspace) await updateWorkspaceSettings(activeWorkspace.id, { agentPolicy });
     else setAppSettings(await updateAppSettings({ ...await getAppSettings(), agentPolicy }));
   }}><AgentsContext.Provider value={{ details: agentDetails, workspaceId: activeWorkspaceId, threadId: activeThreadId, itemsByThread,
-    policy: appSettings.agentPolicy ? { ...appSettings.agentPolicy.subagents, ...activeWorkspace?.settings.agentPolicy?.subagents } : undefined }}>
+    policy: team.policy.subagents }}>
     {features.checkpoints && <Checkpoints running={threadStatusById} onChanged={async (workspace, thread, text) => {
     await refreshThread(workspace, thread);
     if (text !== undefined) composerWorkspaceState.restoreDraftForThread(thread, text);

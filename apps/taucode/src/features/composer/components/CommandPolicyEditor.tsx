@@ -20,8 +20,9 @@ const limits = [
   { field: "maxDepth", label: "Max depth", max: 3, hint: "Levels below the commander" },
 ] as const;
 
-export default function CommandPolicyEditor({ policy, providers, tab, onChange }: {
+export default function CommandPolicyEditor({ policy, providers, tab, onChange, conversation = false }: {
   policy: AgentPolicy; providers: ProviderEntry[]; tab: string; onChange: (policy: AgentPolicy) => void;
+  conversation?: boolean;
 }) {
   const [selectedRole, setSelectedRole] = useState("colonel");
   const [showPresets, setShowPresets] = useState(false);
@@ -87,7 +88,7 @@ export default function CommandPolicyEditor({ policy, providers, tab, onChange }
       <SettingsFieldRow title={label}><SettingsNumberStepper min={1} max={max} value={sub[field]} onChange={event => change({ [field]: Number(event.target.value) })} /></SettingsFieldRow>
       <p>{hint}</p>
     </div>)}</div>
-    <ExecutionLimits policy={policy} onChange={onChange} />
+    <ExecutionLimits policy={policy} onChange={onChange} conversation={conversation} />
     <details className="command-restrictions">
       <summary><ChevronRight size={16} aria-hidden /><span>Model defaults & restrictions</span><small>{sub.allowedModels.length ? `${sub.allowedModels.length} allowed` : "All enabled models"}</small></summary>
       <div>

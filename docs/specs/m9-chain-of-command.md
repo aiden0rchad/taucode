@@ -48,6 +48,43 @@ Chain of Command turns with an actionable error; history and interruption remain
 available. Claude's Single model setting removes Task/Agent tools and applies the
 same restriction to permission requests, with a runtime refresh when policy changes.
 
+## Conversation teams
+
+For an existing Code conversation on Pi or OMP, the composer’s five-star toggle
+and editor apply only to that conversation. The header identifies **This
+conversation · Project team** or **This conversation · Custom team**. A new
+conversation inherits project defaults. With no conversation selected, the editor
+explicitly labels edits as **Project defaults** (or **App defaults**).
+
+**Use project team** removes an override. It appears in the editor footer and,
+when the team is off, beside the star button. Roles/models, delegation mode,
+concurrency/depth/per-turn limits and run time can be overridden. The daily token
+allowance remains project-wide and read-only here; conversation settings cannot
+raise or disable it. Overrides survive restarts and are copied to forks/side chats.
+Side-chat model pickers do not expose controls for their parent’s team.
+
+The desktop and remote transports route `thread_agent_policy` to the owning
+Pi-RPC engine. Reads, saves and resets require an owned Code conversation but do not
+start an engine or access provider credentials. Saved overrides live under the
+managed engine home in `taucode/teams/<thread-id>.json`. Each spawned conversation
+receives `taucode/policies/<thread-id>.json`; its descendants inherit that snapshot.
+Project edits or another conversation’s changes cannot alter an active team. The
+next turn refreshes changed settings. Feature switches remain authoritative, and
+malformed overrides cannot prevent Stop. Reset can recover a corrupt saved team.
+
+Regression coverage includes separate conversations, restart reads, fork copies,
+validation, project allowance inheritance, disabled features, Chat/Work rejection,
+immutable active snapshots, interruption with corrupt settings, late UI responses,
+read-only allowance controls and resetting a disabled team. Browser-preview computer
+use verified toggling, saving a seven-minute limit, switching conversations without
+leakage, reopening the saved limit, and restoring inheritance. Evidence:
+`taucode-conversation-team-preview.png`. Validation: 1,808 frontend tests in the full suite; subsequent editor/wiring
+checks passed 8 and 67 tests respectively, including one added recovery regression.
+All 56 Pi backend tests passed (one provider-dependent test ignored), as did all 45
+extension tests, TypeScript, changed-file lint and `cargo check --all-targets`.
+A signed rebuild, native verification and mixed-model runs remain pending; the Mac
+is locked and the previous build awaits Keychain approval.
+
 ## Limits and access
 
 - Optional run time (0–1440 minutes) bounds a root run and its entire command tree.
@@ -509,7 +546,8 @@ window. Zoom was restored to 100% and test tabs closed. Screenshots:
 `taucode-browser-narrow-toolbar-after.png`, `taucode-browser-wide-toolbar-after.png`.
 This smoke pass does not establish the cause of the earlier empty-tab failure.
 
-- Per-conversation policy overrides beyond the current project defaults.
+- Native acceptance for the implemented conversation-team overrides, including
+  restart/fork behavior in the signed app.
 - Further durable orchestration state and broader cross-engine/OS crash recovery.
   Evidence-backed QA gates, shared turn concurrency, project daily usage allowances,
   inherited deadlines and POSIX cleanup have regression and signed-app coverage.

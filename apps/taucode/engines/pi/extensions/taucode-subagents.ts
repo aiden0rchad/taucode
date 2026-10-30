@@ -1,7 +1,7 @@
 // Derived from pi's examples/extensions/subagent (MIT, Copyright Mario Zechner).
 // Keeps single/parallel/chain JSON streaming; roles come only from taucode policy.
 import { execFileSync, spawn } from "node:child_process";
-import { readFileSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -9,7 +9,7 @@ import { Type } from "typebox";
 import { subagentCheckpoint } from "./lib/recovery.ts";
 import { acceptanceCriteria, registerVerification } from "./lib/verification.ts";
 import { registerExecutionLimits } from "./lib/executionLimits.ts";
-import { acquireSubagentSlot, adoptSubagentSlot, checkLimits, commandInstructions, commandRank, commandTargets, createSubagentBudget, inside, releaseSubagentProcessSlots, releaseSubagentSlot, reserveSubagent, resolveTask, type Policy } from "./lib/policy.ts";
+import { acquireSubagentSlot, adoptSubagentSlot, checkLimits, readPolicy, commandInstructions, commandRank, commandTargets, createSubagentBudget, inside, releaseSubagentProcessSlots, releaseSubagentSlot, reserveSubagent, resolveTask, type Policy } from "./lib/policy.ts";
 
 const optionalString = Type.Optional(Type.Union([Type.String(), Type.Null()]));
 const taskFields = { agent: Type.String(), task: Type.String(), model: optionalString, cwd: optionalString, acceptanceCriteria: Type.Optional(Type.Union([Type.Array(Type.String(), { minItems: 1, maxItems: 20 }), Type.Null()])) };
@@ -20,8 +20,8 @@ type Result = TaskInput & { exitCode: number; status: string; startedAt?: number
 const output = (r: Result) => r.messages.filter(m => m.role === "assistant").at(-1)?.content?.filter(c => c.type === "text").map(c => c.text).join("\n") || r.stderr;
 
 export default function (pi: ExtensionAPI) {
-  registerExecutionLimits(pi, () => JSON.parse(readFileSync(join(process.env.PI_CODING_AGENT_DIR!, "taucode/policy.json"), "utf8")));
-  registerVerification(pi, () => JSON.parse(readFileSync(join(process.env.PI_CODING_AGENT_DIR!, "taucode/policy.json"), "utf8")));
+  registerExecutionLimits(pi, readPolicy);
+  registerVerification(pi, readPolicy);
   let count = 0;
   let active = 0;
   let turnBudget: string | undefined;
@@ -49,7 +49,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_end", () => { finish(); for (const checkpoint of completedCheckpoints) checkpoint.discard(); completedCheckpoints.clear(); });
   pi.on("session_shutdown", () => { clearInterval(parentWatch); finish(); });
   pi.on("before_agent_start", () => {
-    const current: Policy = JSON.parse(readFileSync(join(process.env.PI_CODING_AGENT_DIR!, "taucode/policy.json"), "utf8"));
+    const current: Policy = readPolicy();
     const role = Number(process.env.TAUCODE_SUBAGENT_DEPTH ?? 0) === 0 ? "commander" : process.env.TAUCODE_SUBAGENT_ROLE ?? "unknown";
     const chain = current.enabled !== false && current.mode === "chain-of-command";
     const targets = commandTargets(role, current.roles);
@@ -63,7 +63,7 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({ agent: optionalString, task: optionalString, model: taskFields.model, cwd: taskFields.cwd, acceptanceCriteria: taskFields.acceptanceCriteria, tasks: Type.Optional(Type.Union([Type.Array(Task), Type.Null()])), chain: Type.Optional(Type.Union([Type.Array(Task), Type.Null()])) }),
     async execute(_id, params, signal, onUpdate, ctx) {
       const home = process.env.PI_CODING_AGENT_DIR!;
-      const policy: Policy = JSON.parse(readFileSync(join(home, "taucode/policy.json"), "utf8"));
+      const policy: Policy = readPolicy();
       const depth = Number(process.env.TAUCODE_SUBAGENT_DEPTH ?? 0);
       // Strict-schema providers send empty arrays/nulls for unused optional modes.
       const modes = [!!(params.agent || params.task), !!params.tasks?.length, !!params.chain?.length];

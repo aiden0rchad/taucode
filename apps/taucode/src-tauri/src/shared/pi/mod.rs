@@ -407,6 +407,7 @@ impl PiEngine {
             }
         }
         config::write_policy(&home, registry, policy)?;
+        config::write_thread_policy(&home, &id, registry, policy)?;
         config::write_access(&home, &id, None)?;
         if self.work {
             let file = home.join("taucode/threads").join(format!("{id}.json"));
@@ -675,6 +676,24 @@ impl PiEngine {
             .get_mut(id)
             .filter(|s| s.workspace == workspace)
             .ok_or("Unknown pi thread")?;
+        let team_home = self.data.as_ref().ok_or("Pi runtime is not configured")?
+            .join(format!("{}/agent", self.profile.id())).join(workspace);
+        if method == "thread/agentPolicy" {
+            if self.chat || self.work { return Err("Conversation teams are available only in Code".into()); }
+            match params["action"].as_str() {
+                Some("get") => {},
+                Some("set") => {
+                    let team = serde_json::from_value::<crate::types::SubagentPolicy>(params["policy"].clone()).map_err(|e| format!("Invalid conversation team: {e}"))?;
+                    let effective = config::apply_team(&policy, Some(team));
+                    providers::validate(&registry, &effective)?;
+                    config::write_team(&team_home, id, Some(&effective.subagents))?;
+                },
+                Some("reset") => config::write_team(&team_home, id, None)?,
+                _ => return Err("Unknown conversation team action".into()),
+            }
+            let team = config::read_team(&team_home, id)?;
+            return Ok(json!({"overridden":team.is_some(),"policy":config::apply_team(&policy, team)}));
+        }
         if method == "thread/chatWeb/set" && self.chat {
             let web = params["web"].as_bool().ok_or("Missing Web state")?;
             if s.thread["chatWeb"] != web {
@@ -744,8 +763,9 @@ impl PiEngine {
             let (mut cloned, _) = read_session(&file, &registry)?;
             cloned["modelProvider"] = s.thread["modelProvider"].clone();
             cloned["model"] = s.thread["model"].clone();
-            let home = self.data.as_ref().ok_or("Pi runtime is not configured")?.join("pi/agent").join(workspace);
+            let home = &team_home;
             config::write_access(&home, &new_id, Some("read-only"))?;
+            config::write_team(&home, &new_id, config::read_team(&home, id)?.as_ref())?;
             sessions.insert(new_id, Session { workspace: workspace.into(), thread: cloned.clone(), file, process: None, configuration: String::new() });
             return Ok(json!({"result":thread_response(cloned, false, "read-only")}));
         }
@@ -883,6 +903,13 @@ impl PiEngine {
             return Ok(json!({"result":{"thread":thread,"readState":null}}));
         }
         // Interrupt must remain available after credentials/configuration change.
+        let policy = if !self.chat && !self.work && !matches!(method, "turn/interrupt" | "turn/steer") {
+            let team = config::read_team(&team_home, id)?;
+            let overridden = team.is_some();
+            let effective = config::apply_team(&policy, team);
+            if overridden { providers::validate(&registry, &effective)?; }
+            super::engines::feature_policy(effective, &super::engine_registry::features(self.data.as_deref()))
+        } else { policy };
         let p = if matches!(method, "turn/interrupt" | "turn/steer") {
             match &s.process {
                 Some(p) if p.alive.load(Ordering::SeqCst) => p.clone(),
@@ -929,6 +956,7 @@ impl PiEngine {
                 .as_str()
                 .ok_or("Pi clone missing ID")?
                 .to_owned();
+            config::write_team(&team_home, &new_id, config::read_team(&team_home, id)?.as_ref())?;
             let mut session = Session {
                 workspace: workspace.into(),
                 thread: cloned.clone(),

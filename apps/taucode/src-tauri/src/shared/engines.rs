@@ -443,6 +443,9 @@ impl WorkspaceSession {
             obj.remove("engine");
         }
         let (definition, notice) = super::engine_registry::resolve(&settings, &engine)?;
+        if method == "thread/agentPolicy" && definition.protocol != EngineProtocol::PiRpc {
+            return Err("Conversation teams require Pi or OMP".into());
+        }
         let engine = definition.id.clone();
         let mutating = matches!(method, "turn/start" | "turn/steer" | "thread/start" | "thread/fork" | "thread/compact/start" | "thread/accessMode/set");
         if !definition.enabled && mutating { return Err(format!("Enable {} to continue", definition.name)); }

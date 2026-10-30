@@ -1017,3 +1017,16 @@ pub(crate) async fn get_subagent_transcript(
     codex_core::thread_feature_core(&state.sessions, workspace_id, "subagent/transcript",
         json!({"threadId":thread_id,"nodeId":node_id})).await
 }
+
+#[tauri::command]
+pub(crate) async fn thread_agent_policy(
+    workspace_id: String, thread_id: String, action: String, policy: Option<Value>,
+    state: State<'_, AppState>, app: AppHandle,
+) -> Result<Value, String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        return remote_backend::call_remote(&*state, app, "thread_agent_policy",
+            json!({"workspaceId":workspace_id,"threadId":thread_id,"action":action,"policy":policy})).await;
+    }
+    codex_core::thread_feature_core(&state.sessions, workspace_id, "thread/agentPolicy",
+        json!({"threadId":thread_id,"action":action,"policy":policy})).await
+}
