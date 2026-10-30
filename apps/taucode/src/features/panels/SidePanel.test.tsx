@@ -77,6 +77,33 @@ it("opens a URL as its own tab, switches browser pages and restores a missing ho
   await waitFor(() => expect(host.tabs[0]?.url).toBe("https://example.com/"));
   expect(screen.getByRole("button", { name: "Downloads" })).toBeTruthy();
 });
+it("reveals the selected tab and its close button after opening, switching and reopening the panel", async () => {
+  const reveal = vi.fn();
+  const original = HTMLElement.prototype.scrollIntoView;
+  HTMLElement.prototype.scrollIntoView = reveal;
+  try {
+    render(shell());
+    fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+    fireEvent.click(screen.getByRole("button", { name: /Changes/ }));
+    const changes = screen.getByRole("tab", { name: "Changes" }).parentElement;
+    expect(reveal.mock.instances[reveal.mock.instances.length - 1]).toBe(changes);
+    fireEvent.click(screen.getByRole("button", { name: "New panel tab" }));
+    fireEvent.click(screen.getByRole("button", { name: /New page/ }));
+    const page = await screen.findByRole("tab", { name: "New page" });
+    await waitFor(() => expect(reveal.mock.instances[reveal.mock.instances.length - 1]).toBe(page.parentElement));
+    reveal.mockClear();
+    act(() => { host = { ...host, tabs: host.tabs.map(tab => ({ ...tab, title: "A much longer page title" })) }; callbacks.forEach(callback => callback(host)); });
+    expect(reveal.mock.instances[reveal.mock.instances.length - 1]).toBe(page.parentElement);
+    fireEvent.click(screen.getByRole("tab", { name: "Changes" }));
+    expect(reveal.mock.instances[reveal.mock.instances.length - 1]).toBe(changes);
+    fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+    reveal.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+    expect(reveal.mock.instances[reveal.mock.instances.length - 1]).toBe(changes);
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original;
+  }
+});
 it("opens Task by default and validates corrupt saved tab data", () => {
   render(shell("work:task", [{ id: "task", label: "Task", content: <p>Plan and outputs</p> }]));
   expect(screen.getByRole("tab", { name: "Task", selected: true })).toBeTruthy();

@@ -35,6 +35,9 @@ export function WorkspaceShell({ children, scope, title, tools = [], searchUrl =
   tools = tools.filter(t => ({ git: features.git, agents: features.subagents, terminal: features.terminal, sidechat: features.sideChats } as Record<string, boolean>)[t.id] ?? true);
   const controller = useSidePanelState({ scope, tools, searchUrl, onNavigate, reservedShortcuts, dock, sessionRail });
   const { state, update, browser, resize, layout, overlay, panelRef, mainRef, expanded, setExpanded, address, setAddress, error, busy, recent, pending, history, historyIndex, openTool, closeTool, active, openPage, close, navigate } = controller;
+  useEffect(() => {
+    if (!dock && state.open) panelRef.current?.querySelector('[role="tab"][aria-selected="true"]')?.parentElement?.scrollIntoView?.({ block: "nearest", inline: "nearest", behavior: "instant" });
+  }, [dock, scope, state.open, state.active, active?.title, panelRef]);
   useEffect(() => {if (features.diagnostics) {const panel=state.open ? active?.kind ?? "conversation" : "conversation";diagnosticContext({panel});record({kind:"ux",area:"ui",code:"ui.panel_open",message:"Panel selection changed",context:{panel}});}},[features.diagnostics,state.open,active?.kind]);
   if (dock) return <PanelContext.Provider value={{ scope, openTool, closeTool, openPage }}><DockWorkspace {...{ children, scope, title, tools, searchUrl, onInterrupt, titleActions, actions, onNavigate, sessionRail, onBrowserContext }} controller={controller} /></PanelContext.Provider>;
   return <PanelContext.Provider value={{ scope, openTool, closeTool, openPage }}><div className={`workspace-shell${layout.sidebarOverlay ? " sidebar-overlay" : ""}${expanded && state.open ? " panel-expanded" : ""}`} ref={resize.appRef} style={{ "--right-panel-width": `${resize.rightPanelWidth}px`, "--sidebar-width": `${layout.sidebarWidth}px`, "--layout-sidebar-column": `${layout.sidebarColumn}px` } as CSSProperties}>

@@ -70,8 +70,60 @@ Screenshots: `taucode-evicted-tab-before.png` and `taucode-evicted-tab-after.png
 in the task's visualization folder.
 
 The plain fixture also exposed a separate contrast issue: default black page text
-appeared over the dark browser background. That remains a follow-up; it is not
-evidence of a loading or process failure.
+appeared over the dark browser background. See the following appearance check;
+this is not evidence of a loading or process failure.
+
+### Follow-up: browser appearance and tab visibility
+
+The installed Wry 0.54.2 implementation disables WebKit's default page background
+whenever an explicit background color is supplied on macOS. Its color setter only
+sets the under-page/overscroll color; it does not supply the missing document
+background. Removing the browser builder's explicit white override leaves WebKit
+responsible for normal page rendering, including site-defined color schemes.
+
+A reusable native rendering fixture covers an unstyled page, an explicit dark
+site theme, system color-scheme support, editable text and button interaction.
+From the repository root, serve it with:
+
+```sh
+python3 -m http.server 60423 --bind 127.0.0.1 --directory apps/taucode/src-tauri/tests/fixtures
+```
+
+Open `http://127.0.0.1:60423/browser-appearance.html` in taucode's native browser.
+Check the three page-theme links, Back/Forward, Reload, zoom and Settings, then
+return after opening eight other tabs. The plain page must be black on white;
+the dark page must preserve its own green background and pale text. This is a
+manual native-rendering regression: a DOM-only color check would miss the
+transparent WebKit canvas that caused this bug.
+
+The same session found active tabs disappearing outside the horizontally scrolled
+tab strip. Selection, opening the panel, conversation changes and page-title updates
+now reveal the active tab together with its close button. A regression failed on
+the old behavior. All 82 browser/panel tests, TypeScript and changed-file ESLint
+passed; 36 Rust browser tests passed. The final panel changes also passed their
+23-test suite, TypeScript and lint. The rebuilt app passed strict deep signature
+verification using the saved Apple Development identity.
+
+Live verification reproduced black-on-dark text before the fix and confirmed
+black-on-white after it. The explicit green/pale site theme and the system dark
+color scheme rendered correctly. Back/Forward and Reload worked across those
+pages. Settings hid the native page behind its snapshot and restored the typed
+input. Zooming out and in kept the page aligned, then Actual Size restored 100%.
+Nine named fixture tabs exercised eviction: returning to the first page restored
+its white canvas and working input without Reload. Its selected tab and close
+button remained visible in the overflowing strip.
+
+After using that native input, returning to the Chat composer worked; GPT 6.1 Sol
+(Account 2), Low, returned `BROWSER_POLISH_OK` in the rebuilt app. All nine fixture
+tabs were closed and their localhost server stopped. Screenshots in the task's
+visualization folder: `taucode-browser-contrast-before.png`,
+`taucode-browser-contrast-after.png`, `taucode-browser-site-dark.png` and
+`taucode-browser-polish-sol-check.png`.
+
+Native page-process termination now records `browser.native.process_terminated`
+in diagnostics with fixed text only, without URLs or page content. It retains the
+existing Reload recovery message; this is instrumentation, not a claimed fix for
+the earlier unreproduced exit.
 
 ## Signing and Keychain acceptance
 
