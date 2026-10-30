@@ -822,6 +822,91 @@ fn crashed_delegation_recovers_only_unfinished_calls_on_the_current_branch() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+#[test]
+fn root_stream_recovery_preserves_branch_identity_and_durable_results() {
+    use sha2::{Digest, Sha256};
+    let dir = temp();
+    let file = dir.join("session.jsonl");
+    let folder = dir.join("session.jsonl.streams");
+    std::fs::create_dir(&folder).unwrap();
+    let save = |key: &str, value: Value| std::fs::write(folder.join(format!("{:x}.json", Sha256::digest(key.as_bytes()))), value.to_string()).unwrap();
+    let mut entries = vec![
+        json!({"type":"session","id":"root-crash","cwd":"/workspace"}),
+        json!({"type":"message","id":"user","parentId":null,"message":{"role":"user","timestamp":1,"content":"Start"}}),
+    ];
+    let write = |entries: &[Value]| std::fs::write(&file, entries.iter().map(|e| format!("{e}\n")).collect::<String>()).unwrap();
+    let partial = json!({"version":1,"savedAt":100,"anchor":"user","result":{"role":"assistant","timestamp":2,"content":[{"type":"text","text":"ROOT_PARTIAL"},{"type":"toolCall","id":"unsafe","name":"bash","arguments":{"command":"never executed"}}]}});
+    save("message:user", partial.clone()); write(&entries);
+    let original = std::fs::read(&file).unwrap();
+    let (_, restored) = read_session(&file, &[]).unwrap();
+    assert_eq!(restored.turns[0]["status"], "interrupted");
+    assert_eq!(restored.turns[0]["items"][1]["text"], "ROOT_PARTIAL");
+    assert_eq!(restored.turns[0]["items"].as_array().unwrap().len(), 2, "partial calls must not appear executed");
+    assert_eq!(std::fs::read(&file).unwrap(), original);
+    entries.push(json!({"type":"message","id":"next","parentId":"user","message":{"role":"user","timestamp":3,"content":"Continue"}}));
+    write(&entries);
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns.len(), 2);
+    entries.pop();
+    // A completed response, alternative branch or explicit rewind suppresses it.
+    for next in [
+        json!({"type":"message","id":"answer","parentId":"user","message":{"role":"assistant","timestamp":2,"stopReason":"stop","content":[{"type":"text","text":"Completed"}]}}),
+        json!({"type":"message","id":"alternative","parentId":"user","message":{"role":"assistant","timestamp":4,"stopReason":"stop","content":[{"type":"text","text":"Alternative"}]}}),
+        json!({"type":"custom","customType":"taucode-rewind","id":"rewind","parentId":"user"}),
+    ] {
+        entries.push(next); write(&entries);
+        assert!(!json!(read_session(&file, &[]).unwrap().1.turns).to_string().contains("ROOT_PARTIAL"));
+        entries.pop();
+    }
+    entries.push(json!({"type":"message","id":"abort","parentId":"user","message":{"role":"assistant","timestamp":2,"stopReason":"aborted","content":[]}}));
+    write(&entries);
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns[0]["items"][1]["text"], "ROOT_PARTIAL");
+    entries.pop();
+    save("message:user", json!({"version":1,"savedAt":100,"anchor":"wrong","result":partial["result"]}));
+    write(&entries);
+    assert!(!json!(read_session(&file, &[]).unwrap().1.turns).to_string().contains("ROOT_PARTIAL"));
+    entries.push(json!({"type":"message","id":"call","parentId":"user","message":{"role":"assistant","timestamp":2,"stopReason":"toolUse","content":[{"type":"toolCall","id":"shell","name":"bash","arguments":{"command":"timer"}}]}}));
+    save("tool:shell", json!({"version":1,"savedAt":100,"toolCallId":"shell","toolName":"bash","result":{"content":[{"type":"text","text":"TOOL_PARTIAL"}]}}));
+    write(&entries);
+    let (_, tool) = read_session(&file, &[]).unwrap();
+    assert_eq!(tool.turns[0]["status"], "interrupted");
+    assert_eq!(tool.turns[0]["items"][1]["aggregatedOutput"], "TOOL_PARTIAL");
+    assert_eq!(tool.turns[0]["items"][1]["exitCode"], Value::Null);
+    assert_eq!(tool.turns[0]["items"][1]["durationMs"], Value::Null);
+    entries.push(json!({"type":"message","id":"result","parentId":"call","message":{"role":"toolResult","toolCallId":"shell","toolName":"bash","content":[{"type":"text","text":"DURABLE_RESULT"}]}}));
+    write(&entries);
+    let (_, done) = read_session(&file, &[]).unwrap();
+    assert_eq!(done.turns[0]["items"][1]["aggregatedOutput"], "DURABLE_RESULT");
+    let last = entries.last_mut().unwrap();
+    last["message"]["isError"] = json!(true);
+    last["message"]["content"] = json!([{"type":"text","text":"Aborted: The operation was aborted."}]);
+    write(&entries);
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns[0]["items"][1]["aggregatedOutput"], "TOOL_PARTIAL\nAborted: The operation was aborted.");
+    // OMP exits with a cancellation snapshot plus a durable copy of its output.
+    save("tool:shell", json!({"version":1,"savedAt":100,"toolCallId":"shell","toolName":"bash","result":{"content":[{"type":"text","text":"[Command cancelled]\nTOOL_PARTIAL\n"}]}}));
+    entries.last_mut().unwrap()["message"]["content"] = json!([{"type":"text","text":"TOOL_PARTIAL\n"}]);
+    entries.insert(entries.len()-1, json!({"type":"custom","customType":"session_exit","id":"exit","parentId":"call","data":{"pendingToolCalls":[{"toolCallId":"shell"}]}}));
+    entries.last_mut().unwrap()["parentId"] = json!("exit");
+    entries.push(json!({"type":"message","id":"followup","parentId":"result","message":{"role":"user","timestamp":3,"content":"Continue"}}));
+    entries.push(json!({"type":"message","id":"reply","parentId":"followup","message":{"role":"assistant","timestamp":4,"stopReason":"stop","content":[{"type":"text","text":"Follow-up complete"}]}}));
+    write(&entries);
+    let (_, stopped) = read_session(&file, &[]).unwrap();
+    assert_eq!(stopped.turns.len(), 2);
+    assert_eq!(stopped.turns[0]["status"], "interrupted");
+    assert_eq!(stopped.turns[1]["status"], "completed");
+    assert_eq!(stopped.turns[0]["items"][1]["aggregatedOutput"], "[Command cancelled]\nTOOL_PARTIAL\n");
+    assert_eq!(stopped.turns[0]["items"][1]["exitCode"], Value::Null);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn supervised_commands_display_the_requested_command() {
+    let mut t = Translator::new("thread", "/workspace");
+    t.apply(&json!({"type":"agent_start"}));
+    t.apply(&json!({"type":"message_end","message":{"role":"assistant","timestamp":1,"content":[{"type":"toolCall","id":"call","name":"bash","arguments":{"command":"printf hello"}}]}}));
+    t.apply(&json!({"type":"tool_execution_start","toolCallId":"call","toolName":"bash","args":{"command":"'/runtime' '/extensions/lib/commandGuard.ts' '123' '/bin/bash' 'printf hello'"}}));
+    assert_eq!(t.turns[0]["items"][0]["command"], "printf hello");
+}
+
 #[tokio::test]
 async fn native_tool_gate_approvals_are_decisions_instead_of_user_questions() {
     let dir = temp();
@@ -1802,6 +1887,70 @@ async fn real_omp_profile_with_offline_transport_fixture() {
         }
     }).await.unwrap();
     assert!(streamed);
+    if cfg!(unix) {
+        engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"STREAM_CRASH_FIXTURE"}],"accessMode":"read-only"})).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while events.recv().await.unwrap()["method"] != "turn/completed" {}
+        }).await.unwrap();
+        let file = engine.sessions.lock().await[id].file.clone();
+        let (_, recovered) = read_session(&file, &[]).unwrap();
+        assert_eq!(recovered.turns.last().unwrap()["status"], "interrupted");
+        assert!(json!(recovered.turns).to_string().contains("ROOT_PARTIAL"), "real OMP extension must save streaming evidence before termination");
+        assert!(!std::fs::read_to_string(&file).unwrap().contains("ROOT_PARTIAL"), "partial output stays outside model context");
+        engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"Say hello again"}],"accessMode":"read-only"})).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let event = events.recv().await.unwrap();
+                if event["method"] == "turn/completed" { assert_eq!(event["params"]["turn"]["status"], "completed", "{event}"); break; }
+            }
+        }).await.unwrap();
+        let (_, followed_up) = read_session(&file, &[]).unwrap();
+        assert_eq!(followed_up.turns.len(), 3);
+        assert_eq!(followed_up.turns[1]["status"], "interrupted");
+        assert_eq!(followed_up.turns[2]["status"], "completed");
+        #[cfg(unix)] {
+            engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"GUARD_NATIVE_FIXTURE"}],"accessMode":"full-access"})).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(15), async {
+                while events.recv().await.unwrap()["method"] != "turn/completed" {}
+            }).await.unwrap();
+            let (_, recovered) = read_session(&file, &[]).unwrap();
+            let turn = recovered.turns.last().unwrap();
+            assert_eq!(turn["status"], "interrupted");
+            let output = turn["items"].as_array().unwrap().iter().find_map(|item| item["aggregatedOutput"].as_str()).unwrap();
+            let pid: i32 = output.trim().strip_prefix("GUARD_NATIVE_READY ").expect(output).parse().unwrap();
+            tokio::time::timeout(Duration::from_secs(4), async {
+                while unsafe { libc::kill(pid, 0) } == 0 { tokio::time::sleep(Duration::from_millis(30)).await; }
+            }).await.expect("native OMP foreground command survived engine SIGKILL");
+            engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"Say hello after supervisor"}],"accessMode":"read-only"})).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(15), async {
+                loop {
+                    let event = events.recv().await.unwrap();
+                    if event["method"] == "turn/completed" { assert_eq!(event["params"]["turn"]["status"], "completed"); break; }
+                }
+            }).await.unwrap();
+            let (_, final_history) = read_session(&file, &[]).unwrap();
+            assert_eq!(final_history.turns.len(), 5);
+            assert_eq!(final_history.turns[3]["status"], "interrupted");
+            assert_eq!(final_history.turns[4]["status"], "completed");
+            engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"GUARD_STOP_FIXTURE"}],"accessMode":"full-access"})).await.unwrap();
+            let pid: i32 = tokio::time::timeout(Duration::from_secs(15), async {
+                loop {
+                    let event = events.recv().await.unwrap();
+                    if event["method"] == "item/commandExecution/outputDelta" {
+                        if let Some(pid) = event["params"]["delta"].as_str().and_then(|s| s.trim().strip_prefix("GUARD_NATIVE_READY ")) { break pid.parse().unwrap(); }
+                    }
+                }
+            }).await.unwrap();
+            engine.request("workspace", "turn/interrupt", json!({"threadId":id})).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(15), async {
+                while events.recv().await.unwrap()["method"] != "turn/completed" {}
+            }).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(4), async {
+                while unsafe { libc::kill(pid, 0) } == 0 { tokio::time::sleep(Duration::from_millis(30)).await; }
+            }).await.expect("native OMP Stop left its foreground command alive");
+            assert_eq!(read_session(&file, &[]).unwrap().1.turns.last().unwrap()["status"], "interrupted");
+        }
+    }
     engine.shutdown().await.unwrap();
     assert!(dir.join("omp/agent/workspace/models.yml").exists());
     assert!(!dir.join("omp/agent/workspace/auth.json").exists());

@@ -2,6 +2,7 @@ pub(super) mod config;
 pub(crate) mod agents;
 mod process;
 mod profile;
+mod recovery;
 #[cfg(test)]
 mod tests;
 mod translate;
@@ -1232,18 +1233,45 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
         } else { None }
     }).collect();
     let mut messages = vec![];
-    for entry in &branch {
+    let recovery = recovery::Checkpoints::load(file);
+    let recorded_calls: std::collections::HashSet<_> = branch.iter().filter(|entry|
+        entry["type"] == "message" && entry["message"]["role"] == "toolResult"
+    ).filter_map(|entry| entry["message"]["toolCallId"].as_str()).collect();
+    for (index, entry) in branch.iter().enumerate() {
         match entry["type"].as_str() {
             Some("message") => {
-                let m = &entry["message"];
+                let mut m = entry["message"].clone();
+                if m["role"] == "assistant" && matches!(m["stopReason"].as_str(), Some("aborted" | "error")) && m["content"].as_array().is_some_and(Vec::is_empty) {
+                    if let Some(saved) = entry["parentId"].as_str().and_then(|id| recovery.message(id)).filter(|saved| saved["timestamp"] == m["timestamp"]) {
+                        m["content"] = saved["content"].clone();
+                    }
+                }
+                if m["role"] == "toolResult" && m["isError"] == true {
+                    if let Some(saved) = recovery.tool(&json!({"id":m["toolCallId"],"name":m["toolName"]})) {
+                        let partial = translate::text(&saved["result"]["content"]);
+                        let durable = translate::text(&m["content"]);
+                        if !partial.is_empty() && !durable.contains(&partial) {
+                            // OMP can checkpoint a cancellation label followed by the
+                            // same output it persists. Keep the label without repeating output.
+                            let missing = partial.strip_suffix(&durable).unwrap_or(&partial).trim_end();
+                            if !missing.is_empty() {
+                                if let Some(content) = m["content"].as_array_mut() { content.insert(0, json!({"type":"text","text":missing})); }
+                            }
+                        }
+                    }
+                }
                 if m["role"] == "user" && thread["preview"] == "" {
                     thread["preview"] = json!(translate::text(&m["content"]));
                 }
                 messages.push(m.clone());
                 if m["role"] == "assistant" {
-                    for call in m["content"].as_array().into_iter().flatten().filter(|p| p["type"] == "toolCall").filter_map(|p| p["id"].as_str()) {
-                        if !finished_calls.contains(call) {
-                            if let Some(saved) = agents::checkpoint(file, call) { messages.push(saved); }
+                    for call in m["content"].as_array().into_iter().flatten().filter(|p| p["type"] == "toolCall") {
+                        let Some(id) = call["id"].as_str() else { continue; };
+                        if !finished_calls.contains(id) {
+                            if let Some(saved) = agents::checkpoint(file, id) { messages.push(saved); }
+                        }
+                        if !recorded_calls.contains(id) {
+                            if let Some(saved) = recovery.tool(call) { messages.push(saved); }
                         }
                     }
                 }
@@ -1260,7 +1288,15 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
             Some("session_info") => thread["name"] = entry["name"].clone(),
             Some("compaction") => messages.push(json!({"role":"taucodeCompaction","result":entry})),
             Some("custom") if entry["customType"] == "taucode-subagent-result" => messages.push(json!({"role":"taucodeSubagentResult","toolCallId":entry["data"]["toolCallId"],"result":entry["data"]["result"]})),
+            Some("custom") if entry["customType"] == "session_exit" && entry["data"]["pendingToolCalls"].as_array().is_some_and(|calls| !calls.is_empty()) => messages.push(json!({"role":"taucodeInterrupted"})),
             _ => (),
+        }
+        // A saved assistant (including an alternate branch) or explicit rewind
+        // supersedes its unfinished stream. A later user turn must retain it.
+        if let Some(saved) = entry["id"].as_str().and_then(|id| recovery.message(id)) {
+            let superseded = branch[index + 1..].iter().take_while(|next| next["message"]["role"] != "user")
+                .any(|next| next["message"]["role"] == "assistant" || next["customType"] == "taucode-rewind");
+            if !superseded { messages.push(saved); }
         }
     }
     let mut translator = Translator::history(id, cwd, &messages);

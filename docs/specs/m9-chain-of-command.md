@@ -307,9 +307,69 @@ depth 2) were restored after testing. Screenshots: `taucode-forcequit-recovered-
 `taucode-forcequit-transcript-live.png`, `taucode-crash-followup-live.png`.
 A sampled stack traced the startup prompt to Codex thread
 listing (`prepare_codex`), separate from offline Pi/OMP thread resume.
-Remaining crash scope includes root assistant streaming, nondelegated tools,
-cross-engine recovery and Windows process cleanup. The last second of unflushed
-progress may be unavailable after an abrupt kill.
+The last second of unflushed progress may be unavailable after an abrupt kill.
+
+## Root response and tool recovery
+
+Pi/OMP root responses and ordinary tool progress now use private, atomically
+replaced checkpoints alongside the session. Recovery restores text/thinking and
+actual partial output for display only. It does not add unfinished output to model
+context, replay tool calls or restart execution. A durable successful result wins;
+an error result retains missing partial output alongside its actual error. Branch
+changes, explicit rewinds and later saved responses suppress obsolete response
+snapshots. Follow-up turns stay separate, and normal successful turns remove their
+own checkpoints. Interrupted records remain available after later successful turns.
+
+Validation: 546 backend tests passed (two explicit live tests ignored), 31 Node
+extension tests, four Bun recovery tests, typecheck and changed-file lint. The real
+installed OMP runtime also passed an offline transport test that killed the engine
+after its first streamed text was checkpointed, recovered that text outside model
+context and completed a subsequent follow-up. Regression tests cover ordinary
+tool output, generic abort results, branch identity, final-result precedence,
+filtering unexecuted tool calls and killed writers.
+
+The first signed native test force-quit the app during an Account 2 Sol/Low
+foreground timer. Its engine, browser/CodeGraph helpers and timer exited; reopening
+the conversation restored the partial output. This exposed OMP's cancellation
+snapshot containing the same output as its durable tool result. Recovery now adds
+only the missing cancellation prefix. An OMP exit with pending calls also marks
+the turn interrupted before a later follow-up, and does not invent an exit code.
+The targeted Pi/OMP suite passed 49 tests (one explicit live test ignored),
+including display of the requested command instead of the supervision wrapper.
+The signed build restored the cancellation output once and completed a native
+Account 2 Sol/Low follow-up with `ROOT_RECOVERY_OK`. A separate abrupt engine kill
+also restored `ROOT_HARD_READY` from its checkpoint.
+
+That abrupt engine kill exposed an orphaned foreground timer, which was manually
+stopped. Pi/OMP shell calls now use a POSIX supervisor that watches the owning
+engine and parent, terminates the command's process group and escalates after one
+second. OMP's native runner uses a direct executable invocation; Pi preserves its
+shell. Stopped/exited engines are reaped even when diagnostics are disabled.
+Policy approval still runs against the original command before supervision.
+
+Five supervisor tests pass under Node and Bun, covering literal input/environment,
+exit status, cancellation, engine death, pipelines and TERM-resistant commands.
+The actual installed OMP runtime passes an offline tool-call regression: execute
+the supervised command, kill the engine after its output checkpoint, verify the
+worker exits, restore its output, complete a follow-up, then start another command
+and verify normal Stop cleans it up. Earlier full extension validation passed 35
+tests; the additional OMP launcher case passed in the targeted five-test suite.
+
+The final native supervisor recheck is pending macOS Keychain approval. Startup
+and several changed-build executions were prompt-free, but the subsequent build
+blocked in `SecKeychainFindGenericPassword`, so cross-build credential trust is
+still unresolved. The queued timer was cancelled while waiting. Screenshots:
+`taucode-root-tool-recovered-live.png` in the task's visualization directory.
+The final signed app is open on the disposable project's recovery conversation,
+with only a text-only `ROOT_READY` request queued. Chain of Command is temporarily
+off for `command-stop-qfgg_8ap` to isolate root execution; restore it after the
+remaining native supervisor checks. Team models and limits were not changed.
+
+Cross-engine recovery, Windows process cleanup and power-loss durability remain
+unverified. Checkpoints coalesce to one write per second; they are not a guarantee
+that the final streamed token survives abrupt termination.
+The supervisor covers the foreground process group; deliberately detached child
+groups and killing the supervisor itself are not covered by these checks.
 
 ## Credential-free history loading
 

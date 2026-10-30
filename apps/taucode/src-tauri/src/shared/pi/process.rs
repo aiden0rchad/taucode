@@ -97,7 +97,9 @@ impl Process {
                     Err(e) => break format!("Pi stdout failed: {e}"),
                 }
             };
-            if taucode_diag_mcp::writer::enabled() {if let Ok(Some(status))=reader.child.lock().await.try_wait(){taucode_diag_mcp::observe::exited(diagnostic_pid,status);}}
+            if let Ok(Some(status)) = reader.child.lock().await.try_wait() {
+                if taucode_diag_mcp::writer::enabled() { taucode_diag_mcp::observe::exited(diagnostic_pid, status); }
+            }
             reader.alive.store(false, Ordering::SeqCst);
             let running = reader.running.swap(false, Ordering::SeqCst);
             let mut t = reader.translator.lock().await;

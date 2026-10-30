@@ -3,8 +3,11 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { decide, normalizeRule, safeReadOnlyCommand, type Access } from "./lib/policy.ts";
 import { connectorDecision, type Connector } from "./lib/connectors.ts";
+import { registerStreamRecovery } from "./lib/streamRecovery.ts";
+import { ownedCommand } from "./lib/commandGuard.ts";
 
 export default function (pi: ExtensionAPI) {
+  registerStreamRecovery(pi);
   pi.on("session_start", async (_event, ctx) => {
     if (process.env.TAUCODE_OMP === "1") {
       const features = JSON.parse(process.env.TAUCODE_FEATURES || "{}");
@@ -60,7 +63,7 @@ export default function (pi: ExtensionAPI) {
     const child = process.env.TAUCODE_SUBAGENT_DEPTH ? { workspace: process.env.TAUCODE_WORKSPACE!, toolAccess: process.env.TAUCODE_TOOL_ACCESS ?? "read-only" } : undefined;
     const decision = decide(read(), call, home, ctx.hasUI, child);
     if (decision === "allow") {
-      if (call.tool === "bash") input.command = safeReadOnlyCommand(call.command);
+      if (call.tool === "bash") input.command = ownedCommand(safeReadOnlyCommand(call.command));
       return;
     }
     if (decision === "block") return { block: true, reason: "Blocked by taucode access policy (read-only, protected path, or no interactive approval)" };
@@ -77,5 +80,6 @@ export default function (pi: ExtensionAPI) {
       renameSync(temp, file);
     }
     if (answer !== "Allow" && answer !== "Allow for session") return { block: true, reason: "Blocked by user" };
+    if (call.tool === "bash") input.command = ownedCommand(safeReadOnlyCommand(call.command));
   });
 }

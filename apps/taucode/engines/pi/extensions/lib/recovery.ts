@@ -4,8 +4,11 @@ import { join } from "node:path";
 
 // One replaceable snapshot per active delegation; never append full trees per token.
 export function subagentCheckpoint(sessionFile: string | undefined, toolCallId: string) {
-  const directory = sessionFile && `${sessionFile}.agents`;
-  const file = directory && join(directory, `${createHash("sha256").update(toolCallId).digest("hex")}.json`);
+  return recoveryCheckpoint(sessionFile && `${sessionFile}.agents`, toolCallId, { toolCallId });
+}
+
+export function recoveryCheckpoint(directory: string | undefined, key: string, identity: Record<string, string>) {
+  const file = directory && join(directory, `${createHash("sha256").update(key).digest("hex")}.json`);
   let latest: unknown, savedAt = 0, written = "", lastWrite = 0, warned = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const flush = () => {
@@ -17,11 +20,11 @@ export function subagentCheckpoint(sessionFile: string | undefined, toolCallId: 
     lastWrite = Date.now();
     try {
       mkdirSync(directory!, { recursive: true, mode: 0o700 });
-      writeFileSync(temp, `{"version":1,"toolCallId":${JSON.stringify(toolCallId)},"savedAt":${savedAt},"result":${result}}`, { mode: 0o600, flag: "wx" });
+      writeFileSync(temp, `${JSON.stringify({ version: 1, ...identity, savedAt }).slice(0, -1)},"result":${result}}`, { mode: 0o600, flag: "wx" });
       renameSync(temp, file);
       written = result; warned = false;
     } catch (error) {
-      if (!warned) console.error("Subagent recovery checkpoint unavailable:", error);
+      if (!warned) console.error("Recovery checkpoint unavailable:", error);
       warned = true;
     } finally { try { rmSync(temp, { force: true }); } catch { /* Keep the original write error. */ } }
   };
@@ -36,7 +39,7 @@ export function subagentCheckpoint(sessionFile: string | undefined, toolCallId: 
     discard() {
       clearTimeout(timer);
       try { if (file) rmSync(file, { force: true }); }
-      catch (error) { console.error("Subagent recovery checkpoint cleanup failed:", error); }
+      catch (error) { console.error("Recovery checkpoint cleanup failed:", error); }
     },
   };
 }

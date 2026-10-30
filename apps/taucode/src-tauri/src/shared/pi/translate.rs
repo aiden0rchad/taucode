@@ -281,6 +281,8 @@ impl Translator {
         let virtual_args = virtual_name.and_then(|_| a["content"].as_str())
             .and_then(|content| serde_json::from_str::<Value>(content).ok());
         let a = virtual_args.as_ref().unwrap_or(a);
+        let requested_command = (name == "bash" && a["command"].as_str().is_some_and(|command| command.contains("/lib/commandGuard.ts' ")))
+            .then(|| self.tools.get(id).and_then(|tool| tool["arguments"]["command"].as_str()).map(str::to_owned)).flatten();
         self.tools
             .insert(id.into(), json!({"name":name,"arguments":a}));
         let item = match name {
@@ -295,7 +297,7 @@ impl Translator {
                 json!({"type":"collabAgentToolCall","id":id,"tool":"spawnAgent","status":"inProgress","senderThreadId":self.thread,"receiverThreadIds":states.keys().collect::<Vec<_>>(),"prompt":tasks.iter().filter_map(|t|t["task"].as_str()).collect::<Vec<_>>().join("\n\n"),"model":a["model"],"reasoningEffort":null,"agentsTree":super::agents::tree(id, &tasks, &Value::Null, false, (m["replay"] != true).then(|| chrono::Utc::now().timestamp_millis()), &mut self.transcripts),"agentsStates":states})
             }
             "bash" => {
-                json!({"type":"commandExecution","id":id,"pluginId":null,"scriptPath":null,"command":a["command"].as_str().unwrap_or(""),"cwd":self.cwd,"processId":null,"source":"agent","status":"inProgress","commandActions":[],"aggregatedOutput":"","exitCode":null,"durationMs":null})
+                json!({"type":"commandExecution","id":id,"pluginId":null,"scriptPath":null,"command":requested_command.as_deref().or_else(|| a["command"].as_str()).unwrap_or(""),"cwd":self.cwd,"processId":null,"source":"agent","status":"inProgress","commandActions":[],"aggregatedOutput":"","exitCode":null,"durationMs":null})
             }
             "write" | "edit" => {
                 let path = a["path"].as_str().unwrap_or("");
@@ -489,7 +491,7 @@ impl Translator {
                                 .ok()
                         })
                         .map(|v| json!(v))
-                        .unwrap_or(json!(if failed { 1 } else { 0 }));
+                        .unwrap_or(if failed && self.aborted { Value::Null } else { json!(if failed { 1 } else { 0 }) });
                     item["durationMs"] = m["durationMs"].clone();
                 }
             }
@@ -644,6 +646,17 @@ impl Translator {
         let mut end = 0u64;
         let mut last_stop = String::new();
         for m in messages {
+            if m["role"] == "taucodeInterrupted" {
+                t.aborted = true;
+                t.failure = Some("Execution interrupted before pending tools completed.".into());
+                continue;
+            }
+            if m["role"] == "taucodeToolProgress" {
+                t.apply(&json!({"type":"tool_execution_update","replay":true,"toolCallId":m["toolCallId"],"toolName":m["toolName"],"partialResult":m["result"]}));
+                t.failure = Some("Execution interrupted. Recovered the last saved tool output; completion was not observed.".into());
+                t.aborted = true;
+                continue;
+            }
             if m["role"] == "taucodeSubagentResult" {
                 if t.find(m["toolCallId"].as_str().unwrap_or("")).is_some_and(|item| item["type"] == "collabAgentToolCall")
                     && super::agents::results(&m["result"]["details"]).is_some() {
@@ -670,6 +683,9 @@ impl Translator {
             }
             t.apply(&json!({"type":"message_start","message":m}));
             t.apply(&json!({"type":"message_end","message":m}));
+            if m["taucodeRecovered"] == true {
+                t.failure = Some("Execution interrupted. Recovered an unfinished response.".into());
+            }
             if m["role"] == "assistant" {
                 end = m["timestamp"].as_u64().unwrap_or(0) + m["durationMs"].as_u64().unwrap_or(0);
                 last_stop = m["stopReason"].as_str().unwrap_or("").into();
