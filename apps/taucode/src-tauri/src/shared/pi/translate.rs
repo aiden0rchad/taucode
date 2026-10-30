@@ -390,11 +390,10 @@ impl Translator {
         match item["type"].as_str().unwrap_or("") {
             "collabAgentToolCall" => {
                 let previous_tree = item["agentsTree"].clone();
-                if let Some(results) = result["details"]["results"].as_array() {
+                if let Some(results) = super::agents::results(&result["details"]) {
                     item["agentsTree"] = super::agents::tree(id, results, &item["agentsTree"], done, &mut self.transcripts);
                 }
-                for (i, r) in result["details"]["results"]
-                    .as_array()
+                for (i, r) in super::agents::results(&result["details"])
                     .into_iter()
                     .flatten()
                     .enumerate()

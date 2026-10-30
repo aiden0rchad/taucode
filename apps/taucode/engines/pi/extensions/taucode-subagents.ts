@@ -150,7 +150,7 @@ export default function (pi: ExtensionAPI) {
               if (event.type === "message_end" || event.type === "tool_result_end") {
                 const msg = event.message as Message;
                 if (!msg) return;
-                const previous = msg.role === "toolResult" && msg.toolName === "subagent"
+                const previous = msg.role === "toolResult" && msg.toolCallId
                   ? r.messages.findIndex(m => m.role === "toolResult" && m.toolCallId === msg.toolCallId) : -1;
                 if (previous >= 0) r.messages[previous] = msg;
                 else r.messages.push(msg);
@@ -163,10 +163,13 @@ export default function (pi: ExtensionAPI) {
                   if (msg.errorMessage) r.stderr = msg.errorMessage;
                 }
                 update();
-              } else if (event.toolName === "subagent" && ["tool_execution_update", "tool_execution_end"].includes(event.type)) {
+              } else if (["tool_execution_update", "tool_execution_end"].includes(event.type)) {
                 const snapshot = event.partialResult ?? event.result;
-                if (!Array.isArray(snapshot?.details?.results)) return;
-                const msg = { ...snapshot, role: "toolResult", toolName: "subagent", toolCallId: event.toolCallId };
+                const details = snapshot?.details;
+                const results = event.toolName === "subagent" ? details?.results
+                  : ["write", "edit"].includes(event.toolName) && details?.xdev?.tool === "subagent" ? details.xdev.inner?.results : undefined;
+                if (!Array.isArray(results)) return;
+                const msg = { ...snapshot, role: "toolResult", toolName: event.toolName, toolCallId: event.toolCallId };
                 const previous = r.messages.findIndex(m => m.role === "toolResult" && m.toolCallId === event.toolCallId);
                 if (previous >= 0) r.messages[previous] = msg;
                 else r.messages.push(msg);

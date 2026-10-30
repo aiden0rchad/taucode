@@ -2,6 +2,11 @@ use super::translate::text;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
+pub(super) fn results(details: &Value) -> Option<&Vec<Value>> {
+    let details = if details["xdev"]["tool"] == "subagent" { &details["xdev"]["inner"] } else { details };
+    details["results"].as_array()
+}
+
 pub(crate) fn capped(messages: impl IntoIterator<Item = Value>) -> Value {
     let mut kept = std::collections::VecDeque::new();
     let mut bytes = 64;
@@ -38,7 +43,7 @@ pub(super) fn tree(
         let mut nested = Vec::new();
         let mut calls = Vec::<(&str, &Value)>::new();
         for message in &messages {
-            if let (Some(call), Some(_)) = (message["toolCallId"].as_str(), message["details"]["results"].as_array()) {
+            if let (Some(call), Some(_)) = (message["toolCallId"].as_str(), self::results(&message["details"])) {
                 if let Some(existing) = calls.iter_mut().find(|(id,_)| *id == call) { existing.1 = message; }
                 else { calls.push((call, message)); }
             }
@@ -46,7 +51,7 @@ pub(super) fn tree(
         for (call, message) in calls {
             let child_prefix = format!("{id}/{call}");
             let prior = json!(old["children"].as_array().into_iter().flatten().filter(|n| n["id"].as_str().is_some_and(|s| s.starts_with(&format!("{child_prefix}:agent:")))).cloned().collect::<Vec<_>>());
-            let mut children = tree(&child_prefix, message["details"]["results"].as_array().unwrap(), &prior, done && !matches!(status, "aborted" | "failed"), transcripts);
+            let mut children = tree(&child_prefix, self::results(&message["details"]).unwrap(), &prior, done && !matches!(status, "aborted" | "failed"), transcripts);
             if matches!(status, "aborted" | "failed") { settle(&mut children, status); }
             nested.extend(children.as_array().unwrap().iter().cloned());
         }
@@ -54,7 +59,9 @@ pub(super) fn tree(
             .map(|m|text(&m["content"])).unwrap_or_default();
         transcripts.insert(id.clone(), capped(messages.into_iter().map(|mut m| {
             // Nested transcripts belong to their own nodes; do not duplicate them.
-            if let Some(details) = m.get_mut("details").and_then(Value::as_object_mut) { details.remove("results"); }
+            for path in ["/details", "/details/xdev/inner"] {
+                if let Some(details) = m.pointer_mut(path).and_then(Value::as_object_mut) { details.remove("results"); }
+            }
             m
         })));
         let mut usage = r["usage"].as_object().cloned().unwrap_or_default();

@@ -582,6 +582,58 @@ fn virtual_mutating_tools_are_not_file_changes_in_live_or_replayed_transcripts()
     }
 }
 
+#[test]
+fn virtual_subagent_results_keep_nested_progress_usage_and_history() {
+    for transport in ["write", "edit"] {
+        let args = json!({"path":"xd://subagent","content":"{\"agent\":\"colonel\",\"task\":\"Delegate\"}"});
+        let wrap = |results: Value| json!({"xdev":{"tool":"subagent","mode":"execute","inner":{"results":results}}});
+        let mut child = json!({"agent":"enlisted","model":"local/worker","status":"running","usage":{"input":17,"output":3,"cost":0.25},"messages":[{"role":"assistant","content":[{"type":"text","text":"Nested worker evidence"}]}]});
+        let mut parent = json!({"agent":"colonel","model":"cloud/planner","status":"running","usage":{"input":11,"output":2,"cost":0.5},"messages":[{"role":"toolResult","toolCallId":"nested","toolName":transport,"details":wrap(json!([child]))}]});
+        let mut t = Translator::new("thread", "/workspace");
+        t.apply(&json!({"type":"agent_start"}));
+        t.apply(&json!({"type":"tool_execution_start","toolCallId":"call","toolName":transport,"args":args}));
+        let update = json!({"type":"tool_execution_update","toolCallId":"call","toolName":transport,"partialResult":{"details":wrap(json!([parent]))}});
+        let events = t.apply(&update);
+        assert!(events.iter().any(|e| e["params"]["item"]["agentsTree"][0]["children"][0]["status"] == "running"));
+        let started = t.turns[0]["items"][0]["agentsTree"][0]["startedAt"].clone();
+        child["status"] = json!("completed");
+        let failed = json!({"agent":"major","status":"failed","stderr":"QA failed","usage":{"input":5},"messages":[]});
+        parent["status"] = json!("completed");
+        parent["messages"][0]["details"] = wrap(json!([child, failed]));
+        let result = json!({"content":[{"type":"text","text":"Team returned"}],"details":wrap(json!([parent]))});
+        let end = json!({"type":"tool_execution_end","toolCallId":"call","toolName":transport,"result":result});
+        t.apply(&end);
+        let node = &t.turns[0]["items"][0]["agentsTree"][0];
+        assert_eq!(node["status"], "completed");
+        assert_eq!(node["startedAt"], started);
+        assert!(node["endedAt"].is_number());
+        assert_eq!(node["usage"]["input"], 33);
+        assert_eq!(node["usage"]["output"], 5);
+        assert_eq!(node["usage"]["cost"], 0.75);
+        assert_eq!(node["children"][0]["id"], "call:agent:0/nested:agent:0");
+        assert_eq!(node["children"][0]["status"], "completed");
+        assert_eq!(node["children"][0]["model"], "local/worker");
+        assert_eq!(node["children"][1]["status"], "failed");
+        assert_eq!(node["children"][1]["errorMessage"], "QA failed");
+        let total = t.total.clone();
+        t.apply(&end);
+        assert_eq!(t.total, total);
+        assert!(!t.transcripts["call:agent:0"].to_string().contains("Nested worker evidence"));
+        assert!(t.transcripts["call:agent:0/nested:agent:0"].to_string().contains("Nested worker evidence"));
+        let history = Translator::history("thread", "/workspace", &[
+            json!({"role":"user","timestamp":1,"content":"Delegate"}),
+            json!({"role":"assistant","timestamp":2,"stopReason":"toolUse","content":[{"type":"toolCall","id":"call","name":transport,"arguments":args}]}),
+            json!({"role":"toolResult","toolCallId":"call","toolName":transport,"content":result["content"],"details":result["details"]}),
+        ]);
+        let restored = &history.turns[0]["items"][1]["agentsTree"][0];
+        assert_eq!(restored["status"], "completed");
+        assert_eq!(restored["usage"], t.turns[0]["items"][0]["agentsTree"][0]["usage"]);
+        assert_eq!(restored["children"][0]["status"], "completed");
+        assert_eq!(restored["children"][1]["status"], "failed");
+        assert_eq!(history.transcripts, t.transcripts);
+    }
+}
+
 #[tokio::test]
 async fn native_tool_gate_approvals_are_decisions_instead_of_user_questions() {
     let dir = temp();

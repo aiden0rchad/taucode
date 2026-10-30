@@ -197,6 +197,40 @@ Validation: 1,735 frontend tests, 20 extension tests, 55 provider/Pi Rust tests
 (one unrelated live OMP test ignored), typecheck, changed-file lint, cargo check,
 app build and signature verification passed.
 
+## OMP nested activity verification
+
+OMP virtual subagent tools return results under `details.xdev.inner` through
+`write`/`edit`. The translator and extension now consume that wrapper as well as
+Pi's direct results. Nested updates retain stable IDs, models, states, usage and
+individual transcripts; final tool messages replace progress snapshots. Parent
+transcripts omit embedded child transcripts, and repeated completion events do
+not double-count usage. Agent cards show two-line assignment/result previews;
+opening a card exposes the full transcript and tool evidence.
+
+Regressions reproduced the missing progress before the fix, then passed for both
+virtual transports, nested success/failure, final-message replacement, transcript
+separation, replay and usage deduplication. Validation: 1,794 frontend tests,
+24 extension tests, 43 Pi Rust tests (one unrelated live test ignored), both
+TypeScript checks, changed-file lint, cargo check, signed debug build.
+
+Live verification on 2026-10-29 used OMP, GPT 6.1 Sol (Account 2), Low reasoning
+and Full access in `command-stop-qfgg_8ap`. Previously stuck completed agents now
+restore with their nested children, models, usage and readable tool transcripts.
+A fresh colonel delegated to an enlisted worker and independent major; both
+appeared before the colonel completed. The worker's foreground eight-second
+timer returned `NESTED_PROGRESS_DONE`; all three agents completed and the parent
+returned `NESTED_PROGRESS_OK`. Relaunch restored the new tree and selected model.
+Original project team models were restored; the fixture content was unchanged
+(CodeGraph's own database/log/process files changed). No Keychain prompt appeared.
+Screenshots: `taucode-agents-stuck-before.png`,
+`taucode-agents-restored-after.png`, `taucode-agents-progress-live.png`, and
+`taucode-agents-completed-live.png` in the task's visualization directory.
+
+Known limits: historical results without stored timestamps display zero elapsed
+time; unknown registry pricing can display zero cost. The earlier cancelled run
+restores its failed parent without the transient children absent from its saved
+result. Persisting timing and interrupted-tree evidence remains follow-up work.
+
 ## Work still required for the full product goal
 
 - Per-conversation policy overrides beyond the current project defaults.

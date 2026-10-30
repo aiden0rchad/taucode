@@ -92,6 +92,36 @@ test("nested subprocesses share one turn budget, reset it, route models and fail
   assert.deepEqual(readdirSync(join(home, "taucode")), ["policy.json"]);
 });
 
+test("OMP virtual delegation forwards child progress and replaces it with the final message", async t => {
+  const root = mkdtempSync(join(tmpdir(), "taucode-virtual-progress-")), home = join(root, "agent"), cli = join(root, "fake-cli.mjs");
+  mkdirSync(join(home, "taucode"), { recursive: true });
+  const variables = { PI_CODING_AGENT_DIR: home, TAUCODE_WORKSPACE: root, TAUCODE_PI_CLI: cli, TAUCODE_SUBAGENT_DEPTH: "0" };
+  const previous = Object.fromEntries(Object.keys(variables).map(key => [key, process.env[key]]));
+  Object.assign(process.env, variables);
+  t.after(() => { for (const [key, value] of Object.entries(previous)) if (value === undefined) delete process.env[key]; else process.env[key] = value; rmSync(root, { recursive: true, force: true }); });
+  writeFileSync(join(home, "taucode/policy.json"), JSON.stringify(policy));
+  writeFileSync(cli, `const transport=process.argv.at(-1).slice(6);
+    const child={agent:"enlisted",status:"running",messages:[],usage:{input:5}};
+    const result={content:[],details:{xdev:{tool:"subagent",mode:"execute",inner:{results:[child]}}}};
+    console.log(JSON.stringify({type:"tool_execution_update",toolName:transport,toolCallId:"nested",partialResult:result}));
+    child.status="completed";
+    console.log(JSON.stringify({type:"tool_execution_end",toolName:transport,toolCallId:"nested",result}));
+    console.log(JSON.stringify({type:"message_end",message:{...result,role:"toolResult",toolName:transport,toolCallId:"nested"}}));
+    console.log(JSON.stringify({type:"message_end",message:{role:"assistant",content:[{type:"text",text:"Done"}],stopReason:"stop"}}));`);
+  let tool: any;
+  subagents({ on() {}, registerTool(value: any) { tool = value; } } as any);
+  for (const transport of ["write", "edit"]) {
+    const updates: any[] = [];
+    const result = await tool.execute("virtual", { agent: "colonel", task: transport }, undefined, (r: any) => updates.push(r), { cwd: root, model: { provider: "taucode-cloud", id: "strong" } });
+    assert.equal(result.isError, false);
+    assert.ok(updates.some(u => u.details.results[0].messages.some((m: any) => m.details?.xdev?.inner?.results?.[0]?.status === "running")), "nested progress must reach the host before final completion");
+    const nested = result.details.results[0].messages.filter((m: any) => m.toolCallId === "nested");
+    assert.equal(nested.length, 1, "final message replaces the progress snapshot");
+    assert.equal(nested[0].details.xdev.inner.results[0].status, "completed");
+    assert.equal(nested[0].details.xdev.inner.results[0].usage.input, 5);
+  }
+});
+
 test("shared concurrency bounds the whole tree, lends coordinator slots and restores them after overlapping calls", { timeout: 15000 }, async t => {
   const root = mkdtempSync(join(tmpdir(), "taucode-concurrency-"));
   const home = join(root, "agent"), cli = join(root, "fake-cli.mjs"), trace = join(root, "trace.jsonl"), aborted = join(root, "aborted");
