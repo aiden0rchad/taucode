@@ -1,5 +1,8 @@
 # Chain of Command
 
+Current acceptance status: [dogfood acceptance](../dogfood-acceptance.md).
+The dated checks below retain their original observations; later checks can supersede them.
+
 Taucode supports a single model and, in Code, a Chain of Command selected from the
 same provider registry. Cloud and local models use identical role configuration.
 Chat and Work use a single model when inheriting a Chain of Command policy, without
@@ -435,8 +438,8 @@ UI retained `ROOT_SUPERVISOR_READY 7980`, then completed a tool-free follow-up w
 `SUPERVISOR_RECOVERY_OK`. Both outputs remained after quitting and relaunching the
 app. Chain of Command was restored afterward; team model choices were preserved.
 Screenshot: `taucode-supervisor-recovery-final.png` in the task's visualization
-directory. The live crash initially displays the generic “Request couldn’t
-complete” card; clearer recovery-specific copy remains polish work.
+directory. The original generic crash card is superseded by the recovery-message
+acceptance in the current dogfood report.
 
 The changed limits build again blocked in `SecKeychainFindGenericPassword` until
 the user approved it. A subsequent same-build relaunch was prompt-free. This does

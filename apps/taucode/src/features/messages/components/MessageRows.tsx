@@ -368,7 +368,7 @@ export const WorkingIndicator = memo(function WorkingIndicator({
           <span className="turn-complete-label">
             {showPollingFetchStatus
               ? `New message will be fetched in ${pollCountdownSeconds} seconds`
-              : `Done in ${formatDurationMs(lastDurationMs)}`}
+              : `Worked for ${formatDurationMs(lastDurationMs)}`}
           </span>
           <span className="turn-complete-line" aria-hidden />
         </div>

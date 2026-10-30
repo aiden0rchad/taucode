@@ -1,5 +1,8 @@
 # M8d — Work dogfood and desktop interaction fixes
 
+Current acceptance status: [dogfood acceptance](../dogfood-acceptance.md).
+The dated checks below retain their original observations; later checks can supersede them.
+
 Verified on macOS, October 28–29, 2026, using the signed debug app from `m1-wiring`.
 The latest Work checks use GPT 6.1 Sol (Account 2), Low reasoning, with Full access.
 Account 2 is the saved default, verified after relaunch. Fixtures live outside this

@@ -48,7 +48,7 @@ describe("Messages", () => {
     const details = container.querySelector(".turn-error-details") as HTMLDetailsElement;
     expect(details.open).toBe(false);
     expect(details.querySelector("pre")?.textContent).toBe(quotaError.text);
-    expect(screen.queryByText("Done in 0:17")).toBeNull();
+    expect(screen.queryByText("Worked for 0:17")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Change model" }));
     expect(changeModel).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -1036,7 +1036,7 @@ describe("Messages", () => {
     }
   });
 
-  it("keeps done duration text when polling fetch countdown is not requested", () => {
+  it("shows neutral elapsed time when polling fetch countdown is not requested", () => {
     const items: ConversationItem[] = [
       {
         id: "assistant-msg-done-default",
@@ -1058,7 +1058,7 @@ describe("Messages", () => {
       />,
     );
 
-    expect(screen.getByText("Done in 0:04")).toBeTruthy();
+    expect(screen.getByText("Worked for 0:04")).toBeTruthy();
   });
 
   it("renders answered user input items with preview and expandable details", () => {

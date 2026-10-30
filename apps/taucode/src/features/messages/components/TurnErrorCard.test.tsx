@@ -11,7 +11,21 @@ it.each([
   ["context_length_exceeded", "Conversation is too long"],
   ["fetch failed", "Couldn’t reach the provider"],
   ["Unexpected backend error", "Request couldn’t complete"],
+  ["The test Pi process exited with status 1", "Request couldn’t complete"],
 ])("summarizes %s", (message, title) => expect(describeTurnError(message).title).toBe(title));
+
+it.each([
+  "Turn failed: Pi process exited unexpectedly",
+  "Turn failed to start: Pi process exited; retry to resume the session",
+  "Pi process is closed",
+])("explains an interrupted agent without offering to replay its command (%s)", message => {
+  const { container } = render(<TurnErrorCard message={message} onRetry={vi.fn()} onChangeModel={vi.fn()} />);
+  expect(screen.getByRole("region", { name: "Agent stopped unexpectedly" })).toBeTruthy();
+  expect(screen.getByText(/send a follow-up to continue/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Change model" })).toBeNull();
+  expect(container.querySelector("pre")?.textContent).toBe(message);
+});
 
 it.each(["", "Turn failed: "])("explains incomplete QA without suggesting a blind retry (%s)", prefix => {
   const message = `${prefix}Verification incomplete: QA could not verify the 429 timeout handling criterion`;
