@@ -46,20 +46,32 @@ function ModelPicker({models,selected,onChange}:{models:Model[];selected:string[
 export function EvalsRunForm({plan,onChange,tasks,engines,models,runtimes}:{plan:EvalPlan;onChange:(p:EvalPlan)=>void;tasks:EvalTask[];engines:{id:string;name:string}[];models:Model[];runtimes:EngineRuntimeStatus[]}) {
  const toggle=(key:"engines"|"tags"|"categories",id:string)=>onChange({...plan,[key]:plan[key].includes(id)?plan[key].filter(v=>v!==id):[...plan[key],id]});
  return <div className="evals-fields">
-  <SettingsFieldRow className="settings-field-row-long" title="Engines" subtitle="Select the runtimes to compare."><div className="evals-chips" role="group" aria-label="Engines">{engines.map(engine=>{
-   const status=runtimes.find(r=>r.engine===(engine.id==="claude"?"claude-acp":engine.id));
-   const state=status?.state??"unknown";
-   return <SettingsButton key={engine.id} className="evals-chip" aria-pressed={plan.engines.includes(engine.id)} title={status?.message} onClick={()=>toggle("engines",engine.id)}><EvalEngineIcon engine={engine.id}/><span>{engine.name}</span><span className={"evals-status-dot "+state} aria-hidden /><small>{state==="pending"?"will install":state}</small></SettingsButton>;
-  })}</div></SettingsFieldRow>
-  <SettingsFieldRow className="settings-field-row-long" title="Models" subtitle="Choose one or more models from your providers."><ModelPicker models={models} selected={plan.models} onChange={ids=>onChange({...plan,models:ids})}/></SettingsFieldRow>
-  <SettingsFieldRow className="settings-field-row-long" title="Reasoning" subtitle="Requested for every model. Engines use the nearest supported level, or ignore it for models without reasoning."><SettingsSelect aria-label="Reasoning" value={plan.effort??""} onChange={e=>onChange({...plan,effort:e.target.value||undefined})}><option value="">Model default</option>{reasoningLevels.map(level=><option key={level} value={level}>{reasoningLabel(level)}</option>)}</SettingsSelect></SettingsFieldRow>
-  {(["tags","categories"] as const).map(key=><SettingsFieldRow className="settings-field-row-long" key={key} title={key==="tags"?"Tags":"Categories"} subtitle="No selection includes all."><div className="evals-chips" role="group" aria-label={key==="tags"?"Tags":"Categories"}>{[...new Set(tasks.flatMap(t=>key==="tags"?t.tags:[t.category]))].map(value=><SettingsButton key={value} className="evals-chip" aria-pressed={plan[key].includes(value)} onClick={()=>toggle(key,value)}>{value}</SettingsButton>)}</div></SettingsFieldRow>)}
-  <SettingsFieldRow className="settings-field-row-long" title="Codegraph"><SettingsSegmented label="Codegraph" value={plan.codegraph.length===2?"both":plan.codegraph[0]?"on":"off"} options={["off","on","both"].map(value=>({value,label:value[0].toUpperCase()+value.slice(1)}))} onChange={v=>onChange({...plan,codegraph:v==="both"?[false,true]:[v==="on"]})}/></SettingsFieldRow>
-  <div className="evals-numeric-fields">{(["repeats","concurrency"] as const).map(key=>{
-   const title=key==="repeats"?"Repeats":"Concurrency";const max=key==="repeats"?100:6;
-   return <SettingsFieldRow className="settings-field-row-long" key={key} title={title}><div className="evals-stepper" role="group" aria-label={title}><SettingsIconButton aria-label={`Decrease ${title.toLowerCase()}`} disabled={plan[key]<=1} onClick={()=>onChange({...plan,[key]:plan[key]-1})}><Minus size={14} aria-hidden/></SettingsIconButton><SettingsTextField aria-label={title} type="number" min={1} max={max} value={plan[key]} onChange={e=>{const n=Number(e.target.value);if(Number.isInteger(n)&&n>=1&&n<=max)onChange({...plan,[key]:n});}}/><SettingsIconButton aria-label={`Increase ${title.toLowerCase()}`} disabled={plan[key]>=max} onClick={()=>onChange({...plan,[key]:plan[key]+1})}><Plus size={14} aria-hidden/></SettingsIconButton></div></SettingsFieldRow>;
-  })}</div>
-  <div className="evals-numeric-fields">{(["maxTotalTokens","maxCost"] as const).map(key=><SettingsFieldRow className="settings-field-row-long" key={key} title={key==="maxCost"?"Cost cap":"Token cap"}><div className="evals-budget"><SettingsTextField type="number" min={key==="maxCost"?0.01:1} step={key==="maxCost"?0.01:1} value={plan[key]??""} placeholder="Unlimited" onChange={e=>onChange({...plan,[key]:e.target.value?Number(e.target.value):undefined})}/><span>{key==="maxCost"?"USD":"tokens"}</span></div></SettingsFieldRow>)}</div>
+  <section className="evals-setup-section" aria-label="Models and engines">
+   <h4><span>1</span> Models & engines</h4>
+   <p>Each model runs the same tasks on every selected engine.</p>
+   <SettingsFieldRow className="settings-field-row-long" title="Models"><ModelPicker models={models} selected={plan.models} onChange={ids=>onChange({...plan,models:ids})}/></SettingsFieldRow>
+   <SettingsFieldRow className="settings-field-row-long" title="Engines"><div className="evals-chips" role="group" aria-label="Engines">{engines.map(engine=>{
+    const status=runtimes.find(r=>r.engine===(engine.id==="claude"?"claude-acp":engine.id));
+    const state=status?.state??"unknown";
+    return <SettingsButton key={engine.id} className="evals-chip" aria-pressed={plan.engines.includes(engine.id)} title={status?.message} onClick={()=>toggle("engines",engine.id)}><EvalEngineIcon engine={engine.id}/><span>{engine.name}</span><span className={"evals-status-dot "+state} aria-hidden /><small>{state==="pending"?"will install":state}</small></SettingsButton>;
+   })}</div></SettingsFieldRow>
+   <SettingsFieldRow className="settings-field-row-long" title="Reasoning" subtitle="Uses the nearest supported level for each model."><SettingsSelect aria-label="Reasoning" value={plan.effort??""} onChange={e=>onChange({...plan,effort:e.target.value||undefined})}><option value="">Model default</option>{reasoningLevels.map(level=><option key={level} value={level}>{reasoningLabel(level)}</option>)}</SettingsSelect></SettingsFieldRow>
+  </section>
+  <section className="evals-setup-section" aria-label="Test tasks">
+   <h4><span>2</span> Test tasks</h4>
+   <p>Use Smoke for a quick check. Clear a filter to include all tasks.</p>
+   {(["tags","categories"] as const).map(key=><SettingsFieldRow className="settings-field-row-long" key={key} title={key==="tags"?"Task sets":"Task types"}><div className="evals-chips" role="group" aria-label={key==="tags"?"Tags":"Categories"}>{[...new Set(tasks.flatMap(t=>key==="tags"?t.tags:[t.category]))].map(value=><SettingsButton key={value} className="evals-chip" aria-pressed={plan[key].includes(value)} onClick={()=>toggle(key,value)}>{value==="computerUse"?"Computer use":value.charAt(0).toUpperCase()+value.slice(1)}</SettingsButton>)}</div></SettingsFieldRow>)}
+   <SettingsFieldRow className="settings-field-row-long" title="CodeGraph" subtitle="Compare with or without code search context."><SettingsSegmented label="Codegraph" value={plan.codegraph.length===2?"both":plan.codegraph[0]?"on":"off"} options={[{value:"off",label:"Off"},{value:"on",label:"On"},{value:"both",label:"Compare both"}]} onChange={v=>onChange({...plan,codegraph:v==="both"?[false,true]:[v==="on"]})}/></SettingsFieldRow>
+  </section>
+  <section className="evals-setup-section evals-limits" aria-label="Run limits">
+   <h4><span>3</span> Run limits</h4>
+   <p>Caps apply to the whole run. Leave blank for no cap; usage already in flight can exceed it.</p>
+   <div className="evals-numeric-fields">{(["repeats","concurrency"] as const).map(key=>{
+    const title=key==="repeats"?"Repeats":"Concurrency";const max=key==="repeats"?100:6;
+    return <SettingsFieldRow className="settings-field-row-long" key={key} title={title} subtitle={key==="repeats"?"Attempts per task and configuration":"Tests running at the same time"}><div className="evals-stepper" role="group" aria-label={title}><SettingsIconButton aria-label={`Decrease ${title.toLowerCase()}`} disabled={plan[key]<=1} onClick={()=>onChange({...plan,[key]:plan[key]-1})}><Minus size={14} aria-hidden/></SettingsIconButton><SettingsTextField aria-label={title} type="number" min={1} max={max} value={plan[key]} onChange={e=>{const n=Number(e.target.value);if(Number.isInteger(n)&&n>=1&&n<=max)onChange({...plan,[key]:n});}}/><SettingsIconButton aria-label={`Increase ${title.toLowerCase()}`} disabled={plan[key]>=max} onClick={()=>onChange({...plan,[key]:plan[key]+1})}><Plus size={14} aria-hidden/></SettingsIconButton></div></SettingsFieldRow>;
+   })}
+   {(["maxTotalTokens","maxCost"] as const).map(key=><SettingsFieldRow className="settings-field-row-long" key={key} title={key==="maxCost"?"Cost cap":"Token cap"} subtitle={key==="maxCost"?"Requires provider pricing":"Includes cached input tokens"}><div className="evals-budget"><SettingsTextField type="number" min={key==="maxCost"?0.01:1} step={key==="maxCost"?0.01:1} value={plan[key]??""} placeholder="No cap" onChange={e=>onChange({...plan,[key]:e.target.value?Number(e.target.value):undefined})}/><span>{key==="maxCost"?"USD":"tokens"}</span></div></SettingsFieldRow>)}
+   </div>
+  </section>
  </div>;
 }
-

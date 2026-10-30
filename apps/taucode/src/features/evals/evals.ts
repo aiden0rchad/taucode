@@ -30,3 +30,6 @@ export function roleSettings(settings:AppSettings,model:string,role:string):AppS
  return {...settings,agentPolicy:{...policy,subagents:{...policy.subagents,roles:policy.subagents.roles.map(r=>r.name===role?{...r,model:ref}:r)}}};
 }
 
+
+export const statusLabel=(status:string)=>({"budget-stopped":"Limit reached",preparing:"Preparing engines",running:"Running",queued:"Queued",cancelled:"Cancelled",passed:"Passed",failed:"Failed",error:"Error",skipped:"Skipped",completed:"Completed"}[status]??status);
+export const taskLabel=(task:string)=>task.replace(/^(ts|py)-/, "").replace(/-/g, " ").replace(/^./, c=>c.toUpperCase());

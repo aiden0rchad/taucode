@@ -110,7 +110,7 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   return <FeatureSettings.Provider value={settings}>{settings?.features?.diagnostics && <><FeedbackComposer /><DiagnosticsCommands /></>}<ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings }}>
     {mode !== "code" && !settingsOpen && settings && <ModeScale settings={settings} setSettings={setSettings} />}
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
-    {evalsFull && settings && <main className="evals-full"><EvalsView full initialRunId={evalsFull.runId} appSettings={settings} onUpdateAppSettings={async next => { const saved = await updateAppSettings(next); setSettings(saved); return saved; }} onClose={() => setEvalsFull(null)} /></main>}
+    {evalsFull && settings && <main className="evals-full"><div className="evals-windowbar" data-tauri-drag-region aria-hidden="true" /><EvalsView full initialRunId={evalsFull.runId} appSettings={settings} onUpdateAppSettings={async next => { const saved = await updateAppSettings(next); setSettings(saved); return saved; }} onClose={() => setEvalsFull(null)} /></main>}
     <div style={{ display: evalsFull ? "none" : "contents" }}>
     {mode === "code" && <SidebarEngine.Provider value={settings?.agentPolicy?.defaultEngine ?? "pi"}>{children}</SidebarEngine.Provider>}
     {mode === "chat" && settings && <ChatView settings={settings} onOpenSettings={() => setSettingsOpen(true)} />}

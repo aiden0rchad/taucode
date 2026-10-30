@@ -4,28 +4,42 @@ Settings → Evals compares engines and provider/model pairs against an offline,
 versioned task suite. Settings shows one compact result card per configuration;
 **Open results** opens that run in the main area. **Open full view** also opens
 the main-area evaluator without requiring a selected run.
-New runs start with the configured default engine/model and last composer reasoning
-level. Missing or disabled defaults fall back to the first available choice.
-Select engines, models, reasoning, tags/categories, Codegraph, repeats, concurrency and optional
-token/dollar caps. The preview counts the matrix and estimates tokens from prior
-completed runs. **Start run → Confirm start** spends provider tokens.
+New-run setup is grouped into **Models & engines**, **Test tasks**, and **Run limits**.
+On first use it selects the configured default engine/model and last composer reasoning
+level. Missing or disabled defaults fall back to the first available choice. The draft
+then persists across Settings/full view and app relaunches; removed models are not
+silently replaced. Spending confirmation is never persisted.
+Select engines, models, reasoning, task sets/types, CodeGraph, repeats, concurrency
+and optional token/dollar caps. The preview shows test/task counts, the selected
+model/engine multiplier, and a token estimate from prior completed runs when available.
+**Start run → Confirm start** spends provider tokens.
 
 Pending runtimes install once before any cells are scheduled; the UI and CLI show
 “Preparing <engine>…”. A preparation failure saves a failed run without model calls.
 Disabled, missing and errored engines are rejected with their name and state.
 
 Progress updates arrive through `eval/progress`. Cancel stops active sessions and
-cancels queued cells. Cards show pass rate, median effective tokens, cache share,
-cost, tool calls and median wall time, with best values highlighted. The full view
-adds sortable comparisons with a sticky configuration column and horizontal
-scrolling. Times use seconds and token counts use k. Its task × configuration
-matrix shows each repeat separately: hover for the check output tail and click
-for the saved read-only transcript. Run headers show recorded app/engine versions,
-requested reasoning and team mode. The engine applies its model's supported reasoning
-levels; the requested level is sent on every turn, including check retries.
-Select a history run as B and another as A to see configuration and task deltas.
-Expand a configuration to select a policy role; **Confirm default** writes only
-that role's model reference. Engine defaults are unchanged.
+cancels queued tests. The progress summary names finished/running/queued counts;
+active cards identify both task and model. Cancelled runs show explicit outcomes,
+not pending labels or an empty metrics table.
+
+Results start with one card per configuration: pass rate with a finished-test
+count, median tokens, median elapsed time and total reported cost. Unknown cost
+stays unknown. **Detailed metrics** expands the sortable comparison with cache
+share, first response, tools and errors; its best values are highlighted. Tables
+scroll horizontally inside the centered page. Its sticky header and reading
+surface stay opaque in glass themes, so underlying controls cannot show through. The task matrix labels passed,
+failed, cancelled and queued outcomes. Selecting a result shows check output and
+model response, with raw events behind a disclosure. Switching runs clears the
+previous transcript/configuration selection.
+
+Run headers show recorded app/engine versions, requested reasoning and team mode.
+The engine applies its model's supported reasoning levels; the requested level is
+sent on every turn, including check retries. **Compare with a previous run** shows
+configuration/task deltas; pass-rate differences use percentage points. Expand a
+model card to select a policy role; **Confirm default** writes only that role's
+model reference. Engine defaults are unchanged. **Recent runs** separates date,
+model names, status and average pass rate rather than concatenating them into one label.
 
 ## CLI and RPC
 
@@ -157,6 +171,9 @@ transcripts and policy writes. `?settings=evals` includes completed A/B and live
 preview runs in History. Open `?settings=evals&evals=layout` at each of 1024px and
 1440px to run real-DOM form, model-picker, results, A/B and progress assertions.
 The document's `data-evals-layout` attribute reports `passed` or the failure.
+It also checks the New run disclosure alignment and opaque sticky header.
+Native acceptance covers completed/cancelled saved runs, draft retention, result
+navigation, expandable metrics, and 730px/1260px window widths.
 
 Before merging an engine/model/Codegraph upgrade, save a passing smoke baseline,
 run CLI gate with the same matrix, and inspect flagged task transcripts. A missing

@@ -124,30 +124,31 @@ Done means:
     semantics as the daemon.
   - `gate` exits non-zero on regression and prints a compact table.
 
-### 4. Evals page (Settings-level or a top-level view; put it under **Settings → Evals** with a "Open full view" that uses the main area)
+### 4. Evals page
 
-- **New run:**
-  - choose the suite filter (tags/categories, with a count preview)
-  - the engines (enabled ones), the models (from the registry, multi-select), codegraph
-    on/off/both, repeats, concurrency, budget caps
-  - Shows "N cells · ~X tasks · est. tokens (from previous runs if any)" and needs an
-    explicit **Start** (these runs spend real provider tokens).
-- **Live progress:** a cell grid (task × config) with status dots, plus a cancel button.
-- **Results:**
-  - a comparison table per config (engine/model/codegraph): pass rate, median effective
-    tokens per task, cache hit %, total cost (or unknown), median first-token and wall
-    time, tool calls, errors
-  - sortable, with best values highlighted
-  - Expand a config to see per-task outcomes, with the check output tail and links to
-    open the eval thread transcript (read-only).
-- **Compare two runs** (A/B): deltas per config and per task, with regressions in red.
-- **Set as default for role:** from a config row, pick a role (orchestrator/default
-  model, or a named subagent role from `agentPolicy`) and write the model into the
-  policy, with a confirm.
-- **History:** a run list with date, plan summary, pass rate and delete.
-- Use the settings design system (SettingsPage/Group/Row, Select, Toggle, segmented),
-  the existing tokens and z-index scale, and a compact tabular layout that works at
-  1024px.
+**Settings → Evals** opens the evaluator. **Open full view** uses a centered main-area
+page with titlebar clearance and an explicit return control.
+
+- **New run:** Models & engines, Test tasks and Run limits sections; searchable model
+  selection, reasoning, tags/categories, CodeGraph on/off/both, repeats, concurrency
+  and budget caps. Counts use tests/tasks; provider spending requires confirmation.
+  Draft settings survive remount/relaunch, while confirmation does not.
+- **Progress:** finished/running/queued counts, a progress bar, model-labeled active
+  tasks and Cancel. Outcomes use status text in addition to color.
+- **Results:** model cards show pass rate/count, median tokens/time and reported cost.
+  Detailed sortable metrics are expandable. No empty comparison table is shown
+  before completed results. Unknown pricing is explicit.
+- **Task results:** each repeat opens saved check output, response and a collapsible
+  raw event log. Changing runs clears stale details and transcripts.
+- **Compare with a previous run:** configuration/task deltas, with regressions in red
+  and pass-rate differences in percentage points.
+- **Set as default for role:** expanded model cards can update the orchestrator or
+  a named role after confirmation, preserving other policy fields.
+- **Recent runs:** date, models, status, average pass rate and Delete; incomplete
+  runs without scores say so.
+
+Use settings primitives and shared design tokens. Setup reflows by container width;
+wide result tables scroll within the page instead of expanding the window.
 
 ### 5. Docs
 
