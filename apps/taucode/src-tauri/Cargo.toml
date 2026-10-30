@@ -50,7 +50,7 @@ chrono = { version = "0.4", features = ["clock"] }
 shell-words = "1.1"
 toml_edit = "0.20.2"
 tau-mcp-proxy = { version = "0.1.0", path = "../../../crates/tau-mcp-proxy" }
-keyring = { version = "3", features = ["apple-native"] }
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
 # Already linked through tau-mcp-proxy; expose its existing client API.
 rmcp = { version = "3", features = ["client", "server", "transport-async-rw", "transport-child-process"] }
 tauri-plugin-global-shortcut = "2"

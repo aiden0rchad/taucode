@@ -26,7 +26,7 @@ fn resource_file(resource: Option<&Path>, executable: &Path, relative: &str) -> 
 
 fn resolve_node(explicit: Option<std::ffi::OsString>, resource: Option<&Path>, executable: &Path) -> PathBuf {
     explicit.map(PathBuf::from)
-        .or_else(|| resource_file(resource, executable, "node/bin/node"))
+        .or_else(|| resource_file(resource, executable, if cfg!(windows) { "node/bin/node.exe" } else { "node/bin/node" }))
         .unwrap_or_else(|| "node".into())
 }
 
@@ -43,7 +43,7 @@ pub(crate) fn node_path_env(node: &Path) -> Result<std::ffi::OsString, String> {
 
 fn npm_command(resource: Option<&Path>, executable: &Path) -> Result<Command, String> {
     // The bundled npm always runs on its matching Node, including lifecycle scripts.
-    let mut command = if let Some(node) = resource_file(resource, executable, "node/bin/node") {
+    let mut command = if let Some(node) = resource_file(resource, executable, if cfg!(windows) { "node/bin/node.exe" } else { "node/bin/node" }) {
         let npm = node.parent().unwrap().join("../lib/node_modules/npm/bin/npm-cli.js");
         if !npm.is_file() { return Err("Bundled npm is missing. Reinstall taucode.".into()); }
         let mut cmd = Command::new(&node);
@@ -240,7 +240,7 @@ async fn prepare_inner(
             let mut command = if matches!(engine, "computer" | "work") {
                 status_file(data, engine, "installing", "Installing Python 3.12 dependencies with uv…")?;
                 let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-                let uv = resource_file(resource.or(RESOURCES.get().map(PathBuf::as_path)), &exe, "uv/uv").unwrap_or_else(|| "uv".into());
+                let uv = resource_file(resource.or(RESOURCES.get().map(PathBuf::as_path)), &exe, if cfg!(windows) { "uv/uv.exe" } else { "uv/uv" }).unwrap_or_else(|| "uv".into());
                 let mut cmd = Command::new(uv);
                 cmd.args(["sync", "--frozen", "--no-dev", "--python", "3.12"]).env("UV_PYTHON_PREFERENCE", "only-managed");
                 cmd
@@ -284,7 +284,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
         let resources = root.join("Resources");
-        let node = resources.join("node/bin/node");
+        let node = resources.join(if cfg!(windows) { "node/bin/node.exe" } else { "node/bin/node" });
         let npm = resources.join("node/lib/node_modules/npm/bin/npm-cli.js");
         let source = resources.join("engines/pi");
         for dir in [node.parent().unwrap(), npm.parent().unwrap(), &source] {
@@ -314,7 +314,7 @@ echo installed > node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js
         let exe = root.join("taucode.app/Contents/MacOS/codex_monitor_daemon");
         fs::create_dir_all(exe.parent().unwrap()).unwrap();
         assert_eq!(resolve_node(None, Some(&resources), &exe), PathBuf::from("node"));
-        let node = resources.join("node/bin/node");
+        let node = resources.join(if cfg!(windows) { "node/bin/node.exe" } else { "node/bin/node" });
         fs::create_dir_all(node.parent().unwrap()).unwrap();
         fs::write(&node, b"fixture").unwrap();
         assert_eq!(resolve_node(None, Some(&resources), &exe), node);

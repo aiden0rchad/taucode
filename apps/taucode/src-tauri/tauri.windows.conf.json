@@ -1,4 +1,7 @@
 {
+  "build": {
+    "beforeBuildCommand": "node scripts/bundle-node-windows.mjs && npm run build"
+  },
   "app": {
     "windows": [
       {
