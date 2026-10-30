@@ -53,12 +53,12 @@ repository in `~/taucode-dogfood/work-notes`.
 
 ## Live evidence
 
-- Streaming persistence build: signed and relaunched successfully. The follow-up
-  in Startup recovery check is waiting in macOS Keychain access, confirmed by a
-  process sample; live streaming/relaunch verification remains pending approval.
-  Its message requests a read-only 40-line checklist and an explicit user question.
-  All nine current fixture files remain unchanged. Do not report this live check
-  as passed until the turn completes and its transcript survives relaunch.
+- The signed streaming persistence build completed a read-only follow-up after
+  macOS Keychain approval: Account 2/Low read the CSV and brief, produced a 40-line
+  checklist, and presented its question after the progress. Yes resumed the turn,
+  completed all three plan steps and returned `STREAM_PERSISTENCE_OK`. The final
+  response, completed plan, Full access and model selection survived relaunch.
+  All nine current fixture files remained unchanged; no output files were created.
 - The rebuilt app opened Weekly action review at its final answer. Scrolling back
   kept older progress visible and exposed Jump to latest; clicking it restored the
   final answer and hid the button. Switching from older messages to Validate action
