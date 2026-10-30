@@ -391,15 +391,19 @@ worker exits, restore its output, complete a follow-up, then start another comma
 and verify normal Stop cleans it up. Earlier full extension validation passed 35
 tests; the additional OMP launcher case passed in the targeted five-test suite.
 
-The final native supervisor recheck is pending macOS Keychain approval. Startup
-and several changed-build executions were prompt-free, but the subsequent build
-blocked in `SecKeychainFindGenericPassword`, so cross-build credential trust is
-still unresolved. The queued timer was cancelled while waiting. Screenshots:
-`taucode-root-tool-recovered-live.png` in the task's visualization directory.
-The final signed app is open on the disposable project's recovery conversation,
-with only a text-only `ROOT_READY` request queued. Chain of Command is temporarily
-off for `command-stop-qfgg_8ap` to isolate root execution; restore it after the
-remaining native supervisor checks. Team models and limits were not changed.
+The final signed native supervisor recheck passed on 2026-10-30 with Account 2
+Sol, Low and Full access. Killing the observed OMP engine during a foreground timer
+removed that engine, its supervisor and worker within the five-second check. The
+UI retained `ROOT_SUPERVISOR_READY 7980`, then completed a tool-free follow-up with
+`SUPERVISOR_RECOVERY_OK`. Both outputs remained after quitting and relaunching the
+app. Chain of Command was restored afterward; team model choices were preserved.
+Screenshot: `taucode-supervisor-recovery-final.png` in the task's visualization
+directory. The live crash initially displays the generic “Request couldn’t
+complete” card; clearer recovery-specific copy remains polish work.
+
+The changed limits build again blocked in `SecKeychainFindGenericPassword` until
+the user approved it. A subsequent same-build relaunch was prompt-free. This does
+not establish credential trust across changed binaries; that issue remains open.
 
 Cross-engine recovery, Windows process cleanup and power-loss durability remain
 unverified. Checkpoints coalesce to one write per second; they are not a guarantee
@@ -469,16 +473,27 @@ provider error cannot bypass QA. Engine TypeScript checking and lint for the new
 helper/tests pass. Existing lint findings in the semaphore loop and slot-cleanup
 `finally` block are unchanged.
 
-These are deterministic runtime tests, not a live GPT evaluation. Desktop QA is
-still pending for the new limits build. The Mac is now accessible and the previous
-build's credential-readiness request completed. The limits build compiled, signed,
-passed signature verification and launched, but its new text-only readiness request
-is blocked in `SecKeychainFindGenericPassword`; user approval is pending again.
-The disposable `command-stop-qfgg_8ap`
-project still has Chain of Command temporarily off for the earlier foreground
-command crash test. Restore it after that test; use GPT 6.1 Sol (Account 2), Low,
-and Full access for the live acceptance run. Do not claim the recurring Keychain
-prompt is resolved.
+The signed limits build also passed native acceptance on 2026-10-30 in the
+disposable `command-stop-qfgg_8ap` project. The commander used GPT 6.1 Sol
+(Account 2), Low, Full access and OMP. A one-token test allowance stopped after
+the first reported response (9,751 tokens); a new conversation stopped immediately
+with the same total and no model reply. Its zero-usage aborted frame did not
+increase the ledger. A one-minute run limit interrupted a 90-second foreground
+timer at 1:01 and removed its observed supervisor and worker processes.
+
+The configured major independently read README.md and reported the criterion
+“README.md has at least one Markdown heading.” with evidence E2 and the reviewed
+artifact. The root displayed verified status with one passing criterion. The
+allowance, timeout and QA messages survived a full app relaunch. Both temporary
+budgets were restored to zero and confirmed in the editor after relaunch; Code
+Chain of Command is enabled, concurrency/turn/depth remain 4/8/2, and the original
+team models are unchanged. Screenshots: `taucode-budget-block-live.png`,
+`taucode-qa-verified-live.png`, `taucode-limits-restored-live.png`.
+
+These narrow smoke tasks establish runtime behavior, not measured cloud/local
+quality or billing accuracy. The recurring changed-build Keychain prompt remains
+unresolved; approval was required for this build. Generic crash error copy and
+the “Done in” label on interrupted runs remain polish items.
 
 The browser smoke pass created two empty tabs, navigated to Example Domain, and
 returned focus to the composer. Narrow panes at 120% UI zoom collapsed the URL
@@ -495,10 +510,9 @@ window. Zoom was restored to 100% and test tabs closed. Screenshots:
 This smoke pass does not establish the cause of the earlier empty-tab failure.
 
 - Per-conversation policy overrides beyond the current project defaults.
-- Further durable orchestration state; evidence-backed QA gates are implemented,
-  with signed-app acceptance still pending.
-- Whole-tree crash recovery acceptance. Shared turn concurrency, project daily
-  usage allowances, inherited deadlines and POSIX Stop cleanup are implemented.
+- Further durable orchestration state and broader cross-engine/OS crash recovery.
+  Evidence-backed QA gates, shared turn concurrency, project daily usage allowances,
+  inherited deadlines and POSIX cleanup have regression and signed-app coverage.
 - Cost/capability-aware model selection backed by evaluation evidence, including
   actual cloud/local mixed-model dogfood runs.
 - Work agent-tree navigation for custom delegation and recovery after errors;
