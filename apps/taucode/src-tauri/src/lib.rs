@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 #[cfg(desktop)]
 use tauri::RunEvent;
-#[cfg(target_os = "macos")]
 use tauri::WindowEvent;
 
 mod backend;
