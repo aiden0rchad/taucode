@@ -318,7 +318,7 @@ echo installed > node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js
         fs::create_dir_all(node.parent().unwrap()).unwrap();
         fs::write(&node, b"fixture").unwrap();
         assert_eq!(resolve_node(None, Some(&resources), &exe), node);
-        assert_eq!(resolve_node(None, None, &exe), exe.parent().unwrap().join("../Resources/node/bin/node"));
+        assert_eq!(resolve_node(None, None, &exe), exe.parent().unwrap().join("../Resources").join(if cfg!(windows) { "node/bin/node.exe" } else { "node/bin/node" }));
         assert_eq!(resolve_node(Some("/override/node".into()), Some(&resources), &exe), PathBuf::from("/override/node"));
         assert!(npm_command(Some(&resources), &exe).is_err());
         let npm = resources.join("node/lib/node_modules/npm/bin/npm-cli.js");

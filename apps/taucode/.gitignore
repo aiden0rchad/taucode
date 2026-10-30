@@ -2,6 +2,8 @@
 logs
 *.log
 **-lock.**
+!engines/pi/package-lock.json
+!engines/browser/package-lock.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

@@ -221,12 +221,15 @@ npm run tauri:build
 
 Artifacts will be in `src-tauri/target/release/bundle/` (platform-specific subfolders).
 
-### Windows (opt-in)
+### Windows x64
 
-Windows builds are opt-in and use a separate Tauri config file to avoid macOS-only window effects.
+The **Windows x64** GitHub Actions workflow builds `.exe` and `.msi` installers on pushes to `main` and manual runs. Download `taucode-windows-x64` from the completed run's Artifacts section. Installers include Node, npm, uv and helper executables; they are unsigned.
+
+To build locally on Windows x64, install Node >=22.19, Rust, Visual Studio C++ Build Tools, LLVM/Clang and CMake. Set `LIBCLANG_PATH` to the LLVM `bin` directory and `TAUCODE_BUNDLE_UV` to a directory containing Windows x64 `uv.exe`, `LICENSE-APACHE` and `LICENSE-MIT` from the uv distribution. Then run:
 
 ```bash
-npm run tauri:build:win
+npm ci
+npm run tauri:build:win -- --bundles nsis,msi
 ```
 
 Artifacts will be in:

@@ -19,6 +19,9 @@ mkdirSync(join(node, "bin"));
 cpSync(process.execPath, join(node, "bin/node.exe"));
 cpSync(join(prefix, "node_modules/npm"), join(node, "lib/node_modules/npm"), { recursive: true });
 cpSync(join(prefix, "LICENSE"), join(node, "LICENSE"));
+for (const name of ["npm", "npx"]) {
+  writeFileSync(join(node, "bin", `${name}.cmd`), `@"%~dp0node.exe" "%~dp0..\\lib\\node_modules\\npm\\bin\\${name}-cli.js" %*\r\n`);
+}
 writeFileSync(join(node, "VERSION"), process.version + "\n");
 for (const name of ["uv.exe", "LICENSE-APACHE", "LICENSE-MIT"]) cpSync(join(process.env.TAUCODE_BUNDLE_UV, name), join(uv, name));
 writeFileSync(join(uv, "VERSION"), execFileSync(join(uv, "uv.exe"), ["--version"]));
