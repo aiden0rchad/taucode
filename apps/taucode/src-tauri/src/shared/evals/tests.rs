@@ -10,6 +10,7 @@ struct Fake {root:PathBuf,sink:Sink,turns:AtomicUsize,stops:Arc<AtomicUsize>,del
 impl Driver for Fake {
  fn request<'a>(&'a self,w:&'a str,m:&'a str,p:Value)->BoxFuture<'a,Result<Value,String>> { Box::pin(async move {
   if m=="thread/start" {assert!(matches!(workspace(w).unwrap().kind,WorkspaceKind::Eval));return Ok(json!({"result":{"thread":{"id":"fake"}}}));}
+  assert_eq!(p["effort"],"low", "Every turn, including check retries, must use the requested reasoning");
   let n=self.turns.fetch_add(1,Ordering::SeqCst)+1;
   if self.delay { tokio::time::sleep(Duration::from_secs(10)).await; }
   if n>1 {
@@ -38,7 +39,7 @@ fn fixture(delay:bool)->(Arc<Evals>,Output,Arc<AtomicUsize>) {
  let factory:Factory=Arc::new(move |entry,_,sink|{let stops=stopped.clone();Box::pin(async move{Ok(Arc::new(Fake{root:PathBuf::from(entry.path),sink,turns:AtomicUsize::new(0),stops,delay}) as Arc<dyn Driver>)})});
  (Arc::new(Evals{data:root,emit:Arc::new(move|e|emit.emit_app_server_event(e)),active:Mutex::new(HashMap::new()),factory,prepare:Arc::new(|_,_|Box::pin(async {panic!("ready engines must not prepare")}))}),output,stops)
 }
-fn plan()->Plan { serde_json::from_value(json!({"engines":["pi"],"models":["lab/model"],"ids":["ts-bugfix-range"],"concurrency":1})).unwrap() }
+fn plan()->Plan { serde_json::from_value(json!({"engines":["pi"],"models":["lab/model"],"ids":["ts-bugfix-range"],"concurrency":1,"effort":"low"})).unwrap() }
 async fn start(service:&Arc<Evals>,plan:Plan)->String {
  service.start(AppSettings::default(),plan,json!([{"engine":"pi","state":"ready","version":"fake"}])).await.unwrap()["runId"].as_str().unwrap().into()
 }
@@ -50,6 +51,8 @@ async fn finished(service:&Arc<Evals>,id:&str)->Run {
 #[tokio::test] async fn lifecycle_usage_nudge_persistence_cleanup() {
  let (service,output,stops)=fixture(false); let id=start(&service,plan()).await;
  let run=finished(&service,&id).await;
+ assert_eq!(run.plan.effort.as_deref(),Some("low"));
+ assert_eq!(run.environment["agentPolicy"],serde_json::to_value(AppSettings::default().agent_policy).unwrap());
  assert_eq!(run.status,"completed"); let cell=&run.cells[0]; assert_eq!(cell.status,"passed"); assert_eq!(cell.turns,2);
  assert_eq!(cell.usage.tokens(),70); assert_eq!(cell.usage.cached_tokens,40); assert_eq!(cell.usage.cost_usd,Some(0.02)); assert_eq!(cell.usage.tool_calls,2);
  assert!(cell.usage.first_token_ms.is_some()); assert!(cell.workdir.is_none()); assert_eq!(stops.load(Ordering::SeqCst),1);
@@ -93,6 +96,10 @@ async fn finished(service:&Arc<Evals>,id:&str)->Run {
  candidate=baseline.clone();candidate.cells[0].usage.tokens_in=200;assert_eq!(gate(&baseline,&candidate,0.1,0.25).unwrap()["passed"],false);
  candidate.cells.clear();assert!(gate(&baseline,&candidate,0.1,0.25).is_err());
  let mut p=plan();p.concurrency=7;assert!(p.validate().is_err());assert!(safe_id("../secret").is_err());
+ let mut legacy=serde_json::to_value(plan()).unwrap();legacy.as_object_mut().unwrap().remove("effort");
+ let mut p:Plan=serde_json::from_value(legacy).unwrap();assert!(p.effort.is_none());assert!(p.validate().is_ok());
+ for level in super::super::reasoning::LEVELS {p.effort=Some(level.into());assert!(p.validate().is_ok());}
+ p.effort=Some("invalid".into());assert_eq!(p.validate().unwrap_err(),"Unknown reasoning level");
  std::fs::remove_dir_all(&service.data).unwrap();
 }
 #[tokio::test] async fn check_environment_timeout_and_retention() {

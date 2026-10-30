@@ -7,7 +7,8 @@ import {Check,Minus,Plus,Search,X} from "lucide-react";
 import {EvalEngineIcon} from "./EvalsResults";
 import type {EngineRuntimeStatus} from "@services/tauri";
 import {PopoverSurface} from "@/features/design-system/components/popover/PopoverPrimitives";
-import {SettingsButton,SettingsFieldRow,SettingsSegmented,SettingsTextField} from "@/features/design-system/components/settings/SettingsPrimitives";
+import {SettingsButton,SettingsFieldRow,SettingsSegmented,SettingsSelect,SettingsTextField} from "@/features/design-system/components/settings/SettingsPrimitives";
+import {reasoningLabel,reasoningLevels} from "@/features/models/reasoning";
 import type {EvalPlan,EvalTask} from "./evals";
 
 type Model={id:string;name:string};
@@ -51,6 +52,7 @@ export function EvalsRunForm({plan,onChange,tasks,engines,models,runtimes}:{plan
    return <SettingsButton key={engine.id} className="evals-chip" aria-pressed={plan.engines.includes(engine.id)} title={status?.message} onClick={()=>toggle("engines",engine.id)}><EvalEngineIcon engine={engine.id}/><span>{engine.name}</span><span className={"evals-status-dot "+state} aria-hidden /><small>{state==="pending"?"will install":state}</small></SettingsButton>;
   })}</div></SettingsFieldRow>
   <SettingsFieldRow className="settings-field-row-long" title="Models" subtitle="Choose one or more models from your providers."><ModelPicker models={models} selected={plan.models} onChange={ids=>onChange({...plan,models:ids})}/></SettingsFieldRow>
+  <SettingsFieldRow className="settings-field-row-long" title="Reasoning" subtitle="Requested for every model. Engines use the nearest supported level, or ignore it for models without reasoning."><SettingsSelect aria-label="Reasoning" value={plan.effort??""} onChange={e=>onChange({...plan,effort:e.target.value||undefined})}><option value="">Model default</option>{reasoningLevels.map(level=><option key={level} value={level}>{reasoningLabel(level)}</option>)}</SettingsSelect></SettingsFieldRow>
   {(["tags","categories"] as const).map(key=><SettingsFieldRow className="settings-field-row-long" key={key} title={key==="tags"?"Tags":"Categories"} subtitle="No selection includes all."><div className="evals-chips" role="group" aria-label={key==="tags"?"Tags":"Categories"}>{[...new Set(tasks.flatMap(t=>key==="tags"?t.tags:[t.category]))].map(value=><SettingsButton key={value} className="evals-chip" aria-pressed={plan[key].includes(value)} onClick={()=>toggle(key,value)}>{value}</SettingsButton>)}</div></SettingsFieldRow>)}
   <SettingsFieldRow className="settings-field-row-long" title="Codegraph"><SettingsSegmented label="Codegraph" value={plan.codegraph.length===2?"both":plan.codegraph[0]?"on":"off"} options={["off","on","both"].map(value=>({value,label:value[0].toUpperCase()+value.slice(1)}))} onChange={v=>onChange({...plan,codegraph:v==="both"?[false,true]:[v==="on"]})}/></SettingsFieldRow>
   <div className="evals-numeric-fields">{(["repeats","concurrency"] as const).map(key=>{

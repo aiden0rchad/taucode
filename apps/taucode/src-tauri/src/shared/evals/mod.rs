@@ -175,7 +175,7 @@ impl Evals {
         } else {None};
         let mut run=Run {id:id.clone(),created_at:chrono::Utc::now().to_rfc3339(),status:if preparing.is_empty() {"running"} else {"preparing"}.into(),
             message:preparing.first().map(|e|format!("Preparing {e}…")),
-            environment:json!({"appVersion":env!("CARGO_PKG_VERSION"),"engines":runtime,"codegraphVersion":graph_version,"models":plan.models}),plan,cells};
+            environment:json!({"appVersion":env!("CARGO_PKG_VERSION"),"engines":runtime,"codegraphVersion":graph_version,"models":plan.models,"agentPolicy":settings.agent_policy}),plan,cells};
         self.save(&run)?;
         let (cancel,_)=watch::channel(false);
         self.active.lock().await.insert(id.clone(),cancel.clone());
@@ -238,7 +238,7 @@ impl Evals {
         loop {
             while !*cancel.borrow() && futures.len()<run.plan.concurrency {
                 let Some(cell)=pending.pop_front() else {break};
-                futures.push(self.cell(run.id.clone(),cell,settings.clone(),run.plan.keep_workdirs,cancel.subscribe(),updates.clone()));
+                futures.push(self.cell(run.id.clone(),cell,settings.clone(),&run.plan,cancel.subscribe(),updates.clone()));
             }
             if futures.is_empty() { break; }
             tokio::select! {
@@ -260,7 +260,7 @@ impl Evals {
         run.status=if budget {"budget-stopped"} else if *cancel.borrow() {"cancelled"} else {"completed"}.into();
         self.save(&run)
     }
-    async fn cell(&self,run:String,mut cell:Cell,settings:AppSettings,keep:Option<bool>,mut cancel:watch::Receiver<bool>,updates:mpsc::UnboundedSender<Cell>)->Cell {
+    async fn cell(&self,run:String,mut cell:Cell,settings:AppSettings,plan:&Plan,mut cancel:watch::Receiver<bool>,updates:mpsc::UnboundedSender<Cell>)->Cell {
         if *cancel.borrow() { cell.status="cancelled".into(); return cell; }
         let root=self.data.join("evals/work").join(run).join(&cell.id);
         let task=suite().tasks.into_iter().find(|t|t.id==cell.task).unwrap();
@@ -291,7 +291,7 @@ impl Evals {
                 driver=Some(backend.clone());
                 let server=if task.repo=="web-page" {Some(process::serve(&root).await?)} else {None};
                 let prompt=task.prompt.replace("{{url}}",server.as_ref().map(|s|s.url.as_str()).unwrap_or(""));
-                self.execute(&*backend,&workspace,&root,&task,&mut cell,prompt,&mut events,&updates).await
+                self.execute(&*backend,&workspace,&root,&task,&mut cell,prompt,plan.effort.as_deref(),&mut events,&updates).await
             }=>result,
         };
         if let Some(driver)=driver { let _=tokio::time::timeout(Duration::from_secs(5),driver.stop()).await; }
@@ -299,14 +299,14 @@ impl Evals {
         if let Err(error)=result { cell.status=if *cancel.borrow() {"cancelled"} else {"failed"}.into(); cell.usage.errors.push(error.clone()); cell.output=error; }
         cell.usage.wall_ms=started.elapsed().as_millis() as u64;
         cell.completed_at=Some(chrono::Utc::now().to_rfc3339());
-        if keep==Some(false) || (keep.is_none() && cell.status=="passed") {
+        if plan.keep_workdirs==Some(false) || (plan.keep_workdirs.is_none() && cell.status=="passed") {
             if let Err(error)=std::fs::remove_dir_all(&root) { if root.exists() { cell.usage.errors.push(format!("Cleanup: {error}")); } }
             if !root.exists() { cell.workdir=None; }
         }
         cell
     }
     #[allow(clippy::too_many_arguments)]
-    async fn execute(&self,driver:&dyn Driver,workspace:&str,root:&Path,task:&Task,cell:&mut Cell,mut prompt:String,events:&mut mpsc::UnboundedReceiver<AppServerEvent>,updates:&mpsc::UnboundedSender<Cell>)->Result<(),String> {
+    async fn execute(&self,driver:&dyn Driver,workspace:&str,root:&Path,task:&Task,cell:&mut Cell,mut prompt:String,effort:Option<&str>,events:&mut mpsc::UnboundedReceiver<AppServerEvent>,updates:&mpsc::UnboundedSender<Cell>)->Result<(),String> {
         let start=Instant::now();
         let response=driver.request(workspace,"thread/start",json!({"cwd":root,"engine":cell.engine,"model":cell.model,"approvalPolicy":"on-request"})).await?;
         let id=response.pointer("/result/thread/id").or_else(||response.pointer("/thread/id")).and_then(Value::as_str).ok_or_else(||format!("Start failed: {response}"))?.to_owned();
@@ -321,7 +321,7 @@ impl Evals {
             cell.turns=turn+1; cell.answer.clear();
             let turn_start=Instant::now();
             cell.transcript.push(json!({"method":"eval/prompt","params":{"text":prompt}}));
-            let response=driver.request(workspace,"turn/start",json!({"threadId":id,"cwd":root,"accessMode":"full-access","model":cell.model,"input":[{"type":"text","text":prompt}]})).await?;
+            let response=driver.request(workspace,"turn/start",json!({"threadId":id,"cwd":root,"accessMode":"full-access","model":cell.model,"effort":effort,"input":[{"type":"text","text":prompt}]})).await?;
             if response.get("error").is_some() { return Err(response["error"].to_string()); }
             loop {
                 let event=events.recv().await.ok_or("Engine event stream closed")?;

@@ -18,6 +18,33 @@ const render = (ui: import("react").ReactNode) => renderUi(<FeatureSettings.Prov
 let fixture:ReturnType<typeof createEvalFixture>;
 beforeEach(()=>{vi.mocked(engineRuntime).mockResolvedValue([{engine:"pi",state:"pending",message:"Ready to set up on first use"}]);fixture=createEvalFixture((_w,_m,p)=>progress?.(p as {runId:string;status:string}));vi.mocked(evalRequest).mockImplementation(async(a,p)=>fixture(a,p as Record<string,unknown>) as never);});
 afterEach(()=>{cleanup();vi.clearAllMocks();});
+it("starts with the configured engine, model and reasoning, and submits changes",async()=>{
+ const configured={...settings,lastComposerReasoningEffort:"low",agentPolicy:{...settings.agentPolicy!,defaultEngine:"omp",defaultModel:{providerId:"openai",modelId:"gpt-5-mini"}}};
+ render(<EvalsView appSettings={configured} onUpdateAppSettings={vi.fn()}/>);
+ await screen.findByText(/2 cells · 2 tasks/);
+ expect(within(screen.getByRole("group",{name:"Engines"})).getByRole("button",{name:/omp/}).getAttribute("aria-pressed")).toBe("true");
+ expect(screen.getByLabelText("Selected models").textContent).toContain("GPT-5 mini");
+ expect((screen.getByRole("combobox",{name:"Reasoning"}) as HTMLSelectElement).value).toBe("low");
+ expect(vi.mocked(evalRequest).mock.calls.find(([action])=>action==="plan")?.[1]).toMatchObject({engines:["omp"],models:["openai/gpt-5-mini"],effort:"low"});
+ fireEvent.change(screen.getByRole("combobox",{name:"Reasoning"}),{target:{value:"high"}});
+ fireEvent.click(screen.getByRole("button",{name:"Start run"}));
+ fireEvent.click(screen.getByRole("button",{name:"Confirm start"}));
+ await waitFor(()=>expect(evalRequest).toHaveBeenCalledWith("start",expect.objectContaining({engines:["omp"],models:["openai/gpt-5-mini"],effort:"high"})));
+});
+it("falls back when saved defaults are no longer available",async()=>{
+ const configured={...settings,lastComposerReasoningEffort:"invalid",agentPolicy:{...settings.agentPolicy!,defaultEngine:"removed",defaultModel:{providerId:"removed",modelId:"missing"}}};
+ render(<EvalsView appSettings={configured} onUpdateAppSettings={vi.fn()}/>);
+ await screen.findByText(/2 cells · 2 tasks/);
+ expect(vi.mocked(evalRequest).mock.calls.find(([action])=>action==="plan")?.[1]).toMatchObject({engines:["pi"],models:["openai/gpt-5"],effort:undefined});
+ expect((screen.getByRole("combobox",{name:"Reasoning"}) as HTMLSelectElement).value).toBe("");
+});
+it("shows the recorded reasoning and team settings when viewing a run",async()=>{
+ const saved=fixture("run",{runId:"eval-a"}) as EvalResult;
+ saved.run.plan.effort="low";
+ saved.run.environment.agentPolicy={...settings.agentPolicy!,subagents:{...settings.agentPolicy!.subagents,enabled:false}};
+ render(<EvalsView initialRunId="eval-a" appSettings={settings} onUpdateAppSettings={vi.fn()}/>);
+ expect(await screen.findByText("Requested reasoning: Low · Team: Off")).toBeTruthy();
+});
 it("counts the matrix and requires explicit confirmation before spending",async()=>{
  render(<EvalsView appSettings={settings} onUpdateAppSettings={vi.fn()} />);
  await screen.findByText(/2 cells · 2 tasks/);

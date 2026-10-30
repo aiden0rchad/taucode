@@ -193,6 +193,7 @@ fn parse_args_from(input:impl IntoIterator<Item=String>)->Result<CliArgs,String>
                 eval_params[key]=json!(n);
             },
             "--baseline" if command == Some(CliCommand::Evals) => eval_params["baseline"]=json!(args.next().ok_or("Missing baseline")?),
+            "--effort" if command == Some(CliCommand::Evals) => eval_params["effort"]=json!(args.next().ok_or("Missing reasoning level")?),
             "--keep-workdirs" if command == Some(CliCommand::Evals) => eval_params["keepWorkdirs"]=json!(true),
             "--listen" => {
                 let value = args.next().ok_or("--listen requires a value")?;
@@ -260,7 +261,7 @@ fn usage() -> String {
     format!(
         "\
 USAGE:\n  codex-monitor-daemonctl [global options] <command> [options]\n\n\
-COMMANDS:\n  evals run --engines pi,omp --models provider/model [--tags smoke] [--codegraph both] [--insecure-no-auth]\n  evals gate --baseline <runId|latest-passing> [--tags smoke] [--max-pass-drop 0.1] [--max-token-increase 0.25]\n  start              Start daemon (auto-restarts mismatched daemon if safe)\n  stop               Stop daemon\n  status             Show daemon status\n  command-preview    Print equivalent daemon start command\n\n\
+COMMANDS:\n  evals run --engines pi,omp --models provider/model [--tags smoke] [--effort low] [--codegraph both] [--insecure-no-auth]\n  evals gate --baseline <runId|latest-passing> [--tags smoke] [--max-pass-drop 0.1] [--max-token-increase 0.25]\n  start              Start daemon (auto-restarts mismatched daemon if safe)\n  stop               Stop daemon\n  status             Show daemon status\n  command-preview    Print equivalent daemon start command\n\n\
 OPTIONS:\n  --listen <addr>        Bind/listen address (default derived from settings, fallback: {DEFAULT_LISTEN_ADDR})\n  --token <token>        Remote backend token override\n  --data-dir <path>      App data dir (contains settings.json/workspaces.json)\n  --daemon-path <path>   Explicit path to codex-monitor-daemon binary\n  --insecure-no-auth     Start/probe daemon without auth token (dev only)\n  --json                 Print JSON output\n  -h, --help             Show this help\n\n\
 NOTES:\n  - Global options are accepted before or after the subcommand.\n  - Use --insecure-no-auth for a local throwaway daemon without a token.\n  - Defaults read token/host from <data-dir>/settings.json\n  - If no --data-dir is provided, default app data dir is used for this platform\n"
     )
@@ -1534,6 +1535,7 @@ fn format_eval_summary(status:&Value,gate:Option<&Value>)->String {
         run["plan"]["engines"].as_array().is_some_and(|selected|selected.contains(&json!(if id=="claude-acp" {"claude"} else {id})))
     }).map(|e|format!("{} {}",e["engine"].as_str().unwrap_or("unknown"),e["version"].as_str().unwrap_or("unknown"))).collect::<Vec<_>>().join(" · ");
     let mut lines=vec![format!("Run {} · {} · {} · App {} · {}",run["id"].as_str().unwrap_or("unknown"),run["status"].as_str().unwrap_or("unknown"),duration,run["environment"]["appVersion"].as_str().unwrap_or("unknown"),if versions.is_empty(){"Engine versions unknown"}else{&versions})];
+    lines.push(format!("Requested reasoning: {}",run["plan"]["effort"].as_str().unwrap_or("model default")));
     let rows:Vec<_>=status["summary"].as_array().into_iter().flatten().collect();
     let config=|r:&Value|format!("{} / {} · cg:{}",r["engine"].as_str().unwrap_or("unknown"),r["model"].as_str().unwrap_or("unknown"),if r["codegraph"]==true {"on"}else{"off"});
     let width=rows.iter().map(|r|config(r).chars().count()).max().unwrap_or(0).max(13);
@@ -1591,6 +1593,8 @@ mod eval_cli_tests {
   assert_eq!(parse_args_from(["--json","status"].map(str::to_owned)).unwrap().command,CliCommand::Status);
   assert!(parse_args_from(["--listen"].map(str::to_owned)).is_err());
   assert!(parse_args_from(["evals"].map(str::to_owned)).is_err());
+  assert_eq!(parse_args_from(["evals","run","--effort","low"].map(str::to_owned)).unwrap().eval_params["effort"],"low");
+  assert!(parse_args_from(["evals","run","--effort"].map(str::to_owned)).is_err());
  }
  #[test] fn preparing_output_is_deduplicated() {
   let mut last=String::new();let state=json!({"status":"preparing","message":"Preparing pi…"});

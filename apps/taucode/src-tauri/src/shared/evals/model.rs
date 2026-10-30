@@ -29,6 +29,7 @@ pub struct Plan {
     #[serde(default)] pub tags: Vec<String>,
     #[serde(default)] pub categories: Vec<String>,
     pub engines: Vec<String>, pub models: Vec<String>,
+    pub effort: Option<String>,
     #[serde(default="off")] pub codegraph: Vec<bool>,
     #[serde(default="one")] pub repeats: usize,
     #[serde(default="two")] pub concurrency: usize,
@@ -48,6 +49,7 @@ impl Plan {
             || self.models.iter().collect::<std::collections::HashSet<_>>().len()!=self.models.len()
             || self.codegraph.iter().collect::<std::collections::HashSet<_>>().len()!=self.codegraph.len() { return Err("Matrix axes must not contain duplicates".into()); }
         if self.models.iter().any(|m| !m.split_once('/').is_some_and(|(a,b)| !a.is_empty() && !b.is_empty())) { return Err("Models must be provider/model references".into()); }
+        if self.effort.as_deref().is_some_and(|level| !super::super::reasoning::LEVELS.contains(&level)) { return Err("Unknown reasoning level".into()); }
         if self.max_cost.is_some_and(|n| !n.is_finite() || n <= 0.) || self.max_total_tokens == Some(0) { return Err("Budgets must be positive".into()); }
         if self.tasks().is_empty() || self.tasks().len()*self.engines.len()*self.models.len()*self.codegraph.len()*self.repeats > 10000 { return Err("Choose between 1 and 10000 cells".into()); }
         if self.ids.iter().any(|id| !suite().tasks.iter().any(|t| &t.id == id)) { return Err("Unknown task ID".into()); }

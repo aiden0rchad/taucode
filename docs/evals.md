@@ -4,7 +4,9 @@ Settings → Evals compares engines and provider/model pairs against an offline,
 versioned task suite. Settings shows one compact result card per configuration;
 **Open results** opens that run in the main area. **Open full view** also opens
 the main-area evaluator without requiring a selected run.
-Select engines, models, tags/categories, Codegraph, repeats, concurrency and optional
+New runs start with the configured default engine/model and last composer reasoning
+level. Missing or disabled defaults fall back to the first available choice.
+Select engines, models, reasoning, tags/categories, Codegraph, repeats, concurrency and optional
 token/dollar caps. The preview counts the matrix and estimates tokens from prior
 completed runs. **Start run → Confirm start** spends provider tokens.
 
@@ -18,7 +20,9 @@ cost, tool calls and median wall time, with best values highlighted. The full vi
 adds sortable comparisons with a sticky configuration column and horizontal
 scrolling. Times use seconds and token counts use k. Its task × configuration
 matrix shows each repeat separately: hover for the check output tail and click
-for the saved read-only transcript. Run headers show recorded app/engine versions.
+for the saved read-only transcript. Run headers show recorded app/engine versions,
+requested reasoning and team mode. The engine applies its model's supported reasoning
+levels; the requested level is sent on every turn, including check retries.
 Select a history run as B and another as A to see configuration and task deltas.
 Expand a configuration to select a policy role; **Confirm default** writes only
 that role's model reference. Engine defaults are unchanged.
@@ -29,7 +33,7 @@ Build the binaries in `apps/taucode/src-tauri`, then run:
 
 ```sh
 codex_monitor_daemonctl evals run --engines pi,omp --models 'lab/GLM 5.3' --tags smoke --codegraph both --repeats 1
-codex_monitor_daemonctl evals run --engines pi --models lab/model --concurrency 2 --max-total-tokens 100000 --max-cost 2 --json
+codex_monitor_daemonctl evals run --engines pi --models lab/model --effort low --concurrency 2 --max-total-tokens 100000 --max-cost 2 --json
 codex_monitor_daemonctl evals gate --baseline latest-passing --tags smoke --max-pass-drop 0.1 --max-token-increase 0.25
 ```
 
@@ -101,7 +105,9 @@ these tasks, and shuts down with the cell.
 
 Results are atomically replaced after progress updates at
 `<data>/evals/runs/<runId>.json`, including the plan, runtime/version status,
-model IDs, usage and transcripts (bounded to 4 MB per cell). Restarted runs retain
+model IDs, the app's agent policy at run start, usage and transcripts (bounded to 4 MB per cell).
+The evaluator inherits this app-wide policy; project-specific overrides do not apply.
+Restarted runs retain
 partial results and are marked interrupted when opened. Check output retains its
 last 2 KB. Default cleanup deletes passing workdirs and retains failed/cancelled
 workdirs, capped at the 20 most recent cells. Explicit `keepWorkdirs: true`

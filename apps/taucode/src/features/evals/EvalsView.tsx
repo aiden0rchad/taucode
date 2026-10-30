@@ -1,6 +1,7 @@
 import { formatModelRef } from "@settings/registry";
 import {EvalsResults} from "./EvalsResults";
 import {EvalsRunForm} from "./EvalsRunForm";
+import {reasoningLabel,reasoningLevels} from "@/features/models/reasoning";
 import {useCallback,useEffect,useMemo,useState} from "react";
 import type {AppSettings} from "@/types";
 import {evalRequest,engineRuntime,type EngineRuntimeStatus} from "@services/tauri";
@@ -13,7 +14,14 @@ const number=(n:number|null)=>n===null?"unknown":n.toLocaleString(undefined,{max
 export function EvalsView({appSettings,onUpdateAppSettings,onOpenFull,onClose,full=false,initialRunId}:{appSettings:AppSettings;onUpdateAppSettings:(s:AppSettings)=>Promise<unknown>;onOpenFull?:(runId?:string)=>void;onClose?:()=>void;full?:boolean;initialRunId?:string}) {
  const models=(appSettings.providers??[]).filter(p=>p.enabled).flatMap(p=>p.models.filter(m=>m.enabled).map(m=>({id:p.id+"/"+m.id,name:formatModelRef(appSettings,{providerId:p.id,modelId:m.id}).title})));
  const engines=[...["pi","omp","codex","claude"].map(id=>({id,name:id,enabled:appSettings.engines?.find(e=>e.id===id)?.enabled??id!=="omp"})),...(appSettings.engines??[]).filter(e=>!["pi","omp","codex","claude"].includes(e.id))].filter(e=>e.enabled);
- const [plan,setPlan]=useState<EvalPlan>({engines:engines.slice(0,1).map(e=>e.id),models:models.slice(0,1).map(m=>m.id),tags:["smoke"],categories:[],codegraph:[false],repeats:1,concurrency:2});
+ const [plan,setPlan]=useState<EvalPlan>(()=>{
+  const policy=appSettings.agentPolicy;
+  const model=policy?.defaultModel;
+  const engine=engines.find(e=>e.id===policy?.defaultEngine)??engines[0];
+  const selected=models.find(m=>m.id===`${model?.providerId}/${model?.modelId}`)??models[0];
+  const effort=appSettings.lastComposerReasoningEffort;
+  return {engines:engine?[engine.id]:[],models:selected?[selected.id]:[],effort:effort&&reasoningLevels.includes(effort)?effort:undefined,tags:["smoke"],categories:[],codegraph:[false],repeats:1,concurrency:2};
+ });
  const [runtimes,setRuntimes]=useState<EngineRuntimeStatus[]>([]);
  const [tasks,setTasks]=useState<EvalTask[]>([]);
  const [history,setHistory]=useState<EvalHistory[]>([]);
@@ -55,6 +63,7 @@ export function EvalsView({appSettings,onUpdateAppSettings,onOpenFull,onClose,fu
    {confirm&&<div role="alert" className="evals-confirm"><p>Start {count.cells} cells using paid provider tokens?</p><SettingsButton disabled={busy} onClick={()=>void run(async()=>{const started=await evalRequest<{runId:string}>("start",plan);setConfirm(false);await load(started.runId);await refresh();})}>Confirm start</SettingsButton><SettingsButton onClick={()=>setConfirm(false)}>Cancel</SettingsButton></div>}
   </SettingsGroup>
   {result&&<SettingsGroup title={`Run · ${result.run.status}`} subtitle={`App ${result.run.environment.appVersion??"unknown"} · ${result.run.environment.engines?.filter(e=>result.run.plan.engines.includes(e.engine==="claude-acp"?"claude":e.engine)).map(e=>e.engine+" "+(e.version??"unknown")).join(" · ")||"Engine versions unknown"}`} actions={<div className="evals-actions">{active&&<SettingsButton onClick={()=>void run(()=>evalRequest("cancel",{runId:active}))}>Cancel run</SettingsButton>}{!full&&onOpenFull&&<SettingsButton className="primary" onClick={()=>onOpenFull(result.run.id)}>Open results</SettingsButton>}</div>}>
+   <p>Requested reasoning: {result.run.plan.effort?reasoningLabel(result.run.plan.effort):"Model default"}{result.run.environment.agentPolicy&&` · Team: ${result.run.environment.agentPolicy.subagents.enabled?result.run.environment.agentPolicy.subagents.mode==="chain-of-command"?"Chain of Command":"Subagents":"Off"}`}</p>
    {result.run.message&&<p role="status">{result.run.message}</p>}
    {active&&<div className="evals-grid" aria-label="Cell progress">{result.run.cells.map(cell=><SettingsButton key={cell.id} className={"evals-cell "+cell.status} title={`${cell.task} · ${configKey(cell)} · repeat ${cell.repeat+1} · ${cell.status}`} onClick={()=>{setExpanded(configKey(cell));setTranscript(cell);}}><span aria-hidden>●</span><span>{cell.task}</span><small>{cell.engine} · {cell.status}</small></SettingsButton>)}</div>}
    <EvalsResults rows={rows} cells={result.run.cells} full={full} expanded={expanded} sort={sort} ascending={ascending} onSort={(key,high)=>{setAscending(sort===key?!ascending:!high);setSort(key);}} onConfig={key=>setExpanded(expanded===key?null:key)} onTranscript={setTranscript}/>
