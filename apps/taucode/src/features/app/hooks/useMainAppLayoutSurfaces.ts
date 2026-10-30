@@ -435,6 +435,8 @@ function buildPrimarySurface({
         ? composerWorkspaceState.handleInsertComposerText
         : undefined,
       isThinking: composerWorkspaceState.isProcessing,
+      lastTurnStatus: activeThreadId ? threadStatusById[activeThreadId]?.lastTurn?.status : undefined,
+      waitingForApproval: approvals.some(request => request.workspace_id === activeWorkspace?.id && (request.params.threadId ?? request.params.thread_id) === activeThreadId),
       isLoadingMessages: activeThreadId
         ? threadResumeLoadingById[activeThreadId] ?? false
         : false,

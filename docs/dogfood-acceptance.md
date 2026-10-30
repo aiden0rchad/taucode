@@ -237,3 +237,44 @@ scrolling; saved results still show six passing tests and unknown provider cost.
 The Evals redesign passed 1,825 frontend tests plus its native/layout checks before
 this small recovery-copy change. The focused 119-test run covers the latter; these
 counts are separate runs, not an additive total.
+
+## Progress and recovery follow-up — October 30
+
+Work now distinguishes Starting, Working, Waiting for you, Stopping, Stopped,
+Failed and Completed beside the composer and in the header. Failed/stopped tasks
+no longer use the success color. Review request scrolls to and focuses the current
+task's pending request; it does not cycle to another task or answer automatically.
+Stopped/failed tasks offer a draft-preserving follow-up action. A task stopped
+before thread creation can reuse its brief and attachments without starting it.
+
+Chat records terminal turn state from the saved transcript and scopes provider
+errors to their conversation. Code restores the last turn on resume, labels stopped
+and failed sidebar entries, and shows recovery guidance without automatic replay.
+A pending Code question/approval suppresses the working indicator.
+
+Validation: 237 distinct targeted frontend tests passed (235 in the broad focused
+run, then the 52-test thread integration file including two added hydration tests),
+TypeScript, changed-file ESLint, signed rebuild and strict codesign verification.
+These tests cover failures and background-error isolation; live provider failures
+were not deliberately induced in this pass.
+
+Native checks used GPT 6.1 Sol (Account 2), Low:
+- Work, Full access: ask-user displayed Waiting for you; Review request focused the
+  current question. Answering Blue transitioned through Working to Completed.
+  Stop removed a second pending question. The task stayed stopped after relaunch,
+  then a follow-up returned WORK_PROGRESS_RECOVERY_OK in the same task.
+- Code, Full access: a 30-second Node timer emitted CODE_STATUS_READY. Stop removed
+  the timer process and displayed Stopped in the sidebar and conversation. Reopening
+  after relaunch retained that state. A tool-free follow-up returned
+  CODE_PROGRESS_RECOVERY_OK and cleared the stopped notice.
+- Chat: Stop interrupted a streamed list. New chat showed no stopped notice;
+  reopening the original restored it. A follow-up returned CHAT_PROGRESS_RECOVERY_OK.
+
+Screenshots in the task visualization folder: taucode-work-waiting.png,
+taucode-work-stopped.png, taucode-code-stopped.png, taucode-chat-stopped.png.
+
+Follow-up findings: Code's current OMP tool set did not expose an ask-user tool
+(the agent answered with a plain question); the Work tool worked. Reopening a Code
+conversation also replaced its compact fallback title with its full first prompt.
+The latter is the next conversation-cleanup fix. Conversation grouping/search,
+browser overflow/restoration and the new small-project dogfood run remain pending.

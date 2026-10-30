@@ -48,6 +48,36 @@ async function open() {
   await waitFor(() => expect(screen.getByRole("button", { name: "Regenerate last answer" })).not.toHaveProperty("disabled", true));
 }
 describe("Chat UI", () => {
+  it("keeps background failures in their own chat and restores their recovery state", async () => {
+    rows.push({ ...rows[0], id: "other", chat: { ...rows[0].chat, title: "Other conversation" } });
+    const request = vi.mocked(chatRequest).getMockImplementation()!;
+    vi.mocked(chatRequest).mockImplementation((action, params = {}) => {
+      if (action === "read" && params.threadId === "other") return Promise.resolve({ result: { thread: {
+        ...thread("other"), turns: [{ ...thread("other").turns[0], status: "failed", error: { message: "Other model is unavailable" } }],
+      } } });
+      return request(action, params);
+    });
+    render(<ChatView settings={settings} />); await open();
+    act(() => listener({ workspace_id: "chats", message: { method: "error", params: { threadId: "other", message: "Other model is unavailable" } } }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Other conversation" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Other model is unavailable");
+    expect(screen.getByRole("status").textContent).toContain("Failed");
+    await waitFor(() => expect(screen.getByRole("button", { name: "My conversation" })).not.toHaveProperty("disabled", true));
+    fireEvent.click(screen.getByRole("button", { name: "My conversation" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.queryByText(/Review the error, then retry/)).toBeNull();
+  });
+  it("restores a stopped chat and leaves continuing to the user", async () => {
+    const request = vi.mocked(chatRequest).getMockImplementation()!;
+    vi.mocked(chatRequest).mockImplementation((action, params = {}) => action === "read" ? Promise.resolve({ result: { thread: {
+      ...thread("chat"), turns: [{ ...thread("chat").turns[0], status: "interrupted" }],
+    } } }) : request(action, params));
+    render(<ChatView settings={settings} />); await open();
+    expect(screen.getByRole("status").textContent).toContain("Stopped — Send a follow-up");
+    expect(screen.getByRole("button", { name: "Regenerate last answer" })).not.toHaveProperty("disabled", true);
+    expect(chatRequest).not.toHaveBeenCalledWith("send", expect.anything());
+  });
   it("renders user and assistant markdown and shared shell controls", async () => {
     const onOpenSettings = vi.fn();
     render(<ChatView settings={settings} onOpenSettings={onOpenSettings} />); await open();

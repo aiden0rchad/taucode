@@ -43,11 +43,21 @@ import { RenameThreadPrompt } from "@threads/components/RenameThreadPrompt";
 
 const templateIcons = { "Organize a folder": FolderTree, "Research brief": FileSearch, "Spreadsheet from documents": Table, "Slide deck from notes": Presentation, "Clean up downloads": Trash2 };
 const workToolIcons: Record<string, typeof Terminal> = { commandExecution: Terminal, fileChange: FilePenLine, webSearch: Globe, collabToolCall: Bot, subAgentActivity: Bot, plan: ListChecks };
+const taskStates = {
+  queued: { label: "Queued", hint: "Waiting for an available slot. One task runs in each space at a time." },
+  starting: { label: "Starting", hint: "Starting the model. If macOS requests Keychain access, respond to its prompt. You can stop this launch and keep your message." },
+  running: { label: "Working", hint: "You can add an instruction below or stop the task. It keeps running when you switch modes." },
+  "needs-input": { label: "Waiting for you", hint: "Review the pending request before this task can continue." },
+  stopping: { label: "Stopping", hint: "Waiting for the agent to stop. Your message is kept for retry." },
+  stopped: { label: "Stopped", hint: "Review the saved progress, then send a follow-up to continue. Nothing restarts automatically." },
+  failed: { label: "Failed", hint: "Review the error, then retry or send a follow-up. Existing work is kept." },
+  done: { label: "Completed", hint: "Review the result and outputs, or ask for changes below." },
+} satisfies Record<WorkTask["status"], { label: string; hint: string }>;
 
 function InputRequest({ request, busy, respond }: { request: WorkRequest; busy: boolean; respond: (answer: Record<string, unknown>) => void }) {
   const [answer, setAnswer] = useState("");
   const approval = request.method.endsWith("/requestApproval");
-  return <section className="work-input" aria-label={approval ? "Approval required" : "Question"}>
+  return <section className="work-input" tabIndex={-1} aria-label={approval ? "Approval required" : "Question"}>
     <h3>{approval ? "Approval required" : "Your input is needed"}</h3>
     {request.params.reason && <p>{request.params.reason}</p>}
     {request.params.command && <pre>{request.params.command}</pre>}
@@ -116,6 +126,12 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const liveAgents = runningAgents(agents);
   const progressRef = useRef<HTMLDivElement>(null);
   const progressContentRef = useRef<HTMLDivElement>(null);
+  const followInputRef = useRef<HTMLTextAreaElement>(null);
+  const reviewRequest = () => {
+    const request = progressContentRef.current?.querySelector<HTMLElement>(".work-input");
+    request?.scrollIntoView({ block: "center" });
+    request?.focus({ preventScroll: true });
+  };
   const followProgress = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
   const scrollToLatest = useCallback(() => {
@@ -255,7 +271,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
         </aside>) : null;
   return <AgentsContext.Provider value={{ workspaceId: task?.spaceId ?? null, threadId: task?.threadId ?? null, itemsByThread: task?.threadId ? { [task.threadId]: work.items } : {} }}><WorkspaceShell titleActions={<>
         <span className="thread-header-model" title={formatModelRef(settings, task?.model ?? model).title}>pi · {formatModelRef(settings, task?.model ?? model).name}</span>
-        {task && <div className="work-actions"><span className={`thread-state-chip ${["starting", "running", "stopping"].includes(task.status) ? "processing" : task.status === "needs-input" ? "reviewing" : "ready"}`} role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && task.status !== "stopping" && <button className="ghost main-header-action" aria-label="Stop task" title="Stop task" disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop</button>}
+        {task && <div className="work-actions"><span className={`thread-state-chip work-state-${task.status}`} role="status">{taskStates[task.status].label}</span>{(active || task.status === "queued") && task.status !== "stopping" && <button className="ghost main-header-action" aria-label="Stop task" title="Stop task" disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop</button>}
           {task.threadId && !task.importId && <RewindAction workspaceId={task.spaceId} threadId={task.threadId} running={active} />}
         </div>}
         {work.state.tasks.some(t => ["starting", "running", "needs-input"].includes(t.status)) && <IconButton className="ghost main-header-action" aria-label="Stop all tasks" title="Stop all tasks" disabled={busy} onClick={() => { void run(() => work.mutate("stop-all")); }}><Square size={14} aria-hidden /></IconButton>}
@@ -301,10 +317,6 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
             onRetry={canRecover && retryText ? () => continueTask(retryText, false) : undefined}
             onChangeModel={canRecover ? () => setModelPickerRequest(current => current + 1) : undefined} />}
           {task.pending.map(request => <InputRequest key={request.id} request={request} busy={busy} respond={answer => { void run(() => work.mutate("respond", { taskId: task.id, requestId: request.id, answer })); }} />)}
-          {task.status === "queued" && <p className="chat-muted">Waiting for an available slot. One task runs in each space at a time.</p>}
-          {task.status === "starting" && <p role="status" className="chat-muted">Starting the model. If macOS requests Keychain access, respond to its prompt. You can stop this launch and keep your message.</p>}
-          {task.status === "stopping" && <p role="status" className="chat-muted">Stopping the launch… Your message is kept for retry.</p>}
-          {active && task.status !== "stopping" && <p className="chat-muted">This task keeps running when you switch modes or hide the window.</p>}
           {task.importId ? <section aria-label="Continue imported task">
             <p className="chat-muted">Read-only Cowork history. Continue starts a new task with summarized context and the last 10 messages.</p>
             <label>Space <select aria-label="Continuation space" value={continuationSpace} onChange={e => setSpaceId(e.target.value)} disabled={busy}><option value="" disabled>Choose an available space</option>{writableSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
@@ -316,6 +328,14 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           </section> : null}
         </div></div>{showLatest && <button className="secondary work-jump-latest" onClick={scrollToLatest}>Jump to latest</button>}</div>
         {!task.importId && <form className="work-follow-up" aria-label="Task conversation" onSubmit={e => { e.preventDefault(); sendFollowUp(); }}>
+          <div className={`work-conversation-state work-state-${task.status}`}>
+            <div role="status"><strong>{taskStates[task.status].label}</strong><p>{!task.threadId && (task.status === "stopped" || task.status === "failed") ? "This task did not start. Reuse its brief to try again." : taskStates[task.status].hint}</p></div>
+            {task.status === "needs-input" && <button className="ghost" type="button" onClick={reviewRequest}>Review request</button>}
+            {task.threadId && (task.status === "stopped" || task.status === "failed") && <button className="ghost" type="button" onClick={() => followInputRef.current?.focus()}>Write follow-up</button>}
+            {!task.threadId && (task.status === "stopped" || task.status === "failed") && <button className="ghost" type="button" onClick={() => {
+              setBrief(task.pendingMessage ?? task.brief); setSpaceId(task.spaceId); setModel(task.model); setAccess(task.accessMode); setAttachments(task.attachments); work.setActive(null);
+            }}>Reuse brief</button>}
+          </div>
           <ComposerShell
             toolbar={<ComposerAccessControl value={followAccess} onChange={setFollowAccess} disabled={busy || active || task.status === "queued"} />}
             reasoning={{
@@ -329,9 +349,8 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
               disabled: busy || active || task.status === "queued", onOpenSettings,
             }}
             actions={<ComposerSendButton label={task.status === "running" ? "Send instruction" : "Send follow-up"} disabled={followBlocked || !followUp.trim()} disabledReason={task.status === "needs-input" ? "Answer the pending request first" : ["queued", "starting", "stopping"].includes(task.status) ? "Waiting for this task to start or finish stopping" : busy ? "Please wait" : "Write a message"} onSend={sendFollowUp} />}>
-            <textarea aria-label="Message task" placeholder={task.status === "running" ? "Add an instruction…" : "Ask for changes or continue this task…"} rows={2} value={followUp} disabled={busy} onChange={e => setDrafts(current => ({ ...current, [task.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); sendFollowUp(); } }} />
+            <textarea ref={followInputRef} aria-label="Message task" placeholder={task.status === "running" ? "Add an instruction…" : "Ask for changes or continue this task…"} rows={2} value={followUp} disabled={busy} onChange={e => setDrafts(current => ({ ...current, [task.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); sendFollowUp(); } }} />
           </ComposerShell>
-          {task.status === "needs-input" && <button className="ghost" type="button" onClick={jumpToInput}>Answer the pending request above to continue</button>}
         </form>}
       </div> : <div className="chat-scroll"><div className="chat-column">
         <div className="chat-empty work-empty"><DigitalRain /><span className="chat-eyebrow">A space for getting things done</span><h1>What would you like to make?</h1><p>Bring a folder and a brief. Follow the plan, review requests, and find the finished files here.</p>

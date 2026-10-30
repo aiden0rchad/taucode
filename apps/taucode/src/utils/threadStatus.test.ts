@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 import { getThreadStatusClass, getWorkspaceHomeThreadState } from "./threadStatus";
 
 describe("threadStatus", () => {
+  it.each([["failed", "failed"], ["interrupted", "stopped"]])("keeps %s distinct from ready and unread", (turnStatus, expected) => {
+    expect(getThreadStatusClass({ lastTurn: { status: turnStatus }, hasUnread: true }, false)).toBe(expected);
+    expect(getThreadStatusClass({ lastTurn: { status: turnStatus }, isProcessing: true }, false)).toBe("processing");
+    expect(getThreadStatusClass({ lastTurn: { status: turnStatus } }, true)).toBe("unread");
+  });
   it("prioritizes pending user input over processing state", () => {
     expect(
       getThreadStatusClass(

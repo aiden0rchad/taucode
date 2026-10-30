@@ -111,6 +111,19 @@ describe("useThreads UX integration", () => {
     expect(result.current.approvals).toEqual([]);
   });
 
+  it.each(["interrupted", "failed"])("restores the last %s turn without starting work", async status => {
+    vi.mocked(resumeThread).mockResolvedValue({ result: { thread: {
+      id: "thread-recovery", turns: [{ id: "saved-turn", status, items: [
+        { id: "saved-user", type: "userMessage", content: [{ type: "text", text: "Saved request" }] },
+      ] }],
+    } } });
+    const { result } = renderHook(() => useThreads({ activeWorkspace: workspace, onWorkspaceConnected: vi.fn() }));
+    act(() => result.current.setActiveThreadId("thread-recovery"));
+    await waitFor(() => expect(result.current.threadStatusById["thread-recovery"]?.lastTurn?.status).toBe(status));
+    expect(result.current.threadStatusById["thread-recovery"]?.isProcessing).toBe(false);
+    expect(sendUserMessageService).not.toHaveBeenCalled();
+  });
+
   it("resumes selected threads when no local items exist", async () => {
     vi.mocked(resumeThread).mockResolvedValue({
       result: {

@@ -1,4 +1,5 @@
 export type ThreadStatusFlags = {
+  lastTurn?: { status: string };
   activeFlags?: import("@protocol/v2/ThreadActiveFlag").ThreadActiveFlag[];
   isProcessing?: boolean;
   hasUnread?: boolean;
@@ -7,7 +8,7 @@ export type ThreadStatusFlags = {
 
 export type ThreadStatusById = Record<string, ThreadStatusFlags>;
 
-export type ThreadStatusClass = "processing" | "reviewing" | "unread" | "ready";
+export type ThreadStatusClass = "processing" | "reviewing" | "unread" | "ready" | "failed" | "stopped";
 
 export function getThreadStatusClass(
   status: ThreadStatusFlags | undefined,
@@ -22,6 +23,8 @@ export function getThreadStatusClass(
   if (status?.isProcessing) {
     return "processing";
   }
+  if (status?.lastTurn?.status === "failed") return "failed";
+  if (status?.lastTurn?.status === "interrupted") return "stopped";
   if (status?.hasUnread) {
     return "unread";
   }

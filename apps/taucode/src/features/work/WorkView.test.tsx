@@ -49,6 +49,50 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Work mode", () => {
+  it.each([
+    ["running", "Working"], ["needs-input", "Waiting for you"],
+    ["stopped", "Stopped"], ["failed", "Failed"], ["done", "Completed"],
+  ] as const)("shows an explicit %s state beside the composer", async (status, label) => {
+    state.tasks = [task("Report", status)];
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    const conversation = screen.getByRole("form", { name: "Task conversation" });
+    expect(within(conversation).getByRole("status").textContent).toContain(label);
+    if (status === "failed" || status === "stopped") {
+      expect(document.querySelector(".work-actions .thread-state-chip.ready")).toBeNull();
+      expect(within(conversation).getByRole("status").textContent).toContain("follow-up");
+      const input = within(conversation).getByRole("textbox", { name: "Message task" });
+      fireEvent.change(input, { target: { value: "Keep my draft" } });
+      fireEvent.click(within(conversation).getByRole("button", { name: "Write follow-up" }));
+      expect(document.activeElement).toBe(input);
+      expect(input).toHaveProperty("value", "Keep my draft");
+      expect(workRequest).not.toHaveBeenCalledWith("follow-up", expect.anything());
+    }
+  });
+  it("reviews the current request without cycling tasks or approving it", async () => {
+    state.tasks = [task("First", "needs-input"), { ...task("Second", "needs-input"), pending: [
+      { id: "second-request", method: "item/commandExecution/requestApproval", params: { command: "test-command" } },
+    ] }];
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Second" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review request" }));
+    expect(screen.getByRole("button", { name: "Second" }).getAttribute("aria-current")).toBe("page");
+    const request = screen.getByRole("region", { name: "Approval required" });
+    expect(document.activeElement).toBe(request);
+    expect(vi.mocked(request.scrollIntoView).mock.contexts.slice(-1)[0]).toBe(request);
+    expect(workRequest).not.toHaveBeenCalledWith("respond", expect.anything());
+  });
+  it("recovers the brief and attachments when startup stopped before creating a thread", async () => {
+    state.tasks = [{ ...task("Unstarted", "stopped"), threadId: null, pendingMessage: "Keep this request", attachments: ["notes.txt"], accessMode: "full-access" }];
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Unstarted" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reuse brief" }));
+    expect(screen.getByRole("textbox", { name: "Task brief" })).toHaveProperty("value", "Keep this request");
+    expect(screen.getByRole("combobox", { name: "Space" })).toHaveProperty("value", "space");
+    expect(screen.getByRole("combobox", { name: "Access mode" })).toHaveProperty("value", "full-access");
+    expect(screen.getByRole("button", { name: "Remove notes.txt" })).toBeTruthy();
+    expect(workRequest).not.toHaveBeenCalledWith("create", expect.anything());
+  });
   it("shows task-owned preview controls and preserves the follow-up draft across actions", async () => {
     state.tasks = [task("First", "done"), task("Second", "done")];
     const request = vi.mocked(workRequest).getMockImplementation()!;

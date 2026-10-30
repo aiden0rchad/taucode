@@ -1283,6 +1283,11 @@
   border-color: rgba(63, 228, 126, 0.2);
 }
 
+.thread-state-chip.failed { color: var(--status-error); background: color-mix(in srgb, var(--status-error) 10%, transparent); }
+.thread-state-chip.stopped { color: var(--text-muted); background: var(--surface-card-muted); }
+.thread-status.failed { background: var(--status-error); }
+.thread-status.stopped { background: transparent; border: 1px solid var(--text-muted); }
+
 .thread-time {
   color: var(--text-faint);
   font-size: 11px;
