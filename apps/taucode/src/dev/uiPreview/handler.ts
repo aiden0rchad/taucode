@@ -123,6 +123,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
     switch (action) {
       case "list": return state.work;
       case "read": return response(findThread(task?.threadId));
+      case "subagent-transcript": return { messages: [{ role: "assistant", content: "Checked the source notes and verified the summary against each action item." }], truncated: false };
       case "add-space": {
         const path = String(params.path ?? "/preview/new-space");
         const space = { id: id("space"), name: String(params.name || path.split("/").pop()), path, kind: "work" as const, readOnlyFolders: Array.isArray(params.readOnlyFolders) ? params.readOnlyFolders.map(String) : [] };

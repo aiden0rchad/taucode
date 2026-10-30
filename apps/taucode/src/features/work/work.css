@@ -81,3 +81,5 @@
 
 .work-tool-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .work-tool summary > svg { flex-shrink: 0; }
+
+.work-agents-link { display: inline-flex; align-items: center; gap: 6px; margin: 4px 0; }

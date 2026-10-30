@@ -138,7 +138,8 @@ function summarizeCollabReceiver(
         ? [item.collabReceiver]
         : [];
   if (receivers.length === 0) {
-    return item.title || "";
+    const nodes = item.agentsTree ?? [];
+    return nodes.length > 1 ? `${nodes[0].agent || "Agent"} +${nodes.length - 1}` : nodes[0]?.agent || "agent";
   }
   const label = (receiver: (typeof receivers)[number]) => {
     if (receiver.threadId.startsWith(`${item.id}:agent:`)) {

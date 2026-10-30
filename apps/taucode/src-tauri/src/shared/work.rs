@@ -78,6 +78,17 @@ pub(crate) struct Work {
     rx: Mutex<Option<mpsc::UnboundedReceiver<AppServerEvent>>>,
 }
 fn occupied(status: &str) -> bool { matches!(status, "starting" | "running" | "needs-input" | "stopping") }
+fn task_title(brief: &str) -> String {
+    let line = brief.lines().find(|line| !line.trim().is_empty()).unwrap_or("New task");
+    let mut words = line.split_whitespace();
+    let text = words.by_ref().take(8).collect::<Vec<_>>().join(" ");
+    if text.chars().count() <= 64 && words.next().is_none() { return text; }
+    let mut title: String = text.chars().take(63).collect();
+    if text.chars().count() > 63 {
+        if let Some(boundary) = title.rfind(' ').filter(|&index| title[..index].chars().count() >= 32) { title.truncate(boundary); }
+    }
+    format!("{}…", title.trim_end())
+}
 fn next_task(store: &Store) -> Option<usize> {
     if store.tasks.iter().filter(|t| occupied(&t.status)).count() >= store.concurrency { return None; }
     // A single writer per space makes checkpoint attribution and rewind deterministic.
@@ -355,17 +366,22 @@ impl Work {
         Ok(())
     }
     pub async fn request(self: &Arc<Self>, settings: &AppSettings, action: &str, params: Value) -> Result<Value, String> {
-        if !settings.features().work_mode && !matches!(action, "stop" | "interrupt" | "list" | "read") { return Err("Enable Work in Settings → Features".into()); }
+        if !settings.features().work_mode && !matches!(action, "stop" | "interrupt" | "list" | "read" | "subagent-transcript") { return Err("Enable Work in Settings → Features".into()); }
         let mut state = self.state.lock().await;
         self.initialize(&mut state).await?;
         state.settings = settings.clone();
-        if action == "read" {
-            if let Some(task) = state.store.tasks.iter().find(|t| Some(t.id.as_str()) == params["taskId"].as_str() && t.import_id.is_none()).cloned() {
+        if matches!(action, "read" | "subagent-transcript") {
+            let task = state.store.tasks.iter().find(|t| Some(t.id.as_str()) == params["taskId"].as_str()).cloned().ok_or("Unknown task")?;
+            if action == "subagent-transcript" && task.import_id.is_some() { return Err("Detailed agent transcripts are unavailable for imported tasks".into()); }
+            if task.import_id.is_none() {
                 let space = state.store.spaces.iter().find(|s| s.id == task.space_id).ok_or("Unknown space")?.clone();
                 let thread = task.thread_id.ok_or("Task is queued")?;
                 let session = self.session(&mut state, &space).await;
                 drop(state);
-                return session.pi.request(&space.id, "thread/read", json!({"threadId":thread})).await;
+                return if action == "subagent-transcript" {
+                    let node = params["nodeId"].as_str().filter(|id| !id.is_empty()).ok_or("Select an agent")?;
+                    session.pi.request(&space.id, "subagent/transcript", json!({"threadId":thread,"nodeId":node})).await
+                } else { session.pi.request(&space.id, "thread/read", json!({"threadId":thread})).await };
             }
         }
         let result = self.action(&mut state, action, params).await;
@@ -419,7 +435,7 @@ impl Work {
                 let model = params["model"].as_str().ok_or("Select a model")?;
                 let (provider, model_id) = model.split_once('/').ok_or("Select a registry model")?;
                 if !state.settings.providers.iter().any(|p| p.enabled && p.id == provider && p.models.iter().any(|m| m.enabled && m.id == model_id)) { return Err("Enable this registry model in Settings".into()); }
-                let task = Task { created_at: Some(chrono::Utc::now().timestamp()), updated_at: None, id: uuid::Uuid::new_v4().to_string(), import_id: None, space_id: space_id.into(), thread_id: None, title: brief.lines().next().unwrap().chars().take(100).collect(), brief: brief.into(), attachments, model: model.into(), effort: params["effort"].as_str().map(str::to_owned), access_mode: mode.into(), status: "queued".into(), plan: vec![], outputs: vec![], pending: vec![], pending_message: None, error: None };
+                let task = Task { created_at: Some(chrono::Utc::now().timestamp()), updated_at: None, id: uuid::Uuid::new_v4().to_string(), import_id: None, space_id: space_id.into(), thread_id: None, title: task_title(brief), brief: brief.into(), attachments, model: model.into(), effort: params["effort"].as_str().map(str::to_owned), access_mode: mode.into(), status: "queued".into(), plan: vec![], outputs: vec![], pending: vec![], pending_message: None, error: None };
                 let result = json!(task);
                 if params["runNow"] == true { state.store.tasks.insert(0, task); } else { state.store.tasks.push(task); }
                 return Ok(result);
@@ -612,6 +628,14 @@ mod tests {
         Task { created_at: None, updated_at: None, import_id: None, id: id.into(), space_id: space.into(), thread_id: Some(id.into()), title: id.into(), brief: "brief".into(), attachments: vec![], model: "local/test".into(), effort: None, access_mode: "ask".into(), status: status.into(), plan: vec![], outputs: vec![], pending: vec![], pending_message: None, error: None }
     }
     #[test]
+    fn automatic_titles_keep_whole_words_with_a_unicode_safe_limit() {
+        assert_eq!(task_title("\n  Prepare\t the launch brief\nUse the notes."), "Prepare the launch brief");
+        assert_eq!(task_title("Build an action dashboard with owner and priority filters from these notes"), "Build an action dashboard with owner and priority…");
+        assert_eq!(task_title("Review the quarterly customer research and accompanying implementation notes"), "Review the quarterly customer research and accompanying…");
+        assert_eq!(task_title(&"界".repeat(100)), format!("{}…", "界".repeat(63)));
+        assert_eq!(task_title("   \n\t"), "New task");
+    }
+    #[test]
     fn task_timestamps_are_backward_compatible_and_track_status_changes() {
         let mut value = json!(task("legacy", "space", "queued"));
         value.as_object_mut().unwrap().remove("createdAt");
@@ -703,6 +727,59 @@ mod tests {
         assert_eq!(next_task(&store), None);
         store.tasks[2].status = "stopped".into();
         assert_eq!(next_task(&store), Some(1));
+    }
+    #[tokio::test]
+    async fn agent_transcripts_are_owned_read_only_and_available_after_restart() {
+        let root = temp();
+        let folder = root.join("space");
+        std::fs::create_dir(&folder).unwrap();
+        let service = Work::new(root.join("data"), Sink::default());
+        let settings = AppSettings::default();
+        let space = service.request(&settings, "add-space", json!({"path":folder,"readOnlyFolders":[]})).await.unwrap();
+        let space_id = space["id"].as_str().unwrap();
+        {
+            let mut state = service.state.lock().await;
+            state.store.tasks.push(task("parent", space_id, "done"));
+            let mut queued = task("queued", space_id, "queued");
+            queued.thread_id = None;
+            state.store.tasks.push(queued);
+            service.save(&state.store).unwrap();
+        }
+        let sessions = service.data.join("pi/sessions").join(space_id);
+        std::fs::create_dir_all(&sessions).unwrap();
+        let entries = [json!({"type":"session","version":3,"id":"parent","cwd":folder}),
+            json!({"type":"message","id":"u","parentId":null,"message":{"role":"user","content":"delegate"}}),
+            json!({"type":"message","id":"a","parentId":"u","message":{"role":"assistant","content":[{"type":"toolCall","id":"spawn","name":"subagent","arguments":{"agent":"researcher","task":"review"}}],"stopReason":"toolUse"}}),
+            json!({"type":"message","id":"r","parentId":"a","message":{"role":"toolResult","toolCallId":"spawn","toolName":"subagent","details":{"results":[{"agent":"researcher","status":"failed","messages":[
+                {"role":"assistant","content":"Retained parent evidence"},
+                {"role":"toolResult","toolCallId":"nested","toolName":"subagent","details":{"results":[{"agent":"reviewer","status":"completed","messages":[{"role":"assistant","content":"Nested review evidence"}]}]}}
+            ]}]}}})];
+        std::fs::write(sessions.join("parent.jsonl"), entries.iter().map(Value::to_string).collect::<Vec<_>>().join("\n") + "\n").unwrap();
+        let restarted = Work::new(service.data.clone(), Sink::default());
+        restarted.request(&settings, "list", json!({})).await.unwrap();
+        let state_file = service.data.join("work/state.json");
+        let before = std::fs::read(&state_file).unwrap();
+        let marker = std::time::UNIX_EPOCH + std::time::Duration::from_secs(946684800);
+        std::fs::File::options().write(true).open(&state_file).unwrap().set_modified(marker).unwrap();
+        let result = restarted.request(&settings, "subagent-transcript", json!({"taskId":"parent","nodeId":"spawn:agent:0/nested:agent:0"})).await.unwrap();
+        assert_eq!(result["messages"][0]["content"], "Nested review evidence");
+        assert_eq!(result["truncated"], false);
+        let parent = restarted.request(&settings, "subagent-transcript", json!({"taskId":"parent","nodeId":"spawn:agent:0"})).await.unwrap();
+        assert!(parent.to_string().contains("Retained parent evidence"));
+        assert!(!parent.to_string().contains("Nested review evidence"));
+        for params in [json!({"taskId":"missing","nodeId":"spawn:agent:0"}), json!({"taskId":"queued","nodeId":"spawn:agent:0"}),
+            json!({"taskId":"parent","nodeId":"missing"}), json!({"taskId":"parent","nodeId":"../parent.jsonl"}), json!({"taskId":"parent"})] {
+            assert!(restarted.request(&settings, "subagent-transcript", params).await.is_err());
+        }
+        let history = service.data.join("imports/history");
+        std::fs::create_dir_all(&history).unwrap();
+        let import_id = uuid::Uuid::new_v4().to_string();
+        config::write_json(&history.join(format!("{import_id}.json")), &json!({"source":"cowork","kind":"work","cwd":folder,"title":"Imported","status":"done","messages":[],"turns":[],"attachments":[]})).unwrap();
+        assert!(restarted.request(&settings, "subagent-transcript", json!({"taskId":format!("import-{import_id}"),"nodeId":"spawn:agent:0"})).await.unwrap_err().contains("imported"));
+        assert_eq!(std::fs::read(&state_file).unwrap(), before);
+        assert_eq!(std::fs::metadata(&state_file).unwrap().modified().unwrap(), marker);
+        assert!(std::fs::read_dir(sessions).unwrap().all(|f| f.unwrap().path().extension().unwrap() == "jsonl"), "Reads must not start an engine or queued task");
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[tokio::test]
     async fn renaming_is_persisted_metadata_only_for_local_tasks() {

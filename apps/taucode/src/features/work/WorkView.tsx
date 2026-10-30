@@ -12,6 +12,8 @@ import { describeTool } from "@/features/messages/utils/messageRenderUtils";
 import { exportMarkdownFile } from "@services/tauri";
 import { WorkConcurrency } from "./WorkConcurrency";
 import { WorkFiles } from "./WorkFiles";
+import { AgentActivity } from "@/features/agents/AgentsPanel";
+import { AgentsContext, agentGroups, runningAgents } from "@/features/agents/agents";
 import { clampReasoning, useReasoningSelection } from "@/features/models/reasoning";
 import { SidebarResizeHandle } from "@/features/layout/components/SidebarResizeHandle";
 import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
@@ -32,7 +34,7 @@ import { templates, useWork, workGroups } from "./useWork";
 import "./work.css";
 import Square from "lucide-react/dist/esm/icons/square";
 import Plus from "lucide-react/dist/esm/icons/plus";
-import { WorkspaceShell } from "@/features/panels/SidePanel";
+import { WorkspaceShell, useSidePanel } from "@/features/panels/SidePanel";
 import { SidebarBottomRail } from "@app/components/SidebarBottomRail";
 import { RowMenu } from "@/features/chat/RowMenu";
 import { RenameThreadPrompt } from "@threads/components/RenameThreadPrompt";
@@ -53,6 +55,11 @@ function InputRequest({ request, busy, respond }: { request: WorkRequest; busy: 
       <label>Your answer <input value={answer} onChange={e => setAnswer(e.target.value)} /></label><button disabled={busy || !answer.trim()}>Reply</button>
     </form>}
   </section>;
+}
+
+function WorkAgentsLink() {
+  const panel = useSidePanel();
+  return <button type="button" className="ghost work-agents-link" onClick={() => panel?.openTool("agents")}><Bot size={16} aria-hidden />View agents</button>;
 }
 
 export function WorkView({ settings, onOpenSettings = () => {} }: { settings: AppSettings; onOpenSettings?: () => void }) {
@@ -91,6 +98,10 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const selectedSpace = writableSpaces.find(s => s.id === spaceId)?.id || "";
   const needs = work.state.tasks.filter(t => t.status === "needs-input");
   const task = work.task;
+  const taskId = task?.id;
+  const loadAgentTranscript = useCallback((_workspace: string, _thread: string, nodeId: string) => workRequest<{ messages: Record<string, unknown>[]; truncated: boolean }>("subagent-transcript", { taskId, nodeId }), [taskId]);
+  const agents = agentGroups(work.items).flatMap(group => group.nodes);
+  const liveAgents = runningAgents(agents);
   const progressRef = useRef<HTMLDivElement>(null);
   const progressContentRef = useRef<HTMLDivElement>(null);
   const followProgress = useRef(true);
@@ -223,18 +234,19 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   };
   const taskMarkdown = task ? `# ${task.title}\n\n${task.brief}\n\n${buildThreadTranscript(items)}` : "";
   const taskPanel = task ? (<aside className="work-inspector" aria-label="Task details">
+          {features.subagents && !task.importId && agents.length > 0 && <section aria-label="Agents"><h2>Agents{liveAgents > 0 && <small> · {liveAgents} running</small>}</h2><p className="chat-muted">Inspect delegated work, model usage, and results.</p><WorkAgentsLink /></section>}
           <section aria-label="Plan"><h2>Plan</h2>{task.plan.length ? <><progress className="plan-progress" aria-label="Plan completion" max={task.plan.length} value={task.plan.filter(step => step.status === "completed").length} /><ul className="work-plan">{task.plan.map((step, index) => <li key={index}><span role="checkbox" aria-labelledby={`work-plan-${index}`} aria-readonly="true" aria-checked={step.status === "completed"}>{step.status === "completed" ? <CheckCircle2 aria-hidden /> : <Circle aria-hidden />}</span><div id={`work-plan-${index}`}><Markdown {...fileLinks} value={step.step} className="markdown" showFilePath={false} /></div></li>)}</ul></> : <p className="chat-muted">The task’s checklist will appear here.</p>}</section>
           <section aria-label="Outputs"><h2>Outputs <small>{task.outputs.length}</small></h2>{!task.outputs.length && <p className="chat-muted">Created and modified files will appear here.</p>}
             {task.outputs.map(path => <div className="work-output" key={path}><img className="file-type-icon" src={getFileTypeIconUrl(path)} alt="" /><strong title={path}>{path.split("/").pop()}</strong><div className="work-actions">{(["open", "reveal", ...(/\.(png|jpe?g|gif|webp|pdf)$/i.test(path) ? ["preview"] : [])] as const).map(action => <IconButton className="ghost" key={action} aria-label={action === "open" ? "Open" : action === "reveal" ? "Reveal in Finder" : "Quick Look"} title={action === "open" ? "Open" : action === "reveal" ? "Reveal in Finder" : "Quick Look"} disabled={busy} onClick={() => { void run(() => workOutput(task.id, path, action as "open" | "reveal" | "preview")); }}>{action === "open" ? <ExternalLink aria-hidden /> : action === "reveal" ? <FolderOpen aria-hidden /> : <Eye aria-hidden />}</IconButton>)}</div></div>)}
           </section>
         </aside>) : null;
-  return <WorkspaceShell titleActions={<>
+  return <AgentsContext.Provider value={{ workspaceId: task?.spaceId ?? null, threadId: task?.threadId ?? null, itemsByThread: task?.threadId ? { [task.threadId]: work.items } : {} }}><WorkspaceShell titleActions={<>
         <span className="thread-header-model" title={formatModelRef(settings, task?.model ?? model).title}>pi · {formatModelRef(settings, task?.model ?? model).name}</span>
         {task && <div className="work-actions"><span className={`thread-state-chip ${["starting", "running", "stopping"].includes(task.status) ? "processing" : task.status === "needs-input" ? "reviewing" : "ready"}`} role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && task.status !== "stopping" && <button className="ghost main-header-action" aria-label="Stop task" title="Stop task" disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop</button>}
           {task.threadId && !task.importId && <RewindAction workspaceId={task.spaceId} threadId={task.threadId} running={active} />}
         </div>}
         {work.state.tasks.some(t => ["starting", "running", "needs-input"].includes(t.status)) && <IconButton className="ghost main-header-action" aria-label="Stop all tasks" title="Stop all tasks" disabled={busy} onClick={() => { void run(() => work.mutate("stop-all")); }}><Square size={14} aria-hidden /></IconButton>}
-      </>} reservedShortcuts={Object.entries(settings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`work:${work.active ?? "new"}`} title={task?.title || "New task"} actions={task ? [...(!task.importId ? [{ label: "Rename", disabled: busy, onClick: () => openRename(task) }] : []), { label: "Copy", onClick: () => { void run(() => navigator.clipboard.writeText(taskMarkdown)); } }, { label: "Export", onClick: () => { void run(() => exportMarkdownFile(taskMarkdown, "task.md", "Export task")); } }] : []} onNavigate={scope => work.setActive(scope.slice(5) === "new" ? null : scope.slice(5))} tools={task ? [{ id: "task", label: "Task", content: taskPanel }, { id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={task.spaceId} /> }] : selectedSpace ? [{ id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={selectedSpace} /> }] : []} searchUrl={settings.browser?.searchUrl} onInterrupt={() => work.active ? workRequest("stop", { taskId: work.active }).then(() => {}) : undefined}><div className={"chat-layout work-layout" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
+      </>} reservedShortcuts={Object.entries(settings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`work:${work.active ?? "new"}`} title={task?.title || "New task"} actions={task ? [...(!task.importId ? [{ label: "Rename", disabled: busy, onClick: () => openRename(task) }] : []), { label: "Copy", onClick: () => { void run(() => navigator.clipboard.writeText(taskMarkdown)); } }, { label: "Export", onClick: () => { void run(() => exportMarkdownFile(taskMarkdown, "task.md", "Export task")); } }] : []} onNavigate={scope => work.setActive(scope.slice(5) === "new" ? null : scope.slice(5))} tools={task ? [{ id: "task", label: "Task", content: taskPanel }, ...(features.subagents && task.threadId && !task.importId ? [{ id: "agents", label: "Agents", content: <AgentActivity key={task.id} loadTranscript={loadAgentTranscript} /> }] : []), { id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={task.spaceId} /> }] : selectedSpace ? [{ id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={selectedSpace} /> }] : []} searchUrl={settings.browser?.searchUrl} onInterrupt={() => work.active ? workRequest("stop", { taskId: work.active }).then(() => {}) : undefined}><div className={"chat-layout work-layout" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
     <SidebarResizeHandle />
     <aside className="sidebar chat-sidebar" aria-label="Spaces and tasks">
       <ModeSwitcher />
@@ -271,7 +283,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           {items.map(item => {
             if (item === duplicateError) return null;
             if (item.kind === "message" && isTurnError(item)) return <TurnErrorCard key={item.id} message={item.text} />;
-            const description = item.kind === "tool" ? describeTool(item) : null; return item.kind === "message" ? <article className={"message chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.text} showFilePath={false} /><div className="message-hover-actions"><IconButton className="ghost" title="Copy message" aria-label="Copy message" onClick={() => { void navigator.clipboard.writeText(item.text).catch(() => work.setError("Could not copy message.")); }}><Copy aria-hidden /></IconButton></div></article> : item.kind === "tool" ? <details className={`work-tool${/fail|error/i.test(item.status ?? "") ? " is-error" : ""}`} key={item.id}><summary>{createElement(/fail|error/i.test(item.status ?? "") ? CircleAlert : item.status === "inProgress" ? LoaderCircle : workToolIcons[item.toolType] ?? Search, { "aria-hidden": true, className: item.status === "inProgress" ? "tool-spinner" : undefined })}<span className="work-tool-label" title={item.title}>{description?.verb}{description?.target ? ` ${description.target}` : ""}</span>{/fail|error/i.test(item.status ?? "") && <span>Failed</span>}<ChevronDown aria-hidden /></summary><pre>{item.detail}</pre>{item.output && <Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.content || item.summary} showFilePath={false} /></details> : null; })}
+            const description = item.kind === "tool" ? describeTool(item) : null; return item.kind === "message" ? <article className={"message chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.text} showFilePath={false} /><div className="message-hover-actions"><IconButton className="ghost" title="Copy message" aria-label="Copy message" onClick={() => { void navigator.clipboard.writeText(item.text).catch(() => work.setError("Could not copy message.")); }}><Copy aria-hidden /></IconButton></div></article> : item.kind === "tool" ? <details className={`work-tool${/fail|error/i.test(item.status ?? "") ? " is-error" : ""}`} key={item.id}><summary>{createElement(/fail|error/i.test(item.status ?? "") ? CircleAlert : item.status === "inProgress" ? LoaderCircle : workToolIcons[item.toolType] ?? Search, { "aria-hidden": true, className: item.status === "inProgress" ? "tool-spinner" : undefined })}<span className="work-tool-label" title={item.title}>{description?.verb}{description?.target ? ` ${description.target}` : ""}</span>{/fail|error/i.test(item.status ?? "") && <span>Failed</span>}<ChevronDown aria-hidden /></summary><pre>{item.detail}</pre>{features.subagents && !task.importId && item.agentsTree?.length ? <WorkAgentsLink /> : null}{item.output && <Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.content || item.summary} showFilePath={false} /></details> : null; })}
           {errorMessage && <TurnErrorCard key={task.id} message={errorMessage} disabled={followBlocked}
             onRetry={canRecover && retryText ? () => continueTask(retryText, false) : undefined}
             onChangeModel={canRecover ? () => setModelPickerRequest(current => current + 1) : undefined} />}
@@ -331,6 +343,6 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       if (busy || !taskName.trim()) return;
       void run(() => work.mutate("rename", { taskId: rename.id, title: taskName })).then(success => { if (success) setRename(null); });
     }} />}
-  </div></WorkspaceShell>;
+  </div></WorkspaceShell></AgentsContext.Provider>;
 }
 

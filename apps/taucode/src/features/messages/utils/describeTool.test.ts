@@ -6,6 +6,10 @@ type Tool = Extract<ConversationItem, { kind: "tool" }>;
 const tool = (patch: Partial<Tool>): Tool => ({ id: Math.random().toString(36), kind: "tool", toolType: "mcpToolCall", title: "", detail: "", status: "completed", ...patch } as Tool);
 
 describe("describeTool", () => {
+  it("uses agent names when recovered delegation records lack receiver metadata", () => {
+    expect(describeTool(tool({ toolType: "collabToolCall", title: "Collab: spawnAgent", agentsTree: [{ id: "first", agent: "Researcher", status: "completed", children: [] }, { id: "second", agent: "Reviewer", status: "completed", children: [] }] })).target).toBe("Researcher +1");
+    expect(describeTool(tool({ toolType: "collabToolCall", title: "Collab: spawnAgent" })).target).toBe("agent");
+  });
   it("shows a stopped delegation neutrally without hiding an actual child failure", () => {
     const item = tool({ toolType: "collabToolCall", title: "collab: spawnAgent", status: "failed", agentsTree: [{ id: "colonel", agent: "colonel", status: "aborted", children: [{ id: "major", agent: "major", status: "completed", children: [] }] }] });
     expect(describeTool(item).verb).toBe("Stopped");

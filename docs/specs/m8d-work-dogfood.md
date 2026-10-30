@@ -148,10 +148,47 @@ No account enrollment or payment was performed.
 
 - Set up and verify Apple-issued signing across rebuilds.
 - Give agent-started preview servers visible lifecycle controls and cleanup.
-- Generate concise default task titles; manual naming is available.
+- Native acceptance for the Work agent panel and shorter default titles below.
 - Investigate an earlier process exit when evaluation attempted to create an empty
   native tab. The new no-open-page guard avoids that invalid call; the underlying
   WebKit creation failure was not conclusively diagnosed.
 
 The temporary gateway quota override expires October 29 at 12:44:27 a.m. PDT;
 automatic quota protection remains configured afterward.
+
+## Work delegation and titles — 2026-10-30
+
+Work now opens the shared Agents tree from the Task inspector or an expanded
+delegation row. Selecting a root or nested agent reads its retained transcript in
+the side panel while the task and follow-up composer stay visible. Failed reads
+offer Retry transcript; changing tasks cancels stale reads and clears the selected
+agent. Imported tasks retain their historical summaries without offering an
+unavailable detailed transcript. Chain of Command remains Code-only.
+
+The Work API resolves the task's own space and thread before reading a node. Reads
+do not rewrite Work metadata, start an engine, or pump queued tasks. Existing
+transcript credential redaction remains in effect. Polling is sequential, only
+for the selected pending/running agent (2 seconds visible, 10 seconds hidden),
+with one final read on completion. Unknown prices remain explicitly unavailable.
+Narrow-panel transcript gutters no longer produce a horizontal scrollbar; tree
+styles no longer affect Markdown lists/headings inside transcripts. Delegation
+labels fall back to agent names when receiver metadata is missing.
+
+New tasks use a compact first-line preview of the brief: eight words / 64 Unicode
+characters, retaining word boundaries when practical and marking truncation with
+an ellipsis. This is an extractive default, not a model-generated summary. It
+adds no provider request and preserves the full brief, existing titles, and manual
+renames.
+
+Validation: 1,815 frontend tests / 226 files; 11 Work backend tests; TypeScript,
+changed-file ESLint and `cargo check --all-targets` passed. Regressions cover nested
+transcripts after restart, invalid/imported task requests, unchanged state-file
+mtime, queue isolation, retry, non-overlapping polling, final snapshots, stale
+reads, draft preservation and Unicode title limits.
+
+Computer-use verification in the browser fixture preview opened an agent result,
+resized the side panel to 320px, switched tasks and returned with the original draft
+intact. Evidence: `taucode-work-agents-preview.png`. This is fixture UI evidence,
+not a live model run. The signed native app is still the earlier evaluation build;
+native acceptance and cloud/local benchmarks remain pending macOS access/Keychain
+approval. Agent-started preview-server controls remain outstanding.

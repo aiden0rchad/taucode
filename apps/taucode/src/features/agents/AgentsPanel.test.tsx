@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
-import { AgentsPanel } from "./AgentsPanel";
+import { AgentActivity, AgentsPanel } from "./AgentsPanel";
 import { AgentsContext, agentGroups, runningAgents } from "./agents";
 import { getSubagentTranscript } from "@services/tauri";
 import type { AgentNode, ConversationItem } from "@/types";
@@ -10,12 +10,54 @@ import { buildConversationItem } from "@utils/threadItems";
 
 vi.mock("@services/tauri", () => ({ getSubagentTranscript: vi.fn() }));
 vi.mock("@/features/messages/components/Messages", () => ({ Messages: ({ items }: { items: ConversationItem[] }) => <div>{items.map(i => <p key={i.id}>{i.kind === "message" ? i.text : i.kind === "tool" ? i.output : ""}</p>)}</div> }));
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); });
 const node: AgentNode = { id: "call:agent:0", agent: "Researcher", model: "test/model", status: "running", startedAt: Date.now() - 3000, usage: { input: 10, output: 2, cost: .01 }, children: [] };
 const item = (nodes: AgentNode[]): ConversationItem => ({ id: "call", kind: "tool", toolType: "collabToolCall", title: "Agents", detail: "", agentsTree: nodes });
 const view = (items: ConversationItem[]) => <AgentsContext.Provider value={{ workspaceId: "ws", threadId: "main", itemsByThread: { main: items }, policy: { enabled: true, maxConcurrent: 2, maxPerTurn: 4, maxDepth: 3, allowedModels: [], defaultModel: null, roles: [] } }}><AgentsPanel onSelect={vi.fn()} /></AgentsContext.Provider>;
 
 describe("Agents panel", () => {
+  it("retries a failed read without starting an agent", async () => {
+    vi.mocked(getSubagentTranscript).mockRejectedValueOnce(new Error("Read interrupted"))
+      .mockResolvedValue({ messages: [{ role: "assistant", content: "Recovered result" }], truncated: false });
+    render(view([item([{ ...node, status: "failed", errorMessage: "Process exited" }])]));
+    fireEvent.click(screen.getByRole("button", { name: /Researcher/ }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Error: Read interrupted");
+    fireEvent.click(screen.getByRole("button", { name: "Retry transcript" }));
+    expect(await screen.findByText("Recovered result")).toBeTruthy();
+    expect(getSubagentTranscript).toHaveBeenCalledTimes(2);
+  });
+  it("ignores late reads when switching tasks and never requests the old agent from the new task", async () => {
+    let resolve!: (value: Awaited<ReturnType<typeof getSubagentTranscript>>) => void;
+    const load = vi.fn(() => new Promise<Awaited<ReturnType<typeof getSubagentTranscript>>>(done => { resolve = done; }));
+    const scoped = (threadId: string) => <AgentsContext.Provider value={{ workspaceId: "space", threadId, itemsByThread: { [threadId]: [item([node])] } }}><AgentActivity loadTranscript={load} /></AgentsContext.Provider>;
+    const { rerender } = render(scoped("first"));
+    fireEvent.click(screen.getByRole("button", { name: /Researcher/ }));
+    rerender(scoped("second"));
+    await act(async () => resolve({ messages: [{ role: "assistant", content: "Old task answer" }], truncated: false }));
+    expect(screen.queryByText("Old task answer")).toBeNull();
+    expect(screen.getByRole("button", { name: /Researcher/ })).toBeTruthy();
+    expect(load.mock.calls).toHaveLength(1);
+  });
+  it("does not overlap polls, fetches a final snapshot, and stops polling a completed selection", async () => {
+    vi.useFakeTimers();
+    let resolve!: (value: Awaited<ReturnType<typeof getSubagentTranscript>>) => void;
+    vi.mocked(getSubagentTranscript).mockImplementationOnce(() => new Promise(done => { resolve = done; }))
+      .mockResolvedValue({ messages: [{ role: "assistant", content: "Final snapshot" }], truncated: false });
+    const other = { ...node, id: "other", agent: "Other" };
+    const { rerender } = render(view([item([node, other])]));
+    fireEvent.click(screen.getByRole("button", { name: /Researcher/ }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(12000); });
+    expect(getSubagentTranscript).toHaveBeenCalledTimes(1);
+    await act(async () => resolve({ messages: [], truncated: false }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(getSubagentTranscript).toHaveBeenCalledTimes(2);
+    rerender(view([item([{ ...node, status: "completed" }, other])]));
+    await act(async () => {});
+    expect(screen.getByText("Final snapshot")).toBeTruthy();
+    expect(getSubagentTranscript).toHaveBeenCalledTimes(3);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(getSubagentTranscript).toHaveBeenCalledTimes(3);
+  });
   it("shows policy when empty", () => {
     render(view([]));
     expect(screen.getByText("No subagents in this thread yet")).toBeTruthy();

@@ -48,6 +48,44 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Work mode", () => {
+  it("opens nested agent transcripts in the task panel while preserving drafts and task scope", async () => {
+    state.tasks = [task("First", "done"), task("Second", "done")];
+    const request = vi.mocked(workRequest).getMockImplementation()!;
+    let resolveTranscript!: (value: unknown) => void;
+    vi.mocked(workRequest).mockImplementation((action, params) => {
+      if (action === "subagent-transcript") return new Promise(resolve => { resolveTranscript = resolve; });
+      if (action === "read") return Promise.resolve({ result: { thread: { turns: [{ id: "turn", items: [{
+        id: "delegate", type: "collabAgentToolCall", tool: "spawnAgent", status: "completed", receiverThreadIds: [], agentsTree: [{
+          id: "delegate:agent:0", agent: "Researcher", status: "completed", children: [{ id: "delegate:agent:0/review:agent:0", agent: "Reviewer", status: "failed", errorMessage: "Check interrupted", children: [] }],
+        }],
+      }] }] } } });
+      return request(action, params);
+    });
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "First" }));
+    const draft = screen.getByRole("textbox", { name: "Message task" });
+    fireEvent.change(draft, { target: { value: "Keep this draft" } });
+    fireEvent.click((await screen.findAllByRole("button", { name: "View agents" }))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "View Reviewer transcript, failed" }));
+    expect(workRequest).toHaveBeenCalledWith("subagent-transcript", { taskId: "First", nodeId: "delegate:agent:0/review:agent:0" });
+    await act(async () => resolveTranscript({ messages: [{ role: "assistant", content: "Partial review evidence" }], truncated: false }));
+    expect(await screen.findByText("Partial review evidence")).toBeTruthy();
+    expect(draft).toHaveProperty("value", "Keep this draft");
+    fireEvent.click(screen.getByRole("button", { name: "Second" }));
+    expect(screen.queryByText("Partial review evidence")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "First" }));
+    expect(screen.getByRole("textbox", { name: "Message task" })).toHaveProperty("value", "Keep this draft");
+    expect(workRequest).not.toHaveBeenCalledWith("follow-up", expect.anything());
+  });
+  it("does not offer unavailable transcripts for imported tasks", async () => {
+    state.tasks = [{ ...task("Imported", "done"), importId: "copy" }];
+    readHistory([{ id: "turn", items: [{ id: "delegate", type: "collabAgentToolCall", tool: "spawnAgent", status: "completed", receiverThreadIds: [], agentsTree: [{ id: "child", agent: "Researcher", status: "completed", children: [] }] }] }]);
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Imported" }));
+    await screen.findByRole("log", { name: "Task progress" });
+    expect(screen.queryByRole("button", { name: "View agents" })).toBeNull();
+    expect(workRequest).not.toHaveBeenCalledWith("subagent-transcript", expect.anything());
+  });
   it("opens loaded history at the latest result and follows output only while near the bottom", async () => {
     state.tasks = [task("First", "running"), task("Second", "done")];
     const request = vi.mocked(workRequest).getMockImplementation()!;

@@ -553,6 +553,6 @@ This smoke pass does not establish the cause of the earlier empty-tab failure.
   inherited deadlines and POSIX cleanup have regression and signed-app coverage.
 - Cost/capability-aware model selection backed by evaluation evidence, including
   actual cloud/local mixed-model dogfood runs.
-- Work agent-tree navigation for custom delegation and recovery after errors;
-  Work currently renders delegated results as expandable tool rows rather than the
-  full interactive tree. Chain of Command remains Code-only.
+- Native acceptance for Work's new interactive agent tree and retained transcripts;
+  regression and browser-fixture evidence is recorded in `m8d-work-dogfood.md`.
+  Chain of Command remains Code-only.
