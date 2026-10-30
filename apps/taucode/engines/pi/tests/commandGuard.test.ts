@@ -22,11 +22,12 @@ for (const omp of [false, true]) test(`command supervision preserves shell input
   assert.equal(output, "quotes ' \" ` $()\nsecond line\n");
 });
 
-for (const mode of ["cancel", "crash", "stubborn"]) test(`foreground process stops: ${mode}`, { skip: process.platform === "win32", timeout: 10000 }, async t => {
-  const timer = `${quote(process.execPath)} -e ${quote(`${mode === "stubborn" ? "process.on('SIGTERM',()=>{});" : ""}console.log('READY '+process.pid); setInterval(()=>{},1000)`)} | cat`;
+for (const mode of ["cancel", "crash", "stubborn", "managed-stop", "managed-crash"]) test(`foreground process stops: ${mode}`, { skip: process.platform === "win32", timeout: 10000 }, async t => {
+  const managed = mode.startsWith("managed-");
+  const timer = `${quote(process.execPath)} -e ${quote(`${mode === "stubborn" || managed ? "process.on('SIGTERM',()=>{});" : ""}console.log('READY '+process.pid); setInterval(()=>{},1000)`)} | cat`;
   const parent = spawn(process.execPath, ["--input-type=module", "-e", `
     import {spawn} from 'node:child_process';
-    const guard=spawn(process.execPath,[${JSON.stringify(script)},String(process.pid),'/bin/bash',${JSON.stringify(timer)}],{stdio:['ignore','inherit','inherit']});
+    const guard=spawn(process.execPath,[${JSON.stringify(script)},String(process.pid),'/bin/bash',${JSON.stringify(timer)},...${JSON.stringify(managed ? ["--shared-group"] : [])}],{detached:${managed},stdio:['ignore','inherit','inherit']});
     process.stdout.write('GUARD '+guard.pid+'\\n'); setInterval(()=>{},1000);
   `], { stdio: ["ignore", "pipe", "pipe"] });
   let output = "", guard = 0, worker = 0;
@@ -38,7 +39,7 @@ for (const mode of ["cancel", "crash", "stubborn"]) test(`foreground process sto
     if (guard && worker) break;
   }
   assert.ok(guard && worker, output);
-  process.kill(mode === "cancel" ? guard : parent.pid!, mode === "cancel" ? "SIGTERM" : "SIGKILL");
+  process.kill(mode === "managed-stop" ? -guard : mode === "cancel" ? guard : parent.pid!, mode === "cancel" ? "SIGTERM" : "SIGKILL");
   const deadline = Date.now() + 4000;
   while (Date.now() < deadline) {
     try { process.kill(worker, 0); } catch { return; }

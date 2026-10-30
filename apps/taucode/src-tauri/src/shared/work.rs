@@ -72,6 +72,7 @@ struct State {
 }
 pub(crate) struct Work {
     data: PathBuf,
+    previews: Arc<super::managed_tasks::ManagedTasks>,
     state: Mutex<State>,
     emit: Arc<dyn Fn(AppServerEvent) + Send + Sync>,
     tx: mpsc::UnboundedSender<AppServerEvent>,
@@ -118,10 +119,14 @@ fn merge_outputs(task: &mut Task, space: &Space, paths: impl IntoIterator<Item =
     task.outputs.sort();
 }
 impl Work {
+    #[cfg(test)]
     pub fn new(data: PathBuf, sink: impl EventSink) -> Arc<Self> {
+        Self::with_tasks(data, sink, super::managed_tasks::ManagedTasks::new())
+    }
+    pub fn with_tasks(data: PathBuf, sink: impl EventSink, previews: Arc<super::managed_tasks::ManagedTasks>) -> Arc<Self> {
         let (tx, rx) = mpsc::unbounded_channel();
         Arc::new(Self {
-            data, state: Mutex::new(State { store: Store::default(), sessions: HashMap::new(), settings: AppSettings::default(), loaded: false, starts: HashMap::new() }),
+            data, previews, state: Mutex::new(State { store: Store::default(), sessions: HashMap::new(), settings: AppSettings::default(), loaded: false, starts: HashMap::new() }),
             emit: Arc::new(move |event| sink.emit_app_server_event(event)), tx, rx: Mutex::new(Some(rx)),
         })
     }
@@ -225,6 +230,7 @@ impl Work {
         session.pi = PiEngine::work(self.data.clone(), space.id.clone(), space.path.clone(), Arc::new(move |workspace, message| {
             let _ = tx.send(AppServerEvent { workspace_id: workspace.into(), message });
         }));
+        session.pi.previews = Some(self.previews.clone());
         #[cfg(test)] { session.pi.fake = true; }
         session.pi.configure(&space.id, state.settings.providers.clone(), state.settings.agent_policy.clone()).await;
         session.pi.read_only_folders.lock().await.insert(space.id.clone(), space.read_only_folders.clone());
@@ -366,10 +372,21 @@ impl Work {
         Ok(())
     }
     pub async fn request(self: &Arc<Self>, settings: &AppSettings, action: &str, params: Value) -> Result<Value, String> {
-        if !settings.features().work_mode && !matches!(action, "stop" | "interrupt" | "list" | "read" | "subagent-transcript") { return Err("Enable Work in Settings → Features".into()); }
+        if !settings.features().work_mode && !matches!(action, "stop" | "interrupt" | "list" | "read" | "subagent-transcript" | "preview") { return Err("Enable Work in Settings → Features".into()); }
         let mut state = self.state.lock().await;
         self.initialize(&mut state).await?;
         state.settings = settings.clone();
+        if action == "preview" {
+            let task = state.store.tasks.iter().find(|t| Some(t.id.as_str()) == params["taskId"].as_str()).ok_or("Unknown task")?;
+            if task.import_id.is_some() { return Err("Imported tasks have no managed previews".into()); }
+            let action = params["action"].as_str().ok_or("Missing preview action")?;
+            if !matches!(action, "list" | "stop" | "restart" | "clearFinished") { return Err("Previews are started by the task's preview_server tool".into()); }
+            if action == "restart" && (!settings.features().work_mode || !settings.features().terminal || task.access_mode == "read-only") { return Err("Enable Work and Terminal with write access to restart a preview".into()); }
+            let space = state.store.spaces.iter().find(|s| s.id == task.space_id).ok_or("Unknown space")?.clone();
+            let thread = task.thread_id.clone().ok_or("Task is queued")?;
+            drop(state);
+            return self.previews.request_owned(&space.id, &thread, Path::new(&space.path), action, params.clone(), Default::default()).await;
+        }
         if matches!(action, "read" | "subagent-transcript") {
             let task = state.store.tasks.iter().find(|t| Some(t.id.as_str()) == params["taskId"].as_str()).cloned().ok_or("Unknown task")?;
             if action == "subagent-transcript" && task.import_id.is_some() { return Err("Detailed agent transcripts are unavailable for imported tasks".into()); }
@@ -540,6 +557,9 @@ impl Work {
     }
     async fn stop(&self, state: &mut State, id: &str) -> Result<(), String> {
         let index = state.store.tasks.iter().position(|t| t.id == id).ok_or("Unknown task")?;
+        if let Some(thread) = &state.store.tasks[index].thread_id {
+            self.previews.stop_session(&state.store.tasks[index].space_id, thread).await?;
+        }
         if let Some(cancel) = state.starts.remove(id) {
             state.store.tasks[index].set_status("stopping");
             let _ = cancel.send(());
@@ -727,6 +747,55 @@ mod tests {
         assert_eq!(next_task(&store), None);
         store.tasks[2].status = "stopped".into();
         assert_eq!(next_task(&store), Some(1));
+    }
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn preview_controls_resolve_owned_tasks_and_allow_cleanup_when_disabled() {
+        let root = temp();
+        let service = Work::new(root.join("data"), Sink::default());
+        let settings = AppSettings::default();
+        let space = service.request(&settings, "add-space", json!({"path":root,"readOnlyFolders":[]})).await.unwrap();
+        let space_id = space["id"].as_str().unwrap();
+        {
+            let mut state = service.state.lock().await;
+            for id in ["first", "other", "queued", "imported"] {
+                let mut value = task(id, space_id, "done");
+                if id == "queued" { value.thread_id = None; }
+                if id == "imported" { value.import_id = Some("copy".into()); }
+                state.store.tasks.push(value);
+            }
+            service.save(&state.store).unwrap();
+        }
+        let state_file = service.data.join("work/state.json");
+        let before = std::fs::read(&state_file).unwrap();
+        for id in ["first", "other"] {
+            service.previews.request_owned(space_id, id, &root, "start", json!({"command":"sleep 30"}), Default::default()).await.unwrap();
+        }
+        let request = |task: &str, action: &str, id: Value| json!({"taskId":task,"action":action,"id":id,"threadId":"other","workspaceId":"unowned"});
+        let first = service.request(&settings, "preview", request("first", "list", Value::Null)).await.unwrap();
+        assert_eq!(first.as_array().unwrap().len(), 1);
+        assert_eq!(first[0]["threadId"], "first");
+        let id = first[0]["id"].clone();
+        for task in ["other", "queued", "imported", "missing"] {
+            assert!(service.request(&settings, "preview", request(task, "stop", id.clone())).await.is_err());
+        }
+        assert!(service.request(&settings, "preview", request("first", "start", id.clone())).await.is_err());
+        let disabled: AppSettings = serde_json::from_value(json!({"features":{"workMode":false,"terminal":false}})).unwrap();
+        let stopped = service.request(&disabled, "preview", request("first", "stop", id.clone())).await.unwrap();
+        assert_eq!(stopped[0]["status"], "stopped");
+        assert!(service.request(&disabled, "preview", request("first", "restart", id.clone())).await.is_err());
+        service.state.lock().await.store.tasks[0].access_mode = "read-only".into();
+        assert!(service.request(&settings, "preview", request("first", "restart", id.clone())).await.is_err());
+        service.state.lock().await.store.tasks[0].access_mode = "ask".into();
+        let restarted = service.request(&settings, "preview", request("first", "restart", id.clone())).await.unwrap();
+        assert_eq!(restarted[0]["status"], "running");
+        assert_ne!(restarted[0]["id"], id);
+        service.previews.stop_session(space_id, "first").await.unwrap();
+        assert_eq!(service.request(&settings, "preview", request("other", "list", Value::Null)).await.unwrap()[0]["status"], "running");
+        assert_eq!(std::fs::read(&state_file).unwrap(), before, "controls must not rewrite task state or start the model");
+        assert!(service.state.lock().await.sessions.is_empty());
+        service.previews.shutdown().await.unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[tokio::test]
     async fn agent_transcripts_are_owned_read_only_and_available_after_restart() {

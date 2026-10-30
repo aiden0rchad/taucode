@@ -1157,6 +1157,7 @@ async fn fake(idle: Duration, marker: &Path) -> (Arc<Process>, Arc<StdMutex<Vec<
         .arg("--session")
         .arg("session.jsonl")
         .env("FAKE_PI_EOF", marker)
+        .env("FAKE_PI_REQUESTS", marker.with_extension("requests"))
         .env("TAUCODE_SESSION_KEY", "fake-thread");
     let events = Arc::new(StdMutex::new(vec![]));
     let sink = events.clone();
@@ -1736,7 +1737,7 @@ fn work_spawn_profile_loads_only_bundled_skills_and_preserves_connectors_and_sub
     let mut command = Command::new("node");
     work_profile(&mut command, Path::new("/synthetic/work"), Some(Path::new("/synthetic/work/.venv/bin/python")));
     let args: Vec<_> = command.as_std().get_args().map(|s| s.to_string_lossy().into_owned()).collect();
-    assert!(args.contains(&"read,write,edit,ls,find,grep,bash,subagent,ask_user,mcp__*".into()));
+    assert!(args.contains(&"read,write,edit,ls,find,grep,bash,subagent,ask_user,preview_server,mcp__*".into()));
     assert!(args.contains(&"/synthetic/work/skills".into()));
     assert!(args.contains(&"--no-context-files".into()));
     assert!(args.contains(&"--no-skills".into()));
@@ -1744,6 +1745,7 @@ fn work_spawn_profile_loads_only_bundled_skills_and_preserves_connectors_and_sub
     assert!(WORK_PROMPT.contains("outputs/") && WORK_PROMPT.contains("In Ask mode, ask before deleting or overwriting"));
     assert!(WORK_PROMPT.contains("Do not use ask_user to request tool permission"));
     assert!(command.as_std().get_envs().any(|(k, v)| k == "TAUCODE_WORK" && v == Some(std::ffi::OsStr::new("1"))));
+    assert!(command.as_std().get_envs().any(|(k, v)| k == "TAUCODE_WORK_PYTHON" && v == Some(std::ffi::OsStr::new("/synthetic/work/.venv/bin/python"))));
 }
 #[test]
 fn markdown_checklists_translate_to_plan_items_and_updates() {
@@ -1763,7 +1765,8 @@ async fn real_pi_work_starts_offline_with_work_policy_and_skills() {
     let dir = temp();
     let space = dir.join("space");
     std::fs::create_dir(&space).unwrap();
-    let engine = PiEngine::work(dir.join("data"), "workspace".into(), space.to_string_lossy().into_owned(), Arc::new(|_, _| {}));
+    let mut engine = PiEngine::work(dir.join("data"), "workspace".into(), space.to_string_lossy().into_owned(), Arc::new(|_, _| {}));
+    engine.previews = Some(crate::shared::managed_tasks::ManagedTasks::new());
     let provider: ProviderEntry = serde_json::from_value(json!({"id":"local","name":"Offline","kind":"ollama","enabled":true,"auth":{"type":"none"},"models":[{"id":"offline","enabled":true}]})).unwrap();
     let mut policy = AgentPolicy::default();
     policy.subagents.mode = crate::types::SubagentMode::ChainOfCommand;
@@ -1773,7 +1776,12 @@ async fn real_pi_work_starts_offline_with_work_policy_and_skills() {
     let id = response["result"]["thread"]["id"].as_str().unwrap();
     assert!(engine.sessions.lock().await[id].process.is_none());
     let (registry, policy) = engine.registry.lock().await["workspace"].clone();
-    engine.spawn(engine.sessions.lock().await.get_mut(id).unwrap(), &registry, &policy).await.unwrap();
+    let process = engine.spawn(engine.sessions.lock().await.get_mut(id).unwrap(), &registry, &policy).await.unwrap();
+    let preview = process.preview.lock().await.clone().unwrap();
+    assert!(preview.runtime.guard.as_ref().unwrap().1.is_file());
+    let env: HashMap<_, _> = preview.runtime.env.as_ref().unwrap().iter().cloned().collect();
+    assert_eq!(env["HOME"], dir.join("data/pi/agent/workspace").to_string_lossy());
+    assert!(env.keys().all(|key| matches!(key.as_str(), "PATH" | "LANG" | "TMPDIR" | "SYSTEMROOT" | "WINDIR" | "TERM" | "HOME" | "XDG_CONFIG_HOME" | "OTEL_SDK_DISABLED" | "TAUCODE_WORK_PYTHON")));
     let delivered: Value = serde_json::from_slice(&std::fs::read(dir.join("data/pi/agent/workspace/taucode/policy.json")).unwrap()).unwrap();
     assert_eq!(delivered["enabled"], false);
     assert_eq!(delivered["mode"], "custom");
@@ -2210,4 +2218,83 @@ fn omp_preload_blocks_auth_and_unconfigured_network() {
         .env("PI_CODING_AGENT_DIR", &dir).output().unwrap();
     assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn managed_preview_bridge_serves_restarts_and_stops_without_user_dialogs() {
+    use crate::shared::managed_tasks::{ManagedTasks, TaskRuntime};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let root = temp();
+    let access = root.join("access.json");
+    std::fs::write(&access, r#"{"kind":"work","accessMode":"full-access"}"#).unwrap();
+    let manager = ManagedTasks::new();
+    let node = crate::shared::engine_runtime::node_path();
+    let preview = Arc::new(preview::Preview { manager: manager.clone(), data: root.clone(), access: access.clone(), workspace: "work".into(), thread: "fake-thread".into(), cwd: root.clone(),
+        runtime: TaskRuntime { guard: Some((node, Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/pi/extensions/lib/commandGuard.ts"))), env: Some(crate::shared::engine_registry::environment(std::env::vars(), &root).into_iter().chain([("TAUCODE_PREVIEW_TEST".into(), "owned ✓".into())]).collect()) }, secrets: vec!["secret-canary".into()] });
+    let (process, events) = fake(Duration::from_secs(600), &root.join("eof")).await;
+    *process.preview.lock().await = Some(preview.clone());
+    let script = root.join("server.cjs");
+    std::fs::write(&script, r#"const http = require('node:http'); const server = http.createServer((_, res) => res.end(process.env.TAUCODE_PREVIEW_TEST)); server.listen(0, '127.0.0.1', () => console.log('http://127.0.0.1:' + server.address().port + '/ secret-canary'));"#).unwrap();
+    let message = |id: &str, params: Value| json!({"type":"extension_ui_request","method":"select","id":id,"title":format!("taucode:preview:{params}"),"options":["Continue"]});
+    process.receive(message("start", json!({"action":"start","command":"node server.cjs","label":"Preview","workspace":"unowned","cwd":"/"}))).await;
+    let wait_url = || async {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let tasks = preview.request(json!({"action":"list"})).await.unwrap();
+                if tasks.as_array().unwrap().iter().any(|t| t["status"] == "running" && t["urls"][0].is_string()) { break tasks; }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }).await.unwrap()
+    };
+    let tasks = wait_url().await;
+    let id = tasks[0]["id"].as_str().unwrap().to_string();
+    assert_eq!(tasks[0]["workspaceId"], "work");
+    assert_eq!(tasks[0]["cwd"], root.canonicalize().unwrap().to_string_lossy().as_ref());
+    let url = tasks[0]["urls"][0].as_str().unwrap();
+    let addr = url.trim_start_matches("http://").trim_end_matches('/');
+    let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    stream.write_all(b"GET / HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n").await.unwrap();
+    let mut body = String::new(); stream.read_to_string(&mut body).await.unwrap();
+    assert!(body.contains("owned ✓"));
+    assert!(manager.request_owned("work", "other", &root, "stop", json!({"id":id}), Default::default()).await.is_err());
+    process.receive(message("list", json!({"action":"list"}))).await;
+    let records = root.join("eof.requests");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if std::fs::read_to_string(&records).unwrap_or_default().contains("[REDACTED]") { break; }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.unwrap();
+    assert!(!std::fs::read_to_string(&records).unwrap().contains("secret-canary"));
+    assert!(events.lock().unwrap().iter().all(|e| e["method"] != "item/tool/requestUserInput"));
+    // Late requests must not launch a command after cancellation.
+    process.request(json!({"type":"abort"})).await.unwrap();
+    assert!(tokio::net::TcpStream::connect(addr).await.is_err());
+    process.receive(message("late", json!({"action":"start","command":"touch late-start"}))).await;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if std::fs::read_to_string(&records).unwrap_or_default().contains("\"id\": \"late\"") { break; }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.unwrap();
+    assert!(!root.join("late-start").exists());
+    assert_eq!(preview.request(json!({"action":"list"})).await.unwrap()[0]["status"], "stopped");
+    // A restarted preview retains the Work environment and survives engine shutdown.
+    manager.request_owned("work", "fake-thread", &root, "restart", json!({"id":id}), Default::default()).await.unwrap();
+    let restarted = wait_url().await;
+    assert_eq!(restarted.as_array().unwrap().len(), 2);
+    process.shutdown().await.unwrap();
+    assert_eq!(preview.request(json!({"action":"list"})).await.unwrap()[0]["status"], "running");
+    std::fs::write(&access, r#"{"kind":"work","accessMode":"read-only"}"#).unwrap();
+    assert!(preview.request(json!({"action":"start","command":"touch read-only"})).await.unwrap_err().contains("write access"));
+    std::fs::write(&access, r#"{"kind":"code","accessMode":"full-access"}"#).unwrap();
+    assert!(preview.request(json!({"action":"start","command":"touch wrong-mode"})).await.is_err());
+    std::fs::write(&access, r#"{"kind":"work","accessMode":"full-access"}"#).unwrap();
+    std::fs::write(root.join("settings.json"), r#"{"features":{"terminal":false}}"#).unwrap();
+    assert!(preview.request(json!({"action":"start","command":"touch disabled"})).await.is_err());
+    assert!(preview.request(json!({"action":"restart","id":id})).await.is_err());
+    preview.stop().await.unwrap();
+    manager.shutdown().await.unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }

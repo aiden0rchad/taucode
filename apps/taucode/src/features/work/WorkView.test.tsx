@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppSettings, ReasoningCapability, WorkState, WorkTask } from "@/types";
 import { WorkView } from "./WorkView";
-import { workRequest, workOutput, workAttachment, pickWorkAttachments } from "@services/tauri";
+import { workRequest, workOutput, workAttachment, pickWorkAttachments, browserRequest } from "@services/tauri";
 
 const events = vi.hoisted(() => ({ listener: (_event: unknown) => {}, importsChanged: () => {} }));
 vi.mock("@services/tauri", () => ({ subscribeBrowser: vi.fn().mockResolvedValue(() => {}), browserRequest: vi.fn().mockResolvedValue(undefined),
@@ -34,6 +34,7 @@ beforeEach(() => {
   state = { spaces: [{ id: "space", kind: "work", name: "Research", path: "/synthetic", readOnlyFolders: [] }], tasks: [], concurrency: 2 };
   vi.mocked(workRequest).mockImplementation(async (action, params) => {
     if (action === "list") return structuredClone(state);
+    if (action === "preview") return [];
     if (action === "create") { const created = { ...task("new-task", "queued"), ...params, threadId: null } as WorkTask; state.tasks.push(created); return created; }
     if (action === "read") return { result: { thread: { id: params?.taskId, turns: [] } } };
     if (action === "respond") { state.tasks[0].status = "running"; state.tasks[0].pending = []; }
@@ -48,6 +49,44 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Work mode", () => {
+  it("shows task-owned preview controls and preserves the follow-up draft across actions", async () => {
+    state.tasks = [task("First", "done"), task("Second", "done")];
+    const request = vi.mocked(workRequest).getMockImplementation()!;
+    let previews = [{ id: "server", workspaceId: "space", threadId: "First", command: "python3 -m http.server", label: "Dashboard", cwd: "/synthetic", pid: 123, status: "running", startedAt: Date.now(), endedAt: null as number | null, exitCode: null, output: "Listening on loopback", outputTruncated: false, urls: ["http://127.0.0.1:8765/"] }];
+    vi.mocked(workRequest).mockImplementation(async (action, params) => {
+      if (action !== "preview") return request(action, params);
+      if (params?.taskId !== "First") return [];
+      if (params.action === "stop") previews[0] = { ...previews[0], status: "stopped", endedAt: Date.now() };
+      if (params.action === "restart") previews.unshift({ ...previews[0], id: "restarted", status: "running", endedAt: null });
+      if (params.action === "clearFinished") previews = previews.filter(p => p.status === "running");
+      return structuredClone(previews);
+    });
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "First" }));
+    const draft = screen.getByRole("textbox", { name: "Message task" });
+    fireEvent.change(draft, { target: { value: "Keep this follow-up" } });
+    fireEvent.click(await screen.findByRole("button", { name: "View previews" }));
+    const panel = screen.getByRole("region", { name: "Background tasks" });
+    expect(within(panel).queryByRole("textbox")).toBeNull();
+    fireEvent.click(within(panel).getByText("Dashboard"));
+    expect(within(panel).getByLabelText("Output for Dashboard").textContent).toContain("Listening on loopback");
+    fireEvent.click(within(panel).getByRole("button", { name: "http://127.0.0.1:8765/" }));
+    await waitFor(() => expect(browserRequest).toHaveBeenCalledWith(expect.objectContaining({ action: "navigate", url: "http://127.0.0.1:8765/" })));
+    fireEvent.click(screen.getByRole("tab", { name: "Previews" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Stop Dashboard" }));
+    await waitFor(() => expect(within(panel).queryByRole("button", { name: "Stop Dashboard" })).toBeNull());
+    fireEvent.click(within(panel).getByText("Finished"));
+    fireEvent.click(within(panel).getByText("Dashboard"));
+    fireEvent.click(within(panel).getByRole("button", { name: "Restart" }));
+    await within(panel).findByRole("button", { name: "Stop Dashboard" });
+    expect(workRequest).toHaveBeenCalledWith("preview", { taskId: "First", action: "restart", id: "server" });
+    expect(draft).toHaveProperty("value", "Keep this follow-up");
+    fireEvent.click(screen.getByRole("button", { name: "Second" }));
+    expect(screen.queryByLabelText("Output for Dashboard")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "First" }));
+    expect(screen.getByRole("textbox", { name: "Message task" })).toHaveProperty("value", "Keep this follow-up");
+    expect(workRequest).not.toHaveBeenCalledWith("follow-up", expect.anything());
+  });
   it("opens nested agent transcripts in the task panel while preserving drafts and task scope", async () => {
     state.tasks = [task("First", "done"), task("Second", "done")];
     const request = vi.mocked(workRequest).getMockImplementation()!;

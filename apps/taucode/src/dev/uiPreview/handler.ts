@@ -123,6 +123,24 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
     switch (action) {
       case "list": return state.work;
       case "read": return response(findThread(task?.threadId));
+      case "preview": {
+        if (!task || task.importId || !task.threadId) throw new Error("Task has no managed previews");
+        const key = JSON.stringify([task.spaceId, task.threadId]);
+        if (!managedTasks.has(key)) managedTasks.set(key, [{ id: id("preview-server"), workspaceId: task.spaceId, threadId: task.threadId, command: '"$TAUCODE_WORK_PYTHON" -m http.server 8765 --bind 127.0.0.1', label: "Dashboard preview", cwd: state.work.spaces.find(s => s.id === task.spaceId)!.path, pid: null, status: "running", startedAt: Date.now() - 12000, endedAt: null, exitCode: null, output: "UI fixture. No process was started.\nServing http://127.0.0.1:8765/\n", outputTruncated: false, urls: ["http://127.0.0.1:8765/"] }]);
+        const tasks = managedTasks.get(key)!;
+        if (params.action === "stop" || params.action === "restart") {
+          const previous = tasks.find(t => t.id === params.id);
+          if (!previous) throw new Error("Preview not found in this task");
+          if (params.action === "stop") Object.assign(previous, { status: "stopped", endedAt: Date.now() });
+          else {
+            if (previous.status === "running") throw new Error("Stop the preview before restarting it");
+            if (task.accessMode === "read-only" || state.settings.features?.terminal === false || state.settings.features?.workMode === false) throw new Error("Restart requires Work, Terminal and write access");
+            tasks.unshift({ ...previous, id: id("preview-server"), status: "running", startedAt: Date.now(), endedAt: null });
+          }
+        } else if (params.action === "clearFinished") managedTasks.set(key, tasks.filter(t => t.status === "running"));
+        else if (params.action !== "list") throw new Error("Previews are started by the task");
+        return structuredClone(managedTasks.get(key));
+      }
       case "subagent-transcript": return { messages: [{ role: "assistant", content: "Checked the source notes and verified the summary against each action item." }], truncated: false };
       case "add-space": {
         const path = String(params.path ?? "/preview/new-space");

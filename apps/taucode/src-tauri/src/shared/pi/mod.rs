@@ -1,6 +1,7 @@
 pub(super) mod config;
 pub(crate) mod agents;
 mod process;
+mod preview;
 mod profile;
 mod recovery;
 #[cfg(test)]
@@ -51,6 +52,7 @@ pub(crate) struct PiEngine {
     profile: profile::EngineProfile,
     chat: bool,
     work: bool,
+    pub previews: Option<Arc<super::managed_tasks::ManagedTasks>>,
     pub read_only_folders: Mutex<HashMap<String, Vec<String>>>,
     pub paths: Mutex<HashMap<String, String>>,
     sessions: Mutex<HashMap<String, Session>>,
@@ -72,6 +74,7 @@ impl Default for PiEngine {
             profile: Default::default(),
             chat: false,
             work: false,
+            previews: None,
             read_only_folders: Mutex::new(HashMap::new()),
             paths: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
@@ -457,7 +460,7 @@ impl PiEngine {
             command.args(&self.profile.definition.args);
             command
         } else if self.profile.omp() { Command::new(runtime.as_ref().ok_or("Missing omp runtime")?.join("node_modules/.bin/bun")) }
-        else { Command::new(node) };
+        else { Command::new(&node) };
         command.env_clear().envs(super::engine_registry::environment(std::env::vars(), &home));
         let guard = runtime.as_ref().map(|dir| dir.join("no-accounts.mjs")).unwrap_or_default();
         #[cfg(test)]
@@ -551,6 +554,20 @@ impl PiEngine {
             let _ = events.send(e.clone());
             sink(&workspace, e);
         });
+        let preview = self.previews.as_ref().map(|manager| {
+            let mut env = super::engine_registry::environment(std::env::vars(), &home);
+            env.extend(command.as_std().get_envs().filter_map(|(key, value)| {
+                matches!(key.to_str(), Some("TAUCODE_WORK_PYTHON" | "PATH")).then(|| value.map(|v| (key.to_string_lossy().into_owned(), v.to_string_lossy().into_owned()))).flatten()
+            }));
+            Arc::new(preview::Preview {
+                manager: manager.clone(), data: self.data.clone().unwrap(), access: home.join("taucode/threads").join(format!("{id}.json")),
+                workspace: s.workspace.clone(), thread: id.clone(), cwd: PathBuf::from(s.thread["cwd"].as_str().unwrap_or_default()),
+                runtime: super::managed_tasks::TaskRuntime {
+                    guard: Some((node.clone(), home.join("extensions/lib/commandGuard.ts"))),
+                    env: Some(env.into_iter().collect()),
+                }, secrets: secrets.clone(),
+            })
+        });
         let p = Process::spawn(
             command,
             translator,
@@ -560,6 +577,7 @@ impl PiEngine {
             secrets,
         )
         .await?;
+        *p.preview.lock().await = preview;
         let mut starting = StartingProcess(Some(p.clone()));
         let state = match p.request(json!({"type":"get_state"})).await {
             Ok(v) => v,
@@ -1432,10 +1450,10 @@ fn rewind_session(file: &Path, thread: &str, user_item: Option<&str>, leaf: Opti
     Ok(previous)
 }
 
-const WORK_PROMPT: &str = "You are doing knowledge work in the selected space. Use ask_user when you need clarification or a user decision; do not assume an answer. Plan first with a Markdown checklist (- [ ] step); update it with - [x] as you progress. Keep outputs in outputs/ unless told otherwise. In Ask mode, ask before deleting or overwriting user files outside outputs/. Full access authorizes workspace edits and shell commands without extra confirmation; read-only mode permits no writes. Never write outside this space; extra folders are read-only. Submit tools directly; taucode enforces their approval rules. Do not use ask_user to request tool permission. Shell commands must respect these same boundaries. Use the bundled document skills and TAUCODE_WORK_PYTHON; if unavailable explain that document libraries are unavailable and offer Markdown/CSV instead. Summarize what was produced with relative file paths. Do not schedule recurring tasks.";
+const WORK_PROMPT: &str = "You are doing knowledge work in the selected space. Use ask_user when you need clarification or a user decision; do not assume an answer. Plan first with a Markdown checklist (- [ ] step); update it with - [x] as you progress. Keep outputs in outputs/ unless told otherwise. In Ask mode, ask before deleting or overwriting user files outside outputs/. Full access authorizes workspace edits and shell commands without extra confirmation; read-only mode permits no writes. Never write outside this space; extra folders are read-only. Submit tools directly; taucode enforces their approval rules. Do not use ask_user to request tool permission. Shell commands must respect these same boundaries. Use preview_server for local preview servers, bound to 127.0.0.1 with a foreground command; do not detach servers with shell backgrounding, nohup, or daemon mode. Inspect its status/logs and verify readiness in the browser. Taucode keeps previews after completion and provides Stop/Restart controls. Use the bundled document skills and TAUCODE_WORK_PYTHON; if unavailable explain that document libraries are unavailable and offer Markdown/CSV instead. Summarize what was produced with relative file paths. Do not schedule recurring tasks.";
 fn work_profile(command: &mut Command, source: &Path, python: Option<&Path>) {
     command.env("TAUCODE_WORK", "1")
-        .args(["--no-skills", "--no-context-files", "--no-prompt-templates", "--tools", "read,write,edit,ls,find,grep,bash,subagent,ask_user,mcp__*", "--append-system-prompt", WORK_PROMPT])
+        .args(["--no-skills", "--no-context-files", "--no-prompt-templates", "--tools", "read,write,edit,ls,find,grep,bash,subagent,ask_user,preview_server,mcp__*", "--append-system-prompt", WORK_PROMPT])
         .arg("--skill").arg(source.join("skills"));
     if let Some(python) = python { command.env("TAUCODE_WORK_PYTHON", python); }
 }

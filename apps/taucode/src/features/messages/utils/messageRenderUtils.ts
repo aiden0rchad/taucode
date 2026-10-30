@@ -411,6 +411,7 @@ export function describeTool(item: Extract<ConversationItem, { kind: "tool" }>):
   }
   const path = stripRange(firstStringField(args, ["path", "file", "filename", "file_path"]));
   const lower = name.toLowerCase();
+  if (lower === "preview_server") return { verb: args?.action === "start" ? "Started preview" : args?.action === "stop" ? "Stopped preview" : "Checked previews", target: firstStringField(args, ["label"]), category: "command" };
   if (lower === "subagent" || lower === "task") return { verb: "Ran sub-agent", target: firstStringField(args, ["agent", "description"]), category: "agent" };
   if (/codegraph|explore/.test(lower)) return { verb: "Explored code", target: firstStringField(args, ["query"]), category: "search" };
   if (lower === "read" || lower.endsWith("read_file") || lower === "view") return { verb: "Read", target: basename(path) || path, category: "read" };

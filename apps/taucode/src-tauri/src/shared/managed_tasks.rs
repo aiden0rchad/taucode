@@ -1,4 +1,4 @@
-//! Commands explicitly launched by the user. This registry never adopts external processes.
+//! Commands launched by the user or an approved Work tool. Never adopts external processes.
 use std::{collections::HashMap, path::{Path, PathBuf}, process::Stdio, sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Duration};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -30,7 +30,14 @@ pub(crate) struct ManagedTask {
     urls: Vec<String>,
 }
 
+#[derive(Clone, Default)]
+pub(crate) struct TaskRuntime {
+    pub guard: Option<(PathBuf, PathBuf)>,
+    pub env: Option<Vec<(String, String)>>,
+}
+
 struct Task {
+    runtime: TaskRuntime,
     value: Mutex<ManagedTask>,
     stop: Mutex<Option<oneshot::Sender<()>>>,
     finished: watch::Sender<bool>,
@@ -101,58 +108,62 @@ impl ManagedTasks {
         }
         let path = workspaces.lock().await.get(&workspace_id)
             .map(|w| PathBuf::from(&w.path)).ok_or("Workspace not found")?;
-        match action.as_str() {
+        let cwd = if matches!(action.as_str(), "start" | "restart") {
+            if !app_settings.lock().await.features().terminal { return Err("Enable Terminal in Settings → Features".into()); }
+            let cwd = tokio::fs::canonicalize(&path).await.map_err(|e| format!("Workspace is unavailable: {e}"))?;
+            let session = sessions.lock().await.get(&workspace_id).cloned().ok_or("Workspace not connected")?;
+            let response = tokio::time::timeout(Duration::from_secs(15), session.send_request_for_workspace(
+                &workspace_id, "thread/read", json!({"threadId":thread_id,"excludeTurns":true})
+            )).await.map_err(|_| "Session validation timed out")??;
+            let thread = response.pointer("/result/thread").or_else(|| response.get("thread")).ok_or("Session not found")?;
+            validate_session(&cwd, &thread_id, thread).await?
+        } else { path };
+        self.request_owned(&workspace_id, &thread_id, &cwd, &action, params, TaskRuntime::default()).await
+    }
+
+    /// Caller must resolve the owned session and enforce its current access policy.
+    pub(crate) async fn request_owned(&self, workspace: &str, thread: &str, cwd: &Path, action: &str, params: Value, runtime: TaskRuntime) -> Result<Value, String> {
+        if workspace.is_empty() || thread.is_empty() { return Err("A workspace and session are required".into()); }
+        match action {
             "list" => (),
             "start" | "restart" => {
-                if !app_settings.lock().await.features().terminal {
-                    return Err("Enable Terminal in Settings → Features".into());
-                }
-                let (command, label) = if action == "restart" {
-                    let task = self.find(&workspace_id, &thread_id, &params).await?;
+                let (command, label, runtime) = if action == "restart" {
+                    let task = self.find(workspace, thread, &params).await?;
                     let value = task.value.lock().await;
                     if value.status == "running" { return Err("Stop the task before restarting it".into()); }
-                    (value.command.clone(), value.label.clone())
+                    (value.command.clone(), value.label.clone(), task.runtime.clone())
                 } else {
-                    (params["command"].as_str().ok_or("Command is required")?.to_string(),
-                     params["label"].as_str().unwrap_or("").to_string())
+                    (params["command"].as_str().ok_or("Command is required")?.to_string(), params["label"].as_str().unwrap_or("").to_string(), runtime)
                 };
-                validate_command(&command)?;
                 if label.len() > 256 { return Err("Task name is too long".into()); }
-                let cwd = tokio::fs::canonicalize(&path).await.map_err(|e| format!("Workspace is unavailable: {e}"))?;
+                let cwd = tokio::fs::canonicalize(cwd).await.map_err(|e| format!("Workspace is unavailable: {e}"))?;
                 if !cwd.is_dir() { return Err("Workspace is not a directory".into()); }
-                // A Codex connection can address sessions outside its workspace. Verify the
-                // returned session's real cwd before giving a command that workspace's scope.
-                let session = sessions.lock().await.get(&workspace_id).cloned().ok_or("Workspace not connected")?;
-                let response = tokio::time::timeout(Duration::from_secs(15), session.send_request_for_workspace(
-                    &workspace_id, "thread/read", json!({"threadId":thread_id,"excludeTurns":true})
-                )).await.map_err(|_| "Session validation timed out")??;
-                let thread = response.pointer("/result/thread").or_else(|| response.get("thread")).ok_or("Session not found")?;
-                let cwd = validate_session(&cwd, &thread_id, thread).await?;
-                self.start(&workspace_id, &thread_id, &cwd, command, label).await?;
+                self.start_with_runtime(workspace, thread, &cwd, command, label, runtime).await?;
             }
-            "stop" => {
-                let task = self.find(&workspace_id, &thread_id, &params).await?;
-                let mut finished = task.finished.subscribe();
-                if let Some(stop) = task.stop.lock().await.take() { let _ = stop.send(()); }
-                if !*finished.borrow() {
-                    tokio::time::timeout(Duration::from_secs(10), finished.wait_for(|done| *done))
-                        .await.map_err(|_| "Task is still stopping")?.map_err(|e| e.to_string())?;
-                }
-            }
+            "stop" => { let task = self.find(workspace, thread, &params).await?; stop(&task).await?; }
             "clearFinished" => {
                 let mut tasks = self.tasks.lock().await;
                 let mut remove = Vec::new();
                 for (id, task) in tasks.iter() {
                     let value = task.value.lock().await;
-                    if value.workspace_id == workspace_id && value.thread_id == thread_id && value.status != "running" {
-                        remove.push(id.clone());
-                    }
+                    if value.workspace_id == workspace && value.thread_id == thread && value.status != "running" { remove.push(id.clone()); }
                 }
                 for id in remove { tasks.remove(&id); }
             }
             _ => return Err("Unknown managed task action".into()),
         }
-        serde_json::to_value(self.list(&workspace_id, &thread_id).await).map_err(|e| e.to_string())
+        serde_json::to_value(self.list(workspace, thread).await).map_err(|e| e.to_string())
+    }
+
+    pub(crate) async fn stop_session(&self, workspace: &str, thread: &str) -> Result<(), String> {
+        let tasks: Vec<_> = self.tasks.lock().await.values().cloned().collect();
+        for task in tasks {
+            let value = task.value.lock().await;
+            let owned = value.workspace_id == workspace && value.thread_id == thread;
+            drop(value);
+            if owned { stop(&task).await?; }
+        }
+        Ok(())
     }
 
     async fn find(&self, workspace: &str, thread: &str, params: &Value) -> Result<Arc<Task>, String> {
@@ -179,7 +190,11 @@ impl ManagedTasks {
         values
     }
 
+    #[cfg(test)]
     async fn start(&self, workspace: &str, thread: &str, cwd: &Path, command: String, label: String) -> Result<Arc<Task>, String> {
+        self.start_with_runtime(workspace, thread, cwd, command, label, TaskRuntime::default()).await
+    }
+    async fn start_with_runtime(&self, workspace: &str, thread: &str, cwd: &Path, command: String, label: String, runtime: TaskRuntime) -> Result<Arc<Task>, String> {
         validate_command(&command)?;
         let mut tasks = self.tasks.lock().await;
         if self.closing.load(Ordering::Acquire) { return Err("Background tasks are shutting down".into()); }
@@ -189,19 +204,29 @@ impl ManagedTasks {
         if running >= 16 { return Err("At most 16 background tasks can run at once".into()); }
         #[cfg(unix)]
         let mut process = {
-            let mut process = tokio_command(std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()));
-            process.arg("-lc").arg(&command);
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+            let mut process = if let Some((node, script)) = &runtime.guard {
+                let mut process = tokio_command(node);
+                process.arg(script).arg(std::process::id().to_string()).arg(&shell).arg(&command).arg("--shared-group");
+                process
+            } else {
+                let mut process = tokio_command(shell);
+                process.arg("-lc").arg(&command);
+                process
+            };
             process.process_group(0);
             process
         };
         #[cfg(windows)]
         let mut process = { let mut process = tokio_command("cmd.exe"); process.args(["/D", "/S", "/C", &command]); process };
+        if let Some(env) = &runtime.env { process.env_clear().envs(env.iter().cloned()); }
         process.current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
         let mut child = process.spawn().map_err(|e| format!("Could not start task: {e}"))?;
         let (stop_tx, stop_rx) = oneshot::channel();
         let (finished, _) = watch::channel(false);
         let id = uuid::Uuid::new_v4().to_string();
         let task = Arc::new(Task {
+            runtime,
             value: Mutex::new(ManagedTask {
                 id: id.clone(), workspace_id: workspace.into(), thread_id: thread.into(),
                 label: if label.trim().is_empty() { command.lines().next().unwrap_or(&command).chars().take(100).collect() } else { label.trim().into() },
@@ -216,6 +241,16 @@ impl ManagedTasks {
         *task.runner.lock().unwrap() = Some(runner);
         Ok(task)
     }
+}
+
+async fn stop(task: &Task) -> Result<(), String> {
+    let mut finished = task.finished.subscribe();
+    if let Some(stop) = task.stop.lock().await.take() { let _ = stop.send(()); }
+    if !*finished.borrow() {
+        tokio::time::timeout(Duration::from_secs(10), finished.wait_for(|done| *done))
+            .await.map_err(|_| "Task is still stopping")?.map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 async fn validate_session(workspace: &Path, thread_id: &str, thread: &Value) -> Result<PathBuf, String> {

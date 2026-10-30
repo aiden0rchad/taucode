@@ -37,8 +37,8 @@ if args.session_dir:
 
 
 def record(request):
-    if args.session_dir:
-        with session.with_suffix(".requests").open("a") as output:
+    if args.session_dir or os.environ.get("FAKE_PI_REQUESTS"):
+        with pathlib.Path(os.environ.get("FAKE_PI_REQUESTS") or session.with_suffix(".requests")).open("a") as output:
             output.write(json.dumps(request) + "\n")
 
 

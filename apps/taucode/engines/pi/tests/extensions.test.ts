@@ -209,3 +209,35 @@ test("subagents single, parallel, chain, concurrency, per-run limit, depth and a
   assert.equal((await hanging).details.results[0].status, "failed");
   await assert.rejects(tool.execute("invalid", { ...task, agentScope: "project" }, undefined, undefined, ctx), /directories are disabled/);
 });
+
+test("Work preview starts share bash policy; cleanup stays available without rewrapping commands", async () => {
+  const keys = ["PI_CODING_AGENT_DIR", "TAUCODE_SESSION_KEY", "TAUCODE_WORK", "TAUCODE_CHAT", "TAUCODE_OMP", "TAUCODE_SUBAGENT_DEPTH"];
+  const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  try {
+    keys.forEach(key => delete process.env[key]);
+    Object.assign(process.env, { PI_CODING_AGENT_DIR: home, TAUCODE_SESSION_KEY: "preview", TAUCODE_WORK: "1" });
+    const file = join(home, "taucode/threads/preview.json");
+    const write = (accessMode: string) => writeFileSync(file, JSON.stringify({ kind: "work", workspace: cwd, accessMode, sessionAllow: [] }));
+    let handler: any;
+    gate({ on: (name: string, fn: any) => { if (name === "tool_call") handler = fn; } } as any);
+    const event = { toolName: "preview_server", toolCallId: "preview", input: { action: "start", command: "python3 -m http.server 0 --bind 127.0.0.1" } };
+    let prompts = 0;
+    const ctx = { cwd, hasUI: true, ui: { select: async (title: string, options: string[]) => {
+      prompts++;
+      assert.deepEqual(options, ["Allow", "Block"]);
+      assert.deepEqual(JSON.parse(title.slice("taucode:approval:".length)), { toolCallId: "preview", tool: "bash", cwd, command: event.input.command });
+      return "Allow";
+    } } };
+    write("ask"); assert.equal(await handler(event, ctx), undefined); assert.equal(prompts, 1);
+    write("full-access"); assert.equal(await handler(event, ctx), undefined); assert.equal(prompts, 1);
+    assert.equal(event.input.command, "python3 -m http.server 0 --bind 127.0.0.1");
+    write("read-only"); assert.equal((await handler(event, ctx)).block, true);
+    for (const action of ["list", "stop"]) assert.equal(await handler({ ...event, input: { action, id: "owned" } }, ctx), undefined);
+    write("ask");
+    assert.equal((await handler(event, { ...ctx, ui: { select: async () => { write("read-only"); return "Allow"; } } })).block, true);
+    write("full-access"); process.env.TAUCODE_SUBAGENT_DEPTH = "1";
+    assert.equal((await handler(event, ctx)).block, true);
+    delete process.env.TAUCODE_SUBAGENT_DEPTH; delete process.env.TAUCODE_WORK;
+    assert.equal((await handler(event, ctx)).block, true);
+  } finally { for (const key of keys) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; } }
+});

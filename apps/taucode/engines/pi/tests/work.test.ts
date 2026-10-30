@@ -65,3 +65,24 @@ test("Work questions use pi UI and cannot run in non-interactive children", asyn
   assert.equal(result.content[0].text, "January");
   await assert.rejects(tool.execute("question", { question: "Which month?" }, undefined, undefined, { ...ctx, hasUI: false }), /parent task/);
 });
+
+test("preview servers use the host bridge, report errors and honor cancellation", async () => {
+  const work = (await import("../extensions/taucode-work.ts")).default;
+  const tools = new Map<string, any>();
+  work({ on: () => {}, registerTool: (tool: any) => tools.set(tool.name, tool) } as any);
+  const preview = tools.get("preview_server");
+  const params = { action: "start", command: "python3 -m http.server 0 --bind 127.0.0.1" };
+  const tasks = [{ id: "owned", status: "running" }];
+  const ctx = { hasUI: true, ui: { select: async (title: string, options: string[]) => {
+    assert.deepEqual(JSON.parse(title.slice("taucode:preview:".length)), params);
+    assert.deepEqual(options, ["Continue"]);
+    return JSON.stringify({ tasks });
+  } } };
+  assert.deepEqual((await preview.execute("p", params, undefined, undefined, ctx)).details.tasks, tasks);
+  await assert.rejects(preview.execute("p", params, undefined, undefined, { ...ctx, hasUI: false }), /parent task/);
+  for (const value of [undefined, JSON.stringify({ error: "Read-only task" })]) {
+    await assert.rejects(preview.execute("p", params, undefined, undefined, { ...ctx, ui: { select: async () => value } }), /cancel|Read-only/i);
+  }
+  const abort = new AbortController(); abort.abort();
+  await assert.rejects(preview.execute("p", params, abort.signal, undefined, ctx), /cancel/i);
+});

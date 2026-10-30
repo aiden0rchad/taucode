@@ -38,7 +38,13 @@ export default function (pi: ExtensionAPI) {
     // OMP dispatches this write through the inner MCP tool's tool_call hook.
     // Apply connector policy there once, rather than prompting for a filesystem write first.
     if (process.env.TAUCODE_OMP === "1" && event.toolName === "write" && typeof event.input?.path === "string" && event.input.path.startsWith("xd://mcp__")) return;
-    if (!["bash", "write", "edit", ...(process.env.TAUCODE_WORK === "1" ? ["read", "ls", "find", "grep"] : [])].includes(event.toolName) && !event.toolName.startsWith("mcp__")) return;
+    const preview = event.toolName === "preview_server";
+    if (preview) {
+      if (process.env.TAUCODE_WORK !== "1" || process.env.TAUCODE_SUBAGENT_DEPTH || !ctx.hasUI) return { block: true, reason: "Preview servers belong to the parent Work task" };
+      if (event.input.action !== "start") return;
+      if (typeof event.input.command !== "string" || !event.input.command.trim()) return { block: true, reason: "A preview command is required" };
+    }
+    if (!preview && !["bash", "write", "edit", ...(process.env.TAUCODE_WORK === "1" ? ["read", "ls", "find", "grep"] : [])].includes(event.toolName) && !event.toolName.startsWith("mcp__")) return;
     const home = process.env.PI_CODING_AGENT_DIR!;
     const session = process.env.TAUCODE_SESSION_KEY;
     if (!home || !session || !/^[\w-]+$/.test(session)) return { block: true, reason: "Missing taucode thread access policy" };
@@ -59,11 +65,11 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     const input = event.input as Record<string, unknown>;
-    const call = { tool: event.toolName, cwd: ctx.cwd, command: input.command as string, path: input.path as string };
+    const call = { tool: preview ? "bash" : event.toolName, cwd: ctx.cwd, command: input.command as string, path: input.path as string };
     const child = process.env.TAUCODE_SUBAGENT_DEPTH ? { workspace: process.env.TAUCODE_WORKSPACE!, toolAccess: process.env.TAUCODE_TOOL_ACCESS ?? "read-only" } : undefined;
     const decision = decide(read(), call, home, ctx.hasUI, child);
     if (decision === "allow") {
-      if (call.tool === "bash") input.command = ownedCommand(safeReadOnlyCommand(call.command));
+      if (call.tool === "bash" && !preview) input.command = ownedCommand(safeReadOnlyCommand(call.command));
       return;
     }
     if (decision === "block") return { block: true, reason: "Blocked by taucode access policy (read-only, protected path, or no interactive approval)" };
@@ -80,6 +86,6 @@ export default function (pi: ExtensionAPI) {
       renameSync(temp, file);
     }
     if (answer !== "Allow" && answer !== "Allow for session") return { block: true, reason: "Blocked by user" };
-    if (call.tool === "bash") input.command = ownedCommand(safeReadOnlyCommand(call.command));
+    if (call.tool === "bash" && !preview) input.command = ownedCommand(safeReadOnlyCommand(call.command));
   });
 }

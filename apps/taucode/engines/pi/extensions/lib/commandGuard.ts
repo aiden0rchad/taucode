@@ -16,11 +16,12 @@ export function ownedCommand(command: string) {
 if (process.argv[1] === script) {
   const owner = Number(process.argv[2]), shell = process.argv[3], command = process.argv[4];
   if (!Number.isSafeInteger(owner) || owner <= 1 || !shell || command === undefined || process.platform === "win32") process.exit(2);
-  const child = spawn(shell, ["-c", command], { detached: true, stdio: "inherit" });
+  const sharedGroup = process.argv[5] === "--shared-group";
+  const child = spawn(shell, ["-c", command], { detached: !sharedGroup, stdio: "inherit" });
   const parent = process.ppid;
   let stopping = false;
   const kill = (signal: NodeJS.Signals) => {
-    if (child.pid) try { process.kill(-child.pid, signal); } catch (error) {
+    if (child.pid) try { process.kill(-(sharedGroup ? process.pid : child.pid), signal); } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ESRCH") console.error("Command cleanup failed:", error);
     }
   };

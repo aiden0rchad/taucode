@@ -147,7 +147,7 @@ No account enrollment or payment was performed.
 ## Remaining follow-ups
 
 - Set up and verify Apple-issued signing across rebuilds.
-- Give agent-started preview servers visible lifecycle controls and cleanup.
+- Native acceptance for agent-started preview servers and their lifecycle controls.
 - Native acceptance for the Work agent panel and shorter default titles below.
 - Investigate an earlier process exit when evaluation attempted to create an empty
   native tab. The new no-open-page guard avoids that invalid call; the underlying
@@ -191,4 +191,45 @@ resized the side panel to 320px, switched tasks and returned with the original d
 intact. Evidence: `taucode-work-agents-preview.png`. This is fixture UI evidence,
 not a live model run. The signed native app is still the earlier evaluation build;
 native acceptance and cloud/local benchmarks remain pending macOS access/Keychain
-approval. Agent-started preview-server controls remain outstanding.
+approval. Preview-server controls are implemented below; native acceptance remains pending.
+
+
+## Managed Work previews
+
+The parent Work agent uses `preview_server` to start, list and stop a foreground
+preview command in its own space. Start shares the bash access policy: Ask shows
+an approval, Full access permits ordinary commands, and read-only blocks starts.
+The host rechecks Work/Terminal availability and current task access. Chat and
+child agents cannot use this tool. The host resolves workspace/thread/cwd itself;
+arguments cannot select another task. The preview inherits the filtered Work
+environment, isolated home, bundled Python and Node PATH, without provider keys.
+
+Local tasks expose Previews in the side panel and View previews in their Task
+inspector. Controls show detected URLs, elapsed time, status and bounded logs,
+with Stop, Restart and Clear finished. Opening a URL uses the browser panel;
+a URL printed in output is not a readiness check. Read-only or disabled features
+prevent restarting but retain cleanup. Task switching preserves composer drafts
+and rejects old responses. Imported and queued tasks have no managed previews.
+
+The app and daemon share the existing managed-task registry. Previews survive
+turn completion and idle engine shutdown; Stop task stops that task's previews,
+and normal host shutdown joins all managed process cleanup. On POSIX, a guard in
+the owned process group also terminates it if the host crashes, including stubborn
+children. Windows retains normal managed-task cleanup; crash cleanup there is not
+verified. External processes are never adopted or killed by port number. History
+lasts until backend restart; servers are not automatically relaunched.
+
+Validation includes an actual loopback HTTP server through the host bridge,
+secret-redacted tool results, late requests after cancellation, task isolation,
+restart, engine shutdown survival, policy/feature changes, unchanged Work state,
+and host-crash/process-group cleanup. Frontend: 1,817 tests / 226 files; engine
+extensions: 49 tests. Rust: 57 Pi tests passed (one ignored), 12 Work tests and
+9 managed-task tests passed. TypeScript, changed-file ESLint and
+`cargo check --all-targets` passed. Browser-fixture
+computer use exercised Stop, retained logs, Restart, Clear finished and the URL
+link. At 320px, the panel has no horizontal overflow and Stop clears the status
+text by 8px. Evidence: `taucode-work-previews.png`.
+
+The native app has not been rebuilt/relaunched for this batch while macOS access
+and Keychain approval remain unresolved. Signed-app acceptance and cloud/local
+model benchmarks remain open; the fixture screenshot is not a live model run.

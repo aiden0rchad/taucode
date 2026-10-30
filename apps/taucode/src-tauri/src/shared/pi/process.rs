@@ -24,6 +24,9 @@ pub(super) struct Process {
     pub running: AtomicBool,
     cancelling: AtomicBool,
     pub extensions: Mutex<std::collections::HashSet<String>>,
+    pub preview: Mutex<Option<Arc<super::preview::Preview>>>,
+    preview_operation: Mutex<()>,
+    preview_generation: AtomicU64,
     child: Mutex<Child>,
     stdin: Mutex<Option<ChildStdin>>,
     pending: Mutex<HashMap<String, oneshot::Sender<Result<Value, String>>>>,
@@ -67,6 +70,9 @@ impl Process {
             running: AtomicBool::new(false),
             cancelling: AtomicBool::new(false),
             extensions: Mutex::new(Default::default()),
+            preview: Mutex::new(None),
+            preview_operation: Mutex::new(()),
+            preview_generation: AtomicU64::new(0),
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),
             pending: Mutex::new(HashMap::new()),
@@ -178,6 +184,34 @@ impl Process {
         }
         if m["type"] == "extension_ui_request" {
             let method = m["method"].as_str().unwrap_or("");
+            if method == "select" && m["title"].as_str().is_some_and(|title| title.starts_with("taucode:preview:")) {
+                let owner = self.clone();
+                let generation = self.preview_generation.load(Ordering::SeqCst);
+                tokio::spawn(async move {
+                    let _operation = owner.preview_operation.lock().await;
+                    if generation != owner.preview_generation.load(Ordering::SeqCst) || owner.cancelling.load(Ordering::SeqCst) {
+                        let _ = owner.write(json!({"type":"extension_ui_response","id":m["id"],"cancelled":true})).await;
+                        return;
+                    }
+                    let preview = owner.preview.lock().await.clone();
+                    let result = match &preview {
+                        Some(preview) if !owner.cancelling.load(Ordering::SeqCst) => match serde_json::from_str(m["title"].as_str().unwrap().trim_start_matches("taucode:preview:")) {
+                            Ok(params) => preview.request(params).await,
+                            Err(error) => Err(error.to_string()),
+                        },
+                        _ => Err("Preview request is unavailable or cancelled".into()),
+                    };
+                    if generation != owner.preview_generation.load(Ordering::SeqCst) || owner.cancelling.load(Ordering::SeqCst) || !owner.alive.load(Ordering::SeqCst) {
+                        if let Some(preview) = preview { let _ = preview.stop().await; }
+                        let _ = owner.write(json!({"type":"extension_ui_response","id":m["id"],"cancelled":true})).await;
+                    } else {
+                        let value = match result { Ok(value) => json!({"tasks":value}), Err(error) => json!({"error":error}) };
+                        let text = redact(value.to_string(), preview.as_ref().map(|p| p.secrets.as_slice()).unwrap_or_default());
+                        let _ = owner.write(json!({"type":"extension_ui_response","id":m["id"],"value":text})).await;
+                    }
+                });
+                return;
+            }
             if method == "setStatus" && matches!(m["statusKey"].as_str(), Some("taucode-verification" | "taucode-execution-limit")) {
                 if let Some(record) = m["statusText"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()) {
                     let kind = if m["statusKey"] == "taucode-execution-limit" { "taucode_execution_limit" } else { "taucode_verification" };
@@ -286,6 +320,11 @@ impl Process {
         if value["type"] == "prompt" { self.cancelling.store(false, Ordering::SeqCst); }
         if value["type"] == "abort" {
             self.cancelling.store(true, Ordering::SeqCst);
+            self.preview_generation.fetch_add(1, Ordering::SeqCst);
+            {
+                let _operation = self.preview_operation.lock().await;
+                if let Some(preview) = self.preview.lock().await.clone() { preview.stop().await?; }
+            }
             self.translator.lock().await.apply(&json!({"type":"abort_requested"}));
             // Pi waits for tool hooks to settle before acknowledging abort. An
             // unanswered extension dialog otherwise holds that wait forever.
