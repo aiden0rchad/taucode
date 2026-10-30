@@ -233,3 +233,28 @@ text by 8px. Evidence: `taucode-work-previews.png`.
 The native app has not been rebuilt/relaunched for this batch while macOS access
 and Keychain approval remain unresolved. Signed-app acceptance and cloud/local
 model benchmarks remain open; the fixture screenshot is not a live model run.
+
+## Native tab creation failure handling — 2026-10-30
+
+The retained October 26 `codex-monitor` crash report points to the already-fixed
+KVO/class-replacement issue in `set_bounds`. It does not establish the cause of
+the later empty-tab exit. Retained app logs contain no useful failure details;
+browser diagnostics only recorded generic invocation failures.
+
+Code review found a separate recoverable-error bug: failed native-view creation
+left the tab loading and eligible for recreation on each placement/poll. Creation
+now settles the tab with a Retry error, removes partial view bookkeeping and
+closes any partial child. Polling does not retry errored tabs; explicit Reload or
+navigation can retry. Late page-load callbacks from the failed creation cannot
+erase that error or overwrite a retry. Diagnostics record only the creation
+stage (configuration/window/webview/accessibility/layout/navigation), without
+URLs or platform error text.
+
+Regression checks cover failure-state cleanup, unrelated/closed tab preservation,
+stale load callbacks and the UI Retry action: 36 browser backend tests and 18
+browser UI tests passed, along with TypeScript, changed-file ESLint and
+`cargo check --all-targets`. The existing AppKit/KVO geometry,
+hit-test and cleanup integration test also passed with unshown fixture windows.
+These checks do not reproduce the reported native process exit. A signed-app
+creation/retry smoke test and investigation of that exit remain open; computer
+use still reports the Mac locked. No additional rebuild/relaunch was performed.

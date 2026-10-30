@@ -218,3 +218,18 @@ it("keeps composer focus after adding an annotated image to chat", async () => {
   expect(screen.queryByRole("group", { name: "Browser annotations" })).toBeNull();
   expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Chat draft" }));
 });
+
+it("keeps a failed native tab retryable without showing it as still loading", async () => {
+  render(<BrowserPane onClose={vi.fn()} onTakeOver={vi.fn()} />);
+  await waitFor(() => expect(subscribeBrowser).toHaveBeenCalled());
+  const failed = { id: "two", title: "New tab", url: "about:blank", loading: false, ready: false, error: "Could not open this tab: Main window unavailable. Choose Retry to try again." };
+  act(() => receive({ ...state, backend: "native", active: "two", tabs: [...state.tabs, failed] }));
+  expect(screen.getByRole("alert").textContent).toContain("Main window unavailable");
+  expect(screen.queryByRole("button", { name: "Stop loading" })).toBeNull();
+  expect(screen.getByRole("tab", { name: "Example" })).toBeTruthy();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Retry" })));
+  expect(browserRequest).toHaveBeenCalledWith({ action: "reload" });
+  act(() => receive({ ...state, backend: "native", active: "two", tabs: [...state.tabs, { ...failed, ready: true, error: undefined }] }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("tab", { name: "New tab" }).getAttribute("aria-selected")).toBe("true");
+});
