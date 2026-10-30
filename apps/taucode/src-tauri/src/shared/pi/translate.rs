@@ -646,6 +646,7 @@ impl Translator {
             if m["role"] == "taucodeSubagentResult" {
                 if t.find(m["toolCallId"].as_str().unwrap_or("")).is_some_and(|item| item["type"] == "collabAgentToolCall")
                     && super::agents::results(&m["result"]["details"]).is_some() {
+                    if m["crashed"] == true { t.failure = Some("Execution interrupted before completion. Recovered the last saved agent progress.".into()); }
                     t.apply(&json!({"type":"tool_execution_end","replay":true,"toolCallId":m["toolCallId"],"result":m["result"]}));
                     t.aborted = true;
                 }
@@ -661,7 +662,7 @@ impl Translator {
             }
             if m["role"] == "user" {
                 let queued = m["timestamp"].as_u64().unwrap_or(u64::MAX) < end;
-                if t.active && !queued && last_stop != "toolUse" {
+                if t.active && !queued && (last_stop != "toolUse" || t.aborted) {
                     t.apply(&json!({"type":"agent_settled","aborted":t.aborted}));
                 }
                 t.apply(&json!({"type":"agent_start"}));
@@ -682,6 +683,14 @@ impl Translator {
             }
             if m["role"] == "toolResult" {
                 t.apply(&json!({"type":"tool_execution_end","replay":true,"toolCallId":m["toolCallId"],"toolName":m["toolName"],"result":m,"isError":m["isError"],"durationMs":m["durationMs"]}));
+            }
+        }
+        if last_stop == "toolUse" {
+            t.aborted = true;
+            if let Some(turn) = t.turns.last_mut() {
+                for item in turn["items"].as_array_mut().into_iter().flatten() {
+                    if item.get("agentsTree").is_some() { super::agents::settle(&mut item["agentsTree"], "aborted", None); }
+                }
             }
         }
         t.apply(&json!({"type":"agent_settled","aborted":t.aborted}));

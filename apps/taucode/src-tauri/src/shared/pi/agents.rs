@@ -2,6 +2,25 @@ use super::translate::text;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
+pub(super) fn checkpoint(file: &std::path::Path, call: &str) -> Option<Value> {
+    use sha2::{Digest, Sha256};
+    let directory = file.with_file_name(format!("{}.agents", file.file_name()?.to_str()?));
+    let bytes = std::fs::read(directory.join(format!("{:x}.json", Sha256::digest(call.as_bytes())))).ok()?;
+    let saved: Value = serde_json::from_slice(&bytes).ok()?;
+    if saved["version"] != 1 || saved["toolCallId"] != call || saved["savedAt"].as_i64()? <= 0 { return None; }
+    let mut result = saved["result"].clone();
+    let nodes = result["details"]["results"].as_array_mut()?;
+    if nodes.is_empty() || nodes.iter().any(|n| !n.is_object()) { return None; }
+    for node in nodes {
+        if matches!(node["status"].as_str(), Some("running" | "pending")) {
+            node["status"] = json!("aborted");
+            node["stopReason"] = json!("aborted");
+            node["endedAt"] = Value::Null;
+        }
+    }
+    Some(json!({"role":"taucodeSubagentResult","crashed":true,"toolCallId":call,"result":result}))
+}
+
 pub(super) fn results(details: &Value) -> Option<&Vec<Value>> {
     let details = if details["xdev"]["tool"] == "subagent" { &details["xdev"]["inner"] } else { details };
     details["results"].as_array()

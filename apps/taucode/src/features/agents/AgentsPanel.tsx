@@ -62,7 +62,7 @@ export function AgentsPanel({ onSelect }: { onSelect: (tab: PanelTabId) => void 
     <button className="agent-node" aria-label={`View ${node.agent || "agent"} transcript, ${node.status}`} onClick={() => setSelected(node)}>
       <span className={`agent-status ${node.status}`} aria-label={node.status} />
       <span><strong>{node.agent || "Agent"}</strong> <small title={formatModelRef(settings, node.model).title}>{node.model ? formatModelRef(settings, node.model).name : ""}</small>
-        <span className="agent-detail">{node.status} · {node.startedAt ? `${Math.max(0, Math.floor(((node.endedAt ?? now) - node.startedAt) / 1000))}s` : "elapsed unavailable"}</span>
+        <span className="agent-detail">{node.status} · {node.startedAt && (node.endedAt != null || node.status === "running") ? `${Math.max(0, Math.floor(((node.endedAt ?? now) - node.startedAt) / 1000))}s` : "elapsed unavailable"}</span>
         <span className="agent-detail">{node.usage ? `${(node.usage.input ?? 0) + (node.usage.output ?? 0) + (node.usage.cacheRead ?? 0) + (node.usage.cacheWrite ?? 0)} tokens · ${node.usage.cost == null ? "cost unavailable" : `$${node.usage.cost.toFixed(4)}`}` : "Usage unavailable"}</span>
         {node.task && <span className="agent-detail agent-preview" title={node.task}>{node.task}</span>}
         {node.lastMessage && <span className="agent-detail agent-preview" title={node.lastMessage}>{node.lastMessage}</span>}

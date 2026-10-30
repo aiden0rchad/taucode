@@ -1222,8 +1222,15 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
         next = e["parentId"].as_str();
     }
     branch.reverse();
+    let finished_calls: std::collections::HashSet<_> = branch.iter().filter_map(|entry| {
+        if entry["type"] == "message" && entry["message"]["role"] == "toolResult" {
+            entry["message"]["toolCallId"].as_str()
+        } else if entry["customType"] == "taucode-subagent-result" {
+            entry["data"]["toolCallId"].as_str()
+        } else { None }
+    }).collect();
     let mut messages = vec![];
-    for entry in branch {
+    for entry in &branch {
         match entry["type"].as_str() {
             Some("message") => {
                 let m = &entry["message"];
@@ -1231,6 +1238,13 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
                     thread["preview"] = json!(translate::text(&m["content"]));
                 }
                 messages.push(m.clone());
+                if m["role"] == "assistant" {
+                    for call in m["content"].as_array().into_iter().flatten().filter(|p| p["type"] == "toolCall").filter_map(|p| p["id"].as_str()) {
+                        if !finished_calls.contains(call) {
+                            if let Some(saved) = agents::checkpoint(file, call) { messages.push(saved); }
+                        }
+                    }
+                }
             }
             Some("model_change") => {
                 let pi = entry["provider"].as_str().unwrap_or("");

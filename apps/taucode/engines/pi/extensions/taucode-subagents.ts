@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { subagentCheckpoint } from "./lib/recovery.ts";
 import { acquireSubagentSlot, adoptSubagentSlot, checkLimits, commandInstructions, commandTargets, createSubagentBudget, inside, releaseSubagentProcessSlots, releaseSubagentSlot, reserveSubagent, resolveTask, type Policy } from "./lib/policy.ts";
 
 const optionalString = Type.Optional(Type.Union([Type.String(), Type.Null()]));
@@ -28,10 +29,21 @@ export default function (pi: ExtensionAPI) {
   const clearBudget = () => { if (turnBudget) rmSync(turnBudget, { recursive: true, force: true }); turnBudget = undefined; };
   const finish = () => { clearBudget(); releaseSubagentSlot(ownSlot); ownSlot = undefined; };
   const waiters = new Set<() => void>();
-  pi.on("session_start", (_event, ctx) => { ctx.ui.setStatus("taucode-subagents", "ready"); });
+  const completedCheckpoints = new Set<ReturnType<typeof subagentCheckpoint>>();
+  let parentWatch: ReturnType<typeof setInterval> | undefined;
+  pi.on("session_start", (_event, ctx) => {
+    ctx.ui.setStatus("taucode-subagents", "ready");
+    if (process.platform !== "win32") {
+      const parent = process.ppid;
+      clearInterval(parentWatch);
+      parentWatch = setInterval(() => {
+        if (process.ppid !== parent) { clearInterval(parentWatch); ctx.abort(); }
+      }, 500).unref();
+    }
+  });
   pi.on("agent_start", () => { count = 0; clearBudget(); });
-  pi.on("agent_end", finish);
-  pi.on("session_shutdown", finish);
+  pi.on("agent_end", () => { finish(); for (const checkpoint of completedCheckpoints) checkpoint.discard(); completedCheckpoints.clear(); });
+  pi.on("session_shutdown", () => { clearInterval(parentWatch); finish(); });
   pi.on("before_agent_start", () => {
     const current: Policy = JSON.parse(readFileSync(join(process.env.PI_CODING_AGENT_DIR!, "taucode/policy.json"), "utf8"));
     const role = Number(process.env.TAUCODE_SUBAGENT_DEPTH ?? 0) === 0 ? "commander" : process.env.TAUCODE_SUBAGENT_ROLE ?? "unknown";
@@ -57,7 +69,8 @@ export default function (pi: ExtensionAPI) {
       if (!tasks.length || tasks.some(task => !task.agent?.trim() || !task.task?.trim())) throw new Error("Provide at least one task with a non-empty agent and task");
       const results: Result[] = tasks.map(task => ({ ...task, exitCode: -1, status: "pending", messages: [], stderr: "", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 } }));
       const snapshot = () => ({ content: [{ type: "text" as const, text: results.map(r => `${r.agent}: ${output(r) || r.status}`).join("\n\n") }], details: { mode, results } });
-      const update = () => onUpdate?.(structuredClone(snapshot()));
+      const checkpoint = subagentCheckpoint(depth === 0 ? ctx.sessionManager?.getSessionFile() : undefined, _id);
+      const update = () => { const result = structuredClone(snapshot()); checkpoint.update(result); onUpdate?.(result); };
       const parentActual = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
       const parent = Object.entries(policy.models ?? {}).find(([, actual]) => actual === parentActual)?.[0] ?? parentActual;
       const thinking = pi.getThinkingLevel?.();
@@ -218,9 +231,11 @@ export default function (pi: ExtensionAPI) {
         }
       } else await Promise.all(results.map(run));
       const result = { ...snapshot(), isError: results.some(r => r.status === "failed") };
+      checkpoint.update(structuredClone(result)); checkpoint.flush();
       // OMP can replace a cancelled tool's result with a generic abort error.
       // Keep one branch-aware recovery entry, outside the model's context.
       if (depth === 0 && signal?.aborted) pi.appendEntry("taucode-subagent-result", { toolCallId: _id, result });
+      completedCheckpoints.add(checkpoint);
       return result;
       } finally {
         if (inheritedSlot && --delegating === 0 && !signal?.aborted) {

@@ -293,12 +293,14 @@ for (const { detached, depth, nested = false } of [{ detached: false, depth: 0 }
     } else writeFileSync(${JSON.stringify(queued)}, 'started');`);
   subagents({ on: (name: string, fn: any) => { events[name] = fn; }, registerTool: (value: any) => { tool = value; }, appendEntry: (customType: string, data: any) => saved.push({ customType, data: structuredClone(data) }) } as any);
   events.agent_start();
-  const ctx = { cwd, model: { provider: "taucode-cloud", id: "strong" } };
+  const sessionFile = join(root, "session.jsonl");
+  const ctx = { cwd, model: { provider: "taucode-cloud", id: "strong" }, sessionManager: { getSessionFile: () => sessionFile } };
   const running = tool.execute("cancel-tree", { tasks: [{ agent: depth ? "enlisted" : "colonel", task: "wait for stop" }, { agent: "major", task: "queued" }] }, controller.signal, undefined, ctx);
   for (let i = 0; i < 150 && !existsSync(ready); i++) await delay(20);
   assert.ok(existsSync(ready), "descendant started and installed its SIGTERM handler");
   pids = JSON.parse(readFileSync(ready, "utf8"));
   assert.ok(!existsSync(queued));
+  assert.equal(existsSync(`${sessionFile}.agents`), depth === 0, "only the root writes crash recovery evidence");
   controller.abort();
   const result = await running;
   assert.equal(result.isError, true);
@@ -323,6 +325,51 @@ for (const { detached, depth, nested = false } of [{ detached: false, depth: 0 }
     assert.equal(readdirSync(join(home, "taucode", name)).filter(name => /^slot-\d+-free$/.test(name)).length, 1, "cancelled descendants release their adopted slots");
   }
   events.agent_end(); events.agent_start();
+  if (depth === 0) assert.equal(readdirSync(`${sessionFile}.agents`).length, 0, "durable completion clears temporary recovery snapshots");
   assert.equal((await tool.execute("recovery", { agent: "major", task: "next turn" }, undefined, undefined, ctx)).isError, false);
   assert.ok(existsSync(queued), "a new turn can use the released concurrency slot");
+});
+
+for (const runner of [process.execPath, new URL("../../omp/node_modules/.bin/bun", import.meta.url).pathname]) test(`a killed commander preserves progress and its orphaned coordinator stops nested commands (${runner})`, { skip: process.platform === "win32" || !existsSync(runner), timeout: 10000 }, async t => {
+  const root = mkdtempSync(join(tmpdir(), "taucode-command-crash-"));
+  const home = join(root, "agent"), cli = join(root, "child.mjs"), ready = join(root, "ready.json"), session = join(root, "session.jsonl");
+  mkdirSync(join(home, "taucode"), { recursive: true });
+  writeFileSync(join(home, "taucode/policy.json"), JSON.stringify(policy));
+  const extension = JSON.stringify(new URL("../extensions/taucode-subagents.ts", import.meta.url).href);
+  writeFileSync(cli, `import subagents from ${extension}; import {spawn} from 'node:child_process'; import {writeFileSync} from 'node:fs';
+    const controller = new AbortController(), events = {}; let tool;
+    subagents({on(n,f){events[n]=f;},registerTool(t){tool=t;}});
+    const ctx={cwd:process.cwd(),model:{provider:'taucode-cloud',id:'mid'},ui:{setStatus(){}},abort(){controller.abort();}};
+    events.session_start({},ctx); events.agent_start();
+    if(process.env.TAUCODE_SUBAGENT_ROLE==='colonel') {
+      const result=await tool.execute('nested',{agent:'enlisted',task:'wait'},controller.signal,r=>console.log(JSON.stringify({type:'tool_execution_update',toolCallId:'nested',toolName:'subagent',partialResult:r})),ctx);
+      events.agent_end(); events.session_shutdown();
+    } else {
+      const child=spawn(process.execPath,['--input-type=module','-e',"process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"],{detached:true,stdio:'ignore'});
+      writeFileSync(${JSON.stringify(ready)},JSON.stringify([process.ppid,process.pid,child.pid]));
+      console.log(JSON.stringify({type:'message_end',message:{role:'assistant',content:[{type:'text',text:'CRASH_PARTIAL_EVIDENCE'}],stopReason:'toolUse'}}));
+      process.on('SIGTERM',()=>{}); setInterval(()=>{},1000);
+    }`);
+  const driver = join(root, "driver.mjs");
+  writeFileSync(driver, `import subagents from ${extension}; const events={};let tool;
+    subagents({on(n,f){events[n]=f;},registerTool(t){tool=t;},appendEntry(){}});
+    events.agent_start(); await tool.execute('root-call',{agent:'colonel',task:'delegate'},undefined,undefined,{cwd:process.cwd(),model:{provider:'taucode-cloud',id:'strong'},sessionManager:{getSessionFile:()=>${JSON.stringify(session)}}});`);
+  const { spawn } = await import("node:child_process");
+  const parent = spawn(runner, [driver], { cwd: root, env: { ...process.env, PI_CODING_AGENT_DIR: home, TAUCODE_WORKSPACE: root, TAUCODE_PI_CLI: cli, TAUCODE_SUBAGENT_DEPTH: "0", TAUCODE_SUBAGENT_ROLE: "", TAUCODE_SUBAGENT_BUDGET: "", TAUCODE_SUBAGENT_SLOT: "" }, stdio: "ignore" });
+  let pids: number[] = [];
+  t.after(() => { parent.kill("SIGKILL"); for (const pid of pids) { try { process.kill(pid, "SIGKILL"); } catch {} } rmSync(root, {recursive:true,force:true}); });
+  const folder = `${session}.agents`;
+  let saved = "";
+  for (let i = 0; i < 200; i++) {
+    if (existsSync(ready)) pids = JSON.parse(readFileSync(ready, "utf8"));
+    if (existsSync(folder)) { const name = readdirSync(folder).find(n => n.endsWith(".json")); if (name) saved = readFileSync(join(folder, name), "utf8"); }
+    if (pids.length && saved.includes("CRASH_PARTIAL_EVIDENCE")) break;
+    await delay(20);
+  }
+  assert.match(saved, /CRASH_PARTIAL_EVIDENCE/);
+  parent.kill("SIGKILL");
+  const alive = (pid: number) => { try { const state = execFileSync("ps", ["-o", "stat=", "-p", String(pid)], {encoding:"utf8"}).trim(); return !!state && !state.startsWith("Z"); } catch { return false; } };
+  for (let i = 0; i < 200 && pids.some(alive); i++) await delay(20);
+  assert.ok(pids.every(pid => !alive(pid)), "coordinator, worker and detached command must stop after losing their parent");
+  assert.match(readFileSync(join(folder, readdirSync(folder)[0]), "utf8"), /CRASH_PARTIAL_EVIDENCE/);
 });

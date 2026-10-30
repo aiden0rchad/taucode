@@ -223,6 +223,10 @@ pub(super) fn prepare(
             include_str!("../../../../engines/pi/extensions/lib/connectors.ts"),
         ),
         (
+            "lib/recovery.ts",
+            include_str!("../../../../engines/pi/extensions/lib/recovery.ts"),
+        ),
+        (
             "LICENSE",
             include_str!("../../../../engines/pi/extensions/LICENSE"),
         ),

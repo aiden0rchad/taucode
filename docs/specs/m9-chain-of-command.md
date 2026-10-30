@@ -260,8 +260,40 @@ Screenshots: `taucode-stopped-team-restored.png` and
 in the task's visualization directory.
 
 Known limits: old cancelled runs cannot recover evidence never saved by earlier
-builds. A force-quit/crash before the cancellation checkpoint remains separate
-work. Unknown registry pricing can still display zero cost.
+builds. Unknown registry pricing can still display zero cost.
+
+## Active delegation crash recovery
+
+Pi/OMP root delegations keep one private, atomically replaced recovery file per
+tool call beside the session. Streaming updates are coalesced to at most one write
+per second; final evidence is flushed immediately. Normal turn completion removes
+its temporary snapshots. Interrupted snapshots remain available across later runs.
+They are outside model context and do not append a full tree for every update.
+
+History restores checkpoints only for unfinished calls on the selected branch.
+Durable tool results take precedence; malformed or mismatched checkpoints are
+ignored. Unfinished nodes become aborted, completed children retain their results,
+and exact end times remain unavailable where no completion was observed. Recovery
+does not request credentials, start an engine or rerun a command. POSIX child
+engines detect a lost parent and abort their owned nested work.
+
+Automated verification covers atomic replacement, coalescing, private permissions,
+final flush/cleanup, a killed writer, a killed commander with detached descendants,
+branch isolation, final-result precedence, malformed snapshots, separate follow-up
+turns and offline Pi/OMP resume without credential access. Frontend validation:
+1,796 tests plus typecheck and changed-file lint. Pi backend: 46 tests passed,
+one unrelated live test ignored; cargo check passed. All 28 extension tests pass,
+including killed-commander cleanup under Node and Bun.
+
+In the signed native build, an OMP commander was killed while one Account 2 Sol
+major was running a foreground timer and another had completed. The checkpoint
+retained both states and their messages; the test agents and timer exited. The
+remaining CodeGraph helpers also exited. Relaunch did not restart the test engine.
+Visual verification of the restored conversation and a full app force-quit check
+are pending: computer use currently reports that the Mac is locked.
+Remaining crash scope includes root assistant streaming, nondelegated tools,
+cross-engine recovery and Windows process cleanup. The last second of unflushed
+progress may be unavailable after an abrupt kill.
 
 ## Work still required for the full product goal
 

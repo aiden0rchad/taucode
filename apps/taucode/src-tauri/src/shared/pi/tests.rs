@@ -714,6 +714,66 @@ fn stopping_a_team_preserves_completed_children_without_reporting_a_failure() {
     assert_eq!(queued[0]["endedAt"], 9000);
 }
 
+#[test]
+fn crashed_delegation_recovers_only_unfinished_calls_on_the_current_branch() {
+    use sha2::{Digest, Sha256};
+    let dir = temp();
+    let file = dir.join("session.jsonl");
+    let mut entries = vec![
+        json!({"type":"session","id":"crash","cwd":"/workspace"}),
+        json!({"type":"message","id":"user","parentId":null,"message":{"role":"user","timestamp":1,"content":"Delegate"}}),
+        json!({"type":"message","id":"call","parentId":"user","message":{"role":"assistant","timestamp":2,"stopReason":"toolUse","content":[{"type":"toolCall","id":"delegate","name":"subagent","arguments":{"agent":"colonel","task":"Delegate"}}]}}),
+    ];
+    let write = |entries: &[Value]| std::fs::write(&file, entries.iter().map(|e| format!("{e}\n")).collect::<String>()).unwrap();
+    write(&entries);
+    let recovery = dir.join("session.jsonl.agents");
+    std::fs::create_dir(&recovery).unwrap();
+    let checkpoint = recovery.join(format!("{:x}.json", Sha256::digest(b"delegate")));
+    let saved = json!({"version":1,"toolCallId":"delegate","savedAt":9000,"result":{"details":{"results":[{
+        "agent":"colonel","status":"running","startedAt":1000,"usage":{"input":10},
+        "messages":[{"role":"toolResult","toolCallId":"nested","details":{"results":[
+            {"agent":"enlisted","status":"running","startedAt":2000,"messages":[{"role":"assistant","content":[{"type":"text","text":"Partial crash evidence"}]}]},
+            {"agent":"major","status":"completed","startedAt":3000,"endedAt":6000,"messages":[]}
+        ]}}]
+    }]}}});
+    std::fs::write(&checkpoint, saved.to_string()).unwrap();
+    let (_, restored) = read_session(&file, &[]).unwrap();
+    let node = &restored.turns[0]["items"][1]["agentsTree"][0];
+    assert_eq!(restored.turns[0]["status"], "interrupted");
+    assert_eq!(node["status"], "aborted");
+    assert_eq!(node["startedAt"], 1000);
+    assert_eq!(node["endedAt"], Value::Null, "a checkpoint is not an observed end time");
+    assert_eq!(node["children"][0]["status"], "aborted");
+    assert_eq!(node["children"][1]["status"], "completed");
+    assert_eq!(node["children"][1]["endedAt"], 6000);
+    assert!(restored.transcripts.values().any(|v| v.to_string().contains("Partial crash evidence")));
+    // A subsequent user turn must not merge into the interrupted one.
+    entries.push(json!({"type":"message","id":"next","parentId":"call","message":{"role":"user","timestamp":10000,"content":"Continue"}}));
+    write(&entries);
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns.len(), 2);
+    entries.pop();
+    // Durable final results always supersede a leftover checkpoint.
+    entries.push(json!({"type":"message","id":"done","parentId":"call","message":{"role":"toolResult","toolCallId":"delegate","toolName":"subagent","details":{"results":[{"agent":"colonel","status":"completed","startedAt":1000,"endedAt":10000,"messages":[]}]}}}));
+    write(&entries);
+    let (_, finished) = read_session(&file, &[]).unwrap();
+    assert_eq!(finished.turns[0]["items"][1]["agentsTree"][0]["status"], "completed");
+    assert!(!json!(finished.turns).to_string().contains("Partial crash evidence"));
+    // A different branch, malformed checkpoint or wrong call ID cannot restore it.
+    entries.pop();
+    entries.push(json!({"type":"message","id":"fork","parentId":"user","message":{"role":"assistant","timestamp":3,"stopReason":"stop","content":[{"type":"text","text":"Alternative"}]}}));
+    write(&entries);
+    assert!(read_session(&file, &[]).unwrap().1.transcripts.is_empty());
+    entries.pop(); write(&entries);
+    let mut wrong = saved.clone(); wrong["toolCallId"] = json!("unrelated");
+    for bad in ["{".to_string(), wrong.to_string()] {
+        std::fs::write(&checkpoint, bad).unwrap();
+        let (_, missing) = read_session(&file, &[]).unwrap();
+        assert!(!json!(missing.transcripts).to_string().contains("Partial crash evidence"));
+        assert_eq!(missing.turns[0]["status"], "interrupted");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[tokio::test]
 async fn native_tool_gate_approvals_are_decisions_instead_of_user_questions() {
     let dir = temp();
@@ -1384,6 +1444,20 @@ async fn stored_pi_and_omp_resume_without_credentials_and_spawn_only_when_sendin
         assert!(engine.sessions.lock().await["stored"].process.is_none());
         assert!(!dir.join(format!("{profile}/agent/workspace/models.json")).exists());
         assert!(engine.request("other-workspace", "thread/resume", json!({"threadId":"stored"})).await.is_err());
+        let mut crashed = entries.to_vec();
+        crashed.extend([
+            json!({"type":"message","id":"crash-user","parentId":"a","message":{"role":"user","timestamp":3,"content":"Delegate"}}),
+            json!({"type":"message","id":"crash-call","parentId":"crash-user","message":{"role":"assistant","timestamp":4,"stopReason":"toolUse","content":[{"type":"toolCall","id":"interrupted","name":"subagent","arguments":{"agent":"major","task":"Check"}}]}}),
+        ]);
+        std::fs::write(&file, crashed.iter().map(Value::to_string).collect::<Vec<_>>().join("\n") + "\n").unwrap();
+        use sha2::{Digest, Sha256};
+        let recovery = sessions.join("stored.jsonl.agents");
+        std::fs::create_dir(&recovery).unwrap();
+        std::fs::write(recovery.join(format!("{:x}.json", Sha256::digest(b"interrupted"))), json!({"version":1,"toolCallId":"interrupted","savedAt":5,"result":{"details":{"results":[{"agent":"major","status":"running","startedAt":4,"messages":[{"role":"assistant","content":[{"type":"text","text":"Offline recovery evidence"}]}]}]}}}).to_string()).unwrap();
+        let recovered = engine.request("workspace", "thread/resume", json!({"threadId":"stored"})).await.unwrap();
+        assert_eq!(recovered["result"]["thread"]["turns"][1]["status"], "interrupted");
+        assert!(recovered.to_string().contains("Offline recovery evidence"));
+        assert!(engine.sessions.lock().await["stored"].process.is_none(), "recovery must not restart agent work or request credentials");
         if profile == "pi" {
             engine.fake = true; engine.keys = Arc::new(Keys);
             engine.request("workspace", "turn/start", json!({"threadId":"stored","input":[{"type":"text","text":"Continue"}]})).await.unwrap();

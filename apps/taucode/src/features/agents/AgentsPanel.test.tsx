@@ -21,6 +21,10 @@ describe("Agents panel", () => {
     expect(screen.getByText("No subagents in this thread yet")).toBeTruthy();
     expect(screen.getByText(/2 concurrent · 4 per turn · depth 3/)).toBeTruthy();
   });
+  it("does not invent elapsed time for interrupted agents with an unknown end", () => {
+    render(view([item([{ ...node, status: "aborted", endedAt: null }])]));
+    expect(screen.getByText("aborted · elapsed unavailable")).toBeTruthy();
+  });
   it("updates nested nodes and badges and loads only the selected transcript", async () => {
     const child = { ...node, id: "call:agent:0/nested:agent:0", agent: "Reviewer" };
     const { rerender } = render(view([item([{ ...node, children: [child] }])]));
