@@ -174,6 +174,14 @@ impl Process {
         }
         if m["type"] == "extension_ui_request" {
             let method = m["method"].as_str().unwrap_or("");
+            if method == "setStatus" && m["statusKey"] == "taucode-verification" {
+                if let Some(record) = m["statusText"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()) {
+                    for event in self.translator.lock().await.apply(&json!({"type":"taucode_verification","record":record})) {
+                        (self.emit)(event);
+                    }
+                }
+                return;
+            }
             if method == "setStatus" && m["statusText"] == "ready" {
                 if let Some(key @ ("taucode-gate" | "taucode-subagents" | "taucode-work")) = m["statusKey"].as_str()
                 {

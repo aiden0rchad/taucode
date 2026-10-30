@@ -80,9 +80,32 @@ same restriction to permission requests, with a runtime refresh when policy chan
   The activity tree uses the same nonempty-mode selection and preserves actual
   delegation errors for display when a failed row is expanded.
 
-Commander/colonel instructions reserve independent QA and require reporting missing
-verification. This is currently an instruction contract, not a host-enforced release
-gate. The app must not represent unperformed QA as verified.
+Commander/colonel instructions reserve independent QA. Code turns that use tools
+now require a major's evidence-backed report before receiving a successful status.
+Chat, Work, custom delegation, and replies without tools keep their existing behavior.
+
+### Evidence-backed QA
+
+Delegations accept optional `acceptanceCriteria` (1–20 unique strings); when omitted,
+the assigned task is the criterion. Major-rank agents receive `report_verification`.
+Each verdict cites evidence IDs generated from that major's actual tool results.
+Empty or failed results cannot support a passing verdict, and write/edit responses
+are not verification evidence. Read-only majors can report without gaining shell or
+write tools. Reports retain tool names, IDs, bounded inputs/output, verdicts, notes,
+and SHA-256 hashes of reviewed project files (up to 16 MiB per file).
+
+Files observed through `read` are included automatically. Changes between reading
+and reporting, or between reporting and root completion, invalidate that evidence.
+Later implementation or root commands/edits require a fresh review; review running
+in parallel with implementation does not qualify. A subsequent check can replace
+an earlier failed verdict for the same criterion. Missing, malformed, failed, or
+stale QA leaves the turn failed with an explicit “Verification incomplete” message.
+Cancellation keeps its interrupted status. The summary is persisted outside model
+context and uses the same status when the conversation is reopened.
+
+This gate establishes that QA used tools and recorded verdicts against unchanged
+reviewed files. It cannot prove that a model selected sufficient tests or acceptance
+criteria. It does not automatically spend another model turn trying to repair QA.
 
 ## Verification
 
@@ -412,6 +435,25 @@ honest missing-price handling, not measured cloud/local quality or billing accur
 
 ## Work still required for the full product goal
 
+The evidence gate passed 40 extension tests and 50 Pi/OMP backend tests (one
+unrelated live test ignored). A loopback transport fixture drives the installed
+Pi and OMP runtimes through missing QA, passing QA, and failing QA, then reloads
+each conversation and checks the same final status. It also exposed and fixed
+Pi hiding the reporting tool from read-only majors. The new verification tests
+pass in Node and Bun; they cover stale files, invented/failed evidence, retries,
+parallel implementation, nested virtual tools, and cancellation. A recovered
+provider error cannot bypass QA. Engine TypeScript checking and lint for the new
+helper/tests pass. Existing lint findings in the semaphore loop and slot-cleanup
+`finally` block are unchanged.
+
+These are deterministic runtime tests, not a live GPT evaluation. Desktop QA is
+still pending: computer use reports the Mac locked, and the previous running
+build was waiting for Keychain access. The disposable `command-stop-qfgg_8ap`
+project still has Chain of Command temporarily off for the earlier foreground
+command crash test. Restore it after that test; use GPT 6.1 Sol (Account 2), Low,
+and Full access for the live acceptance run. Do not claim the recurring Keychain
+prompt is resolved.
+
 The browser smoke pass created two empty tabs, navigated to Example Domain, and
 returned focus to the composer. Narrow panes at 120% UI zoom collapsed the URL
 field; the toolbar now puts the address on its own row below 400 CSS pixels. The
@@ -427,7 +469,8 @@ window. Zoom was restored to 100% and test tabs closed. Screenshots:
 This smoke pass does not establish the cause of the earlier empty-tab failure.
 
 - Per-conversation policy overrides beyond the current project defaults.
-- Durable orchestration state and evidence-backed QA completion gates.
+- Further durable orchestration state; evidence-backed QA gates are implemented,
+  with signed-app acceptance still pending.
 - Resource/usage budgets across conversations, deadlines and whole-tree crash
   recovery. Shared turn concurrency and POSIX Stop cleanup are implemented.
 - Cost/capability-aware model selection backed by evaluation evidence, including

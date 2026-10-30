@@ -1865,6 +1865,47 @@ fn omp_models_are_yaml_compatible_and_do_not_contain_credentials() {
 }
 
 #[tokio::test]
+async fn real_pi_and_omp_verification_gates_completion_and_survives_reload() {
+    use tokio::io::AsyncBufReadExt;
+    if !Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/omp/node_modules/.bin/bun").exists() { return; }
+    let mut server = tokio::process::Command::new("node").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/omp_fetch.mjs")).arg("--serve").stdout(std::process::Stdio::piped()).kill_on_drop(true).spawn().unwrap();
+    let port = tokio::io::BufReader::new(server.stdout.take().unwrap()).lines().next_line().await.unwrap().unwrap();
+    for profile in ["pi", "omp"] {
+        let dir = temp();
+        std::fs::write(dir.join("answer.txt"), "42\n").unwrap();
+        let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_,_| {}));
+        engine.profile.definition = crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), profile).unwrap().0;
+        let provider = serde_json::from_value(json!({"id":"local","name":"Stub","kind":"openai-compatible","baseUrl":format!("http://127.0.0.1:{port}/v1"),"enabled":true,"auth":{"type":"none"},"models":[{"id":"stub","enabled":true,"contextWindow":8192}]})).unwrap();
+        let policy = serde_json::from_value(json!({"subagents":{"mode":"chain-of-command","roles":[{"name":"major","description":"QA","toolAccess":"read-only","instructions":""}]}})).unwrap();
+        engine.configure("workspace", vec![provider], policy).await;
+        let mut events = engine.events();
+        for (marker, expected) in [("QA_MISSING_FIXTURE", "failed"), ("QA_PASS_FIXTURE", "completed"), ("QA_FAIL_FIXTURE", "failed")] {
+            let start = engine.request("workspace", "thread/start", json!({"model":"local/stub"})).await.unwrap();
+            let id = start["result"]["thread"]["id"].as_str().unwrap();
+            engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":marker}],"accessMode":"full-access"})).await.unwrap();
+            let mut verification = false;
+            tokio::time::timeout(Duration::from_secs(45), async {
+                loop {
+                    let event = events.recv().await.unwrap();
+                    if event["method"] == "item/completed" && event["params"]["item"]["text"].as_str().is_some_and(|text| text.contains("Chain of Command verification")) { verification = true; }
+                    if event["method"] == "turn/completed" {
+                        assert_eq!(event["params"]["turn"]["status"], expected, "{profile} {marker}: {event}");
+                        assert!(verification, "QA status must arrive before turn completion: {profile} {marker} {event}");
+                        break;
+                    }
+                }
+            }).await.unwrap();
+            let file = engine.sessions.lock().await[id].file.clone();
+            let (_, restored) = read_session(&file, &[]).unwrap();
+            assert_eq!(restored.turns.last().unwrap()["status"], expected, "reloaded {marker}");
+            assert!(json!(restored.turns).to_string().contains("Chain of Command verification"));
+        }
+        engine.shutdown().await.unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[tokio::test]
 async fn real_omp_profile_with_offline_transport_fixture() {
     if !Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/omp/node_modules/.bin/bun").exists() { return; }
     let dir = temp();

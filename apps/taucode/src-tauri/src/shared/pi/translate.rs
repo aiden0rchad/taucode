@@ -582,6 +582,21 @@ impl Translator {
         match m["type"].as_str().unwrap_or("") {
             "abort_requested"=>self.aborted=true,
             "agent_start"=>self.start(&mut out),
+            "taucode_verification" if self.active && !self.aborted => {
+                let record = &m["record"];
+                if let (Some(status @ ("verified" | "unverified")), Some(message)) = (record["status"].as_str(), record["message"].as_str()) {
+                    let mut body = format!("**Chain of Command verification: {status}**\n\n{message}");
+                    for report in record["reports"].as_array().into_iter().flatten() {
+                        for check in report["checks"].as_array().into_iter().flatten() {
+                            if let Some(criterion) = check["criterion"].as_str() {
+                                body.push_str(&format!("\n- {}: {}", if check["passed"] == true { "Pass" } else { "Unverified" }, criterion));
+                            }
+                        }
+                    }
+                    self.item(json!({"type":"agentMessage","id":format!("{}:verification",self.turn_id()),"text":body}), true, &mut out);
+                    if status == "unverified" { self.failure.get_or_insert_with(|| format!("Verification incomplete: {message}")); }
+                }
+            },
             "agent_settled"=>{if let Some(error)=m["errorMessage"].as_str().or(m["error"].as_str()){self.failure=Some(error.into());}self.settle(m["aborted"]==true || self.aborted,&mut out);},
             "message_start"=>{
                 if m["message"]["role"]=="assistant" {self.message_count+=1;self.message=format!("{}:message:{}",self.thread,m["message"]["timestamp"].as_u64().unwrap_or(self.message_count as u64));}
@@ -646,6 +661,10 @@ impl Translator {
         let mut end = 0u64;
         let mut last_stop = String::new();
         for m in messages {
+            if m["role"] == "taucodeVerification" {
+                t.apply(&json!({"type":"taucode_verification","record":m["record"]}));
+                continue;
+            }
             if m["role"] == "taucodeInterrupted" {
                 t.aborted = true;
                 t.failure = Some("Execution interrupted before pending tools completed.".into());

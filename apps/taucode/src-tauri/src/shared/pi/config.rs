@@ -235,6 +235,10 @@ pub(super) fn prepare(
             include_str!("../../../../engines/pi/extensions/lib/commandGuard.ts"),
         ),
         (
+            "lib/verification.ts",
+            include_str!("../../../../engines/pi/extensions/lib/verification.ts"),
+        ),
+        (
             "LICENSE",
             include_str!("../../../../engines/pi/extensions/LICENSE"),
         ),

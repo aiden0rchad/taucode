@@ -11,7 +11,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (process.env.TAUCODE_OMP === "1") {
       const features = JSON.parse(process.env.TAUCODE_FEATURES || "{}");
-      await pi.setActiveTools(pi.getActiveTools().filter(name => ["read", "bash", "edit", "write", "grep", "glob", "lsp", "debug", "eval"].includes(name) || (name === "subagent" && features.subagents !== false) || (name.startsWith("mcp__") && features.connectors !== false)));
+      await pi.setActiveTools(pi.getActiveTools().filter(name => ["read", "bash", "edit", "write", "grep", "glob", "lsp", "debug", "eval"].includes(name) || (["subagent", "report_verification"].includes(name) && features.subagents !== false) || (name.startsWith("mcp__") && features.connectors !== false)));
     }
     ctx.ui.setStatus("taucode-gate", "ready");
   });
@@ -25,7 +25,7 @@ export default function (pi: ExtensionAPI) {
         const prefix = `mcp__${connector.id.replace(/-/g, "_")}_`;
         event = { ...event, toolName: prefix.slice(0, -1) + "__" + event.toolName.slice(prefix.length) };
       }
-      if (!["read", "grep", "find", "glob", "bash", "write", "edit", "subagent"].includes(event.toolName) && !event.toolName.startsWith("mcp__")) {
+      if (!["read", "grep", "find", "glob", "bash", "write", "edit", "subagent", "report_verification"].includes(event.toolName) && !event.toolName.startsWith("mcp__")) {
         const home = process.env.PI_CODING_AGENT_DIR!, session = process.env.TAUCODE_SESSION_KEY!;
         const access = JSON.parse(readFileSync(join(home, "taucode/threads", `${session}.json`), "utf8")) as Access;
         if (access.accessMode === "read-only" || process.env.TAUCODE_SUBAGENT_DEPTH || !ctx.hasUI) return { block: true, reason: "Native tool requires interactive approval" };

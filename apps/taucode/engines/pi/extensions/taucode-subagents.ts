@@ -7,17 +7,19 @@ import { createInterface } from "node:readline";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { subagentCheckpoint } from "./lib/recovery.ts";
-import { acquireSubagentSlot, adoptSubagentSlot, checkLimits, commandInstructions, commandTargets, createSubagentBudget, inside, releaseSubagentProcessSlots, releaseSubagentSlot, reserveSubagent, resolveTask, type Policy } from "./lib/policy.ts";
+import { acceptanceCriteria, registerVerification } from "./lib/verification.ts";
+import { acquireSubagentSlot, adoptSubagentSlot, checkLimits, commandInstructions, commandRank, commandTargets, createSubagentBudget, inside, releaseSubagentProcessSlots, releaseSubagentSlot, reserveSubagent, resolveTask, type Policy } from "./lib/policy.ts";
 
 const optionalString = Type.Optional(Type.Union([Type.String(), Type.Null()]));
-const taskFields = { agent: Type.String(), task: Type.String(), model: optionalString, cwd: optionalString };
+const taskFields = { agent: Type.String(), task: Type.String(), model: optionalString, cwd: optionalString, acceptanceCriteria: Type.Optional(Type.Union([Type.Array(Type.String(), { minItems: 1, maxItems: 20 }), Type.Null()])) };
 const Task = Type.Object(taskFields);
-type TaskInput = { agent: string; task: string; model?: string | null; cwd?: string | null };
+type TaskInput = { agent: string; task: string; model?: string | null; cwd?: string | null; acceptanceCriteria?: string[] | null };
 type Message = { role: string; toolCallId?: string; toolName?: string; content?: { type: string; text?: string }[]; stopReason?: string; errorMessage?: string; usage?: Record<string, any> };
 type Result = TaskInput & { exitCode: number; status: string; startedAt?: number; endedAt?: number; messages: Message[]; stderr: string; stopReason?: string; usage: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number | null; knownCost: number; costKnown: boolean; contextTokens: number; turns: number } };
 const output = (r: Result) => r.messages.filter(m => m.role === "assistant").at(-1)?.content?.filter(c => c.type === "text").map(c => c.text).join("\n") || r.stderr;
 
 export default function (pi: ExtensionAPI) {
+  registerVerification(pi, () => JSON.parse(readFileSync(join(process.env.PI_CODING_AGENT_DIR!, "taucode/policy.json"), "utf8")));
   let count = 0;
   let active = 0;
   let turnBudget: string | undefined;
@@ -56,7 +58,7 @@ export default function (pi: ExtensionAPI) {
     name: "subagent",
     label: "Subagent",
     description: "Delegate using taucode policy roles only (no user/project agent directories). Single: agent + task; parallel: tasks; chain: chain with {previous} substitution. Optional model per task is provider/model. Chain of Command fixes each role's model and shares turn and concurrency limits across the command tree; commanders and colonels delegate, majors verify, enlisted implement. Waiting coordinators lend their concurrency slot to workers and reclaim one before resuming. Custom delegation limits each delegator's immediate children. Children inherit thread access and are non-interactive: read-only stays read-only; in ask mode full roles may write only inside the workspace, bash only on the read-only allowlist. Protected paths require interactive approval and are blocked in children.",
-    parameters: Type.Object({ agent: optionalString, task: optionalString, model: taskFields.model, cwd: taskFields.cwd, tasks: Type.Optional(Type.Union([Type.Array(Task), Type.Null()])), chain: Type.Optional(Type.Union([Type.Array(Task), Type.Null()])) }),
+    parameters: Type.Object({ agent: optionalString, task: optionalString, model: taskFields.model, cwd: taskFields.cwd, acceptanceCriteria: taskFields.acceptanceCriteria, tasks: Type.Optional(Type.Union([Type.Array(Task), Type.Null()])), chain: Type.Optional(Type.Union([Type.Array(Task), Type.Null()])) }),
     async execute(_id, params, signal, onUpdate, ctx) {
       const home = process.env.PI_CODING_AGENT_DIR!;
       const policy: Policy = JSON.parse(readFileSync(join(home, "taucode/policy.json"), "utf8"));
@@ -67,6 +69,7 @@ export default function (pi: ExtensionAPI) {
       const mode = modes[2] ? "chain" : modes[1] ? "parallel" : "single";
       const tasks = (mode === "chain" ? params.chain : mode === "parallel" ? params.tasks : [params]) as TaskInput[];
       if (!tasks.length || tasks.some(task => !task.agent?.trim() || !task.task?.trim())) throw new Error("Provide at least one task with a non-empty agent and task");
+      for (const task of tasks) if (task.acceptanceCriteria != null) acceptanceCriteria(task);
       const results: Result[] = tasks.map(task => ({ ...task, exitCode: -1, status: "pending", messages: [], stderr: "", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: null, knownCost: 0, costKnown: false, contextTokens: 0, turns: 0 } }));
       const snapshot = () => ({ content: [{ type: "text" as const, text: results.map(r => `${r.agent}: ${output(r) || r.status}`).join("\n\n") }], details: { mode, results } });
       const checkpoint = subagentCheckpoint(depth === 0 ? ctx.sessionManager?.getSessionFile() : undefined, _id);
@@ -111,11 +114,11 @@ export default function (pi: ExtensionAPI) {
           const args = [...process.execArgv, cli, "--mode", "json", "-p", "--no-session", ...(process.env.TAUCODE_OMP === "1" ? ["--no-lsp", "--no-pty", "--no-title", "--no-skills", "--no-rules"] : ["--no-approve"]), "--no-extensions", "-e", join(home, "extensions/taucode-gate.ts"), "-e", join(home, "extensions/taucode-subagents.ts"), "--provider", provider, "--model", modelId];
           const toolAccess = process.env.TAUCODE_TOOL_ACCESS === "read-only" ? "read-only" : role.toolAccess;
           if (thinking) args.push("--thinking", thinking);
-          if (toolAccess === "read-only") args.push("--tools", process.env.TAUCODE_OMP === "1" ? "read,grep,glob" : "read,grep,find,ls");
+          if (toolAccess === "read-only") args.push("--tools", (process.env.TAUCODE_OMP === "1" ? "read,grep,glob" : "read,grep,find,ls") + (policy.mode === "chain-of-command" && commandRank(role.name, policy.roles) === "major" ? ",report_verification" : ""));
           if (role.instructions) args.push("--append-system-prompt", role.instructions);
           args.push(`Task: ${r.task}`);
           r.exitCode = await new Promise<number>((resolve, reject) => {
-            const child = spawn(process.execPath, args, { cwd, env: { ...process.env, TAUCODE_SUBAGENT_DEPTH: String(depth + 1), TAUCODE_SUBAGENT_ROLE: role.name, TAUCODE_SUBAGENT_BUDGET: budget, TAUCODE_SUBAGENT_SLOT: slot, TAUCODE_WORKSPACE: workspace, TAUCODE_TOOL_ACCESS: toolAccess }, stdio: ["ignore", "pipe", "pipe"], detached: depth === 0 && process.platform !== "win32" });
+            const child = spawn(process.execPath, args, { cwd, env: { ...process.env, TAUCODE_SUBAGENT_DEPTH: String(depth + 1), TAUCODE_SUBAGENT_ROLE: role.name, TAUCODE_VERIFY_CRITERIA: JSON.stringify(r.acceptanceCriteria ?? [r.task]), TAUCODE_SUBAGENT_BUDGET: budget, TAUCODE_SUBAGENT_SLOT: slot, TAUCODE_WORKSPACE: workspace, TAUCODE_TOOL_ACCESS: toolAccess }, stdio: ["ignore", "pipe", "pipe"], detached: depth === 0 && process.platform !== "win32" });
             const releaseOwners = (owners: Iterable<number>) => {
               try { if (budget) for (const pid of owners) releaseSubagentProcessSlots(budget, pid); }
               catch (error) { r.stderr += `\nConcurrency cleanup failed: ${error}`; r.stopReason = "error"; }

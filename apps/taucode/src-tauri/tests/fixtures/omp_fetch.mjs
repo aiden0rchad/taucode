@@ -11,8 +11,25 @@ function crashAfterCheckpoint(marker) {
   }, 10);
 }
 globalThis.fetch = async (_url, options) => {
-  const request = JSON.parse(options.body);
+  const request = JSON.parse(options?.body ?? await _url.text());
   const messages = JSON.stringify(request.messages);
+  if (/QA_(PASS|MISSING|FAIL)_FIXTURE/.test(messages)) {
+    const calls = request.messages.filter(message => message.role === 'tool').length;
+    const major = process.env.TAUCODE_SUBAGENT_ROLE === 'major' || request.messages.some(message => message.role === 'user' && JSON.stringify(message.content).includes('Task: QA_'));
+    const marker = messages.match(/QA_(PASS|MISSING|FAIL)_FIXTURE/)[0];
+    let tool, args;
+    if (!calls) {
+      tool = major || marker === 'QA_MISSING_FIXTURE' ? 'read' : 'subagent';
+      args = tool === 'read' ? { path: 'answer.txt' } : { agent: 'major', task: marker, acceptanceCriteria: ['answer.txt contains 42'] };
+    } else if (major && calls === 1) {
+      if (!messages.includes('Verification evidence: E1')) throw new Error('QA evidence hook did not run');
+      tool = 'report_verification';
+      args = { checks: [{ criterion: 'answer.txt contains 42', passed: marker === 'QA_PASS_FIXTURE', evidence: ['E1'], note: 'Read the artifact using the read tool' }], artifacts: ['answer.txt'] };
+    }
+    const delta = tool ? { role: 'assistant', tool_calls: [{ index: 0, id: `qa-${calls}`, type: 'function', function: { name: tool, arguments: JSON.stringify(args) } }] } : { role: 'assistant', content: 'Done' };
+    const chunk = { id: 'qa', object: 'chat.completion.chunk', created: 1, model: 'stub', choices: [{ index: 0, delta, finish_reason: tool ? 'tool_calls' : 'stop' }] };
+    return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, { headers: { 'content-type': 'text/event-stream' } });
+  }
   const stop = messages.includes('GUARD_STOP_FIXTURE');
   if (stop || (messages.includes('GUARD_NATIVE_FIXTURE') && !messages.includes('Say hello after supervisor'))) {
     const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
@@ -33,3 +50,18 @@ globalThis.fetch = async (_url, options) => {
   'data: [DONE]\n\n',
 ].join(''), { headers: { 'content-type': 'text/event-stream' } });
 };
+
+// Pi supplies its own fetch implementation; serve the same fixture over loopback.
+if (process.argv.includes('--serve')) {
+  const { createServer } = await import('node:http');
+  const server = createServer(async (request, response) => {
+    try {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      const result = await globalThis.fetch('', { body: Buffer.concat(chunks).toString() });
+      response.writeHead(result.status, Object.fromEntries(result.headers));
+      response.end(await result.text());
+    } catch (error) { response.writeHead(500); response.end(String(error)); }
+  });
+  server.listen(0, '127.0.0.1', () => process.stdout.write(`${server.address().port}\n`));
+}
