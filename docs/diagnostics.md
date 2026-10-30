@@ -1,5 +1,13 @@
 # Diagnostics journal
 
+Diagnostics are optional local records that help explain what went wrong. You do not need to enable them to start using taucode.
+
+## If you are reporting a problem
+
+Open **Settings → Diagnostics** to enable recording, reproduce the problem, then inspect the relevant events or summary. Recording starts off; enabling it does not recreate past events. Review anything you share for private information. The journal does not automatically post a GitHub issue.
+
+**Digest** means a summary of recent records; **retention** means how long records are kept. The rest of this page explains the available levels and advanced reader tools.
+
 Enable **Settings → Diagnostics** (also in **Features → Developer**) to keep a local,
 agent-readable journal. Recording is off by default. Disabling it removes frontend
 timers/listeners/observers and stops the writer; existing files remain.

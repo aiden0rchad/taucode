@@ -10,32 +10,32 @@ hero:
     alt: taucode mark
   actions:
     - theme: brand
-      text: Get started
-      link: /getting-started
+      text: New here? Start here
+      link: /start-here
     - theme: alt
-      text: Explore the guides
-      link: /code
+      text: Make your first file
+      link: /first-task
     - theme: alt
       text: View on GitHub
       link: https://github.com/aiden0rchad/taucode
 features:
   - title: Code in context
-    details: Projects, conversations, Git, diffs, terminals, side chats, and agent teams in the same workspace.
+    details: Ask questions about a coding project, review file changes, and work with its code in one place.
     link: /code
   - title: Just have a conversation
-    details: A dedicated Chat profile with separate history, attachments, and optional restricted web access.
+    details: Ask questions, discuss text or images you attach, and keep a separate chat history.
     link: /chat
   - title: Turn a brief into files
-    details: Work on a folder with a plan, task queue, approval requests, and a visible list of outputs.
+    details: Choose a folder, describe what you need, and follow the task through to its finished files.
     link: /work
   - title: Bring your own models
-    details: Cloud APIs, Ollama, LM Studio, and compatible gateways. Provider configuration belongs to you.
+    details: Connect an AI service or an existing local model server. Start with one provider and one model.
     link: /providers
   - title: Choose the engine
-    details: pi, oh-my-pi, optional Codex, Claude Code through ACP, or a compatible custom executable.
+    details: Start with pi, the default background program that manages conversations and tools. More options are available later.
     link: /engines
   - title: Inspect and recover
-    details: See tool activity, review approvals, rewind checkpointed files, and compare engines with Evals.
+    details: Check what the agent did, review permission requests, and restore eligible files from saved checkpoints.
     link: /checkpoints
 ---
 
@@ -49,8 +49,12 @@ features:
 
 ## A guide for each step
 
+**First time using AI tools?** Begin with [New to taucode?](start-here.md), follow [installation](getting-started.md), then make a file with the [first Work task](first-task.md). Look up unfamiliar words in the [glossary](glossary.md).
+
 | You want to… | Start here |
 | --- | --- |
+| Learn the basics without assuming coding knowledge | [Start here](start-here.md) |
+| Follow a complete, no-coding example | [Your first Work task](first-task.md) |
 | Install taucode and run a first task | [Installation & first run](getting-started.md) |
 | Connect a cloud API or local server | [Providers & models](providers.md) |
 | Understand models, engines, and connectors | [FAQ](faq.md#what-is-the-difference-between-a-provider-a-model-an-engine-and-a-connector) |

@@ -6,9 +6,11 @@ This page describes the documented **0.7.68** baseline as of **October 30, 2026*
 
 ## Installable artifacts
 
+The current [October 30 test release](https://github.com/aiden0rchad/taucode/releases/tag/build-2026-10-30-b6848c7) provides both desktop downloads. For step-by-step installation and help choosing a file, use [Installation & first run](getting-started.md#_1-install-the-app).
+
 ### Windows x64 test build
 
-The [Windows x64 test release](https://github.com/aiden0rchad/taucode/releases/tag/windows-x64-v0.7.68) contains:
+The [October 30 test release](https://github.com/aiden0rchad/taucode/releases/tag/build-2026-10-30-b6848c7) contains:
 
 - `taucode_0.7.68_x64-setup.exe`
 - `SHA256SUMS`
@@ -17,9 +19,11 @@ It is an **unsigned prerelease** for 64-bit Intel/AMD Windows. The release recor
 
 ### macOS
 
-Build from source using [installation](getting-started.md) and [packaging](packaging.md). Local signed development checks are documented, but they do not establish that a public release asset is notarized. Check an individual release's notes and signature evidence before distributing it.
+The same [test release](https://github.com/aiden0rchad/taucode/releases/tag/build-2026-10-30-b6848c7) includes **taucode_0.7.68_aarch64.dmg** for **Apple Silicon Macs**, `macos-arm64-release-manifest.json`, and shared `SHA256SUMS`.
 
-Draft releases are not public downloads. This documentation does not link to a draft or promise a stable macOS binary.
+The package passed the release's recorded bundle, signature, entitlement, bundled-runtime, daemon RPC, and mounted-DMG checks. It uses a **local development signing identity** and is **not notarized**. These checks do not make it a stable release or guarantee opening on every Mac. Follow the [installation steps](getting-started.md#macos-apple-silicon).
+
+There is no Intel Mac installer in this release. Developers can use the [source-build](getting-started.md#build-from-source) and [packaging](packaging.md) instructions.
 
 ## Platform matrix
 

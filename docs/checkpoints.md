@@ -1,5 +1,11 @@
 # Checkpoints & rewind
 
+A **checkpoint** is a saved state of eligible files. **Rewind** lets you restore an earlier state after reviewing which files will change.
+
+If you are new, first finish or stop the active task, open **Rewind…**, and read the selected files and any deletion warning before confirming. Rewind can delete files that did not exist at the earlier point. Keep normal backups too; it cannot undo an email, upload, or change inside another app.
+
+The sections below explain what is saved and the engine-specific options. [Glossary](glossary.md#checkpoint-and-rewind).
+
 Checkpoints record eligible workspace files around turns. Rewind lets you inspect and selectively restore a prior state, with supported conversation rollback where the engine can provide it.
 
 They are a recovery tool, not a replacement for Git commits or backups.

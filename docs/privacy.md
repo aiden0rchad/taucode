@@ -1,5 +1,16 @@
 # Privacy, storage & trust
 
+## The short version
+
+- Your selected AI provider can receive your messages and the file content or screenshots needed for a task. Choose what to send accordingly.
+- An API key is a secret credential. Put it in provider settings, not in a chat or bug report.
+- Folder-based tasks can change real files. Start with a practice folder and review approvals.
+- Local storage does not automatically mean every feature works offline or sends no data.
+- The current app also includes inherited Sentry reporting. The separate local diagnostics journal is optional and starts off.
+- Stop and rewind have limits; keep backups of important files.
+
+The sections below explain these points in detail. For the basic vocabulary, use the [glossary](glossary.md).
+
 taucode is a desktop app that stores working state locally, but the features you enable can contact model providers, package registries, websites, and connector services. Choose those services with the same care as the source material you give them.
 
 ## What can leave your computer

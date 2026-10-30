@@ -1,10 +1,25 @@
 # Work · spaces, tasks & outputs
 
-Work turns a folder and a brief into a task with a plan, visible progress, approvals, and output files. It is intended for document and knowledge work as well as folder-based automation.
+Work helps you turn files in a folder into a result, such as a summary, spreadsheet, or presentation. Choose the folder, describe what you need, and inspect the files it creates.
+
+**First time?** Follow [Your first Work task](first-task.md) to make a summary from sample notes, with every click and expected result explained. If you still need to connect a model, start with [installation](getting-started.md).
 
 ![Work task with its conversation and supporting panel](/screenshots/work.png)
 
 *Offline preview with sample data.*
+
+## The words you will see
+
+| Word | What it means here |
+| --- | --- |
+| Space | The folder you choose for the task. |
+| Task | One conversation about work to do in that folder. |
+| Brief | Your instructions: what to read and what to create. |
+| Plan | The agent's list of steps. |
+| Approval | A request for permission before an action. Read it before agreeing. |
+| Output | A file produced by the task, usually under `outputs/`. |
+
+For example, a space named “Meeting notes” could contain `notes.txt`; a task could read it and create `outputs/summary.md`. The [glossary](glossary.md) explains other terms used later in this guide.
 
 ## Spaces and tasks
 
@@ -12,14 +27,12 @@ A **space** is a folder you choose. It can be a Git repository or an ordinary di
 
 A **task** is a conversation inside that space with a brief, selected model, access settings, status, plan, and outputs. Code projects and Work spaces are separate views; switching modes does not convert a project into a space.
 
-Work uses the dedicated **pi work profile**. The optional OMP engine is not the Work runtime. Chain of Command is a Code feature; Work uses a single-model profile when inheriting that policy, while supported custom delegation is a separate setting.
-
 ## Create a task
 
 1. Choose **Work → Add space** and select a test folder.
 2. Create a task in that space.
-3. Describe the deliverable, relevant source files, destination, and constraints.
-4. Choose a configured model and inspect the access policy.
+3. Describe the file you want, which files to read, where to save it, and anything that must stay unchanged.
+4. Choose your configured model and review its access setting. Start with **Ask** where you can choose it.
 5. Select **Run now** or **Queue**.
 
 For example:
@@ -31,6 +44,20 @@ claims, and leave the original files unchanged.
 ```
 
 Start with a small representative input. A model's ability to produce valid files depends on the model, available tools, runtime installation, and the source material.
+
+**Expected result:** the task starts Running or waits Queued. When it finishes, open the file it produced and check that it answers your request. If it says Needs input, open the task to review its question or approval request.
+
+## Write a useful brief
+
+Give the task four things: **input**, **result**, **destination**, and **constraints**. Use filenames when you know them.
+
+| Instead of… | Try… |
+| --- | --- |
+| “Sort this out.” | “Read the three notes files and create a one-page summary in `outputs/summary.md`.” |
+| “Make a spreadsheet.” | “Extract the date and total from each sample receipt into `outputs/receipts.xlsx`; flag anything you cannot read.” |
+| “Clean my folder.” | “List a proposed folder organization first and wait for approval before moving or deleting files.” |
+
+A focused request is easier to check. After reviewing the first result, send a follow-up asking for a specific correction or change.
 
 ## Task states
 
@@ -55,6 +82,8 @@ Browser, computer, and third-party connectors retain their own approval policies
 
 ## Bundled document skills
 
+You can ask for common document formats in ordinary language. A **skill** is a set of instructions and tools the agent can use for that format; you do not need to write Python code yourself.
+
 The Work runtime includes a small skill pack and locked Python dependencies for:
 
 | Deliverable | Tooling used by the bundled skills |
@@ -75,6 +104,8 @@ Use the file controls to open or reveal outputs. Keep an eye on paths: a file me
 
 ## Previews and background processes
 
+A **preview** is a locally running view of something the task is building, such as a small web page. It is different from an output document: it can stop working when its process stops or the app quits.
+
 The Previews panel lists development servers or background commands started through the supported task tooling. It exposes Open, Stop, and Restart controls and the detected local address where available.
 
 Stopping a preview process does not delete its source files. Stopping the task is a separate action. A local preview URL is reachable only where networking and process lifetime allow; it is not a published website.
@@ -93,3 +124,9 @@ Checkpoints can support selective file rewind for a space, with the same exclusi
 - Propose a folder reorganization before authorizing any moves or deletions.
 
 For sensitive files, read [privacy & trust](privacy.md) before choosing a provider or enabling browser/computer tools.
+
+## Advanced: engines and teams
+
+Work runs on pi with a Work-specific set of tools and settings, called a **profile**. Choosing the optional OMP engine for Code does not change Work's engine.
+
+Chain of Command is a Code feature. Work uses a single-model profile when inheriting that policy; supported custom delegation is a separate setting. See [agents](agents.md) if you want to explore those options after a single-model task works.

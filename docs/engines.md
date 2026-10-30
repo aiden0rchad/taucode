@@ -1,5 +1,26 @@
 # Engines and features
 
+An **engine** is the background program that manages a conversation and the model's tool requests. Start with **pi**, the default. Your provider and model are separate choices; see the [glossary](glossary.md#engine).
+
+## Start with the default engine
+
+1. Open **Settings → Engines**.
+2. Find **pi** and check that it is enabled.
+3. If it needs setup, choose **Install** and wait for the download/preparation to finish.
+4. When it is ready, try the [first Chat message](getting-started.md#_4-send-a-first-chat-message).
+
+**Expected result:** the runtime is ready and your selected model answers. You do not need to add a custom executable or change protocol settings for this first test. Chat and Work use their own pi profiles even when Code uses another engine.
+
+## What is a feature switch?
+
+A feature switch shows or enables an optional part of the app. Find these under **Settings → Features**. For example, Browser adds web tools, Computer use enables the desktop-control feature, and Git enables repository controls. Some features still need their own setup and permissions after being switched on.
+
+If a control seems missing, check its feature switch first. Start with the features needed for your task and add more when you have a reason to use them.
+
+## Detailed engine behavior
+
+The remaining sections cover engine readiness, custom engines, isolation, and advanced controls.
+
 Settings → Engines selects the default runtime from enabled, ready engines and
 enables engines for project and composer pickers. Each row groups its icon, name,
 protocol and status together. Install/Retry appears only when needed; installation

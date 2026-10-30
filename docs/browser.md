@@ -1,5 +1,27 @@
 # Browser pane
 
+The browser pane is the website area inside taucode. You can open a page yourself or let an appropriately configured agent use browser tools.
+
+## Open a page
+
+1. Check that Browser is enabled in **Settings → Features**.
+2. Open a Browser tab in the app's side panel.
+3. Enter a normal website address, such as `https://example.com`, and load it.
+
+**Expected result:** the page appears in the pane. For agent use, also check the browser connector in **Settings → Connectors** and the relevant approvals. Chat's optional Web toggle has a smaller tool set than Code/Work browser use.
+
+## Which browser setting should I use?
+
+Keep the default initially. **Native** uses the operating system's embedded browser. **Headless Chromium** runs an alternative browser for automation; it can help when a site ignores the native backend's input. Platform behavior differs, as described below.
+
+The Browser setting named **Engine** selects the browser backend. It does not select your AI model or the coding agent engine. [Glossary](glossary.md).
+
+If a page fails, read its visible error and try the [browser troubleshooting steps](troubleshooting.md#browser-problems). Changing the backend can use different saved site data, so do not assume you will still be signed in.
+
+## Technical reference
+
+The remaining sections describe backend behavior and implementation limits; you do not need them to open your first page.
+
 Settings → Browser → Engine defaults to **Native**. On macOS the pane is a child
 WKWebView, rendered at the display's resolution with native scrolling, typing and
 media. **Headless Chromium (advanced)** retains the Chromium/CDP pane for sites

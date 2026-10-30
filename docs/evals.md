@@ -1,5 +1,15 @@
 # Evals
 
+**Evals** are repeatable tests for comparing AI models and engines. They are optional and are not a setup step for your first Chat or Work task.
+
+## What to know before running tests
+
+A **configuration** is one combination of engine, model, and settings. A **test task** is a small job with a checkable result. A **run** executes the selected comparisons and collects their results.
+
+Real model runs use provider tokens and can cost money even though the test fixtures are stored locally. Start with one configuration and a small test selection, review the run preview and limits, and read the spending confirmation before starting. An unknown cost is not a zero cost. [Glossary](glossary.md).
+
+**Expected result:** completed tests have visible outcomes and check output. A failed test is useful evidence about that example, not proof that a model is bad at every task. The detailed controls and limitations follow.
+
 Settings → Evals compares engines and provider/model pairs against an offline,
 versioned task suite. Settings shows one compact result card per configuration;
 **Open results** opens that run in the main area. **Open full view** also opens

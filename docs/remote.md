@@ -1,5 +1,9 @@
 # Remote daemon & iOS
 
+This is an **advanced, optional setup** for using a backend on another computer. You do not need it when the app and your files are on the same computer.
+
+A **daemon** is a background program. The **host** is the computer that runs it. In remote mode, the project files and tools belong to that host. Start with [local installation](getting-started.md) unless you specifically need this arrangement. [Glossary](glossary.md).
+
 taucode includes a standalone daemon and control CLI so a supported client can work with projects on another host. This is an advanced, experimental path; it is separate from the normal local desktop workflow.
 
 The desktop app is not required to remain open when the standalone daemon owns the work. The daemon host itself must stay running and reachable.

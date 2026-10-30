@@ -1,5 +1,16 @@
 # MCP connectors & CodeGraph
 
+A **connector** adds tools from another program or service. You can begin with ordinary Chat or the [first Work exercise](first-task.md) without adding a custom connector.
+
+## Understand the choices before adding one
+
+- **MCP** is the communication protocol used by these tool servers.
+- **stdio** means taucode starts a local program and communicates with it.
+- **HTTP** means taucode connects to a web address.
+- **Ask** means tool calls can pause for your approval; **Auto** grants broader automatic use under that connector's policy.
+
+Choose a specific tool you need and follow its own setup instructions. Then use **Test connection** to check that taucode can discover its tools. A successful test does not prove every tool works or is harmless. Keep keys in the marked secret fields. See the [glossary](glossary.md#connector-and-mcp).
+
 Connectors expose tools from Model Context Protocol (MCP) servers. taucode keeps their configuration in its own registry so supported engines receive a consistent set of enabled tools.
 
 ## Before adding a server

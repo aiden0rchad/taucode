@@ -1,6 +1,16 @@
 # Providers & models
 
-A provider is the service that runs a model. An engine is the agent runtime that uses it. Configure providers once in taucode, then select enabled models in the composer and agent policies.
+A **provider** is the service or local server that runs your AI requests. A **model** is the particular AI you choose from that provider. Start with one provider and one model; you can add more later.
+
+If this is your first setup, follow [installation steps 2–4](getting-started.md#_2-connect-one-provider-and-model). The [glossary](glossary.md) explains API keys, models, and engines in plain language.
+
+## What to choose first
+
+Use a provider you already have API access to. For a cloud provider, obtain an API key from its own API dashboard and review its pricing. For a local provider, the model server must already be running.
+
+An **API key** is a secret credential; enter it in provider settings, not in your chat. A **base URL** is the server address; keep the preset's default unless your provider or server setup tells you otherwise.
+
+You do not need to configure environment variables, auth commands, gateways, or role-specific models to make a first request.
 
 ## Add a provider
 
@@ -9,9 +19,27 @@ A provider is the service that runs a model. An engine is the agent runtime that
 3. Use its default endpoint or enter your server's base URL.
 4. Configure authentication, save, then choose **Test & fetch models**.
 5. Enable the models you want available in pickers.
-6. In **Settings → Agents**, choose the default model and any role-specific models.
+6. In **Settings → Agents**, choose a default model. Role-specific models are optional advanced settings.
 
 Use separate provider entries when two accounts or gateways need different credentials. A model reference combines the provider entry and model ID, so two identically named models on different providers remain distinct.
+
+## Check that it works
+
+1. Confirm that **Test & fetch models** returns a model list.
+2. Enable one model, then select it in a new Chat.
+3. Send a short message without attachments.
+
+**Expected result:** a complete text answer. Loading a model list only checks discovery; sending a message checks that the provider can actually run that model for you.
+
+| Problem | First thing to check |
+| --- | --- |
+| No models appear | Provider address, API key, connection error, and whether the provider is enabled. |
+| A model appears in settings but not the picker | Whether that model is enabled. |
+| 401 or 403 | Whether the key and account have access to the selected service/model. |
+| Quota or rate-limit error | The provider's allowance or billing settings; repeated retries may not help. |
+| Local server cannot be reached | Whether the model server is running on the expected computer and address. |
+
+The rest of this page is the detailed reference for additional providers, authentication methods, and capabilities.
 
 ## Supported provider types
 

@@ -1,5 +1,7 @@
 # Engineering references
 
+These are technical design and verification records for contributors. For everyday use, start with the [beginner guide](start-here.md) and [mode guides](work.md). A design record can contain proposals or old instructions; it is not a step-by-step user tutorial.
+
 The user guides describe the current documented behavior. The repository also retains original design specifications, upstream navigation notes, fixtures, and dated verification records.
 
 These engineering files are available on GitHub and are intentionally separate from the published user-guide navigation. A proposal, checklist, or dated instruction is not proof that a feature is currently shipped or supported on every platform.

@@ -1,5 +1,7 @@
 # macOS packaging
 
+This is an advanced guide for preparing distributable macOS app files and their signatures. For installing the published test download, use [Installation & first run](getting-started.md#macos-apple-silicon). The [glossary](glossary.md#common-file-and-development-terms) explains signed, notarized, source build, and checksum.
+
 Run commands from `apps/taucode`. Install frontend dependencies and populate the
 Cargo cache before building; the release script does not run `npm ci`. Packaging
 uses the installed Tauri CLI and offline Cargo. Build natively on the target Mac

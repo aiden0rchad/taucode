@@ -56,9 +56,20 @@ Code uses the selected enabled engine. Chat and Work use dedicated pi profiles; 
 
 ## Get started
 
-The complete [installation and first-run guide](docs/getting-started.md) covers prerequisites, platform differences, provider setup, and the first task.
+**New to AI tools?** Start with the [beginner guide](docs/start-here.md), follow [installation and first run](docs/getting-started.md), then try the [first Work task](docs/first-task.md). The [glossary](docs/glossary.md) explains unfamiliar terms.
 
-### Run from source
+### Download a test build
+
+The [October 30 test release](https://github.com/aiden0rchad/taucode/releases/tag/build-2026-10-30-b6848c7) includes:
+
+| Your computer | File |
+| --- | --- |
+| Apple Silicon Mac | `taucode_0.7.68_aarch64.dmg` — development signed, not notarized. |
+| Intel/AMD Windows x64 | `taucode_0.7.68_x64-setup.exe` — unsigned. |
+
+These are experimental packages. Follow the [step-by-step installation guide](docs/getting-started.md) and read the [build notes and limits](docs/releases.md). The download includes supporting runtimes; development tools are needed for source builds, not normal use of the packaged app.
+
+### Build from source (developers)
 
 You'll need **Node.js 22.19 or newer with npm**, the **stable Rust toolchain**, **Git**, **CMake**, and your platform's [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). Native dependencies require additional platform tools; Windows needs MSVC and LLVM/Clang, and macOS computer-use components need Xcode/Swift tooling.
 
@@ -72,7 +83,7 @@ npm run tauri:dev
 
 The native app's Cargo configuration defaults to offline builds. The explicit network override above populates the dependency cache on a fresh checkout.
 
-**Windows:** use `npm run tauri:dev:win` for the platform configuration. An **unsigned, experimental Windows x64 installer** is available in the [Windows test release](https://github.com/aiden0rchad/taucode/releases/tag/windows-x64-v0.7.68). Compilation and startup checks are narrower than full feature verification.
+**Windows source builds:** use `npm run tauri:dev:win` for the platform configuration. Compilation and startup checks are narrower than full feature verification.
 
 **Just exploring the interface?** Run `npm run preview:ui` from `apps/taucode` and open `http://localhost:1421`. This uses sample data and makes no provider requests. It cannot run real tasks or access native desktop features.
 

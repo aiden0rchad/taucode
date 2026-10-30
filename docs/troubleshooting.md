@@ -2,6 +2,16 @@
 
 Start with the boundary that failed: installation, runtime, provider, tool, or UI. Preserve the error message and partial work before retrying.
 
+## First things to try
+
+1. **Read the visible error.** Write down which step failed and what the message says. Do not keep resending a paid request without checking it.
+2. **Check the mode and model.** Is this Chat, Code, or Work? Is the provider/model enabled? For a file task, is the correct folder selected?
+3. **Check the status.** Queued means waiting; Needs input means a question or approval needs attention. Neither necessarily means the app has frozen.
+4. **Try a smaller example.** A short Chat message checks the model connection. The [first Work task](first-task.md) checks a simple file workflow with sample data.
+5. **Open the matching section below.** If it is still unclear, report the exact steps and a sanitized error. Leave API keys and personal files out of the report.
+
+**Provider** means the model service; **engine** means the background conversation/tool program; **UI** means the visible interface. Other terms are in the [glossary](glossary.md).
+
 ## Quick diagnosis
 
 | Symptom | First check |

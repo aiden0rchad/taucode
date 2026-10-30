@@ -1,5 +1,15 @@
 # taucode themes
 
+## Change the look without editing files
+
+Open **Settings → Appearance** and choose a built-in theme. **System** follows your computer's light/dark appearance, using the light and dark themes you select. **Glass** adds a translucent appearance where supported.
+
+**Expected result:** the app's colors change. You can select another built-in theme if you prefer it. You do not need to edit JSON or know CSS to use the gallery.
+
+The reference below explains custom themes. A **token** is a named visual setting, such as the accent color; **JSON** is the text format used to save those settings. See the [glossary](glossary.md) and continue here when you want to create or share a custom theme.
+
+## Theme behavior
+
 Choose a theme in Settings → Appearance. System follows the OS using your Light theme and Dark theme selections. Glass uses Tauri's built-in window material API; its sidebar and title bar are about 50% opaque, with app and message surfaces at 72%. The material is pinned to the theme’s light or dark appearance. Composer, menus, modals, side panels and code remain opaque. Claude palettes are community approximations, not official brand assets.
 
 ## Format (v1)

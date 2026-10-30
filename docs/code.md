@@ -1,6 +1,20 @@
 # Code · projects & conversations
 
-Code connects an agent conversation to a project folder. It keeps the repository, model and engine choices, tool activity, file changes, and supporting panels together.
+Code lets you ask questions about a software project and, with the relevant permissions, change its files. A project is the folder holding that code. Start by asking for an explanation before requesting edits.
+
+## First time in Code
+
+After [model setup](getting-started.md), add a copy of a small coding project, select it, and start a new conversation. Keep the default pi engine and choose your enabled model. Start with **Read-only** for an explanation, or **Ask** when you want to review proposed actions.
+
+```text
+Explain this project's folder structure in plain language. Tell me how I would
+run its existing checks. Do not change any files.
+```
+
+**Expected result:** an explanation, with your project files unchanged. If the agent reports a command to run, read what it does before running it. Later, a **diff** shows the lines changed in a file so you can review an edit.
+
+If you want to make ordinary documents rather than work on code, follow [Your first Work task](first-task.md). The [glossary](glossary.md) explains repository, branch, terminal, and the other terms used in this reference.
+
 
 ![Code mode with an agent tree and session rail](/screenshots/code.png)
 

@@ -1,5 +1,9 @@
 # Computer use & permissions
 
+This feature lets an agent look at and operate desktop applications. It is optional: the [first Chat message](getting-started.md#_4-send-a-first-chat-message) and [notes-to-summary exercise](first-task.md) do not need it.
+
+For a first setup, leave it until you have a task that specifically needs another app. **Screen Recording** allows capture; **Accessibility** allows the supported inspection/input paths. These are macOS permissions you grant yourself. A model can make mistakes, so begin with a harmless test and learn the Stop/takeover controls before using important files.
+
 Computer use lets a model inspect and interact with supported desktop apps. It is an **experimental macOS feature** with explicit model, permission, app-selection, and approval requirements.
 
 Do not assume the Windows or Linux build has equivalent native desktop control. The [platform status](releases.md) describes the current verification boundary.

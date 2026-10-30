@@ -2,6 +2,18 @@
 
 Chat is a separate conversation mode for questions, writing, and discussing supplied material. It does not require a Code project.
 
+## Try your first message
+
+After [model setup](getting-started.md#_2-connect-one-provider-and-model), choose **Chat → New chat**, select your model, and send:
+
+```text
+Explain what a to-do list is in two short sentences.
+```
+
+**Expected result:** a written reply appears in the conversation. The reply may arrive a few words at a time; that is called **streaming**. Use **Stop** to interrupt it. This example needs no project folder or extra tools.
+
+The **message box** is where you type requests; technical pages also call it the **composer**. The [glossary](glossary.md) explains other terms used below.
+
 ![Chat with separate history and a Markdown conversation](/screenshots/chat.png)
 
 *Offline preview with sample data.*
@@ -10,7 +22,7 @@ Chat is a separate conversation mode for questions, writing, and discussing supp
 
 Choose **Chat** in the sidebar, select **New chat**, and pick an enabled model. Replies stream into a centered conversation. Use Stop to interrupt a response.
 
-Chat uses a dedicated **pi** profile. It does not switch to Codex or OMP when you change the Code engine. Providers and enabled models come from the same registry, with an optional separate Chat default.
+Chat runs on **pi** with its own restricted set of tools and settings. Choosing another engine for Code does not change Chat's engine. The available models come from your provider settings, and Chat can have its own default model.
 
 ## What Chat can access
 

@@ -22,15 +22,18 @@ export default defineConfig({
     logo: { src: '/taucode-mark.svg', alt: 'taucode' },
     siteTitle: 'taucode / docs',
     nav: [
-      { text: 'Get started', link: '/getting-started' },
-      { text: 'Guides', link: '/code' },
+      { text: 'Start here', link: '/start-here' },
+      { text: 'First task', link: '/first-task' },
       { text: 'FAQ', link: '/faq' },
       { text: 'Builds & status', link: '/releases' },
     ],
     sidebar: [
       { text: 'Start here', items: [
         { text: 'Welcome', link: '/' },
+        { text: 'New to taucode?', link: '/start-here' },
         { text: 'Installation & first run', link: '/getting-started' },
+        { text: 'Your first Work task', link: '/first-task' },
+        { text: 'Plain-language glossary', link: '/glossary' },
         { text: 'Providers & models', link: '/providers' },
         { text: 'Engines & feature switches', link: '/engines' },
         { text: 'Builds & platform status', link: '/releases' },

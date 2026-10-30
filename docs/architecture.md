@@ -1,5 +1,7 @@
 # Architecture & source map
 
+This is a technical map for contributors. If you want to install or use the app, begin with [Start here](start-here.md) or [Your first Work task](first-task.md). The [glossary](glossary.md) explains terms such as backend, daemon, and protocol as you encounter them.
+
 taucode is a Tauri v2 application with a React/TypeScript interface and a Rust host. The desktop adapter and headless daemon share backend domain code. Agent engines and optional helpers run as supervised child processes.
 
 ## Runtime at a glance

@@ -1,5 +1,7 @@
 # Development
 
+This guide is for building or changing taucode's code. To use a downloaded app, follow [Installation & first run](getting-started.md) instead. New to the vocabulary? The [glossary](glossary.md#common-file-and-development-terms) explains terminal, source build, dependency, and repository.
+
 The repository contains the desktop app, reusable Rust support crates, generated protocol types, and this standalone documentation site. Run app commands from `apps/taucode`; run documentation commands from the repository root with `--prefix docs`.
 
 ## Set up a checkout

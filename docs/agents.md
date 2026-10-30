@@ -1,5 +1,13 @@
 # Agents & Chain of Command
 
+An **agent team** splits a job between a main agent and child agents. For example, one child might help implement a change while another reviews it. Each can make model requests, so more agents can mean more usage and cost.
+
+## Start with one model
+
+In **Settings → Agents → Defaults**, choose **Single model** for the simplest starting point. Get one ordinary Code task working before trying a team.
+
+If you later need help from several agents, use this reference to choose roles and limits. A **role** is a named job, such as reviewer; **concurrency** is how many children can work at the same time. The [glossary](glossary.md) explains delegation and the other terms below.
+
 taucode separates model selection from delegation policy. You can keep one model responsible for a task, allow bounded custom delegation, or configure a hierarchy for Code work.
 
 ## Choose a delegation mode
