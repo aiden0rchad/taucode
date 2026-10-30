@@ -298,8 +298,13 @@ A subsequent full app force-quit stopped the test engine, agents and foreground
 timer. It exposed OMP's shutdown behavior: a generic abort tool result was saved
 without agent details and hid the richer checkpoint. The precedence rule now
 keeps recovery evidence in that case, with a regression test covering the retained
-completed child and partial transcript. Final native verification is pending
-unlock/Keychain approval; the Mac locked before the final build could relaunch.
+completed child and partial transcript. The signed native build subsequently
+restored Turn 10 with the interrupted major, completed major, unavailable end time
+and actual README tool output. A fresh Account 2 Sol/Low delegation completed with
+`CRASH_RECOVERY_OK`; the two previous crash checkpoints remained and the new turn's
+checkpoint was removed. Original team models and limits (4 concurrent, 8 per turn,
+depth 2) were restored after testing. Screenshots: `taucode-forcequit-recovered-live.png`,
+`taucode-forcequit-transcript-live.png`, `taucode-crash-followup-live.png`.
 A sampled stack traced the startup prompt to Codex thread
 listing (`prepare_codex`), separate from offline Pi/OMP thread resume.
 Remaining crash scope includes root assistant streaming, nondelegated tools,
@@ -321,7 +326,9 @@ test with command authentication set to fail if invoked. Regression tests cover
 no Keychain calls for history, credential promotion, thread resume before a new
 turn, and no downgrade after authentication. The debug app rebuilt and passed
 signature verification with the same designated requirement as the previous
-build. Native verification is pending the Mac unlock. This removes an unnecessary startup credential read; it does not yet
+build. Native startup loaded saved conversations without waiting for credentials.
+Raw subagent transcript reads still load credentials for redaction. This removes
+an unnecessary startup credential read; it does not yet
 establish Keychain trust across rebuilds when execution needs a credential.
 
 ## Unknown model costs
@@ -339,10 +346,25 @@ last paid response. Historical placeholder zeros also display as unavailable.
 
 Validation: 1,797 frontend tests, typecheck and changed-file lint; 47 Pi backend
 tests passed (one unrelated live test ignored), cargo check; all 29 extension tests;
-all 19 diagnostics tests. Final signed native verification is pending. This establishes
+all 19 diagnostics tests. Native verification showed “cost unavailable” on both
+historical crash records and the newly completed delegation. This establishes
 honest missing-price handling, not measured cloud/local quality or billing accuracy.
 
 ## Work still required for the full product goal
+
+The browser smoke pass created two empty tabs, navigated to Example Domain, and
+returned focus to the composer. Narrow panes at 120% UI zoom collapsed the URL
+field; the toolbar now puts the address on its own row below 400 CSS pixels. The
+signed build showed the usable address and all controls at that width. Frontend
+validation: 1,797 tests, typecheck, script syntax and changed-file lint passed.
+The WebKit geometry check now covers 220/320/480px panes, but that script has not
+been run for this change. A foreground native recheck verified expanded and narrow
+page alignment, zoom from native-page focus, correct selected-tab accessibility,
+and closing/reopening the last empty tab. Earlier stale rendering disappeared
+when the user made the window visible after direct input had reported no available
+window. Zoom was restored to 100% and test tabs closed. Screenshots:
+`taucode-browser-narrow-toolbar-after.png`, `taucode-browser-wide-toolbar-after.png`.
+This smoke pass does not establish the cause of the earlier empty-tab failure.
 
 - Per-conversation policy overrides beyond the current project defaults.
 - Durable orchestration state and evidence-backed QA completion gates.

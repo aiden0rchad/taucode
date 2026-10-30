@@ -1,4 +1,4 @@
-.browser-pane { padding: 10px; gap: 8px; min-width: 0; }
+.browser-pane { padding: 10px; gap: 8px; min-width: 0; container: browser-pane / inline-size; }
 .browser-toolbar, .browser-tabs, .browser-tab, .browser-agent { display: flex; align-items: center; gap: 4px; }
 .browser-tabs { overflow-x: auto; flex-shrink: 0; }
 .browser-tab { min-width: 70px; max-width: 200px; border-radius: 6px; background: var(--surface-card); }
@@ -15,6 +15,11 @@
 .browser-address { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; height: 30px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--ds-border-subtle); border-radius: 8px; background: var(--surface-card); }
 .browser-address svg { flex-shrink: 0; color: var(--text-muted); }
 .browser-address input { width: 100%; height: 100%; min-width: 0; padding: 0; border: 0; outline-offset: 2px; background: transparent; color: var(--text-strong); }
+@container browser-pane (max-width: 400px) {
+  .browser-toolbar { height: auto; flex: 0 0 auto; flex-wrap: wrap; }
+  .browser-address { flex: 0 0 100%; order: -1; }
+  .browser-toolbar .mode-row { margin-left: auto; }
+}
 .browser-progress { height: 2px; flex: 0 0 2px; overflow: hidden; }
 .browser-progress span { display: block; height: 2px; background: var(--text-accent, var(--text-strong)); transition: width .15s; }
 .browser-tab.active { background: var(--surface-active, var(--surface-hover)); }
