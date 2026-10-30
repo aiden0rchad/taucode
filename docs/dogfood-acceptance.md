@@ -14,9 +14,9 @@ tests and `cargo check --all-targets --features custom-protocol` on macOS.
 | Cloud/local measurement | Sol Account 2 and self-hosted Halogen passed six independent bugfix checks. Mixed-team implementation and independent review also passed. | Pricing remains **unknown**, not zero. One sequential baseline does not justify automatic routing or general quality claims. |
 | Conversation teams | Overrides, project isolation, fork/side-chat copying and restart persistence passed. CoC stays in Code. | Native coverage is Pi-RPC/OMP on this Mac. |
 | Work polish | Interactive agent transcripts, concise titles and preview Open/Stop/Restart controls passed live checks; stopping preserved the follow-up draft and closed owned ports. | Historical Work CoC records remain readable; new Work turns do not enable CoC. |
-| Browser stability | Failure-state cleanup and Retry have regression coverage. Native blank-page navigation, close/reopen, zoom, focus and ten repeated create/close cycles passed. | Earlier empty-tab process exit remains unreproduced. Actual native creation failure/Retry has not been fault-injected. |
+| Browser stability | Failure-state cleanup and Retry have regression coverage. Native blank-page navigation, close/reopen, zoom, focus and ten repeated create/close cycles passed. The follow-up fixes evicted tabs stuck loading; twelve-tab eviction and interactive recovery passed in the signed app. | Earlier empty-tab process exit remains unreproduced. Actual native creation failure/Retry has not been fault-injected. |
 | Signing / Keychain | Free Xcode Personal Team signing plus the user's Always Allow approval added Apple-team trust to the provider key. Fresh-process provider requests passed both on relaunch and after rebuilding to a different code hash. | Verified on this Mac and provider key. Certificate renewal, another Mac and release notarization are outside this check. |
-| Final acceptance | Code recovery/team tasks, Chat checks, Work artifacts/previews, browser interactions, settings keyboard flows and responsive Evals checks have passed within the recorded scope. | User review before merge remains required. No claim of a full VoiceOver audit, cross-platform acceptance or release notarization. |
+| Final acceptance | Code recovery/team tasks, Chat checks, Work artifacts/previews, browser interactions, settings keyboard flows and responsive Evals checks have passed within the recorded scope. The user approved the batch; local merge `b6848c7` retained the main branch's Windows packaging changes. | No claim of a full VoiceOver audit, cross-platform acceptance or release notarization. |
 
 ## Recovery-message acceptance
 
@@ -41,6 +41,37 @@ was visible afterward. No process exit occurred. An initial attempt using two
 identical “New tab” labels could not establish which tab was closed and is excluded.
 The only retained `codex-monitor` crash report is October 26's already-fixed
 AppKit/KVO issue; it does not establish the cause of the later reported exit.
+
+### Follow-up: evicted tabs stuck loading
+
+After the merge, a twelve-tab native test reproduced a different failure. The
+browser keeps eight live webviews and evicts older hidden views. Returning to an
+evicted tab showed its snapshot and **Loading page…** indefinitely. Explicit Reload
+recovered it. The app stayed running; this does not establish the cause of the
+earlier empty-tab process exit.
+
+`NativeSlot` withheld visible placement until `ready`, while the native backend
+needed visible placement to recreate the evicted view. Placement now describes
+the unobstructed slot independently of readiness. The backend still waits for the
+page to be ready before showing it; the frontend retains the loading snapshot.
+Blocked, background and overlay-obscured slots still send hidden placement.
+
+The new loading-tab regression failed before the fix. All 59 browser tests,
+TypeScript and changed-file ESLint passed afterward. The debug app rebuilt and
+passed strict deep signature verification with the saved Apple identity.
+
+In that signed build, twelve localhost fixture pages were opened. The native-view
+count stabilized at eight (plus the frontend's placeholder). Revisiting tabs
+1, 2, 3, 4, 12 and 1 automatically restored interactive content without Reload;
+each accepted text input and cleared the loading message. Opening Settings hid
+the native content behind its snapshot; closing Settings restored the page with
+its input retained. All twelve fixture tabs were closed and their server stopped.
+Screenshots: `taucode-evicted-tab-before.png` and `taucode-evicted-tab-after.png`
+in the task's visualization folder.
+
+The plain fixture also exposed a separate contrast issue: default black page text
+appeared over the dark browser background. That remains a follow-up; it is not
+evidence of a loading or process failure.
 
 ## Signing and Keychain acceptance
 
