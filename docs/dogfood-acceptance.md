@@ -12,7 +12,7 @@ No merge is authorized for this batch.
 | Conversation teams | Overrides, project isolation, fork/side-chat copying and restart persistence passed. CoC stays in Code. | Native coverage is Pi-RPC/OMP on this Mac. |
 | Work polish | Interactive agent transcripts, concise titles and preview Open/Stop/Restart controls passed live checks; stopping preserved the follow-up draft and closed owned ports. | Historical Work CoC records remain readable; new Work turns do not enable CoC. |
 | Browser stability | Failure-state cleanup and Retry have regression coverage. Native blank-page navigation, close/reopen, zoom, focus and ten repeated create/close cycles passed. | Earlier empty-tab process exit remains unreproduced. Actual native creation failure/Retry has not been fault-injected. |
-| Signing / Keychain | Free Xcode Personal Team setup produced a valid Apple Development identity. Two different binaries with that identity passed strict signature checks and real provider requests after fresh launches. | User observation of any intervening Keychain prompt is pending. Certificate renewal, another Mac and release notarization are outside this check. |
+| Signing / Keychain | Free Xcode Personal Team setup produced a valid Apple Development identity. Two different binaries with that identity passed strict signature checks and real provider requests after fresh launches. Another fresh launch also completed a confirmed Keychain read and provider request. | The user did not notice whether the first two launches prompted; prompt-free access remains unconfirmed. Certificate renewal, another Mac and release notarization are outside this check. |
 | Final acceptance | Code recovery/team tasks, Chat checks, Work artifacts/previews, browser interactions, settings keyboard flows and responsive Evals checks have passed within the recorded scope. | User review before merge remains required. No claim of a full VoiceOver audit, cross-platform acceptance or release notarization. |
 
 ## Recovery-message acceptance
@@ -74,13 +74,22 @@ Both used the same Apple Development identity and passed
 signed using the saved local preference. GPT 6.1 Sol (Account 2), Low, completed
 both checks. The second request ran in a new app process, so the previous process's
 in-memory credential cache could not satisfy it. No new approval was requested
-through this task; the user is being asked whether any prompt appeared and was
-approved independently. This observation remains necessary before claiming the
-recurring prompt is resolved.
+through this task. The user replied **I didn’t notice** when asked whether either
+launch displayed a prompt. This is not confirmation of prompt-free access.
+
+A further fresh launch of the changed binary (PID 60729) returned
+`APPLE_SIGNING_FRESH_LAUNCH_OK` using GPT 6.1 Sol (Account 2), Low. The old app had
+exited completely. A one-second process sample captured the real
+`keyring::Entry::get_password` / `SecKeychainFindGenericPassword` path; the request
+then completed. This confirms a successful cold-process credential read, not
+whether macOS briefly displayed a prompt. The user was asked about this latest
+check separately. No additional binary change was made for this relaunch.
+Screenshot: `taucode-apple-signing-fresh-launch.png` in the task's visualization folder.
 
 The original metadata probe still reported six build-hash partitions after the
 baseline request; it does not independently prove trust for the new identity.
-Evidence is the changed-binary credential checks plus the pending user observation.
+Evidence is the changed-binary credential checks and the additional fresh launch;
+prompt visibility remains unconfirmed.
 [Free Personal Team development](https://developer.apple.com/help/account/basics/about-your-developer-account)
 does not replace the separate Developer ID distribution/notarization workflow in
 [packaging](packaging.md). Renew the configured identity before its expiry.
