@@ -13,6 +13,7 @@ import "./agents.css";
 
 export function transcriptItems(messages: Record<string, unknown>[]): ConversationItem[] {
   return messages.flatMap((message, index): ConversationItem[] => {
+    if (message.display === false) return [];
     if (message.type) {
       const item = buildConversationItem(message);
       return item ? [item] : [];

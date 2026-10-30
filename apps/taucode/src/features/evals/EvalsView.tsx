@@ -20,8 +20,22 @@ export function EvalsView({appSettings,onUpdateAppSettings,onOpenFull,onClose,fu
   const engine=engines.find(e=>e.id===policy?.defaultEngine)??engines[0];
   const selected=models.find(m=>m.id===`${model?.providerId}/${model?.modelId}`)??models[0];
   const effort=appSettings.lastComposerReasoningEffort;
-  return {engines:engine?[engine.id]:[],models:selected?[selected.id]:[],effort:effort&&reasoningLevels.includes(effort)?effort:undefined,tags:["smoke"],categories:[],codegraph:[false],repeats:1,concurrency:2};
+  const fallback:EvalPlan={engines:engine?[engine.id]:[],models:selected?[selected.id]:[],effort:effort&&reasoningLevels.includes(effort)?effort:undefined,tags:["smoke"],categories:[],codegraph:[false],repeats:1,concurrency:2};
+  try {
+   const saved:unknown=JSON.parse(localStorage.getItem("taucode.evals.plan.v1")??"null");
+   if(!saved||typeof saved!=="object")return fallback;
+   const p=saved as EvalPlan;
+   if(![p.engines,p.models,p.tags,p.categories].every(a=>Array.isArray(a)&&a.every(v=>typeof v==="string"))
+     ||!Array.isArray(p.codegraph)||!p.codegraph.length||!p.codegraph.every(v=>typeof v==="boolean")
+     ||!Number.isInteger(p.repeats)||p.repeats<1||p.repeats>100
+     ||!Number.isInteger(p.concurrency)||p.concurrency<1||p.concurrency>6
+     ||[p.maxTotalTokens,p.maxCost].some(v=>v!==undefined&&(typeof v!=="number"||!Number.isFinite(v)||v<=0)))return fallback;
+   return {engines:[...new Set(p.engines)].filter(id=>engines.some(e=>e.id===id)),models:[...new Set(p.models)].filter(id=>models.some(m=>m.id===id)),
+    effort:p.effort&&reasoningLevels.includes(p.effort)?p.effort:undefined,tags:p.tags,categories:p.categories,codegraph:[...new Set(p.codegraph)],
+    repeats:p.repeats,concurrency:p.concurrency,maxTotalTokens:p.maxTotalTokens,maxCost:p.maxCost};
+  }catch{return fallback;}
  });
+ useEffect(()=>{try{localStorage.setItem("taucode.evals.plan.v1",JSON.stringify(plan));}catch{/* Storage can be unavailable; the current draft still works. */}},[plan]);
  const [runtimes,setRuntimes]=useState<EngineRuntimeStatus[]>([]);
  const [tasks,setTasks]=useState<EvalTask[]>([]);
  const [history,setHistory]=useState<EvalHistory[]>([]);

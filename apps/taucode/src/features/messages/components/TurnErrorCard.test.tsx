@@ -13,6 +13,16 @@ it.each([
   ["Unexpected backend error", "Request couldn’t complete"],
 ])("summarizes %s", (message, title) => expect(describeTurnError(message).title).toBe(title));
 
+it.each(["", "Turn failed: "])("explains incomplete QA without suggesting a blind retry (%s)", prefix => {
+  const message = `${prefix}Verification incomplete: QA could not verify the 429 timeout handling criterion`;
+  const { container } = render(<TurnErrorCard message={message} onRetry={vi.fn()} onChangeModel={vi.fn()} />);
+  expect(screen.getByRole("region", { name: "Review needs follow-up" })).toBeTruthy();
+  expect(screen.getByText(/ask for the missing checks or corrections/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Change model" })).toBeNull();
+  expect(container.querySelector("pre")?.textContent).toBe(message);
+});
+
 it("prevents duplicate retries and handles rejection without losing error details", async () => {
   let reject!: (error: Error) => void;
   const onRetry = vi.fn(() => new Promise<boolean>((_resolve, fail) => { reject = fail; }));

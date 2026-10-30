@@ -16,7 +16,7 @@ vi.mock("@services/events",()=>({subscribeEvalProgress:vi.fn(fn=>{progress=fn;re
 const settings=createFixtures().settings;
 const render = (ui: import("react").ReactNode) => renderUi(<FeatureSettings.Provider value={settings}>{ui}</FeatureSettings.Provider>);
 let fixture:ReturnType<typeof createEvalFixture>;
-beforeEach(()=>{vi.mocked(engineRuntime).mockResolvedValue([{engine:"pi",state:"pending",message:"Ready to set up on first use"}]);fixture=createEvalFixture((_w,_m,p)=>progress?.(p as {runId:string;status:string}));vi.mocked(evalRequest).mockImplementation(async(a,p)=>fixture(a,p as Record<string,unknown>) as never);});
+beforeEach(()=>{localStorage.removeItem("taucode.evals.plan.v1");vi.mocked(engineRuntime).mockResolvedValue([{engine:"pi",state:"pending",message:"Ready to set up on first use"}]);fixture=createEvalFixture((_w,_m,p)=>progress?.(p as {runId:string;status:string}));vi.mocked(evalRequest).mockImplementation(async(a,p)=>fixture(a,p as Record<string,unknown>) as never);});
 afterEach(()=>{cleanup();vi.clearAllMocks();});
 it("starts with the configured engine, model and reasoning, and submits changes",async()=>{
  const configured={...settings,lastComposerReasoningEffort:"low",agentPolicy:{...settings.agentPolicy!,defaultEngine:"omp",defaultModel:{providerId:"openai",modelId:"gpt-5-mini"}}};
@@ -37,6 +37,36 @@ it("falls back when saved defaults are no longer available",async()=>{
  await screen.findByText(/2 cells · 2 tasks/);
  expect(vi.mocked(evalRequest).mock.calls.find(([action])=>action==="plan")?.[1]).toMatchObject({engines:["pi"],models:["openai/gpt-5"],effort:undefined});
  expect((screen.getByRole("combobox",{name:"Reasoning"}) as HTMLSelectElement).value).toBe("");
+});
+it("keeps the draft and budget across settings/full-view remounts without retaining spending confirmation",async()=>{
+ const first=render(<EvalsView appSettings={settings} onUpdateAppSettings={vi.fn()}/>);
+ await screen.findByText(/2 cells · 2 tasks/);
+ fireEvent.change(screen.getByRole("combobox",{name:"Reasoning"}),{target:{value:"low"}});
+ fireEvent.change(screen.getByRole("spinbutton",{name:"Token cap"}),{target:{value:"400000"}});
+ fireEvent.click(screen.getByRole("button",{name:"Start run"}));
+ expect(screen.getByRole("button",{name:"Confirm start"})).toBeTruthy();
+ const saved=JSON.parse(localStorage.getItem("taucode.evals.plan.v1")!);
+ first.unmount();
+ render(<EvalsView full appSettings={settings} onUpdateAppSettings={vi.fn()}/>);
+ await screen.findByText(/2 cells · 2 tasks/);
+ expect(screen.queryByRole("button",{name:"Confirm start"})).toBeNull();
+ expect((screen.getByRole("spinbutton",{name:"Token cap"}) as HTMLInputElement).value).toBe("400000");
+ fireEvent.click(screen.getByRole("button",{name:"Start run"}));
+ fireEvent.click(screen.getByRole("button",{name:"Confirm start"}));
+ await waitFor(()=>expect(evalRequest).toHaveBeenCalledWith("start",saved));
+});
+it("rejects malformed drafts and removes unavailable models without silently substituting one",async()=>{
+ localStorage.setItem("taucode.evals.plan.v1",JSON.stringify({engines:"omp",models:[],codegraph:[false]}));
+ const first=render(<EvalsView appSettings={settings} onUpdateAppSettings={vi.fn()}/>);
+ await screen.findByText(/2 cells · 2 tasks/);
+ const saved=JSON.parse(localStorage.getItem("taucode.evals.plan.v1")!);
+ first.unmount();
+ localStorage.setItem("taucode.evals.plan.v1",JSON.stringify({...saved,models:["removed/missing"],maxTotalTokens:400000,extra:"ignored"}));
+ render(<EvalsView full appSettings={settings} onUpdateAppSettings={vi.fn()}/>);
+ await screen.findByText(/0 cells · 2 tasks/);
+ expect((screen.getByRole("button",{name:"Start run"}) as HTMLButtonElement).disabled).toBe(true);
+ expect(JSON.parse(localStorage.getItem("taucode.evals.plan.v1")!)).toMatchObject({models:[],maxTotalTokens:400000});
+ expect(JSON.parse(localStorage.getItem("taucode.evals.plan.v1")!)).not.toHaveProperty("extra");
 });
 it("shows the recorded reasoning and team settings when viewing a run",async()=>{
  const saved=fixture("run",{runId:"eval-a"}) as EvalResult;

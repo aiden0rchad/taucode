@@ -556,3 +556,89 @@ This smoke pass does not establish the cause of the earlier empty-tab failure.
 - Native acceptance for Work's new interactive agent tree and retained transcripts;
   regression and browser-fixture evidence is recorded in `m8d-work-dogfood.md`.
   Chain of Command remains Code-only.
+
+## Cloud/local baseline — 2026-10-30
+
+Native run `ee72758c-1a15-48cf-b493-e770abf99cc6` completed all six cells on the
+signed evaluation build. OMP 18.12.6, GPT 6.1 Sol (Account 2) and the user's
+confirmed self-hosted Halogen Qwen3.8 Flash Next; Low reasoning requested, Full
+access, CodeGraph off, teams off, one repeat, concurrency one. The 400,000-token
+cap includes cached input. Each cell's independent catalog check passed.
+
+| Task | Sol wall time | Halogen wall time | Result |
+| --- | ---: | ---: | --- |
+| `ts-bugfix-range` | 25.86 s | 11.97 s | Both passed |
+| `py-bugfix-parse` | 22.16 s | 13.97 s | Both passed |
+| `ts-bugfix-reservations` | 48.93 s | 86.72 s | Both passed |
+
+Sol used 147,144 total tokens across the three cells; Halogen used 137,391.
+These totals include cached input. Sol recorded one expected failing test command
+before fixing reservations; all final checks passed. No pricing was returned, so
+cost is unknown, not zero. This single sequential pass with warm caches is a
+baseline, not sufficient evidence for automatic model routing or overall quality.
+Mixed-model delegation is recorded separately below. Evidence screenshot:
+`taucode-cloud-local-baseline.png`; full results/transcripts remain in the app's
+`evals/runs/ee72758c-1a15-48cf-b493-e770abf99cc6.json`.
+
+The first attempt after Keychain approval was still stuck in the old process's
+credential read; it was cancelled with zero tokens. Relaunching the unchanged
+signed build cleared that wait. A subsequent 150,000-token run stopped after
+three passing cells and one interrupted cell; its incomplete results are not
+used as the baseline. This does not establish signing trust across rebuilds.
+
+Dogfood found two follow-ups: Evals lost its draft models/limits when switching
+to full view, and OMP's LSP references lookup was treated as an opaque command.
+The draft now survives remounts/relaunches, while spend confirmation does not;
+invalid saved drafts fall back and removed models are not silently substituted.
+Full access permits six read-only LSP queries on plain paths inside the Code
+workspace, excluding protected paths and symlink escapes. Native mutations,
+unknown actions, child calls and Work retain their existing approval rules;
+Chat blocks native tools before that dispatch path. Regression checks cover
+these boundaries. Native LSP execution passed the gate without an approval, then
+reported `No language server found for this action` for the delivered `.mjs` file.
+Evals preserved both models, Low reasoning, concurrency one, bugfix selection and
+the 400,000-token cap when switching Settings to full view.
+
+### Mixed-team native acceptance
+
+Conversation `fcb98e50-6a10-4883-bda3-07100105abc8` in the disposable
+`command-stop-qfgg_8ap` project used Sol Account 2 / Low / Full access as commander,
+Sol Account 2 for colonel/major and Halogen for enlisted, with a five-minute limit.
+The existing project policy stayed unchanged: another conversation still showed
+Astra Account 2 / Sonnet 5.5 / Halogen and the Project team badge.
+
+Halogen implemented `mixed-qa-20261030/summarize.mjs`, nine Node tests and a README
+in 66.86 seconds. The independent Sol major reran all nine tests and passed 42
+additional API assertions. The first review correctly remained unverified: it
+could not independently certify the commander's earlier LSP attempt. An initial
+report with an empty evidence list was rejected, then corrected. A follow-up
+review limited to the three independently checkable artifact criteria passed all
+nine tests, submitted actual evidence and received the native **verified** badge.
+No artifacts changed after review. This establishes delegation and evidence-gate
+behavior, not a cloud/local speed or quality comparison. Costs remain unknown.
+
+The `/sidechat` command created fork `2b9f6e66-fd2b-4a59-a110-4d36248e71ff` with
+the same conversation team policy, including its five-minute limit; both persisted
+policy files matched byte-for-byte. Evidence: `taucode-mixed-team-verified.png`.
+
+Dogfood found that incomplete QA was presented as a generic provider failure.
+It now says **Review needs follow-up**, directs the user to missing checks or
+corrections, and omits blind Retry/Change model buttons while retaining the original
+details. Retained agent transcripts now respect `display: false`, hiding internal
+policy messages while preserving visible task, tool and result content.
+
+After the final signed rebuild, the native editor still showed the custom
+Sol/Sol/Halogen team and five-minute limit. The saved evaluation draft also
+survived the relaunch. Two changed signed binaries completed provider requests
+without another Keychain prompt on this Mac. This is bounded acceptance for the
+current signing identity, not a guarantee across future certificate, OS or
+Keychain changes.
+
+Final validation: 1,823 frontend tests; 57 Pi backend tests (one ignored); nine
+managed-task backend tests; 50 engine extension tests; TypeScript and changed-file
+ESLint passed. The settings integration test's one-second side-chat lookup timed
+out under full-suite load; its five-second bound now matches the dialog wait.
+The debug app rebuilt and its signature verified. Native verification confirmed
+the new QA follow-up message and hidden internal transcript policy. More repeated,
+diverse evaluation runs and pricing data are still needed before automatic model
+routing; the earlier native browser process exit remains unproven.

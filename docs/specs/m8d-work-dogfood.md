@@ -258,3 +258,44 @@ hit-test and cleanup integration test also passed with unshown fixture windows.
 These checks do not reproduce the reported native process exit. A signed-app
 creation/retry smoke test and investigation of that exit remain open; computer
 use still reports the Mac locked. No additional rebuild/relaunch was performed.
+
+## Native Work acceptance — 2026-10-30
+
+The signed app opened the retained October 28 colonel/enlisted/major tree and its
+enlisted transcript. An internal `display: false` policy message incorrectly
+appeared as an assistant reply; the shared transcript renderer now hides it, with
+a regression retaining ordinary task/result text and explicitly visible notices.
+
+A new **Preview lifecycle check. Preserve all files; do not…** task used Pi,
+GPT 6.1 Sol (Account 2), Low and Full access. It served the existing review pack
+with the bundled Python on a dynamically assigned loopback port. The first command
+had a stray trailing period supplied in the test prompt; it exited with code 2
+and was retained as failed history. After correcting that argument, HTTP returned
+200 / text/html / 6,973 bytes. The browser displayed the page aligned in its pane.
+
+The server survived turn completion. UI Stop closed its port; Restart created a
+new owned server that returned HTTP 200. Both actions preserved the composer draft.
+Quitting taucode stopped the restarted server; neither test port remained open.
+No existing processes or files were changed. The new task title was compact, and
+its conversation composer remained available throughout.
+
+Python prints its URL inside parentheses; URL discovery missed that format. The
+parser now accepts opening parentheses while retaining local-host and credential
+filters. The guard's generated library directory now declares ESM explicitly to
+avoid Node's noisy module-type warning without depending on a version-specific
+CLI flag. Backend tests exercise real preview execution and cleanup.
+
+The final signed build exposed the Python URL as a working Open in Browser link
+and its server log had no module-type warning. The page stayed aligned at 80%,
+100% and 120% zoom; focus returned to the Work composer, and Settings correctly
+covered the browser with its dimmed snapshot. The retained agent transcript
+showed task/result content without the internal policy message. UI Stop closed
+the final preview port; all three lifecycle-test ports were confirmed closed.
+Evidence: `taucode-native-preview-controls.png`.
+
+In Code, opening an empty browser pane, navigating, creating/closing another
+blank tab, restoring the page and closing the last tab all passed on the final
+build. This completes the normal creation/cleanup smoke check; it does not
+reproduce the earlier process exit or inject a native creation failure to prove
+the Retry path live. Final test/build counts are recorded in
+`m9-chain-of-command.md` under Mixed-team native acceptance.

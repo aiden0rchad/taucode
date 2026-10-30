@@ -390,7 +390,7 @@ fn url_delimiter(c: char) -> bool { c.is_whitespace() || matches!(c, '"' | '\'' 
 fn scan_urls(value: &mut ManagedTask, text: &str) {
     let plain = strip_ansi(text);
     for word in plain.split(url_delimiter) {
-        let word = word.trim_end_matches([',', ';', ')', '.']);
+        let word = word.trim_start_matches('(').trim_end_matches([',', ';', ')', '.']);
         let Ok(mut url) = reqwest::Url::parse(word) else { continue; };
         if !matches!(url.scheme(), "http" | "https") || !url.username().is_empty() || url.password().is_some() { continue; }
         let host = url.host_str().unwrap_or("").trim_matches(['[', ']']);
@@ -511,6 +511,9 @@ mod tests {
         append_output(&mut task, "host:5173/\u{1b}[0m\nhttp://0.0.0.0:8000/ http://[::1]:8080/ https://docs.example.com http://user:secret@localhost:99/ javascript:alert(1)");
         scan_urls(&mut task, "\u{1b}[32mhttp://localhost:5173/\u{1b}[0m http://0.0.0.0:8000/ http://[::1]:8080/ https://docs.example.com http://user:secret@localhost:99/ javascript:alert(1)");
         assert_eq!(task.urls, ["http://localhost:5173/", "http://localhost:8000/", "http://[::1]:8080/"]);
+        scan_urls(&mut task, "Serving HTTP on 127.0.0.1 port 52822 (http://127.0.0.1:52822/) ... (https://docs.example.com) (http://user:secret@localhost:99/)");
+        assert_eq!(task.urls.last().unwrap(), "http://127.0.0.1:52822/");
+        assert_eq!(task.urls.len(), 4);
         assert!(validate_command(" ").is_err());
         assert!(validate_command("echo\0bad").is_err());
     }

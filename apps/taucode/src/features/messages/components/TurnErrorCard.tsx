@@ -8,7 +8,10 @@ export function isTurnError(item: ConversationItem | undefined): boolean {
   );
 }
 
-export function describeTurnError(message: string) {
+export function describeTurnError(message: string): { title: string; description: string; canRetry?: boolean } {
+  if (/^(?:Turn failed(?: to start)?:\s*)?Verification incomplete:/i.test(message)) {
+    return { title: "Review needs follow-up", description: "One or more acceptance criteria remain unverified. Review the findings above, then ask for the missing checks or corrections.", canRetry: false };
+  }
   if (/chatgpt_quota_paused|requests are paused|quota.{0,30}(?:exceeded|exhausted)|insufficient_quota/i.test(message)) {
     return { title: "Account usage limit reached", description: "Choose another model or account, or retry when this account’s allowance is available." };
   }
@@ -33,7 +36,7 @@ export function TurnErrorCard({ message, onRetry, onChangeModel, disabled = fals
   onChangeModel?: () => void;
   disabled?: boolean;
 }) {
-  const { title, description } = describeTurnError(message);
+  const { title, description, canRetry = true } = describeTurnError(message);
   const retrying = useRef(false);
   const [pending, setPending] = useState(false);
   const [retryError, setRetryError] = useState(false);
@@ -49,7 +52,7 @@ export function TurnErrorCard({ message, onRetry, onChangeModel, disabled = fals
   return <section className="turn-error-card" aria-label={title}>
     <div className="turn-error-heading"><CircleAlert size={18} aria-hidden /><strong>{title}</strong></div>
     <p>{description}</p>
-    {(onRetry || onChangeModel) && <div className="turn-error-actions">
+    {canRetry && (onRetry || onChangeModel) && <div className="turn-error-actions">
       {onRetry && <button type="button" className="ghost" disabled={disabled || pending} onClick={() => void retry()} title="Resend the last request using the current model; keep existing work"><RotateCcw size={14} aria-hidden />{pending ? "Retrying…" : "Retry"}</button>}
       {onChangeModel && <button type="button" className="ghost" disabled={disabled || pending} onClick={onChangeModel}><SlidersHorizontal size={14} aria-hidden />Change model</button>}
     </div>}

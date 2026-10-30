@@ -16,6 +16,20 @@ const item = (nodes: AgentNode[]): ConversationItem => ({ id: "call", kind: "too
 const view = (items: ConversationItem[]) => <AgentsContext.Provider value={{ workspaceId: "ws", threadId: "main", itemsByThread: { main: items }, policy: { enabled: true, maxConcurrent: 2, maxPerTurn: 4, maxDepth: 3, allowedModels: [], defaultModel: null, roles: [] } }}><AgentsPanel onSelect={vi.fn()} /></AgentsContext.Provider>;
 
 describe("Agents panel", () => {
+  it("hides internal policy messages while retaining task and result text", async () => {
+    vi.mocked(getSubagentTranscript).mockResolvedValue({ messages: [
+      { role: "user", content: "Review this artifact" },
+      { role: "custom", customType: "taucode-subagent-policy", content: "Internal policy instructions", display: false },
+      { role: "custom", content: "Visible review notice", display: true },
+      { role: "assistant", content: "Review passed" },
+    ], truncated: false });
+    render(view([item([{ ...node, status: "completed" }])]));
+    fireEvent.click(screen.getByRole("button", { name: /Researcher/ }));
+    expect(await screen.findByText("Review passed")).toBeTruthy();
+    expect(screen.getByText("Review this artifact")).toBeTruthy();
+    expect(screen.getByText("Visible review notice")).toBeTruthy();
+    expect(screen.queryByText("Internal policy instructions")).toBeNull();
+  });
   it("retries a failed read without starting an agent", async () => {
     vi.mocked(getSubagentTranscript).mockRejectedValueOnce(new Error("Read interrupted"))
       .mockResolvedValue({ messages: [{ role: "assistant", content: "Recovered result" }], truncated: false });

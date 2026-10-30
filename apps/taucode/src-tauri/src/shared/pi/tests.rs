@@ -2226,12 +2226,15 @@ async fn managed_preview_bridge_serves_restarts_and_stops_without_user_dialogs()
     use crate::shared::managed_tasks::{ManagedTasks, TaskRuntime};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let root = temp();
+    std::fs::write(root.join("package.json"), "{}").unwrap();
+    config::prepare(&root, &[], None).unwrap();
+    let guard = root.join("extensions/lib/commandGuard.ts");
     let access = root.join("access.json");
     std::fs::write(&access, r#"{"kind":"work","accessMode":"full-access"}"#).unwrap();
     let manager = ManagedTasks::new();
     let node = crate::shared::engine_runtime::node_path();
     let preview = Arc::new(preview::Preview { manager: manager.clone(), data: root.clone(), access: access.clone(), workspace: "work".into(), thread: "fake-thread".into(), cwd: root.clone(),
-        runtime: TaskRuntime { guard: Some((node, Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/pi/extensions/lib/commandGuard.ts"))), env: Some(crate::shared::engine_registry::environment(std::env::vars(), &root).into_iter().chain([("TAUCODE_PREVIEW_TEST".into(), "owned ✓".into())]).collect()) }, secrets: vec!["secret-canary".into()] });
+        runtime: TaskRuntime { guard: Some((node, guard)), env: Some(crate::shared::engine_registry::environment(std::env::vars(), &root).into_iter().chain([("TAUCODE_PREVIEW_TEST".into(), "owned ✓".into())]).collect()) }, secrets: vec!["secret-canary".into()] });
     let (process, events) = fake(Duration::from_secs(600), &root.join("eof")).await;
     *process.preview.lock().await = Some(preview.clone());
     let script = root.join("server.cjs");
@@ -2248,6 +2251,7 @@ async fn managed_preview_bridge_serves_restarts_and_stops_without_user_dialogs()
         }).await.unwrap()
     };
     let tasks = wait_url().await;
+    assert!(!tasks[0]["output"].as_str().unwrap().contains("MODULE_TYPELESS_PACKAGE_JSON"));
     let id = tasks[0]["id"].as_str().unwrap().to_string();
     assert_eq!(tasks[0]["workspaceId"], "work");
     assert_eq!(tasks[0]["cwd"], root.canonicalize().unwrap().to_string_lossy().as_ref());

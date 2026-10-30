@@ -296,6 +296,7 @@ pub(super) fn prepare(
     ] {
         write_file(&home.join("extensions").join(name), source.as_bytes())?;
     }
+    write_json(&home.join("extensions/lib/package.json"), &json!({"type":"module"}))?;
     if home.join("auth.json").exists() {
         return Err("Remove auth.json from taucode's isolated pi home; accounts and logins are not supported".into());
     }
