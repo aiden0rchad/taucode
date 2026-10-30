@@ -1,12 +1,12 @@
 // Derived from pi's examples/extensions/subagent (MIT, Copyright Mario Zechner).
 // Keeps single/parallel/chain JSON streaming; roles come only from taucode policy.
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { checkLimits, commandInstructions, commandTargets, inside, reserveSubagent, resolveTask, type Policy } from "./lib/policy.ts";
+import { acquireSubagentSlot, adoptSubagentSlot, checkLimits, commandInstructions, commandTargets, createSubagentBudget, inside, releaseSubagentProcessSlots, releaseSubagentSlot, reserveSubagent, resolveTask, type Policy } from "./lib/policy.ts";
 
 const optionalString = Type.Optional(Type.Union([Type.String(), Type.Null()]));
 const taskFields = { agent: Type.String(), task: Type.String(), model: optionalString, cwd: optionalString };
@@ -20,12 +20,18 @@ export default function (pi: ExtensionAPI) {
   let count = 0;
   let active = 0;
   let turnBudget: string | undefined;
+  const inheritedSlot = Number(process.env.TAUCODE_SUBAGENT_DEPTH ?? 0) > 0 ? process.env.TAUCODE_SUBAGENT_SLOT : undefined;
+  const inheritedBudget = process.env.TAUCODE_SUBAGENT_BUDGET;
+  if (inheritedSlot && (!inheritedBudget || !inside(inheritedBudget, join(process.env.PI_CODING_AGENT_DIR!, "taucode")) || !inside(inheritedSlot, inheritedBudget))) throw new Error("Invalid managed subagent slot");
+  let ownSlot = inheritedSlot ? adoptSubagentSlot(inheritedSlot) : undefined;
+  let delegating = 0;
   const clearBudget = () => { if (turnBudget) rmSync(turnBudget, { recursive: true, force: true }); turnBudget = undefined; };
+  const finish = () => { clearBudget(); releaseSubagentSlot(ownSlot); ownSlot = undefined; };
   const waiters = new Set<() => void>();
   pi.on("session_start", (_event, ctx) => { ctx.ui.setStatus("taucode-subagents", "ready"); });
   pi.on("agent_start", () => { count = 0; clearBudget(); });
-  pi.on("agent_end", clearBudget);
-  pi.on("session_shutdown", clearBudget);
+  pi.on("agent_end", finish);
+  pi.on("session_shutdown", finish);
   pi.on("before_agent_start", () => {
     const current: Policy = JSON.parse(readFileSync(join(process.env.PI_CODING_AGENT_DIR!, "taucode/policy.json"), "utf8"));
     const role = Number(process.env.TAUCODE_SUBAGENT_DEPTH ?? 0) === 0 ? "commander" : process.env.TAUCODE_SUBAGENT_ROLE ?? "unknown";
@@ -37,7 +43,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "subagent",
     label: "Subagent",
-    description: "Delegate using taucode policy roles only (no user/project agent directories). Single: agent + task; parallel: tasks; chain: chain with {previous} substitution. Optional model per task is provider/model. Chain of Command fixes each role's model and shares a per-turn budget across the command tree; commanders and colonels delegate, majors verify, enlisted implement. Concurrency limits each delegator's immediate children. Children inherit thread access and are non-interactive: read-only stays read-only; in ask mode full roles may write only inside the workspace, bash only on the read-only allowlist. Protected paths require interactive approval and are blocked in children.",
+    description: "Delegate using taucode policy roles only (no user/project agent directories). Single: agent + task; parallel: tasks; chain: chain with {previous} substitution. Optional model per task is provider/model. Chain of Command fixes each role's model and shares turn and concurrency limits across the command tree; commanders and colonels delegate, majors verify, enlisted implement. Waiting coordinators lend their concurrency slot to workers and reclaim one before resuming. Custom delegation limits each delegator's immediate children. Children inherit thread access and are non-interactive: read-only stays read-only; in ask mode full roles may write only inside the workspace, bash only on the read-only allowlist. Protected paths require interactive approval and are blocked in children.",
     parameters: Type.Object({ agent: optionalString, task: optionalString, model: taskFields.model, cwd: taskFields.cwd, tasks: Type.Optional(Type.Union([Type.Array(Task), Type.Null()])), chain: Type.Optional(Type.Union([Type.Array(Task), Type.Null()])) }),
     async execute(_id, params, signal, onUpdate, ctx) {
       const home = process.env.PI_CODING_AGENT_DIR!;
@@ -56,6 +62,8 @@ export default function (pi: ExtensionAPI) {
       const parent = Object.entries(policy.models ?? {}).find(([, actual]) => actual === parentActual)?.[0] ?? parentActual;
       const run = async (r: Result) => {
         let acquired = false;
+        let slot: string | undefined;
+        let budget: string | undefined;
         try {
           checkLimits(policy, depth, count);
           const parentRole = depth === 0 ? "commander" : process.env.TAUCODE_SUBAGENT_ROLE ?? "unknown";
@@ -64,9 +72,8 @@ export default function (pi: ExtensionAPI) {
           const cwd = r.cwd || ctx.cwd;
           if (!inside(cwd, workspace)) throw new Error("Subagent cwd must be inside the workspace");
           if (signal?.aborted) throw new Error("Subagent aborted");
-          let budget: string | undefined;
           if (policy.mode === "chain-of-command") {
-            budget = depth === 0 ? turnBudget ??= mkdtempSync(join(home, "taucode/subagent-turn-")) : process.env.TAUCODE_SUBAGENT_BUDGET;
+            budget = depth === 0 ? turnBudget ??= createSubagentBudget(home, policy.maxConcurrent) : process.env.TAUCODE_SUBAGENT_BUDGET;
             if (!budget || !inside(budget, join(home, "taucode"))) throw new Error("Missing managed Chain of Command budget");
             reserveSubagent(budget, policy.maxPerTurn);
           }
@@ -81,6 +88,7 @@ export default function (pi: ExtensionAPI) {
           }
           if (signal?.aborted) throw new Error("Subagent aborted");
           active++; acquired = true;
+          if (budget) slot = await acquireSubagentSlot(budget, signal);
           r.model = model; r.status = "running"; update();
           const cli = process.env.TAUCODE_PI_CLI ?? process.argv[1];
           if (!cli) throw new Error("Missing managed pi CLI");
@@ -90,12 +98,18 @@ export default function (pi: ExtensionAPI) {
           if (role.instructions) args.push("--append-system-prompt", role.instructions);
           args.push(`Task: ${r.task}`);
           r.exitCode = await new Promise<number>((resolve, reject) => {
-            const child = spawn(process.execPath, args, { cwd, env: { ...process.env, TAUCODE_SUBAGENT_DEPTH: String(depth + 1), TAUCODE_SUBAGENT_ROLE: role.name, TAUCODE_SUBAGENT_BUDGET: budget, TAUCODE_WORKSPACE: workspace, TAUCODE_TOOL_ACCESS: toolAccess }, stdio: ["ignore", "pipe", "pipe"], detached: depth === 0 && process.platform !== "win32" });
+            const child = spawn(process.execPath, args, { cwd, env: { ...process.env, TAUCODE_SUBAGENT_DEPTH: String(depth + 1), TAUCODE_SUBAGENT_ROLE: role.name, TAUCODE_SUBAGENT_BUDGET: budget, TAUCODE_SUBAGENT_SLOT: slot, TAUCODE_WORKSPACE: workspace, TAUCODE_TOOL_ACCESS: toolAccess }, stdio: ["ignore", "pipe", "pipe"], detached: depth === 0 && process.platform !== "win32" });
+            const releaseOwners = (owners: Iterable<number>) => {
+              try { if (budget) for (const pid of owners) releaseSubagentProcessSlots(budget, pid); }
+              catch (error) { r.stderr += `\nConcurrency cleanup failed: ${error}`; r.stopReason = "error"; }
+            };
             let stopping: Promise<void> | undefined;
             const abort = () => {
               if (stopping) return;
               const targets = new Set<number>();
+              const owners = new Set<number>();
               if (child.pid) targets.add(depth === 0 && process.platform !== "win32" ? -child.pid : child.pid);
+              if (child.pid) owners.add(child.pid);
               if (child.pid && process.platform !== "win32") {
                 try {
                   // Snapshot before signalling: shell tools can lead separate groups,
@@ -110,6 +124,7 @@ export default function (pi: ExtensionAPI) {
                     for (const [pid, parent] of rows) if (owned.has(parent)) owned.add(pid);
                   } while (owned.size !== size);
                   for (const [pid, , group] of rows) if (owned.has(pid)) {
+                    owners.add(pid);
                     targets.delete(pid);
                     targets.add(owned.has(group) ? -group : pid);
                   }
@@ -122,7 +137,7 @@ export default function (pi: ExtensionAPI) {
               };
               stopping = new Promise(resolve => {
                 kill("SIGTERM");
-                setTimeout(() => { kill("SIGKILL"); resolve(); }, 1000);
+                setTimeout(() => { kill("SIGKILL"); releaseOwners(owners); resolve(); }, 1000);
               });
             };
             signal?.addEventListener("abort", abort, { once: true });
@@ -164,6 +179,7 @@ export default function (pi: ExtensionAPI) {
             child.on("close", async code => {
               // Do not release the slot while a detached descendant can still run.
               await stopping;
+              if (child.pid) releaseOwners([child.pid]);
               signal?.removeEventListener("abort", abort); lines.close(); resolve(code ?? 1);
             });
             if (signal?.aborted) abort();
@@ -173,10 +189,16 @@ export default function (pi: ExtensionAPI) {
           r.stderr = String(e); r.exitCode = 1; r.status = "failed";
         } finally {
           if (signal?.aborted) r.stopReason = "aborted";
+          try { releaseSubagentSlot(slot); }
+          catch (error) { r.stderr += `\nConcurrency cleanup failed: ${error}`; r.status = "failed"; r.exitCode = 1; }
           if (acquired) { active--; for (const wake of [...waiters]) wake(); }
           update();
         }
       };
+      // A coordinator cannot occupy the only shared slot while awaiting a child.
+      // Parallel tool calls share this suspension and reacquire only after the last.
+      if (inheritedSlot && delegating++ === 0) { releaseSubagentSlot(ownSlot); ownSlot = undefined; }
+      try {
       if (mode === "chain") {
         let previous = "";
         for (const r of results) {
@@ -190,6 +212,12 @@ export default function (pi: ExtensionAPI) {
         }
       } else await Promise.all(results.map(run));
       return { ...snapshot(), isError: results.some(r => r.status === "failed") };
+      } finally {
+        if (inheritedSlot && --delegating === 0 && !signal?.aborted) {
+          try { ownSlot = await acquireSubagentSlot(inheritedBudget!, signal); }
+          catch (error) { ctx.abort(); throw error; } // Never resume model work without a slot.
+        }
+      }
     },
   });
 }

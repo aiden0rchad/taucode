@@ -53,7 +53,13 @@ same restriction to permission requests, with a runtime refresh when policy chan
 - Chain of Command's per-turn limit is shared across the entire tree using atomic
   reservations in a private managed directory. Descendants cannot start a fresh
   budget. Each top-level turn gets a new budget; end/shutdown removes its directory.
-- Concurrency limits each delegator's immediate children, not the whole tree.
+- Chain of Command concurrency limits active child model work across the whole
+  tree for one root turn; the commander is excluded. Coordinators lend their slot
+  while awaiting delegation, then reacquire one before resuming. This permits
+  nested work even at a limit of one. Custom delegation retains per-delegator limits.
+  Atomic, uniquely owned slot leases prevent stale cleanup from freeing another
+  worker's slot. Exited owners are reclaimed; a missing budget aborts a coordinator
+  instead of letting it resume without a slot.
 - On POSIX systems, Stop snapshots the delegation's descendants before signalling
   them, including shell tools in separate process groups. Only groups whose leader
   belongs to that tree receive a group signal. Forced cleanup runs after a one-second
@@ -80,6 +86,11 @@ gate. The app must not represent unperformed QA as verified.
 - Pi tests run the actual extension in nested fake CLI processes, proving shared
   budget enforcement, local/cloud routing, denied hierarchy edges/model overrides,
   missing-budget failures, Single model, turn reset and cleanup without provider calls.
+- Concurrency stress tests use two colonels with overlapping delegation calls at
+  limits of one and two. They cover slot lending/reacquisition, failed children,
+  aborted queued claims, stale releases, dead-owner reclamation and aborting when
+  reacquisition fails. The old implementation exceeds the limit (three active
+  children with a limit of two).
 - Frontend tests exercise mode selection, model assignment, saving, restoration,
   validation and preservation of legacy roles.
 - Rust tests cover mode serialization/overrides, policy file delivery, unsupported
@@ -92,6 +103,17 @@ discard queued work, and release the concurrency slot for the next turn. Rust re
 tests cover late subagent progress after normal completion and interruption, while
 allowing new-turn progress. These regressions fail against the old behavior.
 They do not establish Windows process-tree cleanup or crash recovery.
+
+The shared concurrency build passed a live signed macOS OMP check in
+`command-stop-qfgg_8ap`: one colonel submitted enlisted and major README inspections
+in a parallel call with concurrency set to one. Both completed and the commander
+returned `SHARED_SLOT_OK`. A 100 ms filesystem trace observed at most one held slot,
+ownership passing through the coordinator and both children, then budget cleanup.
+This sampled trace supplements the deterministic process stress tests. All roles
+used GPT 6.1 Sol (Account 2), with Full access and Low selected for the commander.
+The run also exposed missing explicit child reasoning inheritance, tracked for the
+next fix. Validation: 1,794 frontend tests, 23 extension tests, 42 Pi Rust tests
+(one live test ignored), typechecks, changed-file lint, cargo check, build and signing.
 
 Live macOS verification used the signed app, OMP, GPT 6.1 Sol and Full access in a
 disposable Code workspace. A colonel delegated a foreground Node worker through an
@@ -161,9 +183,10 @@ app build and signature verification passed.
 
 - Per-conversation policy overrides beyond the current project defaults.
 - Durable orchestration state and evidence-backed QA completion gates.
-- Global resource/usage budgets, deadlines, cancellation and crash recovery across
-  the tree; concurrency is currently per delegator.
+- Resource/usage budgets across conversations, deadlines and whole-tree crash
+  recovery. Shared turn concurrency and POSIX Stop cleanup are implemented.
 - Cost/capability-aware model selection backed by evaluation evidence, including
   actual cloud/local mixed-model dogfood runs.
-- Work agent-tree navigation and recovery after errors; Work currently renders
-  delegated results as expandable tool rows rather than the full interactive tree.
+- Work agent-tree navigation for custom delegation and recovery after errors;
+  Work currently renders delegated results as expandable tool rows rather than the
+  full interactive tree. Chain of Command remains Code-only.

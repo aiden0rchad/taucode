@@ -14,7 +14,7 @@ function roleInfo(role: AgentRole) {
   return ranks.find(rank => rank.name === role.name) ?? { name: role.commandRank, title: commandRoleTitle(role.name), job: role.description, description: `${commandRoleTitle(role.commandRank ?? "enlisted")} rank · ${role.toolAccess === "read-only" ? "Read only" : "Full tool access"}`, Icon: presetIcons[role.name.replace(/-\d+$/, "")] ?? Wrench };
 }
 const limits = [
-  { field: "maxConcurrent", label: "Max concurrent", max: 16, hint: "Active agents per delegator" },
+  { field: "maxConcurrent", label: "Max concurrent", max: 16, hint: "Active models across the team" },
   { field: "maxPerTurn", label: "Max per turn", max: 32, hint: "Total agents across the team" },
   { field: "maxDepth", label: "Max depth", max: 3, hint: "Levels below the commander" },
 ] as const;
@@ -81,7 +81,7 @@ export default function CommandPolicyEditor({ policy, providers, tab, onChange }
   </div>;
 
   if (tab === "subagents") return <div className="command-limits">
-    <div className="command-section-heading"><h3>Keep the team focused</h3><p>Set boundaries for how much work the team can start.</p></div>
+    <div className="command-section-heading"><h3>Keep the team focused</h3><p>Set boundaries for how much work the team can start. Coordinators waiting for their team share their slots with workers.</p></div>
     <div className="command-limit-grid">{limits.map(({ field, label, max, hint }) => <div className="command-limit-card" key={field}>
       <SettingsFieldRow title={label}><SettingsNumberStepper min={1} max={max} value={sub[field]} onChange={event => change({ [field]: Number(event.target.value) })} /></SettingsFieldRow>
       <p>{hint}</p>

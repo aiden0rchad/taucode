@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commandInstructions, commandTargets, resolveTask, type Policy } from "../extensions/lib/policy.ts";
+import { acquireSubagentSlot, commandInstructions, commandTargets, createSubagentBudget, releaseSubagentSlot, resolveTask, type Policy } from "../extensions/lib/policy.ts";
 import subagents from "../extensions/taucode-subagents.ts";
 
 const policy: Policy = {
@@ -90,6 +90,82 @@ test("nested subprocesses share one turn budget, reset it, route models and fail
   assert.deepEqual(readdirSync(join(home, "taucode")), ["policy.json"]);
 });
 
+test("shared concurrency bounds the whole tree, lends coordinator slots and restores them after overlapping calls", { timeout: 15000 }, async t => {
+  const root = mkdtempSync(join(tmpdir(), "taucode-concurrency-"));
+  const home = join(root, "agent"), cli = join(root, "fake-cli.mjs"), trace = join(root, "trace.jsonl"), aborted = join(root, "aborted");
+  mkdirSync(join(home, "taucode"), { recursive: true });
+  const variables = { PI_CODING_AGENT_DIR: home, TAUCODE_WORKSPACE: root, TAUCODE_PI_CLI: cli, TAUCODE_SUBAGENT_DEPTH: "0", TAUCODE_SUBAGENT_ROLE: "", TAUCODE_SUBAGENT_BUDGET: "", TAUCODE_SUBAGENT_SLOT: "" };
+  const previous = Object.fromEntries(Object.keys(variables).map(key => [key, process.env[key]]));
+  Object.assign(process.env, variables);
+  const events: Record<string, () => void> = {};
+  const controller = new AbortController();
+  t.after(() => { controller.abort(); events.agent_end?.(); for (const [key, value] of Object.entries(previous)) if (value === undefined) delete process.env[key]; else process.env[key] = value; rmSync(root, { recursive: true, force: true }); });
+  writeFileSync(cli, `import { appendFileSync, rmSync, writeFileSync } from "node:fs"; import { join } from "node:path";
+    import { setTimeout as delay } from "node:timers/promises";
+    import subagents from ${JSON.stringify(new URL("../extensions/taucode-subagents.ts", import.meta.url).href)};
+    let tool; subagents({on() {},registerTool(t) {tool=t;}});
+    const record = delta => appendFileSync(${JSON.stringify(trace)},JSON.stringify({pid:process.pid,delta})+"\\n");
+    if (process.argv.at(-1).includes("fail")) process.exit(2);
+    record(1); await delay(30);
+    if (process.env.TAUCODE_SUBAGENT_ROLE === "colonel") {
+      record(-1);
+      const results = await Promise.all([1,2].map(n => tool.execute("nested-"+n,{tasks:[1,2].map(i=>({agent:"enlisted",task:process.argv.at(-1).includes("lose budget")?"lose budget":"work "+n+"-"+i}))},undefined,undefined,{cwd:process.cwd(),model:{provider:"taucode-cloud",id:"mid"},abort(){writeFileSync(${JSON.stringify(aborted)},"aborted");}})));
+      if (results.some(r=>r.isError)) {console.error(JSON.stringify(results));process.exit(1);}
+      record(1);
+    }
+    if (process.argv.at(-1).includes("lose budget")) rmSync(join(process.env.TAUCODE_SUBAGENT_BUDGET,"concurrency"),{force:true});
+    await delay(60); record(-1);
+    console.log(JSON.stringify({type:"message_end",message:{role:"assistant",content:[{type:"text",text:"Done"}],stopReason:"stop"}}));`);
+  let tool: any;
+  subagents({ on: (name: string, fn: any) => { events[name] = fn; }, registerTool: (value: any) => { tool = value; } } as any);
+  const ctx = { cwd: root, model: { provider: "taucode-cloud", id: "strong" } };
+  for (const maxConcurrent of [2, 1]) {
+    writeFileSync(join(home, "taucode/policy.json"), JSON.stringify({ ...policy, maxConcurrent, maxPerTurn: 16 }));
+    writeFileSync(trace, ""); events.agent_start();
+    const result = await tool.execute("tree", { tasks: [1, 2].map(n => ({ agent: "colonel", task: "batch " + n })) }, controller.signal, undefined, ctx);
+    assert.equal(result.isError, false, JSON.stringify(result));
+    let active = 0, peak = 0;
+    for (const line of readFileSync(trace, "utf8").trim().split("\n")) {
+      active += JSON.parse(line).delta; peak = Math.max(peak, active);
+      assert.ok(active >= 0 && active <= maxConcurrent, `active=${active}, limit=${maxConcurrent}`);
+    }
+    assert.equal(active, 0); assert.equal(peak, maxConcurrent);
+    assert.equal((await tool.execute("failure", { agent: "major", task: "fail" }, controller.signal, undefined, ctx)).isError, true);
+    assert.equal((await tool.execute("recovery", { agent: "major", task: "review" }, controller.signal, undefined, ctx)).isError, false);
+    const budget = readdirSync(join(home, "taucode")).find(name => name.startsWith("subagent-turn-"))!;
+    assert.equal(readdirSync(join(home, "taucode", budget)).filter(name => /^slot-\d+-free$/.test(name)).length, maxConcurrent);
+    events.agent_end();
+    assert.deepEqual(readdirSync(join(home, "taucode")), ["policy.json"]);
+  }
+  events.agent_start();
+  assert.equal((await tool.execute("lost-budget", { agent: "colonel", task: "lose budget" }, controller.signal, undefined, ctx)).isError, true);
+  assert.ok(existsSync(aborted), "a coordinator aborts its model operation if it cannot reacquire a slot");
+});
+
+test("shared slots cancel queued claims and stale releases cannot free a replacement lease", async t => {
+  const home = mkdtempSync(join(tmpdir(), "taucode-slot-"));
+  mkdirSync(join(home, "taucode"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const budget = createSubagentBudget(home, 1);
+  const first = await acquireSubagentSlot(budget);
+  const controller = new AbortController();
+  const waiting = acquireSubagentSlot(budget, controller.signal);
+  controller.abort();
+  await assert.rejects(waiting, /abort/i);
+  releaseSubagentSlot(first);
+  const second = await acquireSubagentSlot(budget);
+  releaseSubagentSlot(first);
+  assert.ok(existsSync(second));
+  assert.ok(!existsSync(join(budget, "slot-0-free")));
+  releaseSubagentSlot(second);
+  assert.ok(existsSync(join(budget, "slot-0-free")));
+  const abandoned = await acquireSubagentSlot(budget);
+  execFileSync(process.execPath, ["--input-type=module", "-e", `import { adoptSubagentSlot } from ${JSON.stringify(new URL("../extensions/lib/policy.ts", import.meta.url).href)}; adoptSubagentSlot(${JSON.stringify(abandoned)});`]);
+  const recovered = await acquireSubagentSlot(budget);
+  releaseSubagentSlot(recovered);
+  assert.deepEqual(readdirSync(budget), ["concurrency", "slot-0-free"]);
+});
+
 test("specialists use their configured models and rank without adding delegation privileges", () => {
   const specialists: Policy = { ...policy, roles: [...policy.roles,
     { name: "researcher", description: "Research", commandRank: "enlisted", model: "cloud/mid", toolAccess: "read-only", instructions: "Cite files" },
@@ -146,13 +222,12 @@ test("a preset reaches child processes with its instructions, read-only tools an
   assert.match((await tool.execute("extra", { agent: "researcher", task: "Again" }, undefined, undefined, ctx)).details.results[0].stderr, /max per turn/);
 });
 
-for (const { detached, depth } of [{ detached: false, depth: 0 }, { detached: true, depth: 0 }, { detached: true, depth: 1 }]) test(`abort at depth ${depth} kills a ${detached ? "detached" : "grouped"} stubborn descendant without killing its parent or starting queued work`, { skip: process.platform === "win32", timeout: 10000 }, async t => {
+for (const { detached, depth, nested = false } of [{ detached: false, depth: 0 }, { detached: true, depth: 0 }, { detached: true, depth: 1 }, { detached: true, depth: 0, nested: true }]) test(`abort at depth ${depth}${nested ? " with nested delegation" : ""} kills a ${detached ? "detached" : "grouped"} stubborn descendant without killing its parent or starting queued work`, { skip: process.platform === "win32", timeout: 10000 }, async t => {
   const root = mkdtempSync(join(tmpdir(), "taucode-command-abort-"));
   const home = join(root, "agent"), cwd = join(root, "workspace"), cli = join(root, "fake-cli.mjs");
   const ready = join(root, "ready.json"), queued = join(root, "queued"), controller = new AbortController();
   mkdirSync(join(home, "taucode"), { recursive: true }); mkdirSync(cwd);
-  const budget = join(home, "taucode/parent-turn");
-  mkdirSync(budget);
+  const budget = createSubagentBudget(home, 1);
   const variables = { PI_CODING_AGENT_DIR: home, TAUCODE_WORKSPACE: cwd, TAUCODE_PI_CLI: cli, TAUCODE_SUBAGENT_DEPTH: String(depth), TAUCODE_SUBAGENT_ROLE: depth ? "colonel" : "", TAUCODE_SUBAGENT_BUDGET: budget };
   const previous = Object.fromEntries(Object.keys(variables).map(key => [key, process.env[key]]));
   Object.assign(process.env, variables);
@@ -172,7 +247,12 @@ for (const { detached, depth } of [{ detached: false, depth: 0 }, { detached: tr
     writeFileSync(${JSON.stringify(ready)}, JSON.stringify([process.ppid, process.pid]));
     setInterval(() => {}, 1000);`;
   writeFileSync(cli, `import { spawn } from 'node:child_process'; import { writeFileSync } from 'node:fs';
-    if (process.argv.at(-1).includes('wait for stop')) {
+    import subagents from ${JSON.stringify(new URL("../extensions/taucode-subagents.ts", import.meta.url).href)};
+    let tool; if (${nested}) subagents({on() {},registerTool(t) {tool=t;}});
+    if (${nested} && process.env.TAUCODE_SUBAGENT_ROLE === 'colonel') {
+      process.on('SIGTERM', () => process.exit(0));
+      await tool.execute('nested',{agent:'enlisted',task:'wait for stop'},undefined,undefined,{cwd:process.cwd(),model:{provider:'taucode-cloud',id:'mid'}});
+    } else if (process.argv.at(-1).includes('wait for stop')) {
       process.on('SIGTERM', () => process.exit(0));
       spawn(process.execPath, ['--input-type=module', '-e', ${JSON.stringify(stubborn)}], {stdio:'ignore',detached:${detached}});
       setInterval(() => {}, 1000);
@@ -197,6 +277,9 @@ for (const { detached, depth } of [{ detached: false, depth: 0 }, { detached: tr
   };
   for (let i = 0; i < 100 && pids.some(alive); i++) await delay(20);
   assert.ok(pids.every(pid => !alive(pid)), "the stopped command tree has no running descendants");
+  for (const name of readdirSync(join(home, "taucode")).filter(name => name.startsWith("subagent-turn-"))) {
+    assert.equal(readdirSync(join(home, "taucode", name)).filter(name => /^slot-\d+-free$/.test(name)).length, 1, "cancelled descendants release their adopted slots");
+  }
   events.agent_end(); events.agent_start();
   assert.equal((await tool.execute("recovery", { agent: "major", task: "next turn" }, undefined, undefined, ctx)).isError, false);
   assert.ok(existsSync(queued), "a new turn can use the released concurrency slot");

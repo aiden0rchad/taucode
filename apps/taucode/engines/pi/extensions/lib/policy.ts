@@ -1,5 +1,7 @@
-import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, basename, resolve, relative, isAbsolute, sep } from "node:path";
+import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 
 export type Role = { name: string; description: string; model?: string; toolAccess: "read-only" | "full"; instructions: string; commandRank?: "colonel" | "major" | "enlisted" | null };
 export type Policy = { enabled?: boolean; mode?: "custom" | "chain-of-command"; maxConcurrent: number; maxPerTurn: number; maxDepth: number; allowedModels: string[]; defaultModel?: string; roles: Role[]; models?: Record<string, string> };
@@ -113,6 +115,55 @@ export function reserveSubagent(directory: string, limit: number): void {
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
   }
   throw new Error(`Subagent max per turn (${limit}) reached across the command tree`);
+}
+export function createSubagentBudget(home: string, limit: number): string {
+  if (!Number.isInteger(limit) || limit < 1) throw new Error("Invalid managed concurrency limit");
+  const directory = mkdtempSync(resolve(home, "taucode/subagent-turn-"));
+  try {
+    writeFileSync(resolve(directory, "concurrency"), String(limit));
+    for (let i = 0; i < limit; i++) writeFileSync(resolve(directory, `slot-${i}-free`), "");
+    return directory;
+  } catch (error) { rmSync(directory, { recursive: true, force: true }); throw error; }
+}
+// Renaming a free token to a unique lease is atomic across processes. A stale
+// cleanup can only release its own lease, never a later occupant of that slot.
+export async function acquireSubagentSlot(directory: string, signal?: AbortSignal): Promise<string> {
+  const limit = Number(readFileSync(resolve(directory, "concurrency"), "utf8"));
+  if (!Number.isInteger(limit) || limit < 1) throw new Error("Invalid managed concurrency limit");
+  while (true) {
+    if (signal?.aborted) throw new Error("Subagent aborted");
+    for (let i = 0; i < limit; i++) {
+      const lease = resolve(directory, `slot-${i}-${process.pid}-${randomUUID()}`);
+      try { renameSync(resolve(directory, `slot-${i}-free`), lease); return lease; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    }
+    for (const name of readdirSync(directory)) {
+      const owner = /^slot-\d+-(\d+)-/.exec(name);
+      if (owner) try { process.kill(Number(owner[1]), 0); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") releaseSubagentSlot(resolve(directory, name)); }
+    }
+    await delay(25, undefined, { signal });
+  }
+}
+export function adoptSubagentSlot(lease: string): string {
+  const slot = /^slot-(\d+)-\d+-/.exec(basename(lease));
+  if (!slot) throw new Error("Invalid managed subagent slot");
+  const owned = resolve(dirname(lease), `slot-${slot[1]}-${process.pid}-${randomUUID()}`);
+  renameSync(lease, owned);
+  return owned;
+}
+export function releaseSubagentSlot(lease?: string): void {
+  if (!lease) return;
+  const slot = /^slot-(\d+)-\d+-/.exec(basename(lease));
+  if (!slot) throw new Error("Invalid managed subagent slot");
+  try { renameSync(lease, resolve(dirname(lease), `slot-${slot[1]}-free`)); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+}
+export function releaseSubagentProcessSlots(directory: string, pid: number): void {
+  let names: string[];
+  try { names = readdirSync(directory); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
+  for (const name of names) if (/^slot-\d+-(\d+)-/.exec(name)?.[1] === String(pid)) releaseSubagentSlot(resolve(directory, name));
 }
 export function resolveTask(policy: Policy, task: { agent: string; model?: string | null }, parent?: string, parentRole = "commander") {
   if (policy.mode === "chain-of-command" && !commandTargets(parentRole, policy.roles).includes(task.agent)) throw new Error(`${parentRole} cannot delegate to ${task.agent} in Chain of Command mode`);
