@@ -3,6 +3,7 @@ import { BookOpen, ChevronRight, Code2, GitBranch, Palette, Plus, Search, Server
 import type { AgentPolicy, AgentRole, ProviderEntry } from "@/types";
 import { commandRolePresets, commandRoleTitle, isCommandRole, modelKey, modelRef } from "@settings/registry";
 import { SettingsButton, SettingsFieldRow, SettingsNumberStepper, SettingsSegmented, SettingsSelect, SettingsTextArea, SettingsTextField } from "@/features/design-system/components/settings/SettingsPrimitives";
+import { ExecutionLimits } from "@settings/components/sections/ExecutionLimits";
 
 const ranks = [
   { name: "colonel", title: "Colonel", job: "Delegation", description: "Turns the goal into focused assignments.", Icon: GitBranch },
@@ -86,6 +87,7 @@ export default function CommandPolicyEditor({ policy, providers, tab, onChange }
       <SettingsFieldRow title={label}><SettingsNumberStepper min={1} max={max} value={sub[field]} onChange={event => change({ [field]: Number(event.target.value) })} /></SettingsFieldRow>
       <p>{hint}</p>
     </div>)}</div>
+    <ExecutionLimits policy={policy} onChange={onChange} />
     <details className="command-restrictions">
       <summary><ChevronRight size={16} aria-hidden /><span>Model defaults & restrictions</span><small>{sub.allowedModels.length ? `${sub.allowedModels.length} allowed` : "All enabled models"}</small></summary>
       <div>

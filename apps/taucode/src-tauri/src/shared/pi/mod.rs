@@ -470,6 +470,7 @@ impl PiEngine {
         if !self.profile.custom() { command.arg(&cli); }
         command
             .env("TAUCODE_PI_CLI", &cli)
+            .env("TAUCODE_COMMAND_USAGE_DB", self.data.as_ref().ok_or("Missing app data")?.join("command-usage").join(format!("{}.sqlite", s.workspace)))
             .env_remove("TAUCODE_SUBAGENT_DEPTH")
             .env_remove("TAUCODE_TOOL_ACCESS")
             .arg("-e")
@@ -1289,6 +1290,7 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
             Some("compaction") => messages.push(json!({"role":"taucodeCompaction","result":entry})),
             Some("custom") if entry["customType"] == "taucode-subagent-result" => messages.push(json!({"role":"taucodeSubagentResult","toolCallId":entry["data"]["toolCallId"],"result":entry["data"]["result"]})),
             Some("custom") if entry["customType"] == "taucode-verification" => messages.push(json!({"role":"taucodeVerification","record":entry["data"]})),
+            Some("custom") if entry["customType"] == "taucode-execution-limit" => messages.push(json!({"role":"taucodeExecutionLimit","record":entry["data"]})),
             Some("custom") if entry["customType"] == "session_exit" && entry["data"]["pendingToolCalls"].as_array().is_some_and(|calls| !calls.is_empty()) => messages.push(json!({"role":"taucodeInterrupted"})),
             _ => (),
         }

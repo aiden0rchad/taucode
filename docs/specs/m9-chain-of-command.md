@@ -50,6 +50,19 @@ same restriction to permission requests, with a runtime refresh when policy chan
 
 ## Limits and access
 
+- Optional run time (0–1440 minutes) bounds a root run and its entire command tree.
+  Descendants inherit the same absolute deadline; they cannot restart the clock.
+- Optional daily team tokens (0–1,000,000,000) are shared by Code Chain of Command
+  conversations and Pi/OMP descendants in the project. Both limits default to zero
+  (off) and apply to new runs. A private SQLite ledger retains provider-reported
+  input, output and cache tokens across processes and restarts, deduplicates response
+  frames, and starts a new allowance at 00:00 UTC. Historical runs before this
+  feature are not backfilled. This is a reported-token threshold, not a hard spend
+  cap: requests already running can overshoot before usage arrives. Missing usage
+  or unavailable accounting stops capped runs instead of assuming zero usage.
+- Limit stops show a readable, persisted reason and interrupt active work. OMP
+  completion waits for its settled protocol frame, after extension QA and accounting
+  hooks; an early `agent_end` is not sufficient evidence of completion.
 - Chain of Command's per-turn limit is shared across the entire tree using atomic
   reservations in a private managed directory. Descendants cannot start a fresh
   budget. Each top-level turn gets a new budget; end/shutdown removes its directory.
@@ -179,7 +192,7 @@ picker. Saves are acknowledged before the toggle changes, and failures remain
 visible. The editor loads on demand and supports keyboard focus and Escape.
 Its Team models tab connects the conversation commander to compact,
 color-coded role rows, with an inline preset picker for adding specialists.
-Limits groups concurrency, turn budget and depth, with
+Limits groups concurrency, turn budget, depth, run time and daily team tokens, with
 model defaults/restrictions under a disclosure. Roles edits one specialist at a
 time, keeping draft values while switching roles or tabs. The fixed header and
 footer frame a scrollable body on smaller windows; light and dark themes use the
@@ -435,6 +448,16 @@ honest missing-price handling, not measured cloud/local quality or billing accur
 
 ## Work still required for the full product goal
 
+Run-budget validation passes 44 extension tests, 53 Pi/OMP backend tests (one
+explicit live test ignored), 13 provider tests, the five focused composer tests,
+frontend/engine typechecks and lint for the new helper and controls. Eight separate
+SQLite writers preserve 800 tokens without double counting repeated responses.
+The installed Pi runtime exhausts an allowance, then a newly started OMP conversation
+makes no provider request against the same project ledger. Reload preserves the stop
+reason on the correct turn. A real OMP delegation starts a foreground Node worker;
+the one-minute deadline interrupts the root and removes the worker process. Native
+acceptance is recorded separately from these loopback-fixture tests.
+
 The evidence gate passed 40 extension tests and 50 Pi/OMP backend tests (one
 unrelated live test ignored). A loopback transport fixture drives the installed
 Pi and OMP runtimes through missing QA, passing QA, and failing QA, then reloads
@@ -447,8 +470,11 @@ helper/tests pass. Existing lint findings in the semaphore loop and slot-cleanup
 `finally` block are unchanged.
 
 These are deterministic runtime tests, not a live GPT evaluation. Desktop QA is
-still pending: computer use reports the Mac locked, and the previous running
-build was waiting for Keychain access. The disposable `command-stop-qfgg_8ap`
+still pending for the new limits build. The Mac is now accessible and the previous
+build's credential-readiness request completed. The limits build compiled, signed,
+passed signature verification and launched, but its new text-only readiness request
+is blocked in `SecKeychainFindGenericPassword`; user approval is pending again.
+The disposable `command-stop-qfgg_8ap`
 project still has Chain of Command temporarily off for the earlier foreground
 command crash test. Restore it after that test; use GPT 6.1 Sol (Account 2), Low,
 and Full access for the live acceptance run. Do not claim the recurring Keychain
@@ -471,8 +497,8 @@ This smoke pass does not establish the cause of the earlier empty-tab failure.
 - Per-conversation policy overrides beyond the current project defaults.
 - Further durable orchestration state; evidence-backed QA gates are implemented,
   with signed-app acceptance still pending.
-- Resource/usage budgets across conversations, deadlines and whole-tree crash
-  recovery. Shared turn concurrency and POSIX Stop cleanup are implemented.
+- Whole-tree crash recovery acceptance. Shared turn concurrency, project daily
+  usage allowances, inherited deadlines and POSIX Stop cleanup are implemented.
 - Cost/capability-aware model selection backed by evaluation evidence, including
   actual cloud/local mixed-model dogfood runs.
 - Work agent-tree navigation for custom delegation and recovery after errors;

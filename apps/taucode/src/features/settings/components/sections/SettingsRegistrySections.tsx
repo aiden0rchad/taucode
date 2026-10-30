@@ -4,6 +4,7 @@ import { SettingsPage, SettingsButton, SettingsTextField, SettingsSelect, Settin
 import { Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { formatRelativeTimeShort } from "@utils/time";
 import { ModelReasoningSettings } from "./ModelReasoningSettings";
+import { ExecutionLimits } from "./ExecutionLimits";
 import "./registry.css";
 import { useEffect, useState } from "react";
 import type { AppSettings, ProviderEntry, ProviderKind, ProviderAuth, AgentPolicy, WorkspaceInfo, WorkspaceSettings } from "@/types";
@@ -137,6 +138,7 @@ export function AgentPolicyEditor({ policy, providers, onChange, tab }: { tab?: 
     <small>Default subagent model: pi, codex</small>
     {modelSelect("Default subagent model", modelKey(sub.defaultModel), v => onChange({ ...policy, subagents: { ...sub, defaultModel: modelRef(v) } }))}
     </SettingsGroup>}
+    {chain && (!tab || tab === "subagents") && <ExecutionLimits policy={policy} onChange={onChange} />}
     {chain && tab === "defaults" && <SettingsGroup title="Team models" subtitle="Choose smaller cloud or local models where suitable. Inherit uses the default subagent model, then the parent's model. Edit tools and instructions in Roles.">
       {sub.roles.filter(isCommandRole).map(role => <div key={role.name}>{modelSelect(`${commandRoleTitle(role.name)} model`, modelKey(role.model), value => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.map(r => r.name === role.name ? { ...r, model: modelRef(value) } : r) } }))}</div>)}
     </SettingsGroup>}

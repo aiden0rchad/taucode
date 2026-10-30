@@ -158,7 +158,11 @@ impl Process {
         Ok(p)
     }
     pub(super) async fn receive(self: &Arc<Self>, mut m: Value) {
-        if self.omp && m["type"] == "agent_end" { m["type"] = json!("agent_settled"); }
+        // OMP can publish agent_end before asynchronous extension hooks finish.
+        // Wait for its settlement frame so QA and usage records arrive first.
+        if self.omp && (m["type"] == "session_settled" || (m["type"] == "prompt_result" && m["sessionSettled"] == true)) {
+            m = json!({"type":"agent_settled", "aborted":m["status"] == "aborted", "errorMessage":m["error"]["message"]});
+        }
         *self.touched.lock().await = Instant::now();
         if m["type"] == "response" {
             if let Some(id) = m["id"].as_str() {
@@ -174,9 +178,10 @@ impl Process {
         }
         if m["type"] == "extension_ui_request" {
             let method = m["method"].as_str().unwrap_or("");
-            if method == "setStatus" && m["statusKey"] == "taucode-verification" {
+            if method == "setStatus" && matches!(m["statusKey"].as_str(), Some("taucode-verification" | "taucode-execution-limit")) {
                 if let Some(record) = m["statusText"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()) {
-                    for event in self.translator.lock().await.apply(&json!({"type":"taucode_verification","record":record})) {
+                    let kind = if m["statusKey"] == "taucode-execution-limit" { "taucode_execution_limit" } else { "taucode_verification" };
+                    for event in self.translator.lock().await.apply(&json!({"type":kind,"record":record})) {
                         (self.emit)(event);
                     }
                 }

@@ -137,6 +137,9 @@ pub(crate) fn validate(providers: &[ProviderEntry], policy: &AgentPolicy) -> Res
         }
     }
     let s = &policy.subagents;
+    if s.max_run_minutes > 1440 || s.daily_token_limit > 1_000_000_000 {
+        return Err("Execution limits: run time 0–1440 minutes, daily tokens 0–1,000,000,000; zero disables the limit".into());
+    }
     if s.enabled && s.mode == SubagentMode::ChainOfCommand {
         if s.max_depth < 2 || s.max_per_turn < 3 {
             return Err("Chain of Command requires depth at least 2 and at least 3 agents per turn".into());
@@ -222,6 +225,8 @@ pub(crate) fn effective_policy(
                 max_concurrent,
                 max_per_turn,
                 max_depth,
+                max_run_minutes,
+                daily_token_limit,
                 allowed_models,
                 roles
             );
@@ -907,8 +912,10 @@ mod tests {
     fn command_policy_round_trips_and_merges_without_changing_legacy_defaults() {
         let base = AgentPolicy::default();
         assert_eq!(base.subagents.mode, SubagentMode::Custom);
+        assert_eq!(base.subagents.max_run_minutes, 0);
+        assert_eq!(base.subagents.daily_token_limit, 0);
         let over: AgentPolicyOverride = serde_json::from_value(json!({"subagents": {
-            "mode":"chain-of-command", "maxDepth":2,
+            "mode":"chain-of-command", "maxDepth":2, "maxRunMinutes":15, "dailyTokenLimit":25000,
             "roles":[
                 {"name":"colonel","description":"Delegate","model":null,"toolAccess":"full","instructions":""},
                 {"name":"major","description":"QA","model":null,"toolAccess":"full","instructions":""},
@@ -919,6 +926,11 @@ mod tests {
         assert!(validate(&[], &policy).is_ok());
         let saved = serde_json::to_value(&policy).unwrap();
         assert_eq!(saved["subagents"]["mode"], "chain-of-command");
+        assert_eq!(saved["subagents"]["maxRunMinutes"], 15);
+        assert_eq!(saved["subagents"]["dailyTokenLimit"], 25000);
+        policy.subagents.daily_token_limit = 1_000_000_001;
+        assert!(validate(&[], &policy).unwrap_err().contains("Execution limits"));
+        policy.subagents.daily_token_limit = 25000;
         assert_eq!(serde_json::from_value::<AgentPolicy>(saved).unwrap().subagents.mode, SubagentMode::ChainOfCommand);
         policy.subagents.max_per_turn = 2;
         assert!(validate(&[], &policy).unwrap_err().contains("at least 3"));

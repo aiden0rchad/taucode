@@ -58,6 +58,7 @@ export function providerEngines(p: ProviderEntry) {
 }
 export function policyError(p: AgentPolicy, providers: ProviderEntry[]): string | null {
   const s = p.subagents;
+  if (!Number.isInteger(s.maxRunMinutes ?? 0) || (s.maxRunMinutes ?? 0) < 0 || (s.maxRunMinutes ?? 0) > 1440 || !Number.isSafeInteger(s.dailyTokenLimit ?? 0) || (s.dailyTokenLimit ?? 0) < 0 || (s.dailyTokenLimit ?? 0) > 1_000_000_000) return "Execution limits: 0–1440 minutes and 0–1,000,000,000 daily tokens. Zero disables a limit.";
   if (s.roles.some(r => r.commandRank && (!["colonel", "major", "enlisted"].includes(r.commandRank) || r.name === "commander" || commandRoles.some(core => core.name === r.name && r.commandRank !== r.name)))) return "Command ranks must be colonel, major or enlisted; core ranks cannot be changed.";
   if (s.enabled && s.mode === "chain-of-command") {
     if (s.maxDepth < 2 || s.maxPerTurn < 3) return "Chain of Command requires depth at least 2 and at least 3 agents per turn.";

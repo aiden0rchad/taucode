@@ -8,6 +8,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { subagentCheckpoint } from "./lib/recovery.ts";
 import { acceptanceCriteria, registerVerification } from "./lib/verification.ts";
+import { registerExecutionLimits } from "./lib/executionLimits.ts";
 import { acquireSubagentSlot, adoptSubagentSlot, checkLimits, commandInstructions, commandRank, commandTargets, createSubagentBudget, inside, releaseSubagentProcessSlots, releaseSubagentSlot, reserveSubagent, resolveTask, type Policy } from "./lib/policy.ts";
 
 const optionalString = Type.Optional(Type.Union([Type.String(), Type.Null()]));
@@ -19,6 +20,7 @@ type Result = TaskInput & { exitCode: number; status: string; startedAt?: number
 const output = (r: Result) => r.messages.filter(m => m.role === "assistant").at(-1)?.content?.filter(c => c.type === "text").map(c => c.text).join("\n") || r.stderr;
 
 export default function (pi: ExtensionAPI) {
+  registerExecutionLimits(pi, () => JSON.parse(readFileSync(join(process.env.PI_CODING_AGENT_DIR!, "taucode/policy.json"), "utf8")));
   registerVerification(pi, () => JSON.parse(readFileSync(join(process.env.PI_CODING_AGENT_DIR!, "taucode/policy.json"), "utf8")));
   let count = 0;
   let active = 0;

@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 export type Role = { name: string; description: string; model?: string; toolAccess: "read-only" | "full"; instructions: string; commandRank?: "colonel" | "major" | "enlisted" | null };
-export type Policy = { enabled?: boolean; mode?: "custom" | "chain-of-command"; maxConcurrent: number; maxPerTurn: number; maxDepth: number; allowedModels: string[]; defaultModel?: string; roles: Role[]; models?: Record<string, string> };
+export type Policy = { enabled?: boolean; mode?: "custom" | "chain-of-command"; maxConcurrent: number; maxPerTurn: number; maxDepth: number; maxRunMinutes?: number; dailyTokenLimit?: number; allowedModels: string[]; defaultModel?: string; roles: Role[]; models?: Record<string, string> };
 export type Rule = { tool: string; command?: string; path?: string; cwd?: string };
 export type Access = { accessMode: "read-only" | "ask" | "full-access"; sessionAllow: Rule[]; kind?: "work"; workspace?: string; readOnlyFolders?: string[]; skillRoot?: string };
 export type Call = { tool: string; command?: string; path?: string; cwd: string };

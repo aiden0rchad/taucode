@@ -16,7 +16,7 @@ export type CommandRank = "colonel" | "major" | "enlisted";
 export type AgentRole = { name: string; description: string; model: ModelRef | null; toolAccess: "read-only" | "full"; instructions: string; commandRank?: CommandRank | null };
 export type AgentPolicy = {
   defaultEngine: EngineKind; defaultModel: ModelRef | null;
-  subagents: { enabled: boolean; mode?: "custom" | "chain-of-command"; maxConcurrent: number; maxPerTurn: number; maxDepth: number; allowedModels: ModelRef[]; defaultModel: ModelRef | null; roles: AgentRole[] };
+  subagents: { enabled: boolean; mode?: "custom" | "chain-of-command"; maxConcurrent: number; maxPerTurn: number; maxDepth: number; maxRunMinutes?: number; dailyTokenLimit?: number; allowedModels: ModelRef[]; defaultModel: ModelRef | null; roles: AgentRole[] };
 };
 export type AgentPolicyOverride = Partial<Omit<AgentPolicy, "subagents">> & { subagents?: Partial<AgentPolicy["subagents"]> };
 export type WorkspaceSettings = {

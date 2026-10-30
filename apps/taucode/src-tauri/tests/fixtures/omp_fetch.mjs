@@ -13,6 +13,15 @@ function crashAfterCheckpoint(marker) {
 globalThis.fetch = async (_url, options) => {
   const request = JSON.parse(options?.body ?? await _url.text());
   const messages = JSON.stringify(request.messages);
+  if (messages.includes('LIMIT_TIMER_')) {
+    const child = request.messages.some(message => message.role === 'user' && JSON.stringify(message.content).includes('Task: LIMIT_TIMER_CHILD'));
+    const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
+    const command = `${quote(process.execPath)} -e ${quote("require('node:fs').writeFileSync('timer.pid',String(process.pid)); console.log('LIMIT_TIMER_READY'); setTimeout(()=>{},90000)")}`;
+    const tool = child ? 'bash' : 'subagent';
+    const args = child ? { command, timeout: 100 } : { agent: 'enlisted', task: 'LIMIT_TIMER_CHILD' };
+    const chunk = { id: 'deadline', object: 'chat.completion.chunk', created: 1, model: 'stub', choices: [{ index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'deadline-call', type: 'function', function: { name: tool, arguments: JSON.stringify(args) } }] }, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 } };
+    return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, { headers: { 'content-type': 'text/event-stream' } });
+  }
   if (/QA_(PASS|MISSING|FAIL)_FIXTURE/.test(messages)) {
     const calls = request.messages.filter(message => message.role === 'tool').length;
     const major = process.env.TAUCODE_SUBAGENT_ROLE === 'major' || request.messages.some(message => message.role === 'user' && JSON.stringify(message.content).includes('Task: QA_'));
@@ -27,7 +36,7 @@ globalThis.fetch = async (_url, options) => {
       args = { checks: [{ criterion: 'answer.txt contains 42', passed: marker === 'QA_PASS_FIXTURE', evidence: ['E1'], note: 'Read the artifact using the read tool' }], artifacts: ['answer.txt'] };
     }
     const delta = tool ? { role: 'assistant', tool_calls: [{ index: 0, id: `qa-${calls}`, type: 'function', function: { name: tool, arguments: JSON.stringify(args) } }] } : { role: 'assistant', content: 'Done' };
-    const chunk = { id: 'qa', object: 'chat.completion.chunk', created: 1, model: 'stub', choices: [{ index: 0, delta, finish_reason: tool ? 'tool_calls' : 'stop' }] };
+    const chunk = { id: 'qa', object: 'chat.completion.chunk', created: 1, model: 'stub', choices: [{ index: 0, delta, finish_reason: tool ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 } };
     return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, { headers: { 'content-type': 'text/event-stream' } });
   }
   const stop = messages.includes('GUARD_STOP_FIXTURE');
@@ -54,7 +63,10 @@ globalThis.fetch = async (_url, options) => {
 // Pi supplies its own fetch implementation; serve the same fixture over loopback.
 if (process.argv.includes('--serve')) {
   const { createServer } = await import('node:http');
+  let requests = 0;
   const server = createServer(async (request, response) => {
+    if (request.url === '/count') { response.end(String(requests)); return; }
+    requests++;
     try {
       const chunks = [];
       for await (const chunk of request) chunks.push(chunk);

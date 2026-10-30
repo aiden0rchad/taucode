@@ -86,9 +86,13 @@ it("keeps role drafts across keyboard navigation, validates limits, and discards
   expect(screen.getByRole("alert").textContent).toContain("concurrent 1–16");
   expect(screen.getByRole("button", { name: "Save changes" })).toHaveProperty("disabled", true);
   fireEvent.change(screen.getByLabelText("Max concurrent"), { target: { value: "3" } });
+  fireEvent.change(screen.getByLabelText("Run time (minutes)"), { target: { value: "1441" } });
+  expect(screen.getByRole("button", { name: "Save changes" })).toHaveProperty("disabled", true);
+  fireEvent.change(screen.getByLabelText("Run time (minutes)"), { target: { value: "15" } });
+  fireEvent.change(screen.getByLabelText("Daily team tokens"), { target: { value: "25000" } });
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ subagents: expect.objectContaining({ maxConcurrent: 3, roles: expect.arrayContaining([
+  expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ subagents: expect.objectContaining({ maxConcurrent: 3, maxRunMinutes: 15, dailyTokenLimit: 25000, roles: expect.arrayContaining([
     expect.objectContaining({ name: "colonel", instructions: "Delegate bounded work." }),
     expect.objectContaining({ name: "major", instructions: "Report verification evidence." }),
   ]) }) }));

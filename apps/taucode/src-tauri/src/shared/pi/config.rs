@@ -239,6 +239,10 @@ pub(super) fn prepare(
             include_str!("../../../../engines/pi/extensions/lib/verification.ts"),
         ),
         (
+            "lib/executionLimits.ts",
+            include_str!("../../../../engines/pi/extensions/lib/executionLimits.ts"),
+        ),
+        (
             "LICENSE",
             include_str!("../../../../engines/pi/extensions/LICENSE"),
         ),

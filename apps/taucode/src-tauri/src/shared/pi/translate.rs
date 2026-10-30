@@ -582,6 +582,13 @@ impl Translator {
         match m["type"].as_str().unwrap_or("") {
             "abort_requested"=>self.aborted=true,
             "agent_start"=>self.start(&mut out),
+            "taucode_execution_limit" if self.active => {
+                if let Some(message) = m["record"]["message"].as_str() {
+                    self.failure = Some(message.into());
+                    self.aborted = true;
+                    self.item(json!({"type":"agentMessage","id":format!("{}:execution-limit",self.turn_id()),"text":format!("**Execution limit reached**\n\n{message}")}), true, &mut out);
+                }
+            },
             "taucode_verification" if self.active && !self.aborted => {
                 let record = &m["record"];
                 if let (Some(status @ ("verified" | "unverified")), Some(message)) = (record["status"].as_str(), record["message"].as_str()) {
@@ -660,7 +667,17 @@ impl Translator {
         let mut t = Self::new(thread, cwd);
         let mut end = 0u64;
         let mut last_stop = String::new();
+        let mut pending_limit = None;
         for m in messages {
+            if m["role"] == "taucodeExecutionLimit" {
+                // OMP can stop at agent_start before persisting the new user entry.
+                if m["record"]["beforeUser"] == true {
+                    pending_limit = Some(m["record"].clone());
+                } else {
+                    t.apply(&json!({"type":"taucode_execution_limit","record":m["record"]}));
+                }
+                continue;
+            }
             if m["role"] == "taucodeVerification" {
                 t.apply(&json!({"type":"taucode_verification","record":m["record"]}));
                 continue;
@@ -702,6 +719,9 @@ impl Translator {
             }
             t.apply(&json!({"type":"message_start","message":m}));
             t.apply(&json!({"type":"message_end","message":m}));
+            if m["role"] == "user" {
+                if let Some(record) = pending_limit.take() { t.apply(&json!({"type":"taucode_execution_limit","record":record})); }
+            }
             if m["taucodeRecovered"] == true {
                 t.failure = Some("Execution interrupted. Recovered an unfinished response.".into());
             }

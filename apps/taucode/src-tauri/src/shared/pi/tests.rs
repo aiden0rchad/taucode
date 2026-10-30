@@ -1865,6 +1865,104 @@ fn omp_models_are_yaml_compatible_and_do_not_contain_credentials() {
 }
 
 #[tokio::test]
+#[cfg(unix)]
+async fn command_deadline_stops_a_real_delegated_shell_tree() {
+    use tokio::io::AsyncBufReadExt;
+    if !Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/omp/node_modules/.bin/bun").exists() { return; }
+    let mut server = tokio::process::Command::new("node").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/omp_fetch.mjs")).arg("--serve").stdout(std::process::Stdio::piped()).kill_on_drop(true).spawn().unwrap();
+    let port = tokio::io::BufReader::new(server.stdout.take().unwrap()).lines().next_line().await.unwrap().unwrap();
+    let dir = temp();
+    let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_,_| {}));
+    engine.profile.definition = crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), "omp").unwrap().0;
+    let provider = serde_json::from_value(json!({"id":"local","name":"Stub","kind":"openai-compatible","baseUrl":format!("http://127.0.0.1:{port}/v1"),"enabled":true,"auth":{"type":"none"},"models":[{"id":"stub","enabled":true,"contextWindow":8192}]})).unwrap();
+    let policy = serde_json::from_value(json!({"subagents":{"mode":"chain-of-command","maxRunMinutes":1,"roles":[{"name":"enlisted","description":"Work","toolAccess":"full","instructions":""}]}})).unwrap();
+    engine.configure("workspace", vec![provider], policy).await;
+    let mut events = engine.events();
+    let start = engine.request("workspace", "thread/start", json!({"model":"local/stub"})).await.unwrap();
+    let id = start["result"]["thread"]["id"].as_str().unwrap();
+    let started = std::time::Instant::now();
+    engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"LIMIT_TIMER_ROOT"}],"accessMode":"full-access"})).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while !dir.join("timer.pid").exists() { tokio::time::sleep(Duration::from_millis(50)).await; }
+    }).await.unwrap();
+    let pid: i32 = std::fs::read_to_string(dir.join("timer.pid")).unwrap().parse().unwrap();
+    tokio::time::timeout(Duration::from_secs(70), async {
+        loop {
+            let event = events.recv().await.unwrap();
+            if event["method"] == "turn/completed" {
+                assert_eq!(event["params"]["turn"]["status"], "interrupted", "{event}");
+                assert!(event.to_string().contains("time limit"), "{event}");
+                break;
+            }
+        }
+    }).await.unwrap();
+    assert!(started.elapsed() >= Duration::from_secs(59) && started.elapsed() < Duration::from_secs(75));
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while unsafe { libc::kill(pid, 0) } == 0 { tokio::time::sleep(Duration::from_millis(30)).await; }
+    }).await.expect("deadline must stop the delegated command's child process");
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn project_token_allowance_survives_engine_restart_and_blocks_new_provider_calls() {
+    use tokio::io::AsyncBufReadExt;
+    if !Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/omp/node_modules/.bin/bun").exists() { return; }
+    let mut server = tokio::process::Command::new("node").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/omp_fetch.mjs")).arg("--serve").stdout(std::process::Stdio::piped()).kill_on_drop(true).spawn().unwrap();
+    let port = tokio::io::BufReader::new(server.stdout.take().unwrap()).lines().next_line().await.unwrap().unwrap();
+    let dir = temp();
+    for profile in ["pi", "omp"] {
+        let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_,_| {}));
+        engine.profile.definition = crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), profile).unwrap().0;
+        let provider = serde_json::from_value(json!({"id":"local","name":"Stub","kind":"openai-compatible","baseUrl":format!("http://127.0.0.1:{port}/v1"),"enabled":true,"auth":{"type":"none"},"models":[{"id":"stub","enabled":true,"contextWindow":8192}]})).unwrap();
+        let policy = serde_json::from_value(json!({"subagents":{"mode":"chain-of-command","dailyTokenLimit":1}})).unwrap();
+        engine.configure("workspace", vec![provider], policy).await;
+        let mut events = engine.events();
+        let start = engine.request("workspace", "thread/start", json!({"model":"local/stub"})).await.unwrap();
+        let id = start["result"]["thread"]["id"].as_str().unwrap();
+        engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"QA_MISSING_FIXTURE"}],"accessMode":"full-access"})).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                let event = events.recv().await.unwrap();
+                if event["method"] == "turn/completed" {
+                    assert_eq!(event["params"]["turn"]["status"], "interrupted", "{profile}: {event}");
+                    assert!(event.to_string().contains("daily token allowance"), "{profile}: {event}");
+                    break;
+                }
+            }
+        }).await.unwrap();
+        let file = engine.sessions.lock().await[id].file.clone();
+        let (_, restored) = read_session(&file, &[]).unwrap();
+        assert_eq!(restored.turns.last().unwrap()["status"], "interrupted");
+        assert!(json!(restored.turns).to_string().contains("daily token allowance"));
+        let count = reqwest::get(format!("http://127.0.0.1:{port}/count")).await.unwrap().text().await.unwrap();
+        assert_eq!(count, "1", "an exhausted project allowance must block the restarted engine's first provider request");
+        engine.shutdown().await.unwrap();
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn execution_limit_replay_keeps_the_reason_on_its_own_turn() {
+    let history = Translator::history("thread", "/workspace", &[
+        json!({"role":"user","timestamp":1,"content":"First"}),
+        json!({"role":"assistant","timestamp":2,"stopReason":"toolUse","content":[]}),
+        json!({"role":"taucodeExecutionLimit","record":{"message":"First allowance","beforeUser":false}}),
+        json!({"role":"user","timestamp":3,"content":"Second"}),
+        json!({"role":"assistant","timestamp":4,"stopReason":"stop","content":[{"type":"text","text":"OK"}]}),
+        json!({"role":"taucodeExecutionLimit","record":{"message":"Third allowance","beforeUser":true}}),
+        json!({"role":"user","timestamp":5,"content":"Third"}),
+    ]);
+    assert_eq!(history.turns.len(), 3);
+    for (index, status) in ["interrupted", "completed", "interrupted"].iter().enumerate() {
+        assert_eq!(history.turns[index]["status"], *status);
+    }
+    assert!(history.turns[0].to_string().contains("First allowance"));
+    assert!(!history.turns[1].to_string().contains("allowance"));
+    assert!(history.turns[2].to_string().contains("Third allowance"));
+}
+
+#[tokio::test]
 async fn real_pi_and_omp_verification_gates_completion_and_survives_reload() {
     use tokio::io::AsyncBufReadExt;
     if !Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/omp/node_modules/.bin/bun").exists() { return; }
