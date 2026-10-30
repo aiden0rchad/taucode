@@ -13,6 +13,22 @@ impl EventSink for RecordingSink {
     fn emit_terminal_exit(&self, _: TerminalExit) {}
 }
 
+#[tokio::test]
+#[ignore = "requires installed Codex CLI; offline, no provider requests"]
+async fn real_codex_history_starts_without_credentials_or_connectors() {
+    let root = std::env::temp_dir().join(format!("taucode-history-{}", uuid::Uuid::new_v4()));
+    let home = root.join("engines/codex");
+    std::fs::create_dir_all(&home).unwrap();
+    let entry = serde_json::from_value(json!({"id":"history","name":"History","path":root,"settings":{}})).unwrap();
+    let mut settings = crate::types::AppSettings::default();
+    settings.providers = vec![serde_json::from_value(json!({"id":"offline","name":"Offline","kind":"openai","baseUrl":"http://127.0.0.1:9/v1","enabled":true,"auth":{"type":"command","command":"/usr/bin/false","args":[]},"models":[{"id":"offline","enabled":true}]})).unwrap()];
+    let engine = spawn_codex_engine(entry, std::env::var("TAUCODE_CODEX_TEST_BIN").ok(), None, Some(home), "test".into(), RecordingSink::default(), None, settings, false).await.unwrap();
+    let response = tokio::time::timeout(Duration::from_secs(10), engine.send_request("thread/list", json!({}))).await;
+    crate::shared::process_core::kill_child_process_tree(&mut *engine.child.lock().await).await;
+    std::fs::remove_dir_all(root).unwrap();
+    assert!(response.unwrap().unwrap()["result"]["data"].is_array());
+}
+
 pub(crate) fn make_session() -> Arc<WorkspaceSession> {
     make_session_with_setup(None)
 }

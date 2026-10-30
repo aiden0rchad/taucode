@@ -30,6 +30,14 @@ it("rounds logical pixels, batches layout changes and hides on unmount", async (
   await frame(); expect(browserNativeBounds).toHaveBeenCalledTimes(1);
   view.unmount(); expect(browserNativeBounds).toHaveBeenLastCalledWith("one", expect.anything(), false);
 });
+it("refreshes native placement when UI zoom changes the viewport with fixed slot bounds", async () => {
+  render(<NativeSlot tabId="one" ready blocked={false} onError={error} />);
+  await frame();
+  vi.stubGlobal("innerWidth", window.innerWidth + 200);
+  await frame();
+  expect(browserNativeBounds).toHaveBeenCalledTimes(2);
+  expect(browserNativeBounds).toHaveBeenLastCalledWith("one", { x: 12, y: 61, w: 400, h: 300 }, true);
+});
 it.each(["modal", "popover"])("hides behind an intersecting %s with a snapshot, then restores", async kind => {
   const slot = <NativeSlot tabId="one" ready blocked={false} snapshot="AAAA" onError={error} />;
   const view = render(slot); await frame();

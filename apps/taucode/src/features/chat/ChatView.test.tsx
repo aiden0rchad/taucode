@@ -10,7 +10,7 @@ import type { Chat } from "./chat";
 let listener: (event: AppServerEvent) => void;
 let nativeDrop: (event: { payload: { type: string; paths: string[] } }) => void;
 vi.mock("@services/dragDrop", () => ({ subscribeWindowDragDrop: (callback: typeof nativeDrop) => { nativeDrop = callback; return () => {}; } }));
-vi.mock("@services/events", () => ({ subscribeAppServerEvents: (callback: typeof listener) => { listener = callback; return () => {}; } }));
+vi.mock("@services/events", () => ({ subscribeMenuViewAction: () => () => {}, subscribeAppServerEvents: (callback: typeof listener) => { listener = callback; return () => {}; } }));
 vi.mock("@services/tauri", () => ({ subscribeBrowser: vi.fn().mockResolvedValue(() => {}), browserRequest: vi.fn().mockResolvedValue(undefined), chatRequest: vi.fn(), exportMarkdownFile: vi.fn().mockResolvedValue(null), getAppSettings: vi.fn(), updateAppSettings: vi.fn(), readChatAttachment: vi.fn() }));
 vi.mock("./ModeShell", () => ({ ModeSwitcher: () => <nav aria-label="App mode" />, useModeSettings: () => undefined }));
 const settings = { providers: [{ id: "p", name: "Local", enabled: true, models: [{ id: "one", enabled: true }, { id: "two", enabled: true, supportsImages: false }] }], agentPolicy: { defaultModel: { providerId: "p", modelId: "one" } }, mcpServers: [] } as unknown as AppSettings;
@@ -96,6 +96,7 @@ describe("Chat UI", () => {
     await waitFor(() => expect(exportMarkdownFile).toHaveBeenCalledWith(expect.stringContaining("Original answer"), "chat.md", "Export chat"));
     await waitFor(() => expect(screen.getByRole("button", { name: "Edit and resend" })).not.toHaveProperty("disabled", true));
     fireEvent.click(screen.getByRole("button", { name: "Edit and resend" }));
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Message" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "Edited question" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("fork", { threadId: "chat", model: "p/one", beforeUserItemId: "user" }));
@@ -118,6 +119,18 @@ describe("Chat UI", () => {
     expect(screen.getByText("Streaming answer")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("stop", { threadId: "fork" }));
+  });
+  it("cancels editing without changing the conversation and keeps the composer focused", async () => {
+    render(<ChatView settings={settings} />); await open();
+    fireEvent.click(screen.getByRole("button", { name: "Edit and resend" }));
+    const input = screen.getByRole("textbox", { name: "Message" });
+    expect(input).toHaveProperty("value", "**Original question**");
+    screen.getByRole("button", { name: "Cancel" }).focus();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(input);
+    expect(input).toHaveProperty("value", "");
+    expect(screen.getByText("Original answer")).toBeTruthy();
+    expect(vi.mocked(chatRequest).mock.calls.some(([action]) => action === "fork" || action === "send")).toBe(false);
   });
   it("supports pasted images and dropped text; hides Web without the connector", async () => {
     const { rerender } = render(<ChatView settings={settings} />); await open();

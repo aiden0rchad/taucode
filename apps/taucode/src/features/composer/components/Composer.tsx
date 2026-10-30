@@ -38,6 +38,7 @@ import { useComposerKeyDown } from "../hooks/useComposerKeyDown";
 import { useComposerSuggestionStyle } from "../hooks/useComposerSuggestionStyle";
 import { usePromptHistory } from "../hooks/usePromptHistory";
 import { ComposerInput } from "./ComposerInput";
+import { basicCommands, expandTaskCommand } from "../commands";
 import { ComposerAccessControl } from "./ComposerShell";
 import { ComposerMetaBar, ComposerEngineControl } from "./ComposerMetaBar";
 import { ComposerQueue } from "./ComposerQueue";
@@ -54,6 +55,8 @@ type ComposerProps = {
   ) => void;
   onStop: () => void;
   canStop: boolean;
+  onSideChat?: () => void;
+  sideChatDisabledReason?: string | null;
   disabled?: boolean;
 
   isProcessing: boolean;
@@ -69,6 +72,7 @@ type ComposerProps = {
   selectedModelId: string | null;
   defaultModelId?: string | null;
   onSelectModel: (id: string) => void;
+  modelPickerRequest?: number;
   reasoningOptions: string[];
   selectedEffort: string | null;
   onSelectEffort: (effort: string) => void;
@@ -167,6 +171,8 @@ export const Composer = memo(function Composer({
   onSend,
   onStop,
   canStop,
+  onSideChat,
+  sideChatDisabledReason,
   disabled = false,
 
   isProcessing,
@@ -180,6 +186,7 @@ export const Composer = memo(function Composer({
   models,
   selectedModelId, defaultModelId,
   onSelectModel,
+  modelPickerRequest,
   selectedEffort,
   onSelectEffort,
   selectedServiceTier,
@@ -258,6 +265,11 @@ export const Composer = memo(function Composer({
   const editorSettings = editorSettingsProp ?? DEFAULT_EDITOR_SETTINGS;
   const isDictationBusy = dictationState !== "idle";
   const canSend = text.trim().length > 0 || attachedImages.length > 0;
+  const sideChatCommand = /^\/sidechat(?:\s|$)/i.test(text.trim());
+  const commandError = sideChatCommand
+    ? sideChatDisabledReason || (!onSideChat ? "Start a conversation before opening a side chat."
+      : !/^\/sidechat\s*$/i.test(text.trim()) ? "Use /sidechat on its own, then ask your question in the side chat." : null)
+    : null;
   const isMac = isMacPlatform();
   const followUpShortcutLabel = isMac ? "Shift+Cmd+Enter" : "Shift+Ctrl+Enter";
   const effectiveFollowUpBehavior: FollowUpMessageBehavior =
@@ -314,6 +326,7 @@ export const Composer = memo(function Composer({
     text,
     selectionStart,
     disabled,
+    commands: basicCommands.filter(command => command.id === "sidechat" ? Boolean(onSideChat) && !sideChatDisabledReason : command.id !== "compact" || (!isEmpty && (engine === "codex" || engineDefinition?.protocol === "pi-rpc"))),
 
     skills,
 
@@ -363,28 +376,49 @@ export const Composer = memo(function Composer({
   );
 
   const handleSend = useCallback((submitIntent: ComposerSendIntent = "default") => {
-    if (disabled) {
+    if (disabled || commandError) {
       return;
     }
     const trimmed = text.trim();
     if (!trimmed && attachedImages.length === 0) {
       return;
     }
+    if (/^\/sidechat\s*$/i.test(trimmed)) {
+      if (onSideChat && !sideChatDisabledReason) {
+        onSideChat();
+        setComposerText("");
+      }
+      return;
+    }
+    const task = expandTaskCommand(trimmed);
+    if (task?.needsInput) {
+      setComposerText(task.text);
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.setSelectionRange(6, 6);
+        setSelectionStart(6);
+      });
+      return;
+    }
     if (trimmed) {
       recordHistory(trimmed);
     }
-    onSend(trimmed, attachedImages, submitIntent);
+    onSend(task?.text ?? trimmed, attachedImages, submitIntent);
     resetHistoryNavigation();
     setComposerText("");
   }, [
 
     attachedImages,
+    commandError,
     disabled,
+    onSideChat,
+    sideChatDisabledReason,
     onSend,
     recordHistory,
     resetHistoryNavigation,
     setComposerText,
     text,
+    textareaRef,
   ]);
 
   useComposerDraftEffects({
@@ -587,9 +621,11 @@ export const Composer = memo(function Composer({
           ))}
         </div>
       ) : null}
+      {commandError && <div className="composer-command-notice" role="status">{commandError}</div>}
       <ComposerInput
         toolbar={<ComposerAccessControl value={accessMode === "current" ? "ask" : accessMode} disabled={disabled} onChange={mode => onSelectAccessMode(mode === "ask" ? "current" : mode)} />}
         controls={<ComposerMetaBar
+        modelPickerRequest={modelPickerRequest}
         disabled={disabled}
         engine={engine}
         onSelectEngine={onSelectEngine}
@@ -605,7 +641,7 @@ export const Composer = memo(function Composer({
         disabled={disabled}
         sendLabel={effectiveSendLabel}
         canStop={canStop}
-        canSend={canSend}
+        canSend={canSend && !commandError}
         isProcessing={isProcessing}
         onStop={onStop}
         onSend={() => handleSend(defaultSubmitIntent)}

@@ -6,6 +6,7 @@ import {
   exportMarkdownFile,
   addWorkspace,
   compactThread,
+  threadAgentPolicy,
   computerRequestPermissions,
   createGitHubRepo,
   fetchGit,
@@ -1085,4 +1086,12 @@ describe("tauri invoke wrappers", () => {
     });
     expect(isPermissionGrantedMock).not.toHaveBeenCalled();
   });
+});
+
+it("routes conversation team reads and reset with explicit workspace and thread IDs", async () => {
+  vi.mocked(invoke).mockResolvedValue({ overridden: false });
+  await threadAgentPolicy("workspace", "thread", "get");
+  expect(invoke).toHaveBeenLastCalledWith("thread_agent_policy", { workspaceId: "workspace", threadId: "thread", action: "get", policy: undefined });
+  await threadAgentPolicy("workspace", "thread", "reset");
+  expect(invoke).toHaveBeenLastCalledWith("thread_agent_policy", { workspaceId: "workspace", threadId: "thread", action: "reset", policy: undefined });
 });

@@ -1,5 +1,6 @@
 import { DiagnosticBoundary } from "@/features/diagnostics/DiagnosticBoundary";
 import { lazy, Suspense } from "react";
+import { WindowResizeHandles } from "@/features/layout/components/WindowResizeHandles";
 import { useThemedScrollbars } from '@/features/layout/hooks/useThemedScrollbars';
 import "./styles/base.css";
 import "./styles/ds-tokens.css";
@@ -67,5 +68,5 @@ export default function App() {
     );
   }
 
-  return <DiagnosticBoundary panel="app"><ModeShell renderSettings={(onClose, section) => <MainApp settingsOnly initialSettingsSection={section} onCloseModeSettings={onClose} />}><MainApp /></ModeShell><ComputerApprovals /></DiagnosticBoundary>;
+  return <DiagnosticBoundary panel="app"><ModeShell renderSettings={(onClose, section) => <MainApp settingsOnly initialSettingsSection={section} onCloseModeSettings={onClose} />}><MainApp /></ModeShell><ComputerApprovals /><WindowResizeHandles /></DiagnosticBoundary>;
 }

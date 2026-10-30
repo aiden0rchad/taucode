@@ -36,7 +36,9 @@
 .workspace-main .composer > * { max-width: 780px; margin-inline: auto; }
 .workspace-main .chat-pane-composer { position: static; flex-shrink: 0; }
 .tabbed-side-panel { position: relative; z-index: var(--z-panel); flex: 0 0 auto; min-width: 320px; max-width: calc(100vw - 80px); display: flex; flex-direction: column; border-left: 1px solid var(--border-subtle); background: var(--surface-sidebar); min-height: 0; }
-.side-panel-resizer { touch-action: none; position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; cursor: col-resize; z-index: var(--z-sticky); }
+.side-panel-resizer { touch-action: none; position: absolute; top: 0; bottom: 0; left: -8px; width: 16px; cursor: col-resize; z-index: var(--z-sticky); }
+.side-panel-resizer::after { content: ""; position: absolute; inset: 0 auto 0 7px; width: 2px; background: var(--border-accent); opacity: 0; }
+.side-panel-resizer:is(:hover, :focus-visible)::after { opacity: 1; }
 .side-panel-tabbar { display: flex; align-items: center; gap: 2px; padding: 4px; height: 40px; box-sizing: border-box; border-bottom: 1px solid var(--border-subtle); }
 .side-panel-tabs { display: flex; align-items: center; min-width: 0; flex: 1; overflow-x: auto;  }
 .side-panel-tab { display: flex; align-items: center; flex-shrink: 0; border-right: 1px solid var(--border-subtle); }

@@ -200,14 +200,15 @@ impl DaemonState {
         if let Err(error) = shared::diagnostics_core::configure(config.data_dir.join("diagnostics"), &app_settings) {
             eprintln!("Diagnostics configuration failed: {error}");
         }
+        let managed_tasks = shared::managed_tasks::ManagedTasks::new();
         let daemon_binary_path = std::env::current_exe()
             .ok()
             .and_then(|path| path.to_str().map(str::to_string));
         Self {
-            managed_tasks: shared::managed_tasks::ManagedTasks::new(),
+            managed_tasks: managed_tasks.clone(),
             browser: shared::browser::Browser::new(config.data_dir.clone()),
             evals: shared::evals::Evals::new(config.data_dir.clone(), event_sink.clone()),
-            work: shared::work::Work::new(config.data_dir.clone(), event_sink.clone()),
+            work: shared::work::Work::with_tasks(config.data_dir.clone(), event_sink.clone(), managed_tasks),
             chats: shared::chats::Chats::new(config.data_dir.clone(), event_sink.clone()),
             imports: shared::imports::Imports::new(config.data_dir.clone()),
             codegraph: shared::codegraph_core::Codegraph::new(config.data_dir.clone()),
@@ -932,8 +933,10 @@ impl DaemonState {
     }
 
     async fn model_list(&self, workspace_id: String, thread_id: Option<String>) -> Result<Value, String> {
-        let providers = self.app_settings.lock().await.providers.clone();
-        Ok(shared::reasoning::catalog(&providers, &self.sessions, &workspace_id, thread_id.as_deref()).await)
+        let settings = self.app_settings.lock().await.clone();
+        let mut catalog = shared::reasoning::catalog(&settings.providers, &self.sessions, &workspace_id, thread_id.as_deref()).await;
+        shared::providers::mark_default(&mut catalog, settings.agent_policy.default_model.as_ref());
+        Ok(catalog)
     }
 
     async fn experimental_feature_list(

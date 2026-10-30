@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import { useTauriEvent } from "@app/hooks/useTauriEvent";
+import { subscribeMenuViewAction, type MenuViewAction } from "@services/events";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { AppSettings } from "../../../types";
 import { clampUiScale, UI_SCALE_STEP } from "../../../utils/uiScale";
@@ -87,9 +89,15 @@ export function useUiScaleShortcuts({
     });
   }, [queueSaveSettings, setSettings]);
 
+  useTauriEvent<MenuViewAction>(subscribeMenuViewAction, action => {
+    if (action === "zoom_reset") handleScaleReset();
+    if (action === "zoom_in") handleScaleDelta(UI_SCALE_STEP);
+    if (action === "zoom_out") handleScaleDelta(-UI_SCALE_STEP);
+  });
+
   useEffect(() => {
     const handleScaleShortcut = (event: KeyboardEvent) => {
-      if (!event.metaKey && !event.ctrlKey) {
+      if (event.defaultPrevented || (!event.metaKey && !event.ctrlKey)) {
         return;
       }
       if (event.altKey) {

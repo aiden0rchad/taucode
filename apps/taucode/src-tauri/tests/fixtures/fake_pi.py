@@ -37,8 +37,8 @@ if args.session_dir:
 
 
 def record(request):
-    if args.session_dir:
-        with session.with_suffix(".requests").open("a") as output:
+    if args.session_dir or os.environ.get("FAKE_PI_REQUESTS"):
+        with pathlib.Path(os.environ.get("FAKE_PI_REQUESTS") or session.with_suffix(".requests")).open("a") as output:
             output.write(json.dumps(request) + "\n")
 
 
@@ -47,6 +47,8 @@ def emit(value):
 
 
 held = None
+pending_ui = False
+held_abort = None
 prompt_serial = 0
 for line in sys.stdin:
     request = json.loads(line)
@@ -90,13 +92,27 @@ for line in sys.stdin:
         message = {"role": "user", "timestamp": prompt_serial, "content": request["message"]}
         emit({"type": "message_start", "message": message})
         emit({"type": "message_end", "message": message})
+        if request.get("message") == "approval":
+            pending_ui = True
+            emit({"type": "extension_ui_request", "id": "blocked", "method": "confirm", "title": "Allow command?"})
+            continue
         emit({"type": "message_start", "message": {"role": "assistant"}})
         emit({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "contentIndex": 0, "delta": "one\u2028two\u2029three"}})
         if request.get("message") == "crash":
             sys.exit(7)
         continue
     if kind == "abort":
+        if pending_ui:
+            held_abort = response
+            continue
         emit({"type": "agent_settled", "aborted": True})
+    if kind == "extension_ui_response":
+        pending_ui = False
+        if held_abort:
+            emit({"type": "agent_settled", "aborted": True})
+            emit(held_abort)
+            held_abort = None
+        continue
     emit(response)
 
 marker = os.environ.get("FAKE_PI_EOF")

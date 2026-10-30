@@ -22,7 +22,7 @@ export function NativeSlot({ tabId, snapshot, ready, blocked, onError }: { tabId
       rect = roundedRect(bounds);
       const visible = ready && !blocked && !document.hidden && bounds.width > 0 && bounds.height > 0 && bounds.x >= 0 && bounds.y >= 0 && !nativeOverlayIntersects(bounds);
       setHidden(old => old === !visible ? old : !visible);
-      const key = JSON.stringify([rect, visible]);
+      const key = JSON.stringify([rect, visible, window.innerWidth, window.innerHeight]);
       if (!pending && key !== last) {
         pending = true; last = key;
         void browserNativeBounds(tabId, rect, visible).catch(e => { if (!disposed) onError(String(e)); }).finally(() => { pending = false; });

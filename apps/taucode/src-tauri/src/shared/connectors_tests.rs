@@ -220,6 +220,7 @@ fn codex_cannot_load_an_oauth_credential_file() {
         &[],
         &crate::types::AgentPolicy::default(),
         &Keys::default(),
+        true,
     )
     .unwrap_err();
     assert!(error.contains("OAuth sign-in is not supported"));

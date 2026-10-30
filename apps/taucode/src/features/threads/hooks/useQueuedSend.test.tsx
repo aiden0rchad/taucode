@@ -40,6 +40,16 @@ const makeOptions = (
 });
 
 describe("useQueuedSend", () => {
+  it.each(["/new/project", "/compact.md", "/review-existing"])("sends %s as text without treating it as a command", async text => {
+    const options = makeOptions();
+    const { result } = renderHook(() => useQueuedSend(options));
+    await act(async () => { await result.current.handleSend(text, ["image.png"]); });
+    expect(options.sendUserMessage).toHaveBeenCalledWith(text, ["image.png"], { sendIntent: "default" });
+    expect(options.startThreadForWorkspace).not.toHaveBeenCalled();
+    expect(options.startCompact).not.toHaveBeenCalled();
+    expect(options.startReview).not.toHaveBeenCalled();
+  });
+
   it("sends queued messages one at a time after processing completes", async () => {
     const options = makeOptions();
     const { result, rerender } = renderHook(

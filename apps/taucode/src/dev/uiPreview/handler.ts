@@ -3,10 +3,11 @@ import { createDiagnosticsFixture } from "./diagnostics";
 import { builtinIds, parseTheme, type ThemeFile, type ThemeManifest } from "@/features/themes/validate";
 import customTheme from "@/features/themes/fixtures/valid-custom.json";
 import { defaultFeatures, type Features } from '@settings/features';
+import { defaultAgentPolicy, mergePolicy } from '@settings/registry';
 import type { EngineRuntimeStatus } from "@services/tauri";
 import type { ManagedTask } from "@/features/tasks/useManagedTasks";
 import type { BrowserState } from "@/features/browser/browser";
-import type { AppSettings, ImportLog, WorkTask, WorkspaceInfo } from "@/types";
+import type { AgentPolicy, AppSettings, ImportLog, WorkTask, WorkspaceInfo } from "@/types";
 import { assistantMessage, createFixtures, diff, makeThread, userMessage, type PreviewThread } from "./fixtures";
 
 type Params = Record<string, unknown>;
@@ -37,6 +38,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
   const warned = new Set<string>();
   const logs: ImportLog[] = [];
   const managedTasks = new Map<string, ManagedTask[]>();
+  const conversationTeams = new Map<string, AgentPolicy["subagents"]>();
   let sequence = 0;
   const previewSnapshot = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700"><rect width="1000" height="700" fill="#f7f7f5"/><text x="60" y="100" font-family="system-ui" font-size="40" fill="#202020">Example Domain</text><text x="60" y="160" font-family="system-ui" font-size="20" fill="#555">Native browser preview</text></svg>')}`;
   const browser: BrowserState = { backend: "native", capabilities: { screenshot: true, evaluate: true }, tabs: query.get("panel") === "browser" ? [{ id: "preview-page", title: "Example", url: "https://example.com/", loading: false, ready: true, snapshot: previewSnapshot }] : [], active: query.get("panel") === "browser" ? "preview-page" : "" };
@@ -60,17 +62,25 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
     if (!warned.has(command)) { warned.add(command); console.warn(`[uiPreview] Unhandled IPC: ${command}`); }
     return /^(list_|get_.*s$)/.test(command) ? [] : null;
   };
+  let failNextSend = query.get("failure") === "quota";
   const send = (thread: PreviewThread | undefined, text: string) => {
     if (!thread) return { result: { turn: { id: "missing", status: "completed" } } };
     const turn = { id: id("turn"), status: "completed" as const, items: [
       userMessage(id("user"), text), assistantMessage(id("assistant"), `Preview response: **${text || "Message received"}**\n\nThis conversation is stored in memory. No provider was contacted.`),
     ] };
     thread.turns.push(turn);
+    const fail = failNextSend;
+    failNextSend = false;
+    if (fail) turn.items.pop();
     thread.updatedAt = Math.floor(Date.now() / 1000);
     // Deliver after the invoke resolves, as the real asynchronous backend does.
     setTimeout(() => {
       publish(thread.workspaceId, "turn/started", { threadId: thread.id, turn: { id: turn.id } });
       for (const item of turn.items) publish(thread.workspaceId, "item/completed", { threadId: thread.id, turnId: turn.id, item });
+      if (fail) {
+        publish(thread.workspaceId, "error", { threadId: thread.id, turnId: turn.id, willRetry: false, error: { message: "Provider requested 1800000ms wait, exceeds retry.maxDelayMs (300000ms). Original error: 429 ChatGPT Account 1 requests are paused to preserve the final 10% of weekly allowance. This prompt was not processed. ChatGPT Account 1 requests are paused to preserve the final 10% of weekly allowance. This prompt was not processed. (type=chatgpt_quota_paused param=429)" } });
+        return;
+      }
       publish(thread.workspaceId, "turn/completed", { threadId: thread.id, turn });
     }, 30);
     return { result: { turn: { id: turn.id, status: "inProgress" } } };
@@ -113,6 +123,25 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
     switch (action) {
       case "list": return state.work;
       case "read": return response(findThread(task?.threadId));
+      case "preview": {
+        if (!task || task.importId || !task.threadId) throw new Error("Task has no managed previews");
+        const key = JSON.stringify([task.spaceId, task.threadId]);
+        if (!managedTasks.has(key)) managedTasks.set(key, [{ id: id("preview-server"), workspaceId: task.spaceId, threadId: task.threadId, command: '"$TAUCODE_WORK_PYTHON" -m http.server 8765 --bind 127.0.0.1', label: "Dashboard preview", cwd: state.work.spaces.find(s => s.id === task.spaceId)!.path, pid: null, status: "running", startedAt: Date.now() - 12000, endedAt: null, exitCode: null, output: "UI fixture. No process was started.\nServing http://127.0.0.1:8765/\n", outputTruncated: false, urls: ["http://127.0.0.1:8765/"] }]);
+        const tasks = managedTasks.get(key)!;
+        if (params.action === "stop" || params.action === "restart") {
+          const previous = tasks.find(t => t.id === params.id);
+          if (!previous) throw new Error("Preview not found in this task");
+          if (params.action === "stop") Object.assign(previous, { status: "stopped", endedAt: Date.now() });
+          else {
+            if (previous.status === "running") throw new Error("Stop the preview before restarting it");
+            if (task.accessMode === "read-only" || state.settings.features?.terminal === false || state.settings.features?.workMode === false) throw new Error("Restart requires Work, Terminal and write access");
+            tasks.unshift({ ...previous, id: id("preview-server"), status: "running", startedAt: Date.now(), endedAt: null });
+          }
+        } else if (params.action === "clearFinished") managedTasks.set(key, tasks.filter(t => t.status === "running"));
+        else if (params.action !== "list") throw new Error("Previews are started by the task");
+        return structuredClone(managedTasks.get(key));
+      }
+      case "subagent-transcript": return { messages: [{ role: "assistant", content: "Checked the source notes and verified the summary against each action item." }], truncated: false };
       case "add-space": {
         const path = String(params.path ?? "/preview/new-space");
         const space = { id: id("space"), name: String(params.name || path.split("/").pop()), path, kind: "work" as const, readOnlyFolders: Array.isArray(params.readOnlyFolders) ? params.readOnlyFolders.map(String) : [] };
@@ -178,6 +207,17 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "read_thread":
       case "resume_thread": return response(findThread(args.threadId));
       case "list_thread_history": return { turns: [], nextCursor: null };
+      case "thread_agent_policy": {
+        const thread = findThread(args.threadId);
+        const workspace = state.workspaces.find(w => w.id === args.workspaceId);
+        if (!thread || !workspace || thread.workspaceId !== workspace.id) throw new Error("Unknown conversation");
+        const base = mergePolicy(state.settings.agentPolicy ?? defaultAgentPolicy, workspace.settings.agentPolicy);
+        if (args.action === "set") conversationTeams.set(thread.id, structuredClone(args.policy as AgentPolicy["subagents"]));
+        else if (args.action === "reset") conversationTeams.delete(thread.id);
+        else if (args.action !== "get") throw new Error("Unknown conversation team action");
+        const team = conversationTeams.get(thread.id);
+        return { overridden: !!team, policy: { ...base, subagents: team ? { ...team, dailyTokenLimit: base.subagents.dailyTokenLimit } : base.subagents } };
+      }
       case "start_thread":
       case "fork_thread":
       case "create_side_chat": {
@@ -185,6 +225,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
         const thread = makeThread(id("thread"), String(args.workspaceId), command === "create_side_chat" ? "Side chat" : "New conversation");
         thread.cwd = state.workspaces.find(w => w.id === args.workspaceId)?.path ?? thread.cwd;
         if (command === "fork_thread" && parent) thread.turns = structuredClone(parent.turns);
+        if (parent && conversationTeams.has(parent.id)) conversationTeams.set(thread.id, structuredClone(conversationTeams.get(parent.id)!));
         if (command === "create_side_chat" && parent) thread.sideOf = { workspaceId: parent.workspaceId, threadId: parent.id, atItemId: typeof args.atItemId === "string" ? args.atItemId : null };
         state.threads.unshift(thread); return response(thread);
       }

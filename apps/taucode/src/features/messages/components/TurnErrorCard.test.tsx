@@ -1,0 +1,53 @@
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { describeTurnError, TurnErrorCard } from "./TurnErrorCard";
+
+afterEach(cleanup);
+it.each([
+  ["429 chatgpt_quota_paused", "Account usage limit reached"],
+  ["429 Too many requests", "Too many requests"],
+  ["401 Unauthorized", "Provider access needs attention"],
+  ["context_length_exceeded", "Conversation is too long"],
+  ["fetch failed", "Couldn’t reach the provider"],
+  ["Unexpected backend error", "Request couldn’t complete"],
+  ["The test Pi process exited with status 1", "Request couldn’t complete"],
+])("summarizes %s", (message, title) => expect(describeTurnError(message).title).toBe(title));
+
+it.each([
+  "Turn failed: Pi process exited unexpectedly",
+  "Turn failed to start: Pi process exited; retry to resume the session",
+  "Pi process is closed",
+])("explains an interrupted agent without offering to replay its command (%s)", message => {
+  const { container } = render(<TurnErrorCard message={message} onRetry={vi.fn()} onChangeModel={vi.fn()} />);
+  expect(screen.getByRole("region", { name: "Agent stopped unexpectedly" })).toBeTruthy();
+  expect(screen.getByText(/send a follow-up to continue/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Change model" })).toBeNull();
+  expect(container.querySelector("pre")?.textContent).toBe(message);
+});
+
+it.each(["", "Turn failed: "])("explains incomplete QA without suggesting a blind retry (%s)", prefix => {
+  const message = `${prefix}Verification incomplete: QA could not verify the 429 timeout handling criterion`;
+  const { container } = render(<TurnErrorCard message={message} onRetry={vi.fn()} onChangeModel={vi.fn()} />);
+  expect(screen.getByRole("region", { name: "Review needs follow-up" })).toBeTruthy();
+  expect(screen.getByText(/ask for the missing checks or corrections/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Change model" })).toBeNull();
+  expect(container.querySelector("pre")?.textContent).toBe(message);
+});
+
+it("prevents duplicate retries and handles rejection without losing error details", async () => {
+  let reject!: (error: Error) => void;
+  const onRetry = vi.fn(() => new Promise<boolean>((_resolve, fail) => { reject = fail; }));
+  const { container } = render(<TurnErrorCard message="fetch failed" onRetry={onRetry} onChangeModel={vi.fn()} />);
+  const retry = screen.getByRole("button", { name: "Retry" });
+  fireEvent.click(retry);
+  fireEvent.click(retry);
+  expect(onRetry).toHaveBeenCalledOnce();
+  expect((screen.getByRole("button", { name: "Change model" }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => reject(new Error("offline")));
+  expect(screen.getByRole("status").textContent).toContain("Your message is still available");
+  expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(container.querySelector("pre")?.textContent).toBe("fetch failed");
+});

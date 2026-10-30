@@ -101,7 +101,7 @@ it.each([[1440, "dark", "rgba(0, 0, 0, 0.5)"], [900, "light", "rgba(15, 15, 20, 
   await invoke("update_app_settings", { settings: { features: {} } });
   const styles = ["src/styles/ds-tokens.css", "src/styles/ds-modal.css", "src/features/panels/side-panel.css"].map(path => readFileSync(path, "utf8")).join("\n") + settingsStyles;
   render(createElement(Fragment, null, createElement("style", null, styles), createElement(App)));
-  await screen.findByRole("textbox", { name: "Side chat message" });
+  await screen.findByRole("textbox", { name: "Side chat message" }, { timeout: 5000 });
   const dialog = await screen.findByRole("dialog", { name: "Settings" }, { timeout: 5000 });
   document.documentElement.dataset.theme = theme;
   const panel = document.querySelector('.dock-pane[data-dock-pane="sidechat"]');

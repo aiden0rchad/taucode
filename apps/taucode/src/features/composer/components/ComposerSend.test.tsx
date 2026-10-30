@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { assertRowAlignment } from "@/test/rowAlignment.mjs";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isMobilePlatform } from "../../../utils/platformPaths";
@@ -32,6 +32,7 @@ vi.mock("../../../utils/platformPaths", async () => {
 });
 
 type HarnessProps = {
+  isEmpty?: boolean;
   engine?: import("@/types").EngineKind;
   onSend: (
     text: string,
@@ -43,9 +44,12 @@ type HarnessProps = {
   followUpMessageBehavior?: FollowUpMessageBehavior;
   steerAvailable?: boolean;
   selectedServiceTier?: "fast" | "flex" | null;
+  onSideChat?: () => void;
+  sideChatDisabledReason?: string;
 };
 
 function ComposerHarness({
+  isEmpty,
   engine,
   onSend,
 
@@ -53,14 +57,19 @@ function ComposerHarness({
   followUpMessageBehavior = "queue",
   steerAvailable = false,
   selectedServiceTier = null,
+  onSideChat,
+  sideChatDisabledReason,
 }: HarnessProps) {
   const [draftText, setDraftText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   return (
     <Composer
+      isEmpty={isEmpty}
       engine={engine}
       onSend={onSend}
+      onSideChat={onSideChat}
+      sideChatDisabledReason={sideChatDisabledReason}
       onStop={() => {}}
       canStop={false}
       isProcessing={isProcessing}
@@ -113,7 +122,7 @@ describe("Composer send triggers", () => {
   });
   it.each([['pi', 'taucode'], ['codex', 'Codex'], ['claude', 'Claude Code']] as const)("names the %s engine in the placeholder", (engine, label) => {
     render(<ComposerHarness onSend={vi.fn()} engine={engine} />);
-    expect(screen.getByPlaceholderText(`Ask ${label} to do something…`)).toBeTruthy();
+    expect(screen.getByPlaceholderText(`Ask ${label} to do something… Type / for commands`)).toBeTruthy();
   });
   afterEach(() => {
     assertRowAlignment(document.body);
@@ -132,6 +141,79 @@ describe("Composer send triggers", () => {
 
     expect(onSend).toHaveBeenCalledTimes(1);
     expect(onSend).toHaveBeenCalledWith("hello world", [], "default");
+  });
+
+  it("filters slash commands and inserts a plan without sending it", () => {
+    const onSend = vi.fn();
+    render(<ComposerHarness onSend={onSend} onSideChat={vi.fn()} />);
+    const textarea = screen.getByRole("textbox");
+    fireEvent.change(textarea, { target: { value: "/pl", selectionStart: 3 } });
+    expect(screen.getByRole("option", { name: /\/plan/ })).toBeTruthy();
+    fireEvent.keyDown(textarea, { key: "Tab" });
+    expect(textarea).toHaveProperty("value", expect.stringContaining("Wait for my approval before implementing."));
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("expands a typed goal with arguments on Send", () => {
+    const onSend = vi.fn();
+    render(<ComposerHarness onSend={onSend} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "/goal Make a timer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(onSend).toHaveBeenCalledWith(expect.stringMatching(/^Goal: Make a timer\n\nWork toward this goal/), [], "default");
+  });
+
+  it("turns a bare goal into a draft with the caret ready for the objective", async () => {
+    const onSend = vi.fn();
+    render(<ComposerHarness onSend={onSend} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "/goal" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(screen.getByRole("textbox")).toHaveProperty("value", expect.stringMatching(/^Goal: \n\n/));
+    expect(onSend).not.toHaveBeenCalled();
+    await waitFor(() => expect((screen.getByRole("textbox") as HTMLTextAreaElement).selectionStart).toBe(6));
+  });
+
+  it("opens a side chat locally instead of sending the command to the model", () => {
+    const onSend = vi.fn();
+    const onSideChat = vi.fn();
+    render(<ComposerHarness onSend={onSend} onSideChat={onSideChat} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "/sidechat " } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(onSideChat).toHaveBeenCalledOnce();
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox")).toHaveProperty("value", "");
+  });
+
+  it("explains an unavailable side chat without losing the draft", () => {
+    const onSend = vi.fn();
+    const onSideChat = vi.fn();
+    render(<ComposerHarness onSend={onSend} onSideChat={onSideChat} sideChatDisabledReason="Forking is unavailable" />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "/sidechat " } });
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    expect(screen.getByRole("status").textContent).toBe("Forking is unavailable");
+    expect(screen.getByRole("textbox")).toHaveProperty("value", "/sidechat ");
+    expect(onSideChat).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("supports Escape and arrow selection without submitting the draft", () => {
+    const onSend = vi.fn();
+    render(<ComposerHarness onSend={onSend} onSideChat={vi.fn()} />);
+    const textarea = screen.getByRole("textbox");
+    fireEvent.change(textarea, { target: { value: "/", selectionStart: 1 } });
+    fireEvent.keyDown(textarea, { key: "ArrowDown" });
+    expect(within(screen.getByRole("listbox")).getAllByRole("option")[1].getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(textarea, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(textarea).toHaveProperty("value", "/");
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it.each([{ engine: "pi", isEmpty: true }, { engine: "claude", isEmpty: false }])("hides unavailable compaction for $engine (empty=$isEmpty)", ({ engine, isEmpty }) => {
+    render(<ComposerHarness onSend={vi.fn()} engine={engine} isEmpty={isEmpty} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "/", selectionStart: 1 } });
+    expect(screen.queryByRole("option", { name: /\/compact/ })).toBeNull();
+    expect(screen.getByRole("option", { name: /\/plan/ })).toBeTruthy();
   });
 
   it("sends once on send-button click", () => {

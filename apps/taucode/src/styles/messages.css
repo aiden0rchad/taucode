@@ -35,6 +35,57 @@
   color: var(--text-muted);
 }
 
+.turn-error-card {
+  border: 1px solid var(--cm-border-strong);
+  border-radius: 14px;
+  padding: 16px 18px;
+  background: var(--cm-surface-panel);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  min-width: 0;
+}
+
+.turn-error-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-stronger);
+  font-size: 14px;
+}
+
+.turn-error-heading > svg { flex-shrink: 0; color: var(--status-warning, #d5a65a); }
+.turn-error-card > p { margin: 8px 0 0; }
+.turn-error-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.turn-error-actions > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 12px;
+  min-height: 34px;
+  border: 1px solid var(--cm-border-strong);
+  border-radius: 8px;
+  color: var(--text-stronger);
+  font-size: 12px;
+}
+.turn-error-actions > button:disabled { opacity: 0.5; cursor: default; }
+.turn-error-details { margin-top: 12px; font-size: 12px; }
+.turn-error-details > summary { cursor: pointer; width: fit-content; }
+.turn-error-details > pre {
+  margin: 10px 0 0;
+  padding: 10px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 8px;
+  background: var(--cm-surface-panel-strong);
+  font-size: 11px;
+  user-select: text;
+}
+.turn-error-card :is(button, summary):focus-visible { outline: 2px solid var(--border-accent); outline-offset: 3px; }
+
 .messages-loading-indicator {
   display: inline-flex;
   align-items: center;

@@ -1,0 +1,16 @@
+.execution-limits .settings-group-card { border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-card); }
+.command-editor .execution-limits { margin-top: 24px; }
+.command-editor .execution-limits .settings-row,
+.execution-limits .settings-row { padding: 12px 14px; }
+.execution-limits .settings-row + .settings-row { border-top: 1px solid var(--border-subtle); }
+.command-editor .execution-limits .settings-field-row,
+.execution-limits .settings-field-row { display: grid; grid-template-columns: minmax(0, 1fr) 132px; align-items: center; gap: 20px; }
+.execution-limits .settings-field-info { display: flex; flex-direction: column; gap: 4px; }
+.execution-limits .settings-toggle-title { font-size: 12px; font-weight: 550; }
+.execution-limits .settings-toggle-subtitle { font-size: 11px; line-height: 1.5; color: var(--text-subtle); }
+.execution-limits .settings-input { width: 100%; min-width: 0; min-height: 36px; font-size: 16px; font-variant-numeric: tabular-nums; }
+.execution-limits .settings-group-card > p { margin: 0; padding: 0 14px 12px; color: var(--text-subtle); font-size: 11px; line-height: 1.5; }
+@media (max-width: 520px) {
+  .command-editor .execution-limits .settings-field-row,
+  .execution-limits .settings-field-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}

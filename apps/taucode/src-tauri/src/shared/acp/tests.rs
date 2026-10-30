@@ -300,6 +300,29 @@ fn replay_groups_user_blocks_and_keeps_turn_identity() {
     assert_eq!(t.turn_id(), "thread:turn:2");
 }
 #[tokio::test]
+async fn single_model_policy_disables_acp_delegation_and_reloads_when_changed() {
+    let data = temp();
+    let engine = engine(&data);
+    let provider = provider("anthropic");
+    let mut policy = AgentPolicy::default();
+    policy.subagents.enabled = false;
+    engine.configure("workspace", vec![provider.clone()], policy.clone()).await;
+    let start = engine.request("workspace", "thread/start", json!({})).await.unwrap();
+    let id = start["result"]["thread"]["id"].as_str().unwrap();
+    let params = engine.session_params("workspace", id, data.to_str().unwrap(), "model").await.unwrap();
+    let disabled = params["_meta"]["claudeCode"]["options"]["disallowedTools"].as_array().unwrap();
+    assert!(disabled.contains(&json!("Task")) && disabled.contains(&json!("Agent")));
+    let previous = engine.runtimes.lock().await["workspace"].client.id.clone();
+    policy.subagents.enabled = true;
+    engine.configure("workspace", vec![provider.clone()], policy).await;
+    let client = engine.spawn("workspace", data.to_str().unwrap(), &provider, "model").await.unwrap();
+    assert_ne!(client.id, previous);
+    let params = engine.session_params("workspace", id, data.to_str().unwrap(), "model").await.unwrap();
+    assert!(!params["_meta"]["claudeCode"]["options"]["disallowedTools"].as_array().unwrap().contains(&json!("Task")));
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(data).unwrap();
+}
+#[tokio::test]
 async fn fake_agent_stream_approval_resume_cancel_auth_and_fork() {
     let data = temp();
     let engine = engine(&data);
@@ -520,7 +543,7 @@ async fn router_checkpoints_sidechats_and_task_transcripts() {
     let checkpoints = Checkpoints::with_limits(data.clone(), "workspace".into(), root.to_string_lossy().into(), Arc::new(move |e| captured.lock().unwrap().push(e)), crate::shared::checkpoints::CheckpointLimits::testing());
     let (tx, mut completed) = tokio::sync::mpsc::unbounded_channel();
     let observer = checkpoints.clone();
-    let mut session = WorkspaceSession::lazy(Box::new(|| Box::pin(async { Err("Codex must not be used".into()) })), vec![provider("anthropic")], AgentPolicy::default(), None, None, "workspace".into());
+    let mut session = WorkspaceSession::lazy(Box::new(|_| Box::pin(async { Err("Codex must not be used".into()) })), vec![provider("anthropic")], AgentPolicy::default(), None, None, "workspace".into());
     session.checkpoints = Some(checkpoints.clone());
     session.pi = crate::shared::pi::PiEngine::new(data.clone(), "workspace".into(), root.to_string_lossy().into(), None, Arc::new(|_, _| {}));
     session.claude = engine(&data);

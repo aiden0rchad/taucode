@@ -94,16 +94,29 @@ try {
     await check('Native browser toolbar', async () => {
       await open({ panel: 'browser' });
       await page.locator('.browser-native-slot').waitFor();
-      const geometry = await page.locator('.browser-toolbar').evaluate(row => {
-        const r = row.getBoundingClientRect();
-        return { height: r.height, controls: [...row.querySelectorAll(':scope > button, .browser-address, .mode-row-menu-trigger')].map(el => {
-          const b = el.getBoundingClientRect();
-          return { label: el.getAttribute('aria-label') || el.className, delta: Math.abs(b.y + b.height / 2 - r.y - r.height / 2), height: b.height };
-        }) };
-      });
-      assert.equal(geometry.height, 36);
-      for (const control of geometry.controls) assert(control.delta <= .5, JSON.stringify(control));
-      assert(geometry.controls.every(c => c.height === 28 || c.height === 30), JSON.stringify(geometry));
+      const pane = page.locator('.browser-pane');
+      try {
+        for (const size of [220, 320, 480]) {
+          await pane.evaluate((element, size) => { element.style.width = `${size}px`; }, size);
+          const geometry = await page.locator('.browser-toolbar').evaluate(row => ({
+            row: row.getBoundingClientRect().toJSON(),
+            input: row.querySelector('input').getBoundingClientRect().toJSON(),
+            controls: [...row.querySelectorAll(':scope > button, .browser-address, .mode-row-menu-trigger')].map(el => ({ label: el.getAttribute('aria-label') || el.className, ...el.getBoundingClientRect().toJSON() })),
+          }));
+          assert(geometry.input.width >= 140, `Address field collapsed at ${size}px: ${JSON.stringify(geometry)}`);
+          for (const control of geometry.controls) {
+            assert(control.height === 28 || control.height === 30, JSON.stringify(control));
+            assert(control.left >= geometry.row.left - .5 && control.right <= geometry.row.right + .5 && control.top >= geometry.row.top - .5 && control.bottom <= geometry.row.bottom + .5, `Clipped control: ${JSON.stringify(control)}`);
+            for (const other of geometry.controls.filter(c => c !== control)) {
+              assert(control.right <= other.left + .5 || control.left >= other.right - .5 || control.bottom <= other.top + .5 || control.top >= other.bottom - .5, `Overlapping controls: ${JSON.stringify([control, other])}`);
+            }
+          }
+          if (size === 480) {
+            assert.equal(geometry.row.height, 36);
+            for (const control of geometry.controls) assert(Math.abs(control.y + control.height / 2 - geometry.row.y - geometry.row.height / 2) <= .5, JSON.stringify(control));
+          }
+        }
+      } finally { await pane.evaluate(element => { element.style.removeProperty('width'); }); }
     });
     for (const mode of ['code', 'chat', 'work']) await check(`${mode} expanded side panel`, async () => {
       if (mode === 'code') { await checkCodeDock(page, { width, height, open }); return; }

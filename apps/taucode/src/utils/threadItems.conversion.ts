@@ -314,6 +314,17 @@ export function buildItemsFromThread(thread: Record<string, unknown>) {
         items.push(converted);
       }
     });
+    if (turnRecord.status === "failed") {
+      const error = turnRecord.error;
+      const message = typeof error === "string" ? error : error && typeof error === "object" ? asString((error as Record<string, unknown>).message) : "";
+      const user = [...turnItems].reverse().find(item => item.type === "userMessage");
+      const request = user ? buildConversationItemFromThreadItem(user) : null;
+      items.push({
+        id: `${asString(turnRecord.id)}-error`, kind: "message", role: "assistant", isError: true,
+        text: message ? `Turn failed: ${message}` : "Turn failed.",
+        retryMessage: request?.kind === "message" ? { text: request.text, images: request.images } : null,
+      });
+    }
   });
   return items;
 }

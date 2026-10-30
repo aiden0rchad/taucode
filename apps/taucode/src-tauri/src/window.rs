@@ -49,15 +49,40 @@ pub(crate) fn save_main_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> R
 }
 
 #[cfg(target_os = "macos")]
+fn zoom_shortcut(key: &str, command: bool, control: bool, alt: bool) -> Option<&'static str> {
+    if (!command && !control) || alt { return None; }
+    match key {
+        "+" | "=" => Some("zoom_in"),
+        "-" | "_" => Some("zoom_out"),
+        "0" => Some("zoom_reset"),
+        _ => None,
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+#[test]
+fn zoom_shortcuts_preserve_aliases_and_unmodified_browser_input() {
+    for (key, action) in [("+", "zoom_in"), ("=", "zoom_in"), ("-", "zoom_out"), ("_", "zoom_out"), ("0", "zoom_reset")] {
+        assert_eq!(zoom_shortcut(key, true, false, false), Some(action));
+        assert_eq!(zoom_shortcut(key, false, true, false), Some(action));
+        assert_eq!(zoom_shortcut(key, false, false, false), None);
+        assert_eq!(zoom_shortcut(key, true, false, true), None);
+    }
+    assert_eq!(zoom_shortcut("a", true, false, false), None);
+}
+
+#[cfg(target_os = "macos")]
 thread_local! {
     static FOCUS_MONITOR: std::cell::RefCell<Option<objc2::rc::Retained<objc2::runtime::AnyObject>>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(target_os = "macos")]
 pub(crate) fn install_main_focus(webview: &tauri::Webview) -> tauri::Result<()> {
-    webview.with_webview(|platform| unsafe {
+    let app = webview.app_handle().clone();
+    webview.with_webview(move |platform| unsafe {
         use objc2::{rc::Retained, MainThreadMarker};
-        use objc2_app_kit::{NSEvent, NSEventMask, NSView};
+        use objc2_app_kit::{NSApplication, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSView};
+        use tauri::Emitter;
         let main = Retained::retain(platform.inner().cast::<NSView>()).expect("main WKWebView");
         let handler = block2::RcBlock::new(move |event: std::ptr::NonNull<NSEvent>| {
             let event_ref = event.as_ref();
@@ -66,6 +91,24 @@ pub(crate) fn install_main_focus(webview: &tauri::Webview) -> tauri::Result<()> 
                 if event_ref.window(MainThreadMarker::new().expect("AppKit main thread"))
                     == Some(window.clone())
                 {
+                    if event_ref.r#type() == NSEventType::KeyDown {
+                        let modifiers = event_ref.modifierFlags();
+                        let command = modifiers.contains(NSEventModifierFlags::Command);
+                        let control = modifiers.contains(NSEventModifierFlags::Control);
+                        let alt = modifiers.contains(NSEventModifierFlags::Option);
+                        let key = event_ref.charactersIgnoringModifiers().map(|s| s.to_string()).unwrap_or_default();
+                        // Child WKWebViews can consume menu equivalents before AppKit.
+                        // Handle zoom once here, including the shifted + / _ aliases.
+                        if let Some(action) = zoom_shortcut(&key, command, control, alt) {
+                            let _ = app.emit_to(tauri::EventTarget::webview("main"), "menu-view-action", action);
+                            return std::ptr::null_mut();
+                        }
+                        if command && NSApplication::sharedApplication(MainThreadMarker::new().expect("AppKit main thread"))
+                            .mainMenu().is_some_and(|menu| menu.performKeyEquivalent(event_ref)) {
+                            return std::ptr::null_mut();
+                        }
+                        return event.as_ptr();
+                    }
                     if let Some(content) = window.contentView() {
                         let point =
                             content.convertPoint_fromView(event_ref.locationInWindow(), None);
@@ -86,7 +129,7 @@ pub(crate) fn install_main_focus(webview: &tauri::Webview) -> tauri::Result<()> 
                 NSEvent::removeMonitor(&old);
             }
             *monitor.borrow_mut() = NSEvent::addLocalMonitorForEventsMatchingMask_handler(
-                NSEventMask::LeftMouseDown,
+                NSEventMask::LeftMouseDown | NSEventMask::KeyDown,
                 &handler,
             );
         });

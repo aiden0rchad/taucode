@@ -26,7 +26,8 @@ export type ManagedServer = {
   startedAt: number;
 };
 
-export function useManagedTasks(workspaceId: string | null, threadId: string | null) {
+export type ManagedTasksTransport = (workspaceId: string, threadId: string, action: string, params: Record<string, unknown>) => Promise<ManagedTask[]>;
+export function useManagedTasks(workspaceId: string | null, threadId: string | null, transport: ManagedTasksTransport = managedTasksRequest) {
   const key = JSON.stringify([workspaceId, threadId]);
   const scope = useRef(key);
   scope.current = key;
@@ -46,7 +47,7 @@ export function useManagedTasks(workspaceId: string | null, threadId: string | n
     const version = ++sequence.current;
     if (mutation) setState(previous => ({ key, tasks: previous.key === key ? previous.tasks : [], error: "", busy: true }));
     try {
-      const tasks = await managedTasksRequest<ManagedTask[]>(workspaceId, threadId, action, params);
+      const tasks = await transport(workspaceId, threadId, action, params);
       if (mounted.current && scope.current === key && sequence.current === version) {
         setState(previous => ({ key, tasks, error: "", busy: mutation ? false : previous.key === key && previous.busy }));
       }
@@ -59,7 +60,7 @@ export function useManagedTasks(workspaceId: string | null, threadId: string | n
       if (mutation) mutating.current.delete(key);
       if (mutation && mounted.current && scope.current === key) setState(previous => ({ ...previous, busy: false }));
     }
-  }, [key, workspaceId, threadId]);
+  }, [key, workspaceId, threadId, transport]);
   const refresh = useCallback(() => request("list"), [request]);
   useEffect(() => {
     setState({ key, tasks: [], error: "", busy: false });

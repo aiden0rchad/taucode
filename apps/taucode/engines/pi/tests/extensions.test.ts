@@ -47,6 +47,51 @@ test("gate decision table, exact session rules, shell injection and protected pa
   assert.equal(decide(ask, write, home, false, { ...child, toolAccess: "read-only" }), "block");
 });
 
+test("OMP Full access allows scoped LSP queries while retaining native mutation and mode gates", async (t) => {
+  const keys = ["TAUCODE_OMP", "TAUCODE_CHAT", "TAUCODE_CHAT_WEB", "TAUCODE_WORK", "PI_CODING_AGENT_DIR", "TAUCODE_SESSION_KEY", "TAUCODE_SUBAGENT_DEPTH"];
+  const previous = keys.map(key => process.env[key]);
+  t.after(() => keys.forEach((key, i) => previous[i] === undefined ? delete process.env[key] : process.env[key] = previous[i]));
+  for (const key of keys) delete process.env[key];
+  process.env.TAUCODE_OMP = "1";
+  process.env.PI_CODING_AGENT_DIR = home;
+  process.env.TAUCODE_SESSION_KEY = "lsp";
+  const setMode = (accessMode: string) => writeFileSync(join(home, "taucode/threads/lsp.json"), JSON.stringify({ accessMode, sessionAllow: [] }));
+  let handler: any, prompts = 0;
+  gate({ on: (name: string, fn: any) => { if (name === "tool_call") handler = fn; } } as any);
+  const ctx = { cwd, hasUI: true, ui: { select: async () => { prompts++; return "Block"; } } };
+  const call = (input: Record<string, unknown>) => handler({ toolName: "lsp", toolCallId: "lookup", input }, ctx);
+  setMode("full-access");
+  for (const action of ["definition", "type_definition", "implementation", "references", "hover", "symbols"]) {
+    assert.equal(await call({ action, file: "src/lib.js", line: 1, symbol: "range" }), undefined);
+  }
+  assert.equal(prompts, 0);
+  symlinkSync(root, join(cwd, "lsp-outside"));
+  for (const file of ["../outside.js", "/etc/hosts", "lsp-outside/file.js", ".env", ".git/config", home, "~/file.js", "@/etc/hosts", ":/etc/hosts", "file:///etc/hosts", "src/\u00a0../file.js"]) {
+    assert.equal((await call({ action: "references", file })).block, true, file);
+  }
+  for (const action of ["rename", "rename_file", "code_actions", "request", "reload", "future_action"]) {
+    assert.equal((await call({ action, file: "src/lib.js", apply: true })).block, true, action);
+  }
+  const before = prompts;
+  setMode("read-only");
+  assert.equal((await call({ action: "references", file: "src/lib.js" })).block, true);
+  assert.equal(prompts, before);
+  setMode("ask");
+  assert.equal((await call({ action: "references", file: "src/lib.js" })).block, true);
+  assert.equal(prompts, before + 1);
+  setMode("full-access");
+  for (const key of ["TAUCODE_CHAT", "TAUCODE_SUBAGENT_DEPTH", "TAUCODE_WORK"]) {
+    process.env[key] = "1";
+    assert.equal((await call({ action: "references", file: "src/lib.js" })).block, true, key);
+    delete process.env[key];
+  }
+  process.env.TAUCODE_CHAT = "1";
+  process.env.TAUCODE_CHAT_WEB = "1";
+  writeFileSync(join(home, "taucode/connectors.json"), JSON.stringify([{ id: "taucode-browser", enabled: true, approval: "auto", toolDenylist: [] }]));
+  assert.equal(await handler({ toolName: "mcp__taucode_browser_browser_snapshot", toolCallId: "snapshot", input: {} }, ctx), undefined);
+  assert.equal((await handler({ toolName: "mcp__taucode_browser_browser_click", toolCallId: "click", input: {} }, ctx)).block, true);
+});
+
 test("policy model precedence, allow-list, registry mapping and limit boundaries", () => {
   assert.equal(resolveTask(policy, { agent: "scout", model: "local/small" }).model, "local/small");
   assert.equal(resolveTask(policy, { agent: "scout" }).model, "local/large");
@@ -135,6 +180,32 @@ test("OMP virtual MCP writes use only the inner connector gate and retain denial
   assert.equal(prompts, 4);
 });
 
+test("subagent costs distinguish missing pricing, priced zero and incomplete totals", async () => {
+  process.env.PI_CODING_AGENT_DIR = home;
+  process.env.TAUCODE_WORKSPACE = cwd;
+  const cli = join(root, "cost-cli.mjs");
+  writeFileSync(cli, `for (const cost of JSON.parse(process.argv.at(-1).slice(6))) console.log(JSON.stringify({type:"message_end",message:{role:"assistant",content:[{type:"text",text:"Checked"}],stopReason:"stop",usage:{input:2,output:3,cost:cost===null?undefined:{total:cost}}}}));`);
+  process.env.TAUCODE_PI_CLI = cli;
+  writeFileSync(join(home, "taucode/policy.json"), JSON.stringify(policy));
+  let tool: any, reset: any;
+  subagents({ on: (name: string, fn: any) => { if (name === "agent_start") reset = fn; }, registerTool: (t: any) => { tool = t; } } as any);
+  for (const [costs, priced, expected, knownCost] of [
+    [[0], false, null, 0], [[null], false, null, 0], [[-1], true, null, 0],
+    [[0], true, 0, 0], [[0.25, 0.125], false, 0.375, 0.375],
+    [[0.25, null], true, null, 0.25], [[null, 0.25], true, null, 0.25],
+  ] as const) {
+    reset();
+    const ctx = { cwd, model: { provider: "local", id: "small" }, modelRegistry: { find: () => ({ cost: { input: priced ? 1 : 0, output: 0, cacheRead: 0, cacheWrite: 0 } }) } };
+    const result = await tool.execute("cost", { agent: "worker", task: JSON.stringify(costs) }, undefined, undefined, ctx);
+    assert.equal(result.isError, false);
+    const usage = result.details.results[0].usage;
+    assert.equal(usage.cost, expected, JSON.stringify({ costs, priced }));
+    assert.equal(usage.knownCost, knownCost);
+    assert.equal(usage.costKnown, expected !== null);
+    assert.equal(usage.input + usage.output, costs.length * 5);
+  }
+});
+
 test("subagents single, parallel, chain, concurrency, per-run limit, depth and abort without providers", async () => {
   process.env.PI_CODING_AGENT_DIR = home;
   process.env.TAUCODE_WORKSPACE = cwd;
@@ -150,7 +221,7 @@ test("subagents single, parallel, chain, concurrency, per-run limit, depth and a
   process.env.TAUCODE_PI_CLI = cli;
   writeFileSync(join(home, "taucode/policy.json"), JSON.stringify(policy));
   let tool: any, reset: any;
-  subagents({ on: (name: string, fn: any) => { if (name === "agent_start") reset = fn; }, registerTool: (t: any) => { tool = t; } } as any);
+  subagents({ on: (name: string, fn: any) => { if (name === "agent_start") reset = fn; }, registerTool: (t: any) => { tool = t; }, appendEntry() {} } as any);
   const ctx = { cwd, model: { provider: "local", id: "small" } };
   const task = { agent: "scout", task: "read" };
   let peak = 0;
@@ -182,4 +253,36 @@ test("subagents single, parallel, chain, concurrency, per-run limit, depth and a
   setTimeout(() => controller.abort(), 100);
   assert.equal((await hanging).details.results[0].status, "failed");
   await assert.rejects(tool.execute("invalid", { ...task, agentScope: "project" }, undefined, undefined, ctx), /directories are disabled/);
+});
+
+test("Work preview starts share bash policy; cleanup stays available without rewrapping commands", async () => {
+  const keys = ["PI_CODING_AGENT_DIR", "TAUCODE_SESSION_KEY", "TAUCODE_WORK", "TAUCODE_CHAT", "TAUCODE_OMP", "TAUCODE_SUBAGENT_DEPTH"];
+  const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  try {
+    keys.forEach(key => delete process.env[key]);
+    Object.assign(process.env, { PI_CODING_AGENT_DIR: home, TAUCODE_SESSION_KEY: "preview", TAUCODE_WORK: "1" });
+    const file = join(home, "taucode/threads/preview.json");
+    const write = (accessMode: string) => writeFileSync(file, JSON.stringify({ kind: "work", workspace: cwd, accessMode, sessionAllow: [] }));
+    let handler: any;
+    gate({ on: (name: string, fn: any) => { if (name === "tool_call") handler = fn; } } as any);
+    const event = { toolName: "preview_server", toolCallId: "preview", input: { action: "start", command: "python3 -m http.server 0 --bind 127.0.0.1" } };
+    let prompts = 0;
+    const ctx = { cwd, hasUI: true, ui: { select: async (title: string, options: string[]) => {
+      prompts++;
+      assert.deepEqual(options, ["Allow", "Block"]);
+      assert.deepEqual(JSON.parse(title.slice("taucode:approval:".length)), { toolCallId: "preview", tool: "bash", cwd, command: event.input.command });
+      return "Allow";
+    } } };
+    write("ask"); assert.equal(await handler(event, ctx), undefined); assert.equal(prompts, 1);
+    write("full-access"); assert.equal(await handler(event, ctx), undefined); assert.equal(prompts, 1);
+    assert.equal(event.input.command, "python3 -m http.server 0 --bind 127.0.0.1");
+    write("read-only"); assert.equal((await handler(event, ctx)).block, true);
+    for (const action of ["list", "stop"]) assert.equal(await handler({ ...event, input: { action, id: "owned" } }, ctx), undefined);
+    write("ask");
+    assert.equal((await handler(event, { ...ctx, ui: { select: async () => { write("read-only"); return "Allow"; } } })).block, true);
+    write("full-access"); process.env.TAUCODE_SUBAGENT_DEPTH = "1";
+    assert.equal((await handler(event, ctx)).block, true);
+    delete process.env.TAUCODE_SUBAGENT_DEPTH; delete process.env.TAUCODE_WORK;
+    assert.equal((await handler(event, ctx)).block, true);
+  } finally { for (const key of keys) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; } }
 });

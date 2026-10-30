@@ -1,9 +1,9 @@
 import type {AppSettings} from "@/types";
 export type EvalTask = {id:string; category:string; tags:string[]; requires:string[]};
-export type EvalPlan = {engines:string[]; models:string[]; tags:string[]; categories:string[]; codegraph:boolean[]; repeats:number; concurrency:number; maxTotalTokens?:number; maxCost?:number};
+export type EvalPlan = {engines:string[]; models:string[]; effort?:string|null; tags:string[]; categories:string[]; codegraph:boolean[]; repeats:number; concurrency:number; maxTotalTokens?:number; maxCost?:number};
 export type EvalCell = {id:string; task:string; engine:string; model:string; codegraph:boolean; repeat:number; status:string; turns:number; threadId:string|null; output:string; answer:string; transcript:unknown[]; workdir:string|null; usage:{tokensIn:number;cachedTokens:number;tokensOut:number;costUsd:number|null;toolCalls:number;errors:string[];engineReadyMs:number;firstTokenMs:number|null;wallMs:number}};
 export type EvalSummary = {config:string; engine:string; model:string; codegraph:boolean; passRate:number; tokens:number; cacheRate:number; costUsd:number|null; firstTokenMs:number|null; wallMs:number; toolCalls:number; errors:number};
-export type EvalRun = {id:string; createdAt:string; status:string; message?:string|null; plan:EvalPlan; cells:EvalCell[]; environment:{appVersion?:string;engines?:{engine:string;version?:string|null}[]}};
+export type EvalRun = {id:string; createdAt:string; status:string; message?:string|null; plan:EvalPlan; cells:EvalCell[]; environment:{appVersion?:string;engines?:{engine:string;version?:string|null}[];agentPolicy?:AppSettings["agentPolicy"]}};
 export type EvalHistory = Omit<EvalRun,"cells"|"environment"> & {summary:EvalSummary[]};
 export type EvalResult = {run:EvalRun;summary:EvalSummary[]};
 export const configKey=(c:Pick<EvalCell,"engine"|"model"|"codegraph">)=>[c.engine,c.model,c.codegraph].join("/");
@@ -30,3 +30,6 @@ export function roleSettings(settings:AppSettings,model:string,role:string):AppS
  return {...settings,agentPolicy:{...policy,subagents:{...policy.subagents,roles:policy.subagents.roles.map(r=>r.name===role?{...r,model:ref}:r)}}};
 }
 
+
+export const statusLabel=(status:string)=>({"budget-stopped":"Limit reached",preparing:"Preparing engines",running:"Running",queued:"Queued",cancelled:"Cancelled",passed:"Passed",failed:"Failed",error:"Error",skipped:"Skipped",completed:"Completed"}[status]??status);
+export const taskLabel=(task:string)=>task.replace(/^(ts|py)-/, "").replace(/-/g, " ").replace(/^./, c=>c.toUpperCase());

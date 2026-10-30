@@ -2,6 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
+import { ComposerPolicyProvider } from "@/features/composer/components/ComposerPolicy";
+import { defaultAgentPolicy } from "@settings/registry";
 import type { ModelOption } from "@/types";
 import { SideChatPane, SideChatSplit } from "./SideChatPane";
 import { sideChatQuote } from "./useSideChats";
@@ -79,4 +81,10 @@ it("uses side chat timing instead of the parent's message props", () => {
   const message = screen.getByRole("button", { name: "Send to main" });
   expect(message.dataset.start).toBe("100");
   expect(message.dataset.duration).toBe("200");
+});
+
+it("cannot change the parent conversation team from the side-chat model picker", () => {
+  render(<ComposerPolicyProvider scope="Parent" policy={defaultAgentPolicy} onChange={vi.fn()}><SideChatPane {...props()} /></ComposerPolicyProvider>);
+  fireEvent.click(screen.getByRole("button", { name: /model ·/i }));
+  expect(screen.queryByRole("button", { name: "Chain of Command" })).toBeNull();
 });

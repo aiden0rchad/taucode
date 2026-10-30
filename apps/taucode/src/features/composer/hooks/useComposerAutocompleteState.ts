@@ -9,12 +9,14 @@ import {
   getPromptArgumentHint,
 } from "../../../utils/customPrompts";
 import { isComposingEvent } from "../../../utils/keys";
+import { basicCommands } from "../commands";
 
 type Skill = { name: string; description?: string };
 type UseComposerAutocompleteStateArgs = {
   text: string;
   selectionStart: number | null;
   disabled: boolean;
+  commands?: AutocompleteItem[];
 
   skills: Skill[];
 
@@ -73,6 +75,7 @@ export function useComposerAutocompleteState({
   text,
   selectionStart,
   disabled,
+  commands = basicCommands,
 
   skills,
 
@@ -137,71 +140,9 @@ export function useComposerAutocompleteState({
     [prompts],
   );
 
-  const slashCommandItems = useMemo<AutocompleteItem[]>(() => {
-    const commands: AutocompleteItem[] = [
-      {
-        id: "compact",
-        label: "compact",
-        description: "compact the active thread context",
-        insertText: "compact",
-        group: "Slash",
-      },
-      {
-        id: "fast",
-        label: "fast",
-        description: "toggle Fast mode for upcoming turns",
-        insertText: "fast",
-        group: "Slash",
-      },
-      {
-        id: "fork",
-        label: "fork",
-        description: "branch into a new thread",
-        insertText: "fork",
-        group: "Slash",
-      },
-      {
-        id: "mcp",
-        label: "mcp",
-        description: "list configured MCP tools",
-        insertText: "mcp",
-        group: "Slash",
-      },
-      {
-        id: "new",
-        label: "new",
-        description: "start a new chat",
-        insertText: "new",
-        group: "Slash",
-      },
-      {
-        id: "review",
-        label: "review",
-        description: "start a code review",
-        insertText: "review",
-        group: "Slash",
-      },
-      {
-        id: "resume",
-        label: "resume",
-        description: "refresh the active thread",
-        insertText: "resume",
-        group: "Slash",
-      },
-      {
-        id: "status",
-        label: "status",
-        description: "show session status",
-        insertText: "status",
-        group: "Slash",
-      },
-    ];
-    return commands.sort((a, b) => a.label.localeCompare(b.label));
-  }, []);
-
   const slashItems = useMemo<AutocompleteItem[]>(
-    () => [...slashCommandItems, ...promptItems],
-    [promptItems, slashCommandItems],
+    () => [...(/^\s*\/[^\s/]*$/.test(text.slice(0, selectionStart ?? text.length)) ? commands : []), ...promptItems],
+    [commands, promptItems, selectionStart, text],
   );
 
   const triggers = useMemo(
@@ -241,20 +182,22 @@ export function useComposerAutocompleteState({
       const promptRange =
         triggerChar === "@" ? findPromptArgRangeAtCursor(text, cursor) : null;
       const before =
-        triggerChar === "@"
+        triggerChar === "@" || item.replaceTrigger
           ? text.slice(0, triggerIndex)
           : text.slice(0, autocompleteRange.start);
-      const after = text.slice(autocompleteRange.end);
+      const after = item.replaceTrigger ? text.slice(autocompleteRange.end).trimStart() : text.slice(autocompleteRange.end);
       const insert = item.insertText ?? item.label;
       const actualInsert = triggerChar === "@"
         ? insert.replace(/^@+/, "")
         : insert;
-      const needsSpace = promptRange
+      const needsSpace = promptRange || /\s$/.test(actualInsert)
         ? false
         : after.length === 0
           ? true
           : !/^\s/.test(after);
-      const nextText = `${before}${actualInsert}${needsSpace ? " " : ""}${after}`;
+      const nextText = item.replaceTrigger && item.cursorOffset !== undefined
+        ? `${before}${actualInsert.slice(0, item.cursorOffset)}${after}${actualInsert.slice(item.cursorOffset)}`
+        : `${before}${actualInsert}${needsSpace ? " " : ""}${after}`;
       setText(nextText);
       onItemApplied?.(item, { triggerChar, insertedText: actualInsert });
       closeAutocomplete();

@@ -43,6 +43,7 @@ pub(super) struct Translator {
     pub access_mode: String,
     pub total: Value,
     pub cost: f64,
+    unknown_costs: std::collections::HashSet<String>,
     pub queue: Value,
     pub transcripts: HashMap<String, Value>,
     message: String,
@@ -72,6 +73,7 @@ impl Translator {
             access_mode: "ask".into(),
             total: json!({"totalTokens":0,"inputTokens":0,"cachedInputTokens":0,"cacheWriteInputTokens":0,"outputTokens":0,"reasoningOutputTokens":0}),
             cost: 0.0,
+            unknown_costs: Default::default(),
             queue: json!({}),
             transcripts: HashMap::new(),
             message: String::new(),
@@ -156,7 +158,7 @@ impl Translator {
         for mut item in open {
             if !self.completed.contains(item["id"].as_str().unwrap()) {
                 if item.get("agentsTree").is_some() {
-                    super::agents::settle(&mut item["agentsTree"], if aborted { "aborted" } else if self.failure.is_some() { "failed" } else { "completed" });
+                    super::agents::settle(&mut item["agentsTree"], if aborted { "aborted" } else if self.failure.is_some() { "failed" } else { "completed" }, Some(chrono::Utc::now().timestamp_millis()));
                 }
                 if item.get("status").is_some() {
                     item["status"] = json!(if aborted || self.failure.is_some() {
@@ -195,10 +197,7 @@ impl Translator {
         let id = format!("{}:{index}", self.message);
         self.find(&id).unwrap_or_else(||if thinking {json!({"type":"reasoning","id":id,"summary":[],"content":[""]})}else{json!({"type":"agentMessage","id":id,"text":"","phase":null,"memoryCitation":null,"delivery":null,"questions":null})})
     }
-    fn usage(&mut self, u: &Value, out: &mut Vec<Value>) {
-        if !u.is_object() {
-            return;
-        }
+    fn usage(&mut self, u: &Value, source: &str, out: &mut Vec<Value>) {
         let mut last = json!({});
         for (pi, canonical) in [
             ("totalTokens", "totalTokens"),
@@ -212,11 +211,14 @@ impl Translator {
             last[canonical] = json!(n);
             self.total[canonical] = json!(self.total[canonical].as_u64().unwrap_or(0) + n);
         }
-        let cost = u["cost"]["total"]
-            .as_f64()
-            .or(u["cost"].as_f64());
-        self.cost += cost.unwrap_or(0.0);
-        self.total["cost"] = json!(self.cost);
+        // Raw runtime catalogs default unknown prices to zero. Numeric costs here
+        // are normalized delegation deltas; their explicit zero is trustworthy.
+        let cost = u["cost"].as_f64().filter(|n| *n >= 0.0)
+            .or_else(|| u["cost"]["total"].as_f64().filter(|n| *n > 0.0));
+        self.cost += u["knownCost"].as_f64().filter(|n| *n >= 0.0).or(cost).unwrap_or(0.0);
+        if cost.is_some() { self.unknown_costs.remove(source); } else { self.unknown_costs.insert(source.into()); }
+        self.total["cost"] = if self.unknown_costs.is_empty() { json!(self.cost) } else { Value::Null };
+        self.total["knownCost"] = json!(self.cost);
         last["cost"] = json!(cost);
         out.push(self.event("thread/tokenUsage/updated",json!({"turnId":self.turn_id(),"tokenUsage":{"last":last,"total":self.total,"modelContextWindow":self.model["contextWindow"]}})));
     }
@@ -263,7 +265,7 @@ impl Translator {
                 if m["stopReason"] == "aborted" {
                     self.aborted = true;
                 }
-                self.usage(&m["usage"], out);
+                self.usage(&m["usage"], &self.message.clone(), out);
             }
             _ => (),
         }
@@ -279,20 +281,23 @@ impl Translator {
         let virtual_args = virtual_name.and_then(|_| a["content"].as_str())
             .and_then(|content| serde_json::from_str::<Value>(content).ok());
         let a = virtual_args.as_ref().unwrap_or(a);
+        let requested_command = (name == "bash" && a["command"].as_str().is_some_and(|command| command.contains("/lib/commandGuard.ts' ")))
+            .then(|| self.tools.get(id).and_then(|tool| tool["arguments"]["command"].as_str()).map(str::to_owned)).flatten();
         self.tools
             .insert(id.into(), json!({"name":name,"arguments":a}));
         let item = match name {
             "subagent" => {
                 let tasks = a["tasks"]
                     .as_array()
-                    .or(a["chain"].as_array())
+                    .filter(|tasks| !tasks.is_empty())
+                    .or_else(|| a["chain"].as_array().filter(|tasks| !tasks.is_empty()))
                     .cloned()
                     .unwrap_or_else(|| vec![a.clone()]);
                 let states: serde_json::Map<String, Value> = tasks.iter().enumerate().map(|(i, task)| (format!("{id}:agent:{i}"), json!({"status":"running","message":task["task"],"task":task["task"],"agent":task["agent"],"model":task["model"],"usage":null}))).collect();
-                json!({"type":"collabAgentToolCall","id":id,"tool":"spawnAgent","status":"inProgress","senderThreadId":self.thread,"receiverThreadIds":states.keys().collect::<Vec<_>>(),"prompt":tasks.iter().filter_map(|t|t["task"].as_str()).collect::<Vec<_>>().join("\n\n"),"model":a["model"],"reasoningEffort":null,"agentsTree":super::agents::tree(id, &tasks, &Value::Null, false, &mut self.transcripts),"agentsStates":states})
+                json!({"type":"collabAgentToolCall","id":id,"tool":"spawnAgent","status":"inProgress","senderThreadId":self.thread,"receiverThreadIds":states.keys().collect::<Vec<_>>(),"prompt":tasks.iter().filter_map(|t|t["task"].as_str()).collect::<Vec<_>>().join("\n\n"),"model":a["model"],"reasoningEffort":null,"agentsTree":super::agents::tree(id, &tasks, &Value::Null, false, (m["replay"] != true).then(|| chrono::Utc::now().timestamp_millis()), &mut self.transcripts),"agentsStates":states})
             }
             "bash" => {
-                json!({"type":"commandExecution","id":id,"pluginId":null,"scriptPath":null,"command":a["command"].as_str().unwrap_or(""),"cwd":self.cwd,"processId":null,"source":"agent","status":"inProgress","commandActions":[],"aggregatedOutput":"","exitCode":null,"durationMs":null})
+                json!({"type":"commandExecution","id":id,"pluginId":null,"scriptPath":null,"command":requested_command.as_deref().or_else(|| a["command"].as_str()).unwrap_or(""),"cwd":self.cwd,"processId":null,"source":"agent","status":"inProgress","commandActions":[],"aggregatedOutput":"","exitCode":null,"durationMs":null})
             }
             "write" | "edit" => {
                 let path = a["path"].as_str().unwrap_or("");
@@ -373,6 +378,11 @@ impl Translator {
     }
     fn tool_end(&mut self, m: &Value, done: bool, out: &mut Vec<Value>) {
         let id = m["toolCallId"].as_str().unwrap_or("");
+        // Aborted runtimes can flush progress after the terminal tool/turn frame.
+        // Keep final results (including usage), but never reopen a finished tool.
+        if !done && self.completed.contains(id) {
+            return;
+        }
         let Some(mut item) = self.find(id) else {
             return;
         };
@@ -384,11 +394,10 @@ impl Translator {
         match item["type"].as_str().unwrap_or("") {
             "collabAgentToolCall" => {
                 let previous_tree = item["agentsTree"].clone();
-                if let Some(results) = result["details"]["results"].as_array() {
-                    item["agentsTree"] = super::agents::tree(id, results, &item["agentsTree"], done, &mut self.transcripts);
+                if let Some(results) = super::agents::results(&result["details"]) {
+                    item["agentsTree"] = super::agents::tree(id, results, &item["agentsTree"], done, (m["replay"] != true).then(|| chrono::Utc::now().timestamp_millis()), &mut self.transcripts);
                 }
-                for (i, r) in result["details"]["results"]
-                    .as_array()
+                for (i, r) in super::agents::results(&result["details"])
                     .into_iter()
                     .flatten()
                     .enumerate()
@@ -431,11 +440,10 @@ impl Translator {
                         .iter()
                         .map(|k| delta[k].as_u64().unwrap_or(0))
                         .sum::<u64>());
-                    delta["cost"] = json!((usage["cost"].as_f64().unwrap_or(0.0)
-                        - old["cost"].as_f64().unwrap_or(0.0))
-                    .max(0.0));
-                    if delta["totalTokens"] != 0 || delta["cost"].as_f64().unwrap_or(0.0) > 0.0 {
-                        self.usage(&delta, out);
+                    delta["cost"] = json!(usage["cost"].as_f64().map(|cost| (cost - old["cost"].as_f64().unwrap_or(0.0)).max(0.0)));
+                    delta["knownCost"] = json!((usage["knownCost"].as_f64().unwrap_or(0.0) - old["knownCost"].as_f64().unwrap_or(0.0)).max(0.0));
+                    if delta["totalTokens"] != 0 || delta["knownCost"].as_f64().unwrap_or(0.0) > 0.0 || usage["cost"].is_number() != old["cost"].is_number() {
+                        self.usage(&delta, &agent_id, out);
                     }
                     item["agentsStates"][&agent_id] = json!({"status":status,"message":message.chars().take(300).collect::<String>(),"agent":r["agent"],"task":r["task"],"model":r["model"],"usage":r["usage"]});
                 }
@@ -447,7 +455,8 @@ impl Translator {
                     item["status"] = json!("failed");
                 }
                 if done && failed {
-                    super::agents::settle(&mut item["agentsTree"], "failed");
+                    item["error"] = json!({"message":text(&result["content"])});
+                    super::agents::settle(&mut item["agentsTree"], if self.aborted { "aborted" } else { "failed" }, Some(chrono::Utc::now().timestamp_millis()));
                     for state in item["agentsStates"].as_object_mut().into_iter().flat_map(|states| states.values_mut()) {
                         if state["status"] == "running" { state["status"] = json!("errored"); }
                     }
@@ -482,7 +491,7 @@ impl Translator {
                                 .ok()
                         })
                         .map(|v| json!(v))
-                        .unwrap_or(json!(if failed { 1 } else { 0 }));
+                        .unwrap_or(if failed && self.aborted { Value::Null } else { json!(if failed { 1 } else { 0 }) });
                     item["durationMs"] = m["durationMs"].clone();
                 }
             }
@@ -571,7 +580,30 @@ impl Translator {
             return out;
         }
         match m["type"].as_str().unwrap_or("") {
+            "abort_requested"=>self.aborted=true,
             "agent_start"=>self.start(&mut out),
+            "taucode_execution_limit" if self.active => {
+                if let Some(message) = m["record"]["message"].as_str() {
+                    self.failure = Some(message.into());
+                    self.aborted = true;
+                    self.item(json!({"type":"agentMessage","id":format!("{}:execution-limit",self.turn_id()),"text":format!("**Execution limit reached**\n\n{message}")}), true, &mut out);
+                }
+            },
+            "taucode_verification" if self.active && !self.aborted => {
+                let record = &m["record"];
+                if let (Some(status @ ("verified" | "unverified")), Some(message)) = (record["status"].as_str(), record["message"].as_str()) {
+                    let mut body = format!("**Chain of Command verification: {status}**\n\n{message}");
+                    for report in record["reports"].as_array().into_iter().flatten() {
+                        for check in report["checks"].as_array().into_iter().flatten() {
+                            if let Some(criterion) = check["criterion"].as_str() {
+                                body.push_str(&format!("\n- {}: {}", if check["passed"] == true { "Pass" } else { "Unverified" }, criterion));
+                            }
+                        }
+                    }
+                    self.item(json!({"type":"agentMessage","id":format!("{}:verification",self.turn_id()),"text":body}), true, &mut out);
+                    if status == "unverified" { self.failure.get_or_insert_with(|| format!("Verification incomplete: {message}")); }
+                }
+            },
             "agent_settled"=>{if let Some(error)=m["errorMessage"].as_str().or(m["error"].as_str()){self.failure=Some(error.into());}self.settle(m["aborted"]==true || self.aborted,&mut out);},
             "message_start"=>{
                 if m["message"]["role"]=="assistant" {self.message_count+=1;self.message=format!("{}:message:{}",self.thread,m["message"]["timestamp"].as_u64().unwrap_or(self.message_count as u64));}
@@ -635,7 +667,41 @@ impl Translator {
         let mut t = Self::new(thread, cwd);
         let mut end = 0u64;
         let mut last_stop = String::new();
+        let mut pending_limit = None;
         for m in messages {
+            if m["role"] == "taucodeExecutionLimit" {
+                // OMP can stop at agent_start before persisting the new user entry.
+                if m["record"]["beforeUser"] == true {
+                    pending_limit = Some(m["record"].clone());
+                } else {
+                    t.apply(&json!({"type":"taucode_execution_limit","record":m["record"]}));
+                }
+                continue;
+            }
+            if m["role"] == "taucodeVerification" {
+                t.apply(&json!({"type":"taucode_verification","record":m["record"]}));
+                continue;
+            }
+            if m["role"] == "taucodeInterrupted" {
+                t.aborted = true;
+                t.failure = Some("Execution interrupted before pending tools completed.".into());
+                continue;
+            }
+            if m["role"] == "taucodeToolProgress" {
+                t.apply(&json!({"type":"tool_execution_update","replay":true,"toolCallId":m["toolCallId"],"toolName":m["toolName"],"partialResult":m["result"]}));
+                t.failure = Some("Execution interrupted. Recovered the last saved tool output; completion was not observed.".into());
+                t.aborted = true;
+                continue;
+            }
+            if m["role"] == "taucodeSubagentResult" {
+                if t.find(m["toolCallId"].as_str().unwrap_or("")).is_some_and(|item| item["type"] == "collabAgentToolCall")
+                    && super::agents::results(&m["result"]["details"]).is_some() {
+                    if m["crashed"] == true { t.failure = Some("Execution interrupted before completion. Recovered the last saved agent progress.".into()); }
+                    t.apply(&json!({"type":"tool_execution_end","replay":true,"toolCallId":m["toolCallId"],"result":m["result"]}));
+                    t.aborted = true;
+                }
+                continue;
+            }
             if m["role"] == "taucodeCompaction" {
                 if last_stop != "toolUse" {
                     t.apply(&json!({"type":"agent_settled","aborted":t.aborted}));
@@ -646,13 +712,19 @@ impl Translator {
             }
             if m["role"] == "user" {
                 let queued = m["timestamp"].as_u64().unwrap_or(u64::MAX) < end;
-                if t.active && !queued && last_stop != "toolUse" {
+                if t.active && !queued && (last_stop != "toolUse" || t.aborted) {
                     t.apply(&json!({"type":"agent_settled","aborted":t.aborted}));
                 }
                 t.apply(&json!({"type":"agent_start"}));
             }
             t.apply(&json!({"type":"message_start","message":m}));
             t.apply(&json!({"type":"message_end","message":m}));
+            if m["role"] == "user" {
+                if let Some(record) = pending_limit.take() { t.apply(&json!({"type":"taucode_execution_limit","record":record})); }
+            }
+            if m["taucodeRecovered"] == true {
+                t.failure = Some("Execution interrupted. Recovered an unfinished response.".into());
+            }
             if m["role"] == "assistant" {
                 end = m["timestamp"].as_u64().unwrap_or(0) + m["durationMs"].as_u64().unwrap_or(0);
                 last_stop = m["stopReason"].as_str().unwrap_or("").into();
@@ -662,11 +734,19 @@ impl Translator {
                     .flatten()
                     .filter(|p| p["type"] == "toolCall")
                 {
-                    t.apply(&json!({"type":"tool_execution_start","toolCallId":p["id"],"toolName":p["name"],"args":p["arguments"]}));
+                    t.apply(&json!({"type":"tool_execution_start","replay":true,"toolCallId":p["id"],"toolName":p["name"],"args":p["arguments"]}));
                 }
             }
             if m["role"] == "toolResult" {
-                t.apply(&json!({"type":"tool_execution_end","toolCallId":m["toolCallId"],"toolName":m["toolName"],"result":m,"isError":m["isError"],"durationMs":m["durationMs"]}));
+                t.apply(&json!({"type":"tool_execution_end","replay":true,"toolCallId":m["toolCallId"],"toolName":m["toolName"],"result":m,"isError":m["isError"],"durationMs":m["durationMs"]}));
+            }
+        }
+        if last_stop == "toolUse" {
+            t.aborted = true;
+            if let Some(turn) = t.turns.last_mut() {
+                for item in turn["items"].as_array_mut().into_iter().flatten() {
+                    if item.get("agentsTree").is_some() { super::agents::settle(&mut item["agentsTree"], "aborted", None); }
+                }
             }
         }
         t.apply(&json!({"type":"agent_settled","aborted":t.aborted}));

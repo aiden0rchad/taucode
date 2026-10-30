@@ -22,7 +22,11 @@ pub(super) struct Process {
     pub operation: Mutex<()>,
     pub alive: AtomicBool,
     pub running: AtomicBool,
+    cancelling: AtomicBool,
     pub extensions: Mutex<std::collections::HashSet<String>>,
+    pub preview: Mutex<Option<Arc<super::preview::Preview>>>,
+    preview_operation: Mutex<()>,
+    preview_generation: AtomicU64,
     child: Mutex<Child>,
     stdin: Mutex<Option<ChildStdin>>,
     pending: Mutex<HashMap<String, oneshot::Sender<Result<Value, String>>>>,
@@ -64,7 +68,11 @@ impl Process {
             operation: Mutex::new(()),
             alive: AtomicBool::new(true),
             running: AtomicBool::new(false),
+            cancelling: AtomicBool::new(false),
             extensions: Mutex::new(Default::default()),
+            preview: Mutex::new(None),
+            preview_operation: Mutex::new(()),
+            preview_generation: AtomicU64::new(0),
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),
             pending: Mutex::new(HashMap::new()),
@@ -95,7 +103,9 @@ impl Process {
                     Err(e) => break format!("Pi stdout failed: {e}"),
                 }
             };
-            if taucode_diag_mcp::writer::enabled() {if let Ok(Some(status))=reader.child.lock().await.try_wait(){taucode_diag_mcp::observe::exited(diagnostic_pid,status);}}
+            if let Ok(Some(status)) = reader.child.lock().await.try_wait() {
+                if taucode_diag_mcp::writer::enabled() { taucode_diag_mcp::observe::exited(diagnostic_pid, status); }
+            }
             reader.alive.store(false, Ordering::SeqCst);
             let running = reader.running.swap(false, Ordering::SeqCst);
             let mut t = reader.translator.lock().await;
@@ -154,7 +164,11 @@ impl Process {
         Ok(p)
     }
     pub(super) async fn receive(self: &Arc<Self>, mut m: Value) {
-        if self.omp && m["type"] == "agent_end" { m["type"] = json!("agent_settled"); }
+        // OMP can publish agent_end before asynchronous extension hooks finish.
+        // Wait for its settlement frame so QA and usage records arrive first.
+        if self.omp && (m["type"] == "session_settled" || (m["type"] == "prompt_result" && m["sessionSettled"] == true)) {
+            m = json!({"type":"agent_settled", "aborted":m["status"] == "aborted", "errorMessage":m["error"]["message"]});
+        }
         *self.touched.lock().await = Instant::now();
         if m["type"] == "response" {
             if let Some(id) = m["id"].as_str() {
@@ -170,6 +184,43 @@ impl Process {
         }
         if m["type"] == "extension_ui_request" {
             let method = m["method"].as_str().unwrap_or("");
+            if method == "select" && m["title"].as_str().is_some_and(|title| title.starts_with("taucode:preview:")) {
+                let owner = self.clone();
+                let generation = self.preview_generation.load(Ordering::SeqCst);
+                tokio::spawn(async move {
+                    let _operation = owner.preview_operation.lock().await;
+                    if generation != owner.preview_generation.load(Ordering::SeqCst) || owner.cancelling.load(Ordering::SeqCst) {
+                        let _ = owner.write(json!({"type":"extension_ui_response","id":m["id"],"cancelled":true})).await;
+                        return;
+                    }
+                    let preview = owner.preview.lock().await.clone();
+                    let result = match &preview {
+                        Some(preview) if !owner.cancelling.load(Ordering::SeqCst) => match serde_json::from_str(m["title"].as_str().unwrap().trim_start_matches("taucode:preview:")) {
+                            Ok(params) => preview.request(params).await,
+                            Err(error) => Err(error.to_string()),
+                        },
+                        _ => Err("Preview request is unavailable or cancelled".into()),
+                    };
+                    if generation != owner.preview_generation.load(Ordering::SeqCst) || owner.cancelling.load(Ordering::SeqCst) || !owner.alive.load(Ordering::SeqCst) {
+                        if let Some(preview) = preview { let _ = preview.stop().await; }
+                        let _ = owner.write(json!({"type":"extension_ui_response","id":m["id"],"cancelled":true})).await;
+                    } else {
+                        let value = match result { Ok(value) => json!({"tasks":value}), Err(error) => json!({"error":error}) };
+                        let text = redact(value.to_string(), preview.as_ref().map(|p| p.secrets.as_slice()).unwrap_or_default());
+                        let _ = owner.write(json!({"type":"extension_ui_response","id":m["id"],"value":text})).await;
+                    }
+                });
+                return;
+            }
+            if method == "setStatus" && matches!(m["statusKey"].as_str(), Some("taucode-verification" | "taucode-execution-limit")) {
+                if let Some(record) = m["statusText"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()) {
+                    let kind = if m["statusKey"] == "taucode-execution-limit" { "taucode_execution_limit" } else { "taucode_verification" };
+                    for event in self.translator.lock().await.apply(&json!({"type":kind,"record":record})) {
+                        (self.emit)(event);
+                    }
+                }
+                return;
+            }
             if method == "setStatus" && m["statusText"] == "ready" {
                 if let Some(key @ ("taucode-gate" | "taucode-subagents" | "taucode-work")) = m["statusKey"].as_str()
                 {
@@ -195,6 +246,10 @@ impl Process {
                 );
                 return;
             }
+            if self.cancelling.load(Ordering::SeqCst) {
+                let _ = self.write(json!({"type":"extension_ui_response","id":m["id"],"cancelled":true})).await;
+                return;
+            }
             let mut t = self.translator.lock().await;
             // tool_call approval can precede tool_execution_start in pi.
             if let Some(a) = translate::approval(&m) {
@@ -205,8 +260,15 @@ impl Process {
             let request = translate::ui_request(&m, &t.thread, &t.turn_id());
             drop(t);
             let id = request["id"].as_str().unwrap().to_owned();
-            self.dialogs.lock().await.insert(id.clone(), m.clone());
+            let mut dialogs = self.dialogs.lock().await;
+            if self.cancelling.load(Ordering::SeqCst) {
+                drop(dialogs);
+                let _ = self.write(json!({"type":"extension_ui_response","id":m["id"],"cancelled":true})).await;
+                return;
+            }
+            dialogs.insert(id.clone(), m.clone());
             (self.emit)(request);
+            drop(dialogs);
             if let Some(ms) = m["timeout"].as_u64() {
                 let weak = Arc::downgrade(self);
                 tokio::spawn(async move {
@@ -255,6 +317,24 @@ impl Process {
             return Err("Pi process exited; retry to resume the session".into());
         }
         *self.touched.lock().await = Instant::now();
+        if value["type"] == "prompt" { self.cancelling.store(false, Ordering::SeqCst); }
+        if value["type"] == "abort" {
+            self.cancelling.store(true, Ordering::SeqCst);
+            self.preview_generation.fetch_add(1, Ordering::SeqCst);
+            {
+                let _operation = self.preview_operation.lock().await;
+                if let Some(preview) = self.preview.lock().await.clone() { preview.stop().await?; }
+            }
+            self.translator.lock().await.apply(&json!({"type":"abort_requested"}));
+            // Pi waits for tool hooks to settle before acknowledging abort. An
+            // unanswered extension dialog otherwise holds that wait forever.
+            let dialogs = std::mem::take(&mut *self.dialogs.lock().await);
+            let thread = self.translator.lock().await.thread.clone();
+            for (id, request) in dialogs {
+                self.write(json!({"type":"extension_ui_response","id":request["id"],"cancelled":true})).await?;
+                (self.emit)(json!({"method":"serverRequest/resolved","params":{"threadId":thread,"requestId":id}}));
+            }
+        }
         let id = format!("tau-{}", self.next_id.fetch_add(1, Ordering::SeqCst));
         value["id"] = json!(id);
         let (tx, rx) = oneshot::channel();

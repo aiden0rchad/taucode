@@ -63,14 +63,38 @@ pub fn label(id: &str) -> Result<String, String> {
     }
     Ok(format!("browser-{id}"))
 }
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Rect {
     pub x: f64,
     pub y: f64,
     pub w: f64,
     pub h: f64,
 }
+/// A native view may only occupy bounds measured for its own mounted UI slot.
+#[derive(Default)]
+pub struct Placement {
+    tab: String,
+    rect: Option<Rect>,
+    visible: bool,
+}
+impl Placement {
+    pub fn update(&mut self, tab: &str, rect: Option<Rect>, visible: Option<bool>) -> Result<(), String> {
+        let rect = rect.map(Rect::validate).transpose()?;
+        if self.tab != tab { *self = Self { tab: tab.into(), ..Self::default() }; }
+        if let Some(rect) = rect { self.rect = Some(rect); }
+        if let Some(visible) = visible { self.visible = visible; }
+        Ok(())
+    }
+    pub fn rect(&self, tab: &str) -> Option<Rect> {
+        self.rect.filter(|_| self.visible && self.tab == tab)
+    }
+    pub fn detach(&mut self) { *self = Self::default(); }
+}
 impl Rect {
+    pub fn scaled(self, zoom: f64) -> Result<Self, String> {
+        if !zoom.is_finite() || zoom <= 0. { return Err("Invalid UI zoom".into()); }
+        Self { x: self.x * zoom, y: self.y * zoom, w: self.w * zoom, h: self.h * zoom }.validate()
+    }
     pub fn validate(self) -> Result<Self, String> {
         if ![self.x, self.y, self.w, self.h]
             .iter()
@@ -102,6 +126,29 @@ pub fn touch(live: &mut Vec<String>, id: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_placement_does_not_leak_between_closed_or_agent_created_tabs() {
+        let mut placement = Placement::default();
+        let rect = Rect { x: 500., y: 90., w: 400., h: 600. };
+        placement.update("ui-tab", Some(rect), Some(true)).unwrap();
+        assert_eq!(placement.rect("ui-tab"), Some(rect));
+        assert_eq!(placement.rect("agent-tab"), None);
+        placement.detach();
+        assert_eq!(placement.rect("ui-tab"), None);
+        placement.update("agent-tab", None, Some(true)).unwrap();
+        assert_eq!(placement.rect("agent-tab"), None);
+        placement.update("agent-tab", Some(rect), Some(true)).unwrap();
+        assert_eq!(placement.rect("agent-tab"), Some(rect));
+        placement.update("agent-tab", None, Some(false)).unwrap();
+        assert_eq!(placement.rect("agent-tab"), None);
+    }
+    #[test]
+    fn browser_bounds_convert_css_pixels_to_native_points_at_ui_zoom() {
+        let rect = Rect { x: 400., y: 80., w: 500., h: 600. };
+        assert_eq!(rect.scaled(0.8).unwrap(), Rect { x: 320., y: 64., w: 400., h: 480. });
+        assert_eq!(rect.scaled(1.25).unwrap(), Rect { x: 500., y: 100., w: 625., h: 750. });
+        assert!(rect.scaled(f64::NAN).is_err());
+    }
     #[test]
     fn navigation_policy() {
         for url in [

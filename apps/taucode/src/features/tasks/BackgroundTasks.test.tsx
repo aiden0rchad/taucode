@@ -116,3 +116,17 @@ it("isolates preview task history/actions and respects the Terminal gate", async
   await expect(invoke("start", { command: "echo blocked" })).rejects.toThrow("Enable Terminal"); await expect(invoke("restart", { id: started.id })).rejects.toThrow("Enable Terminal");
   expect((await invoke("stop", { id: restarted.id })).find(task => task.id === restarted.id)?.status).toBe("stopped");
 });
+
+it("keeps preview cleanup available in read-only mode without offering arbitrary commands", () => {
+  const value = controller([task(), task({ id: "old", status: "stopped", endedAt: Date.now() })]);
+  render(<BackgroundTasks controller={value} commandsEnabled={false} showCommandInput={false} onOpenUrl={vi.fn()} />);
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.getByText(/Restart requires Work and Terminal/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Stop Dev server" }));
+  expect(value.stop).toHaveBeenCalledWith("dev");
+  fireEvent.click(screen.getByText("Finished"));
+  for (const label of screen.getAllByText("Dev server")) fireEvent.click(label);
+  expect(screen.getByRole("button", { name: "Restart" })).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "Clear finished" }));
+  expect(value.clearFinished).toHaveBeenCalledOnce();
+});

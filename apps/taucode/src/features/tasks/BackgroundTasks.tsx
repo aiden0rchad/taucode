@@ -8,10 +8,11 @@ function elapsed(task: ManagedTask, now: number) {
   const seconds = Math.max(0, Math.floor(((task.endedAt ?? now) - task.startedAt) / 1000));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
-export function BackgroundTasks({ controller, commands = [], commandsEnabled = true, onOpenUrl }: {
+export function BackgroundTasks({ controller, commands = [], commandsEnabled = true, showCommandInput = true, onOpenUrl }: {
   controller: ManagedTasksController;
   commands?: LaunchScriptEntry[];
   commandsEnabled?: boolean;
+  showCommandInput?: boolean;
   onOpenUrl: (url: string) => void;
 }) {
   const [command, setCommand] = useState("");
@@ -46,14 +47,14 @@ export function BackgroundTasks({ controller, commands = [], commandsEnabled = t
     </div>
   </details>{task.status === "running" && <button type="button" className="secondary managed-task-stop" aria-label={`Stop ${task.label}`} disabled={controller.busy} onClick={() => { void controller.stop(task.id).catch(() => {}); }}><Square size={12} /> Stop</button>}</div>;
   return <section className="background-tasks" aria-label="Background tasks">
-    <form className="managed-task-form" onSubmit={event => { event.preventDefault(); if (command.trim()) void run(command); }}>
+    {showCommandInput ? <form className="managed-task-form" onSubmit={event => { event.preventDefault(); if (command.trim()) void run(command); }}>
       <label htmlFor="managed-task-command"><Terminal size={14} /> Run a background task</label>
       <div className="managed-task-input-row">
         <input id="managed-task-command" spellCheck={false} autoCorrect="off" autoCapitalize="off" value={command} onChange={event => setCommand(event.target.value)} placeholder={commandsEnabled ? (controller.canStart ? "Command in this session…" : "Select a session to run a task") : "Enable Terminal in Features to start tasks"} disabled={!canStart} />
         <button className="secondary" type="submit" disabled={controller.busy || !canStart || !command.trim()}><Play size={12} /> Run</button>
       </div>
-    </form>
-    {!commandsEnabled && <p className="managed-task-empty">Enable Terminal in Features to start tasks.</p>}
+    </form> : <p className="managed-task-empty">Previews started by this task appear here. They keep running until you stop them or quit taucode.</p>}
+    {!commandsEnabled && <p className="managed-task-empty">{showCommandInput ? "Enable Terminal in Features to start tasks." : "Restart requires Work and Terminal enabled, and a task with write access. You can still stop previews."}</p>}
     {commands.some(entry => entry.script.trim()) && <div className="managed-task-launchers" aria-label="Configured commands">
       {commands.filter(entry => entry.script.trim()).map(entry => <button type="button" className="secondary" key={entry.id} title={entry.script} disabled={controller.busy || !canStart} onClick={() => { void run(entry.script, entry.label?.trim() || undefined); }}><Play size={12} />{entry.label?.trim() || entry.script}</button>)}
     </div>}

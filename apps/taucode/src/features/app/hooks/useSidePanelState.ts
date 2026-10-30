@@ -1,3 +1,5 @@
+import { useTauriEvent } from "./useTauriEvent";
+import { subscribeMenuViewAction, type MenuViewAction } from "@services/events";
 import { useFeatures } from "@settings/features";
 import { registerNativeOverlay } from "@/features/design-system/nativeOverlays";
 import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
@@ -89,6 +91,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     try { const items = JSON.parse(localStorage.getItem("taucode.browser.recent") ?? "[]"); return Array.isArray(items) ? items.filter(t => t && typeof t.url === "string" && /^https?:/.test(t.url) && typeof t.title === "string").slice(0, 4) : []; } catch { return []; }
   });
   const latest = useRef<BrowserState>({ tabs: [], active: "" });
+  const receivedBrowserState = useRef(false);
   const pending = useRef<{ id: string; scope: string; previous: Set<string>; tab: PanelTab } | null>(null);
   const toolRef = useRef(tools); toolRef.current = tools;
   const history = useRef([scope]);
@@ -107,7 +110,8 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     void subscribeBrowser(value => {
       if (disposed) return;
       const newPages = value.tabs.filter(page => !latest.current.tabs.some(old => old.id === page.id));
-      const hadSnapshot = latest.current.active !== "";
+      const hadSnapshot = receivedBrowserState.current;
+      receivedBrowserState.current = true;
       const previousActive = latest.current.active;
       latest.current = value;
       const request = pending.current;
@@ -196,5 +200,16 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     } catch (e) { setError(String(e)); }
   };
   const navigate = (index: number) => { historyPosition.current = index; setHistoryIndex(index); onNavigate?.(history.current[index]); };
+  useTauriEvent<MenuViewAction>(subscribeMenuViewAction, action => {
+    if (action === "toggle_side_panel") update(s => ({ ...s, open: !s.open }));
+    if (action === "new_browser_tab") void openPage();
+    if (action === "back" && onNavigate && historyIndex > 0) navigate(historyIndex - 1);
+    if (action === "forward" && onNavigate && historyIndex < history.current.length - 1) navigate(historyIndex + 1);
+    if ((action === "previous_tab" || action === "next_tab") && state.tabs.length) {
+      const index = state.tabs.findIndex(tab => tab.id === state.active);
+      const next = (index + (action === "next_tab" ? 1 : -1) + state.tabs.length) % state.tabs.length;
+      update(s => panelReducer(s, { type: "select", id: state.tabs[next].id }));
+    }
+  });
   return { state, update, browser, resize, layout, overlay, panelRef, mainRef, expanded, setExpanded, address, setAddress, error, busy, recent, pending, history, historyIndex, openTool, closeTool, active, openPage, close, navigate };
 }

@@ -8,7 +8,7 @@ export async function checkEvalsLayout() {
  const frame=()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
  const labels=()=>{
   for(const node of document.querySelectorAll<HTMLElement>(".evals-page label,.evals-page .evals-chip,.evals-page .evals-cell,.evals-page th button")){
-   if(node.closest('[hidden]'))continue;
+   if(!node.getClientRects().length)continue;
    assert(node.clientWidth>0,"No measurable layout for "+node.textContent);
    assert(node.scrollWidth<=node.clientWidth,"Clipped label: "+node.textContent);
   }
@@ -30,9 +30,16 @@ export async function checkEvalsLayout() {
   assert(document.querySelectorAll('.evals-summary-card').length===2,"Expected one summary card per configuration");
   assert(!document.querySelector('table[aria-label="Configuration comparison"]'),"Wide table in Settings");
   [...document.querySelectorAll<HTMLButtonElement>('.evals-page button')].find(b=>b.textContent==='Open results')!.click();
+  await waitFor('.evals-full .evals-details');
+  const disclosure=document.querySelector('.evals-new-run .settings-group-disclosure')!;
+  assert(getComputedStyle(disclosure).justifyContent==='flex-start','New run is centered by toolbar styles');
+  const header=document.querySelector('.evals-header')!;
+  assert(!getComputedStyle(header).backgroundColor.startsWith('rgba('),'Sticky header is translucent');
+  [...document.querySelectorAll<HTMLElement>('.evals-page summary')].find(b=>b.textContent==='Detailed metrics')!.click();
   await waitFor('table[aria-label="Configuration comparison"]');await frame();labels();
-  for(const node of document.querySelectorAll('.evals-page th,.evals-page th button'))assert(getComputedStyle(node).whiteSpace==='nowrap','Wrapped table header');
+  for(const node of document.querySelectorAll('table[aria-label="Configuration comparison"] th,table[aria-label="Configuration comparison"] th button'))assert(getComputedStyle(node).whiteSpace==='nowrap','Wrapped table header');
   await waitFor('table[aria-label="Task by configuration"]');
+  [...document.querySelectorAll<HTMLElement>('.evals-page summary')].find(b=>b.textContent==='Compare with a previous run')!.click();
   const select=document.querySelector<HTMLSelectElement>(".evals-compare select")!;
   select.value="eval-a";select.dispatchEvent(new Event("change",{bubbles:true}));
   await waitFor('table[aria-label="A/B deltas"]');await frame();labels();

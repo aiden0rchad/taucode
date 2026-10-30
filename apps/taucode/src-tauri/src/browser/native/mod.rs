@@ -9,8 +9,8 @@ use futures_util::future::BoxFuture;
 use policy::{allowed_origin, automation_allowed, label, navigation, Navigation, Rect};
 use serde_json::{json, Value};
 use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
+    collections::{HashMap, HashSet},
+    sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex},
     time::{Duration, Instant},
 };
 use tauri::{
@@ -23,11 +23,19 @@ const STORE: [u8; 16] = *b"taucode-browser1";
 const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
 struct Views {
     live: Vec<String>,
+    hook_keys: HashMap<String, String>,
     shown: Option<String>,
-    rect: Option<Rect>,
-    visible: bool,
+    placement: policy::Placement,
     last_poll: Instant,
     private: bool,
+}
+impl Views {
+    fn creation_failed(&mut self, state: &watch::Sender<Value>, id: &str, error: &str) {
+        self.live.retain(|entry| entry != id);
+        self.hook_keys.remove(id);
+        if self.shown.as_deref() == Some(id) { self.shown = None; }
+        update(state, id, json!({"ready":false,"loading":false,"progress":0,"error":format!("Could not open this tab: {error}. Choose Retry to try again.")}));
+    }
 }
 pub struct NativeBackend {
     app: AppHandle,
@@ -47,9 +55,9 @@ impl NativeBackend {
             state,
             views: tokio::sync::Mutex::new(Views {
                 live: vec![],
+                hook_keys: HashMap::new(),
                 shown: None,
-                rect: None,
-                visible: false,
+                placement: policy::Placement::default(),
                 last_poll: Instant::now(),
                 private: false,
             }),
@@ -121,6 +129,22 @@ impl NativeBackend {
             policy::touch(&mut views.live, id);
             return Ok(view);
         }
+        self.update(id, json!({"error":null,"ready":false,"loading":true}));
+        let mut stage = "configuration";
+        let valid = Arc::new(AtomicBool::new(true));
+        let result = self.create_view(id, views, &mut stage, valid.clone()).await;
+        if let Err(error) = &result {
+            valid.store(false, Ordering::Release);
+            // A partially configured child must not be reused on Retry.
+            if let Some(view) = self.app.get_webview(&name) { let _ = close_view(view); }
+            views.creation_failed(&self.state, id, error);
+            // Stage names contain no URL, page content or platform error text.
+            taucode_diag_mcp::writer::metadata("error", "browser", "browser.native.create_failed", json!({"errorClass":stage}));
+        }
+        result
+    }
+    async fn create_view(&self, id: &str, views: &mut Views, stage: &mut &'static str, valid: Arc<AtomicBool>) -> Result<Webview, String> {
+        let name = label(id)?;
         let tab = self.tab(id).ok_or("Unknown browser tab")?;
         let url = tab["url"].as_str().unwrap_or("about:blank");
         if navigation(url, url) != Navigation::Allow {
@@ -130,6 +154,7 @@ impl NativeBackend {
             if let Some(view) = self.app.get_webview(&label(&evicted)?) {
                 close_view(view)?;
             }
+            views.hook_keys.remove(&evicted);
             self.update(&evicted, json!({"ready":false}));
         }
         let settings = self.settings()?;
@@ -141,12 +166,15 @@ impl NativeBackend {
         let nav_id = id.to_string();
         let new_state = self.state.clone();
         let download_state = self.state.clone();
+        let download_valid = valid.clone();
         let downloads = self.downloads.clone();
         let downloads_dir = self.app.path().download_dir().map_err(|e| e.to_string())?;
+        let hook_key = uuid::Uuid::new_v4().to_string();
         let mut builder = WebviewBuilder::new(&name, WebviewUrl::External(url.parse().map_err(|_|"Invalid URL")?))
             .user_agent(UA).devtools(cfg!(debug_assertions)).focused(false)
             .background_color(tauri::window::Color(255,255,255,255))
             .incognito(settings.private_browsing)
+            .initialization_script(format!("({})({});", include_str!("page_hooks.js"), json!(hook_key)))
             .on_navigation(move |url| {
                 let current = nav_state.borrow()["tabs"].as_array().and_then(|tabs|tabs.iter().find(|t|t["id"] == nav_id)).and_then(|t|t["url"].as_str()).unwrap_or("about:blank").to_string();
                 match navigation(url.as_str(), &current) {
@@ -157,7 +185,7 @@ impl NativeBackend {
             })
             .on_page_load(move |_view, payload| {
                 let finished = matches!(payload.event(),PageLoadEvent::Finished);
-                update(&state,&tab_id,json!({"url":payload.url().as_str(),"loading":!finished,"ready":finished,"progress":if finished {1.} else {0.1},"error":null}));
+                update_if(&state,&tab_id,json!({"url":payload.url().as_str(),"loading":!finished,"ready":finished,"progress":if finished {1.} else {0.1},"error":null}), || valid.load(Ordering::Acquire));
             })
             .on_document_title_changed(move |_view,title|update(&title_state,&title_id,json!({"title":title})))
             .on_new_window(move |url,_| {
@@ -170,7 +198,8 @@ impl NativeBackend {
             })
             .on_download(move |view,event| match event {
                 DownloadEvent::Requested { url,destination } => {
-                    update(&download_state, view.label().trim_start_matches("browser-"), json!({"ready":true,"loading":false,"error":null}));
+                    if !download_valid.load(Ordering::Acquire) { return false; }
+                    update_if(&download_state, view.label().trim_start_matches("browser-"), json!({"ready":true,"loading":false,"error":null}), || download_valid.load(Ordering::Acquire));
                     if downloads.lock().unwrap().remove(url.as_str()) {
                         let name = destination.file_name().unwrap_or(std::ffi::OsStr::new("download"));
                         let mut path = downloads_dir.join(name);
@@ -198,11 +227,13 @@ impl NativeBackend {
                     .join("browser/native-webview2"),
             );
         }
+        *stage = "window";
         let window = self
             .app
             .get_window("main")
             .ok_or("Main window unavailable")?;
         // Create offscreen: no white flash before first load or before hide is processed.
+        *stage = "webview";
         let view = window
             .add_child(
                 builder,
@@ -211,10 +242,11 @@ impl NativeBackend {
             )
             .map_err(|e| e.to_string())?;
         #[cfg(target_os = "macos")]
-        if let Err(error) = macos::install_accessibility(&view).await {
-            let _ = close_view(view);
-            return Err(error);
+        {
+            *stage = "accessibility";
+            macos::install_accessibility(&view).await?;
         }
+        *stage = "layout";
         if let Some(main) = self.app.get_webview("main") {
             // add_child changes the original webview's sizing semantics. Keep the
             // UI full-window; browser bounds remain controlled by place().
@@ -223,7 +255,11 @@ impl NativeBackend {
         }
         view.hide().map_err(|e| e.to_string())?;
         #[cfg(target_os = "macos")]
-        navigation_events::install(&view, id.to_string(), self.state.clone())?;
+        {
+            *stage = "navigation";
+            navigation_events::install(&view, id.to_string(), self.state.clone())?;
+        }
+        views.hook_keys.insert(id.into(), hook_key);
         Ok(view)
     }
     async fn place(&self, views: &mut Views) -> Result<(), String> {
@@ -232,8 +268,8 @@ impl NativeBackend {
             .app
             .get_window("main")
             .ok_or("Main window unavailable")?;
-        let visible = views.visible
-            && views.rect.is_some()
+        let rect = views.placement.rect(&id);
+        let visible = rect.is_some()
             && window.is_visible().unwrap_or(false)
             && !window.is_minimized().unwrap_or(true);
         let ready = self
@@ -242,7 +278,8 @@ impl NativeBackend {
         if !visible || !ready || views.shown.as_deref().is_some_and(|shown| shown != id) {
             self.hide(views).await?;
         }
-        if !visible || id.is_empty() {
+        // A failed creation needs explicit Retry, never an unbounded poll/recreate loop.
+        if !visible || id.is_empty() || self.tab(&id).is_some_and(|tab| tab["error"].is_string()) {
             return Ok(());
         }
         let view = self.view(&id, views).await?;
@@ -250,7 +287,13 @@ impl NativeBackend {
             .tab(&id)
             .is_some_and(|t| t["ready"] == true && t["error"].is_null())
         {
-            let rect = views.rect.unwrap();
+            let mut rect = rect.unwrap();
+            #[cfg(target_os = "macos")]
+            { rect = rect.scaled(macos::ui_zoom(&self.app.get_webview("main").ok_or("Main webview unavailable")?).await?)?; }
+            // Child webviews sit above HTML; leave the window resize gutter reachable.
+            let size = window.inner_size().map_err(|e| e.to_string())?.to_logical::<f64>(window.scale_factor().map_err(|e| e.to_string())?);
+            rect.w = rect.w.min((size.width - 8. - rect.x).max(1.));
+            rect.h = rect.h.min((size.height - 8. - rect.y).max(1.));
             view.set_bounds(tauri::Rect {
                 position: LogicalPosition::new(rect.x, rect.y).into(),
                 size: LogicalSize::new(rect.w, rect.h).into(),
@@ -283,6 +326,7 @@ impl NativeBackend {
                 }
                 self.update(&id, json!({"ready":false}));
             }
+            views.hook_keys.clear();
             views.private = settings.private_browsing;
         }
         let action = p["action"].as_str().ok_or("Missing browser action")?;
@@ -340,17 +384,19 @@ impl NativeBackend {
             return Ok(Value::Null);
         }
         if action == "detach" {
-            views.visible = false;
+            views.placement.detach();
             self.hide(&mut views).await?;
             return Ok(Value::Null);
         }
         if action == "reset" {
+            views.placement.detach();
             self.hide(&mut views).await?;
             for id in views.live.drain(..) {
                 if let Some(view) = self.app.get_webview(&label(&id)?) {
                     close_view(view)?;
                 }
             }
+            views.hook_keys.clear();
             self.state
                 .send_replace(json!({"tabs":[],"active":"","agent":false}));
             return Ok(Value::Null);
@@ -371,6 +417,7 @@ impl NativeBackend {
                     close_view(view)?;
                 }
             }
+            views.hook_keys.clear();
             self.state
                 .send_replace(json!({"backend":"native","tabs":[],"active":"","agent":false}));
             return Ok(Value::Null);
@@ -385,16 +432,10 @@ impl NativeBackend {
                     return Ok(Value::Null);
                 }
             }
-            if !p["rect"].is_null() {
-                views.rect = Some(
-                    serde_json::from_value::<Rect>(p["rect"].clone())
-                        .map_err(|e| e.to_string())?
-                        .validate()?,
-                );
-            }
-            if let Some(visible) = p["visible"].as_bool() {
-                views.visible = visible;
-            }
+            let rect = if p["rect"].is_null() { None } else {
+                Some(serde_json::from_value::<Rect>(p["rect"].clone()).map_err(|e| e.to_string())?)
+            };
+            views.placement.update(&self.active(), rect, p["visible"].as_bool())?;
             self.place(&mut views).await?;
             return Ok(Value::Null);
         }
@@ -442,6 +483,7 @@ impl NativeBackend {
         if action == "close" {
             let id = id.unwrap_or_else(|| self.active());
             label(&id)?;
+            if id == self.active() { views.placement.detach(); }
             if views.shown.as_deref() == Some(&id) {
                 self.hide(&mut views).await?;
             }
@@ -449,6 +491,7 @@ impl NativeBackend {
                 close_view(view)?;
             }
             views.live.retain(|v| v != &id);
+            views.hook_keys.remove(&id);
             self.state.send_modify(|s| {
                 if let Some(tabs) = s["tabs"].as_array_mut() {
                     tabs.retain(|t| t["id"] != id);
@@ -472,6 +515,9 @@ impl NativeBackend {
             return Ok(Value::Null);
         }
         if self.active().is_empty() {
+            if action != "navigate" {
+                return Err("No browser page is open. Navigate to a URL first.".into());
+            }
             self.add_tab("about:blank");
         }
         let id = self.active();
@@ -540,17 +586,31 @@ impl NativeBackend {
                 return macos::control(&view, action.into()).await;
             }
             #[cfg(target_os = "macos")]
-            "script" | "evaluate" => {
+            "script" | "evaluate" | "console" | "dialog" => {
                 let url = view.url().map_err(|e| e.to_string())?;
                 if action == "evaluate" { policy::check_target(&p, &id, Some(url.as_str()))?; }
                 if !automation_allowed(&url, &settings) {
                     return Err("Browser origin blocked by policy".into());
                 }
-                return if action == "evaluate" { macos::evaluate_page(&view, p, url.as_str()).await }
-                else {
-                    let mut p = p; p["expectedUrl"] = json!(url.as_str());
-                    macos::script(&view, p).await
-                };
+                if action == "evaluate" { return macos::evaluate_page(&view, p, url.as_str()).await; }
+                let key = views.hook_keys.get(&id).ok_or("Native page hooks unavailable; reload the tab")?;
+                let hooks = |params: Value| json!({"function":format!("() => globalThis[{}].request({params})", json!(key))});
+                if matches!(action, "console" | "dialog") {
+                    return macos::evaluate_page(&view, hooks(p), url.as_str()).await;
+                }
+                let snapshot = p["op"] == "snapshot";
+                let mut p = p; p["expectedUrl"] = json!(url.as_str());
+                let mut result = macos::script(&view, p).await?;
+                if snapshot {
+                    let note = macos::evaluate_page(&view, hooks(json!({"action":"snapshot"})), url.as_str()).await?;
+                    if let Some(note) = note.as_str().filter(|s| !s.is_empty()) {
+                        result["dialogNote"] = json!(note.chars().take(14000).collect::<String>());
+                    }
+                    if serde_json::to_vec(&result).map_err(|e| e.to_string())?.len() > 200000 {
+                        return Err("Native result exceeds 200 KB".into());
+                    }
+                }
+                return Ok(result);
             }
             #[cfg(target_os = "macos")]
             "screenshot" => {
@@ -619,7 +679,12 @@ impl BrowserBackend for NativeBackend {
     }
 }
 fn update(state: &watch::Sender<Value>, id: &str, values: Value) {
+    update_if(state, id, values, || true);
+}
+fn update_if(state: &watch::Sender<Value>, id: &str, values: Value, valid: impl FnOnce() -> bool) {
     state.send_if_modified(|s| {
+        // Check under the state lock so failure always wins against an in-flight callback.
+        if !valid() { return false; }
         let Some(tab) = s["tabs"]
             .as_array_mut()
             .and_then(|tabs| tabs.iter_mut().find(|t| t["id"] == id))
@@ -640,6 +705,41 @@ fn update(state: &watch::Sender<Value>, id: &str, values: Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_creation_settles_the_tab_and_discards_only_its_partial_state() {
+        let original = json!({"id":"other","ready":true,"loading":false,"title":"Keep this page","url":"https://example.test/"});
+        let (state, _) = watch::channel(json!({"tabs":[original.clone(),{"id":"failed","ready":false,"loading":true,"progress":0.1}],"active":"failed"}));
+        let mut views = Views { live: vec!["other".into(), "failed".into()], hook_keys: HashMap::from([("other".into(), "keep".into()), ("failed".into(), "discard".into())]), shown: Some("failed".into()), placement: Default::default(), last_poll: Instant::now(), private: false };
+        views.creation_failed(&state, "failed", "Main window unavailable");
+        let snapshot = state.borrow().clone();
+        assert_eq!(snapshot["active"], "failed");
+        assert_eq!(snapshot["tabs"][0], original);
+        assert_eq!(snapshot["tabs"][1]["loading"], false);
+        assert_eq!(snapshot["tabs"][1]["ready"], false);
+        assert_eq!(snapshot["tabs"][1]["progress"], 0);
+        assert!(snapshot["tabs"][1]["error"].as_str().unwrap().contains("Choose Retry"));
+        assert_eq!(views.live, ["other"]);
+        assert_eq!(views.hook_keys, HashMap::from([("other".into(), "keep".into())]));
+        assert!(views.shown.is_none());
+        // A late failure for a closed tab must not resurrect it or hide another page.
+        views.shown = Some("other".into());
+        views.creation_failed(&state, "closed", "creation failed");
+        assert_eq!(*state.borrow(), snapshot);
+        assert_eq!(views.shown.as_deref(), Some("other"));
+    }
+    #[test]
+    fn late_page_load_cannot_clear_a_failed_creation_or_overwrite_its_retry() {
+        let (state, _) = watch::channel(json!({"tabs":[{"id":"failed","ready":false,"loading":false,"error":"Choose Retry"}]}));
+        let valid = AtomicBool::new(false);
+        let original = state.borrow().clone();
+        update_if(&state, "failed", json!({"ready":true,"error":null}), || valid.load(Ordering::Acquire));
+        assert_eq!(*state.borrow(), original);
+        // Retry creates a separate callback lifetime; the old one stays invalid.
+        let retry = AtomicBool::new(true);
+        update_if(&state, "failed", json!({"ready":true,"error":null,"title":"Retried page"}), || retry.load(Ordering::Acquire));
+        update_if(&state, "failed", json!({"ready":false,"loading":true}), || valid.load(Ordering::Acquire));
+        assert_eq!(state.borrow()["tabs"][0], json!({"id":"failed","ready":true,"loading":false,"error":null,"title":"Retried page"}));
+    }
     #[test]
     fn clear_site_confirmation_rejects_changed_tab_or_url() {
         let params = json!({"action":"clearSite","confirmed":true,"tabId":"one","expectedUrl":"https://first.example/page"});

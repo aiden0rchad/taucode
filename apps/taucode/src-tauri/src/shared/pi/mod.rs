@@ -1,7 +1,9 @@
 pub(super) mod config;
 pub(crate) mod agents;
 mod process;
+mod preview;
 mod profile;
+mod recovery;
 #[cfg(test)]
 mod tests;
 mod translate;
@@ -36,11 +38,21 @@ struct Session {
     process: Option<Arc<Process>>,
     configuration: String,
 }
+// A cancelled startup must not leave a child alive before it joins the session.
+struct StartingProcess(Option<Arc<Process>>);
+impl Drop for StartingProcess {
+    fn drop(&mut self) {
+        if let Some(process) = self.0.take() {
+            tokio::spawn(async move { let _ = process.shutdown().await; });
+        }
+    }
+}
 pub(crate) struct PiEngine {
     pub(super) data: Option<PathBuf>,
     profile: profile::EngineProfile,
     chat: bool,
     work: bool,
+    pub previews: Option<Arc<super::managed_tasks::ManagedTasks>>,
     pub read_only_folders: Mutex<HashMap<String, Vec<String>>>,
     pub paths: Mutex<HashMap<String, String>>,
     sessions: Mutex<HashMap<String, Session>>,
@@ -49,7 +61,7 @@ pub(crate) struct PiEngine {
     sink: Sink,
     graph: Option<CodegraphSetup>,
     idle: Duration,
-    keys: Arc<dyn KeyStore>,
+    pub(super) keys: Arc<dyn KeyStore>,
     #[cfg(test)]
     pub(super) fake: bool,
     #[cfg(test)]
@@ -62,6 +74,7 @@ impl Default for PiEngine {
             profile: Default::default(),
             chat: false,
             work: false,
+            previews: None,
             read_only_folders: Mutex::new(HashMap::new()),
             paths: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
@@ -141,7 +154,13 @@ impl PiEngine {
         registry: Vec<ProviderEntry>,
         policy: AgentPolicy,
     ) {
-        let policy = super::engines::feature_policy(policy, &super::engine_registry::features(self.data.as_deref()));
+        let mut policy = super::engines::feature_policy(policy, &super::engine_registry::features(self.data.as_deref()));
+        // Chain of Command belongs to Code. Keep the saved role/model choices,
+        // but run Chat and Work as a single model when inheriting that policy.
+        if (self.chat || self.work) && policy.subagents.mode == crate::types::SubagentMode::ChainOfCommand {
+            policy.subagents.enabled = false;
+            policy.subagents.mode = crate::types::SubagentMode::Custom;
+        }
         self.registry
             .lock()
             .await
@@ -354,7 +373,14 @@ impl PiEngine {
             .ok_or("Pi runtime is not configured")?
             .join(if self.chat { "chats/agent".into() } else { format!("{}/agent", self.profile.id()) })
             .join(if self.chat { &id } else { &s.workspace });
-        let mut env = config::prepare(&home, registry, self.graph.as_ref(), self.keys.as_ref())?;
+        let (credentials, delivery) = {
+            let (registry, connectors, keys) = (registry.to_vec(), connectors.clone(), self.keys.clone());
+            tokio::task::spawn_blocking(move || -> Result<_, String> {
+                Ok((config::credentials(&registry, keys.as_ref())?, super::connectors::delivery(&connectors, keys.as_ref())?))
+            }).await.map_err(|_| "Credential lookup failed".to_string())??
+        };
+        let mut env = config::prepare(&home, registry, self.graph.as_ref())?;
+        env.extend(credentials);
         let features = super::engine_registry::features(self.data.as_deref());
         self.profile.prepare(&home, registry, &features, &mut env)?;
         for p in registry.iter().filter(|p| p.enabled) {
@@ -367,7 +393,6 @@ impl PiEngine {
                 }
             }
         }
-        let delivery = super::connectors::delivery(&connectors, self.keys.as_ref())?;
         config::write_json(&home.join("mcp.json"), &delivery.pi)?;
         if self.profile.omp() {
             let network = home.join("taucode/network.json");
@@ -385,6 +410,7 @@ impl PiEngine {
             }
         }
         config::write_policy(&home, registry, policy)?;
+        config::write_thread_policy(&home, &id, registry, policy)?;
         config::write_access(&home, &id, None)?;
         if self.work {
             let file = home.join("taucode/threads").join(format!("{id}.json"));
@@ -434,7 +460,7 @@ impl PiEngine {
             command.args(&self.profile.definition.args);
             command
         } else if self.profile.omp() { Command::new(runtime.as_ref().ok_or("Missing omp runtime")?.join("node_modules/.bin/bun")) }
-        else { Command::new(node) };
+        else { Command::new(&node) };
         command.env_clear().envs(super::engine_registry::environment(std::env::vars(), &home));
         let guard = runtime.as_ref().map(|dir| dir.join("no-accounts.mjs")).unwrap_or_default();
         #[cfg(test)]
@@ -448,6 +474,7 @@ impl PiEngine {
         if !self.profile.custom() { command.arg(&cli); }
         command
             .env("TAUCODE_PI_CLI", &cli)
+            .env("TAUCODE_COMMAND_USAGE_DB", self.data.as_ref().ok_or("Missing app data")?.join("command-usage").join(format!("{}.sqlite", s.workspace)))
             .env_remove("TAUCODE_SUBAGENT_DEPTH")
             .env_remove("TAUCODE_TOOL_ACCESS")
             .arg("-e")
@@ -527,6 +554,20 @@ impl PiEngine {
             let _ = events.send(e.clone());
             sink(&workspace, e);
         });
+        let preview = self.previews.as_ref().map(|manager| {
+            let mut env = super::engine_registry::environment(std::env::vars(), &home);
+            env.extend(command.as_std().get_envs().filter_map(|(key, value)| {
+                matches!(key.to_str(), Some("TAUCODE_WORK_PYTHON" | "PATH")).then(|| value.map(|v| (key.to_string_lossy().into_owned(), v.to_string_lossy().into_owned()))).flatten()
+            }));
+            Arc::new(preview::Preview {
+                manager: manager.clone(), data: self.data.clone().unwrap(), access: home.join("taucode/threads").join(format!("{id}.json")),
+                workspace: s.workspace.clone(), thread: id.clone(), cwd: PathBuf::from(s.thread["cwd"].as_str().unwrap_or_default()),
+                runtime: super::managed_tasks::TaskRuntime {
+                    guard: Some((node.clone(), home.join("extensions/lib/commandGuard.ts"))),
+                    env: Some(env.into_iter().collect()),
+                }, secrets: secrets.clone(),
+            })
+        });
         let p = Process::spawn(
             command,
             translator,
@@ -536,6 +577,8 @@ impl PiEngine {
             secrets,
         )
         .await?;
+        *p.preview.lock().await = preview;
+        let mut starting = StartingProcess(Some(p.clone()));
         let state = match p.request(json!({"type":"get_state"})).await {
             Ok(v) => v,
             Err(e) => {
@@ -570,6 +613,7 @@ impl PiEngine {
         p.translator.lock().await.model = state["model"].clone();
         s.configuration = fingerprint;
         s.process = Some(p.clone());
+        starting.0 = None;
         Ok(p)
     }
     async fn dispatch(
@@ -630,7 +674,7 @@ impl PiEngine {
                 process: None,
                 configuration: String::new(),
             };
-            if let Err(e) = self.spawn(&mut session, &registry, &policy).await {
+            if let Err(e) = if self.work { Ok(()) } else { self.spawn(&mut session, &registry, &policy).await.map(|_| ()) } {
                 let _ = std::fs::remove_file(&session.file);
                 return Err(e);
             }
@@ -650,6 +694,24 @@ impl PiEngine {
             .get_mut(id)
             .filter(|s| s.workspace == workspace)
             .ok_or("Unknown pi thread")?;
+        let team_home = self.data.as_ref().ok_or("Pi runtime is not configured")?
+            .join(format!("{}/agent", self.profile.id())).join(workspace);
+        if method == "thread/agentPolicy" {
+            if self.chat || self.work { return Err("Conversation teams are available only in Code".into()); }
+            match params["action"].as_str() {
+                Some("get") => {},
+                Some("set") => {
+                    let team = serde_json::from_value::<crate::types::SubagentPolicy>(params["policy"].clone()).map_err(|e| format!("Invalid conversation team: {e}"))?;
+                    let effective = config::apply_team(&policy, Some(team));
+                    providers::validate(&registry, &effective)?;
+                    config::write_team(&team_home, id, Some(&effective.subagents))?;
+                },
+                Some("reset") => config::write_team(&team_home, id, None)?,
+                _ => return Err("Unknown conversation team action".into()),
+            }
+            let team = config::read_team(&team_home, id)?;
+            return Ok(json!({"overridden":team.is_some(),"policy":config::apply_team(&policy, team)}));
+        }
         if method == "thread/chatWeb/set" && self.chat {
             let web = params["web"].as_bool().ok_or("Missing Web state")?;
             if s.thread["chatWeb"] != web {
@@ -719,8 +781,9 @@ impl PiEngine {
             let (mut cloned, _) = read_session(&file, &registry)?;
             cloned["modelProvider"] = s.thread["modelProvider"].clone();
             cloned["model"] = s.thread["model"].clone();
-            let home = self.data.as_ref().ok_or("Pi runtime is not configured")?.join("pi/agent").join(workspace);
+            let home = &team_home;
             config::write_access(&home, &new_id, Some("read-only"))?;
+            config::write_team(&home, &new_id, config::read_team(&home, id)?.as_ref())?;
             sessions.insert(new_id, Session { workspace: workspace.into(), thread: cloned.clone(), file, process: None, configuration: String::new() });
             return Ok(json!({"result":thread_response(cloned, false, "read-only")}));
         }
@@ -858,9 +921,17 @@ impl PiEngine {
             return Ok(json!({"result":{"thread":thread,"readState":null}}));
         }
         // Interrupt must remain available after credentials/configuration change.
+        let policy = if !self.chat && !self.work && !matches!(method, "turn/interrupt" | "turn/steer") {
+            let team = config::read_team(&team_home, id)?;
+            let overridden = team.is_some();
+            let effective = config::apply_team(&policy, team);
+            if overridden { providers::validate(&registry, &effective)?; }
+            super::engines::feature_policy(effective, &super::engine_registry::features(self.data.as_deref()))
+        } else { policy };
         let p = if matches!(method, "turn/interrupt" | "turn/steer") {
             match &s.process {
                 Some(p) if p.alive.load(Ordering::SeqCst) => p.clone(),
+                _ if method == "turn/interrupt" => return Ok(json!({"result":{}})),
                 _ => self.spawn(s, &registry, &policy).await?,
             }
         } else {
@@ -903,6 +974,7 @@ impl PiEngine {
                 .as_str()
                 .ok_or("Pi clone missing ID")?
                 .to_owned();
+            config::write_team(&team_home, &new_id, config::read_team(&team_home, id)?.as_ref())?;
             let mut session = Session {
                 workspace: workspace.into(),
                 thread: cloned.clone(),
@@ -1198,15 +1270,58 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
         next = e["parentId"].as_str();
     }
     branch.reverse();
+    let finished_calls: std::collections::HashSet<_> = branch.iter().filter_map(|entry| {
+        if entry["type"] == "message" && entry["message"]["role"] == "toolResult"
+            && agents::results(&entry["message"]["details"]).is_some() {
+            entry["message"]["toolCallId"].as_str()
+        } else if entry["customType"] == "taucode-subagent-result"
+            && agents::results(&entry["data"]["result"]["details"]).is_some() {
+            entry["data"]["toolCallId"].as_str()
+        } else { None }
+    }).collect();
     let mut messages = vec![];
-    for entry in branch {
+    let recovery = recovery::Checkpoints::load(file);
+    let recorded_calls: std::collections::HashSet<_> = branch.iter().filter(|entry|
+        entry["type"] == "message" && entry["message"]["role"] == "toolResult"
+    ).filter_map(|entry| entry["message"]["toolCallId"].as_str()).collect();
+    for (index, entry) in branch.iter().enumerate() {
         match entry["type"].as_str() {
             Some("message") => {
-                let m = &entry["message"];
+                let mut m = entry["message"].clone();
+                if m["role"] == "assistant" && matches!(m["stopReason"].as_str(), Some("aborted" | "error")) && m["content"].as_array().is_some_and(Vec::is_empty) {
+                    if let Some(saved) = entry["parentId"].as_str().and_then(|id| recovery.message(id)).filter(|saved| saved["timestamp"] == m["timestamp"]) {
+                        m["content"] = saved["content"].clone();
+                    }
+                }
+                if m["role"] == "toolResult" && m["isError"] == true {
+                    if let Some(saved) = recovery.tool(&json!({"id":m["toolCallId"],"name":m["toolName"]})) {
+                        let partial = translate::text(&saved["result"]["content"]);
+                        let durable = translate::text(&m["content"]);
+                        if !partial.is_empty() && !durable.contains(&partial) {
+                            // OMP can checkpoint a cancellation label followed by the
+                            // same output it persists. Keep the label without repeating output.
+                            let missing = partial.strip_suffix(&durable).unwrap_or(&partial).trim_end();
+                            if !missing.is_empty() {
+                                if let Some(content) = m["content"].as_array_mut() { content.insert(0, json!({"type":"text","text":missing})); }
+                            }
+                        }
+                    }
+                }
                 if m["role"] == "user" && thread["preview"] == "" {
                     thread["preview"] = json!(translate::text(&m["content"]));
                 }
                 messages.push(m.clone());
+                if m["role"] == "assistant" {
+                    for call in m["content"].as_array().into_iter().flatten().filter(|p| p["type"] == "toolCall") {
+                        let Some(id) = call["id"].as_str() else { continue; };
+                        if !finished_calls.contains(id) {
+                            if let Some(saved) = agents::checkpoint(file, id) { messages.push(saved); }
+                        }
+                        if !recorded_calls.contains(id) {
+                            if let Some(saved) = recovery.tool(call) { messages.push(saved); }
+                        }
+                    }
+                }
             }
             Some("model_change") => {
                 let pi = entry["provider"].as_str().unwrap_or("");
@@ -1219,7 +1334,18 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
             }
             Some("session_info") => thread["name"] = entry["name"].clone(),
             Some("compaction") => messages.push(json!({"role":"taucodeCompaction","result":entry})),
+            Some("custom") if entry["customType"] == "taucode-subagent-result" => messages.push(json!({"role":"taucodeSubagentResult","toolCallId":entry["data"]["toolCallId"],"result":entry["data"]["result"]})),
+            Some("custom") if entry["customType"] == "taucode-verification" => messages.push(json!({"role":"taucodeVerification","record":entry["data"]})),
+            Some("custom") if entry["customType"] == "taucode-execution-limit" => messages.push(json!({"role":"taucodeExecutionLimit","record":entry["data"]})),
+            Some("custom") if entry["customType"] == "session_exit" && entry["data"]["pendingToolCalls"].as_array().is_some_and(|calls| !calls.is_empty()) => messages.push(json!({"role":"taucodeInterrupted"})),
             _ => (),
+        }
+        // A saved assistant (including an alternate branch) or explicit rewind
+        // supersedes its unfinished stream. A later user turn must retain it.
+        if let Some(saved) = entry["id"].as_str().and_then(|id| recovery.message(id)) {
+            let superseded = branch[index + 1..].iter().take_while(|next| next["message"]["role"] != "user")
+                .any(|next| next["message"]["role"] == "assistant" || next["customType"] == "taucode-rewind");
+            if !superseded { messages.push(saved); }
         }
     }
     let mut translator = Translator::history(id, cwd, &messages);
@@ -1324,10 +1450,10 @@ fn rewind_session(file: &Path, thread: &str, user_item: Option<&str>, leaf: Opti
     Ok(previous)
 }
 
-const WORK_PROMPT: &str = "You are doing knowledge work in the selected space. Use ask_user when you need clarification or a user decision; do not assume an answer. Plan first with a Markdown checklist (- [ ] step); update it with - [x] as you progress. Keep outputs in outputs/ unless told otherwise. Ask before deleting or overwriting user files outside outputs/, regardless of access mode. Never write outside this space; extra folders are read-only. Shell commands require approval and must respect these same boundaries. Use the bundled document skills and TAUCODE_WORK_PYTHON; if unavailable explain that document libraries are unavailable and offer Markdown/CSV instead. Summarize what was produced with relative file paths. Do not schedule recurring tasks.";
+const WORK_PROMPT: &str = "You are doing knowledge work in the selected space. Use ask_user when you need clarification or a user decision; do not assume an answer. Plan first with a Markdown checklist (- [ ] step); update it with - [x] as you progress. Keep outputs in outputs/ unless told otherwise. In Ask mode, ask before deleting or overwriting user files outside outputs/. Full access authorizes workspace edits and shell commands without extra confirmation; read-only mode permits no writes. Never write outside this space; extra folders are read-only. Submit tools directly; taucode enforces their approval rules. Do not use ask_user to request tool permission. Shell commands must respect these same boundaries. Use preview_server for local preview servers, bound to 127.0.0.1 with a foreground command; do not detach servers with shell backgrounding, nohup, or daemon mode. Inspect its status/logs and verify readiness in the browser. Taucode keeps previews after completion and provides Stop/Restart controls. Use the bundled document skills and TAUCODE_WORK_PYTHON; if unavailable explain that document libraries are unavailable and offer Markdown/CSV instead. Summarize what was produced with relative file paths. Do not schedule recurring tasks.";
 fn work_profile(command: &mut Command, source: &Path, python: Option<&Path>) {
     command.env("TAUCODE_WORK", "1")
-        .args(["--no-skills", "--no-context-files", "--no-prompt-templates", "--tools", "read,write,edit,ls,find,grep,bash,subagent,ask_user,mcp__*", "--append-system-prompt", WORK_PROMPT])
+        .args(["--no-skills", "--no-context-files", "--no-prompt-templates", "--tools", "read,write,edit,ls,find,grep,bash,subagent,ask_user,preview_server,mcp__*", "--append-system-prompt", WORK_PROMPT])
         .arg("--skill").arg(source.join("skills"));
     if let Some(python) = python { command.env("TAUCODE_WORK_PYTHON", python); }
 }

@@ -5,7 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import type { ConversationItem } from "../../../types";
 import { expectOpenedFileTarget } from "../test/fileLinkAssertions";
 import { Messages } from "./Messages";
-import { prepareThreadItems } from "@utils/threadItems";
+import { buildConversationItem, prepareThreadItems } from "@utils/threadItems";
 
 const useFileLinkOpenerMock = vi.fn(
   (_workspacePath: string | null, _openTargets: unknown[], _selectedOpenAppId: string) => ({
@@ -38,10 +38,69 @@ vi.mock("@services/tauri", async () => {
 });
 
 describe("Messages", () => {
+  const failedUser: ConversationItem = { id: "failed-user", kind: "message", role: "user", text: "Check this image", images: ["data:image/png;base64,AAA"] };
+  const quotaError: ConversationItem = { id: "123-assistant", kind: "message", role: "assistant", text: "Turn failed: Provider requested 1800000ms wait. Original error: 429 ChatGPT Account 1 requests are paused to preserve the final 10% of weekly allowance. This prompt was not processed." };
+
+  it("collapses a legacy quota error, preserves retry attachments, and opens model recovery", async () => {
+    const retry = vi.fn().mockResolvedValue(true), changeModel = vi.fn();
+    const { container } = render(<Messages items={[failedUser, quotaError]} threadId="thread" isThinking={false} lastDurationMs={17000} openTargets={[]} selectedOpenAppId="" onRetryMessage={retry} onChangeModel={changeModel} />);
+    expect(screen.getByText("Account usage limit reached")).toBeTruthy();
+    const details = container.querySelector(".turn-error-details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(details.querySelector("pre")?.textContent).toBe(quotaError.text);
+    expect(screen.queryByText("Worked for 0:17")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Change model" }));
+    expect(changeModel).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledWith(failedUser.text, failedUser.images));
+  });
+
+  it("does not replay an old failure after a newer user message or a successful response", () => {
+    const props = { threadId: "thread", isThinking: false, openTargets: [], selectedOpenAppId: "", onRetryMessage: vi.fn(), onChangeModel: vi.fn() };
+    const { rerender } = render(<Messages {...props} items={[failedUser, quotaError, { ...failedUser, id: "new-user" }]} />);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Change model" })).toBeNull();
+    rerender(<Messages {...props} items={[failedUser, quotaError, { id: "answer", kind: "message", role: "assistant", text: "Done" }]} />);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("retries the captured failed-start request instead of a previous successful request", async () => {
+    const retry = vi.fn().mockResolvedValue(true);
+    const failedStart: ConversationItem = { id: "failure", kind: "message", role: "assistant", text: "Request rejected", isError: true, retryMessage: { text: "New request", images: ["new.png"] } };
+    const props = { threadId: "thread", isThinking: false, openTargets: [], selectedOpenAppId: "", onRetryMessage: retry };
+    const { rerender } = render(<Messages {...props} items={[failedUser, failedStart]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledWith("New request", ["new.png"]));
+    rerender(<Messages {...props} items={[failedUser, { ...failedStart, retryMessage: undefined, text: "Turn failed to start: offline" }]} />);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("does not mistake normal assistant or user text for an application error", () => {
+    render(<Messages items={[{ ...failedUser, text: "Turn failed: example" }, { id: "agent-answer", kind: "message", role: "assistant", text: "Turn failed: an example from the docs" }]} threadId="thread" isThinking={false} openTargets={[]} selectedOpenAppId="" />);
+    expect(screen.getByText("Turn failed: an example from the docs")).toBeTruthy();
+    expect(screen.queryByText("Error details")).toBeNull();
+  });
+
+  it("disables recovery while a turn is running", () => {
+    render(<Messages items={[failedUser, quotaError]} threadId="thread" isThinking openTargets={[]} selectedOpenAppId="" onRetryMessage={vi.fn()} onChangeModel={vi.fn()} />);
+    expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Change model" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+  it("shows the actual delegation error when a failed spawn is expanded", () => {
+    const item = buildConversationItem({
+      type: "collabAgentToolCall", id: "spawn", tool: "spawnAgent", status: "failed",
+      error: { message: "Delegation budget exhausted" }, agentsStates: {}, agentsTree: [],
+    });
+    expect(item).not.toBeNull();
+    render(<Messages items={[item!]} threadId="thread" workspaceId="workspace" isThinking={false} openTargets={[]} selectedOpenAppId="" />);
+    fireEvent.click(screen.getByRole("button", { name: /spawn failed/i }));
+    expect(screen.getByText("Delegation budget exhausted")).toBeTruthy();
+  });
+
   it("renders a stored virtual subagent write as a tool instead of a file edit", () => {
     const items = prepareThreadItems([{ id: "old-subagent", kind: "tool", toolType: "fileChange", title: "File changes", detail: "A xd://subagent", status: "failed", output: "Call failed", changes: [{ path: "xd://subagent", kind: "add" }] }]);
     render(<Messages items={items} threadId="thread" workspaceId="workspace" isThinking={false} openTargets={[]} selectedOpenAppId="" />);
-    expect(screen.getByText("Tool: subagent")).toBeTruthy();
+    expect(screen.getByText("Ran sub-agent")).toBeTruthy();
     expect(screen.queryByText("file edited")).toBeNull();
   });
 
@@ -56,7 +115,7 @@ describe("Messages", () => {
       ],
     }];
     render(<Messages items={items} threadId="thread" workspaceId="workspace" isThinking={false} openTargets={[]} selectedOpenAppId="" />);
-    expect(screen.getByRole("button", { name: /spawn failed:\s*scout \+1/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /spawn failed\s*scout \+1/i })).toBeTruthy();
     expect(screen.queryByText(/call_failed:agent:/)).toBeNull();
   });
   beforeAll(() => {
@@ -977,7 +1036,7 @@ describe("Messages", () => {
     }
   });
 
-  it("keeps done duration text when polling fetch countdown is not requested", () => {
+  it("shows neutral elapsed time when polling fetch countdown is not requested", () => {
     const items: ConversationItem[] = [
       {
         id: "assistant-msg-done-default",
@@ -999,7 +1058,7 @@ describe("Messages", () => {
       />,
     );
 
-    expect(screen.getByText("Done in 0:04")).toBeTruthy();
+    expect(screen.getByText("Worked for 0:04")).toBeTruthy();
   });
 
   it("renders answered user input items with preview and expandable details", () => {
@@ -1150,6 +1209,7 @@ describe("Messages", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Expand tool calls" }));
     await waitFor(() => {
       const exploreBlocks = container.querySelectorAll(".explore-inline");
       expect(exploreBlocks.length).toBe(2);
@@ -1192,6 +1252,7 @@ describe("Messages", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Expand tool calls" }));
     await waitFor(() => {
       expect(container.querySelectorAll(".explore-inline").length).toBe(2);
     });
@@ -1299,7 +1360,7 @@ describe("Messages", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("5 tool calls")).toBeTruthy();
+      expect(screen.getByText("Explored 3 items · Ran 2 commands")).toBeTruthy();
     });
   });
 
@@ -1714,7 +1775,7 @@ describe("Messages", () => {
       />,
     );
 
-    expect(screen.getByText("hook:")).toBeTruthy();
+    expect(screen.getByText("Hook")).toBeTruthy();
     expect(screen.getByText("session-start")).toBeTruthy();
     expect(screen.getByText("failed • 0:03")).toBeTruthy();
 

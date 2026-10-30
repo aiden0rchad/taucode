@@ -604,8 +604,10 @@ pub(crate) async fn model_list(
         .await;
     }
 
-    let providers = state.app_settings.lock().await.providers.clone();
-    Ok(crate::shared::reasoning::catalog(&providers, &state.sessions, &workspace_id, thread_id.as_deref()).await)
+    let settings = state.app_settings.lock().await.clone();
+    let mut catalog = crate::shared::reasoning::catalog(&settings.providers, &state.sessions, &workspace_id, thread_id.as_deref()).await;
+    crate::shared::providers::mark_default(&mut catalog, settings.agent_policy.default_model.as_ref());
+    Ok(catalog)
 }
 
 #[tauri::command]
@@ -1014,4 +1016,17 @@ pub(crate) async fn get_subagent_transcript(
     }
     codex_core::thread_feature_core(&state.sessions, workspace_id, "subagent/transcript",
         json!({"threadId":thread_id,"nodeId":node_id})).await
+}
+
+#[tauri::command]
+pub(crate) async fn thread_agent_policy(
+    workspace_id: String, thread_id: String, action: String, policy: Option<Value>,
+    state: State<'_, AppState>, app: AppHandle,
+) -> Result<Value, String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        return remote_backend::call_remote(&*state, app, "thread_agent_policy",
+            json!({"workspaceId":workspace_id,"threadId":thread_id,"action":action,"policy":policy})).await;
+    }
+    codex_core::thread_feature_core(&state.sessions, workspace_id, "thread/agentPolicy",
+        json!({"threadId":thread_id,"action":action,"policy":policy})).await
 }

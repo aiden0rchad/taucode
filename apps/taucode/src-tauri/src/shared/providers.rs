@@ -137,6 +137,17 @@ pub(crate) fn validate(providers: &[ProviderEntry], policy: &AgentPolicy) -> Res
         }
     }
     let s = &policy.subagents;
+    if s.max_run_minutes > 1440 || s.daily_token_limit > 1_000_000_000 {
+        return Err("Execution limits: run time 0–1440 minutes, daily tokens 0–1,000,000,000; zero disables the limit".into());
+    }
+    if s.enabled && s.mode == SubagentMode::ChainOfCommand {
+        if s.max_depth < 2 || s.max_per_turn < 3 {
+            return Err("Chain of Command requires depth at least 2 and at least 3 agents per turn".into());
+        }
+        if ["colonel", "major", "enlisted"].iter().any(|name| !s.roles.iter().any(|r| r.name == *name)) {
+            return Err("Chain of Command requires colonel, major and enlisted roles".into());
+        }
+    }
     if !(1..=16).contains(&s.max_concurrent)
         || !(1..=32).contains(&s.max_per_turn)
         || !(1..=3).contains(&s.max_depth)
@@ -166,6 +177,15 @@ pub(crate) fn validate(providers: &[ProviderEntry], policy: &AgentPolicy) -> Res
     }
     let mut names = HashSet::new();
     for role in &s.roles {
+        if role.command_rank.is_some_and(|rank| match role.name.as_str() {
+            "commander" => true,
+            "colonel" => rank != CommandRank::Colonel,
+            "major" => rank != CommandRank::Major,
+            "enlisted" => rank != CommandRank::Enlisted,
+            _ => false,
+        }) {
+            return Err("Core command ranks cannot be changed".into());
+        }
         if !valid_slug(&role.name) || !names.insert(&role.name) {
             return Err("Role names must be unique slugs".into());
         }
@@ -201,9 +221,12 @@ pub(crate) fn effective_policy(
             macro_rules! merge { ($($field:ident),*) => { $(if let Some(v) = &s.$field { p.subagents.$field = v.clone(); })* }; }
             merge!(
                 enabled,
+                mode,
                 max_concurrent,
                 max_per_turn,
                 max_depth,
+                max_run_minutes,
+                daily_token_limit,
                 allowed_models,
                 roles
             );
@@ -226,6 +249,15 @@ pub(crate) fn catalog(providers: &[ProviderEntry]) -> Value {
         "contextWindow": m.context_window
     }))).collect::<Vec<_>>() } })
 }
+// The client falls back to the first model when nothing is flagged; flag the user's
+// policy default so new threads start on it.
+pub(crate) fn mark_default(catalog: &mut Value, default: Option<&crate::types::ModelRef>) {
+    let Some(d) = default else { return };
+    let id = format!("{}/{}", d.provider_id, d.model_id);
+    if let Some(data) = catalog["result"]["data"].as_array_mut() {
+        for entry in data { entry["isDefault"] = json!(entry["id"] == id.as_str()); }
+    }
+}
 pub(crate) trait KeyStore: Send + Sync {
     fn get(&self, id: &str) -> Result<Option<String>, String>;
     fn set(&self, id: &str, key: &str) -> Result<(), String>;
@@ -245,25 +277,43 @@ fn key_entry(id: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new("dev.taucode.desktop", &account)
         .map_err(|_| "Cannot access provider Keychain".into())
 }
+// One Keychain read per credential per launch: every read can raise a macOS access
+// prompt (each read, when the user picks Allow instead of Always Allow).
+static KEY_CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Option<String>>>> =
+    std::sync::LazyLock::new(Default::default);
+fn cached_key(cache: &std::sync::Mutex<std::collections::HashMap<String, Option<String>>>, id: &str, read: impl FnOnce() -> Result<Option<String>, String>) -> Result<Option<String>, String> {
+    // Hold the lock during the OS read: concurrent engine starts must share one prompt.
+    let mut cache = cache.lock().map_err(|_| "Provider key cache unavailable")?;
+    if let Some(value) = cache.get(id) { return Ok(value.clone()); }
+    let value = read()?;
+    cache.insert(id.into(), value.clone());
+    Ok(value)
+}
 impl KeyStore for Keychain {
     fn get(&self, id: &str) -> Result<Option<String>, String> {
-        match key_entry(id)?.get_password() {
+        cached_key(&KEY_CACHE, id, || match key_entry(id)?.get_password() {
             Ok(v) => { taucode_diag_mcp::writer::remember_secret(&v); Ok(Some(v)) },
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(_) => Err("Cannot read provider Keychain".into()),
-        }
+        })
     }
     fn set(&self, id: &str, key: &str) -> Result<(), String> {
+        let mut cache = KEY_CACHE.lock().map_err(|_| "Provider key cache unavailable")?;
         taucode_diag_mcp::writer::remember_secret(key);
         key_entry(id)?
             .set_password(key)
-            .map_err(|_| "Cannot save provider key".into())
+            .map_err(|_| "Cannot save provider key")?;
+        cache.insert(id.into(), Some(key.into()));
+        Ok(())
     }
     fn delete(&self, id: &str) -> Result<(), String> {
+        let mut cache = KEY_CACHE.lock().map_err(|_| "Provider key cache unavailable")?;
         match key_entry(id)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(_) => Err("Cannot delete provider key".into()),
+            Ok(()) | Err(keyring::Error::NoEntry) => {}
+            Err(_) => return Err("Cannot delete provider key".into()),
         }
+        cache.insert(id.into(), None);
+        Ok(())
     }
 }
 pub(crate) fn delete_removed_keys(
@@ -609,6 +659,29 @@ pub(crate) async fn probe(p: &ProviderEntry, model: &ProviderModel, keys: &dyn K
 mod tests {
     use super::*;
     use std::sync::Mutex as StdMutex;
+    #[test]
+    fn concurrent_keychain_reads_share_one_prompt_and_failed_reads_can_retry() {
+        use std::sync::{Barrier, atomic::{AtomicUsize, Ordering}};
+        let cache = StdMutex::default();
+        let reads = AtomicUsize::new(0);
+        let start = Barrier::new(4);
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                scope.spawn(|| {
+                    start.wait();
+                    assert_eq!(cached_key(&cache, "test", || {
+                        reads.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(20));
+                        Ok(Some("fixture-key".into()))
+                    }).unwrap().as_deref(), Some("fixture-key"));
+                });
+            }
+        });
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
+        assert!(cached_key(&cache, "retry", || Err("denied".into())).is_err());
+        assert_eq!(cached_key(&cache, "retry", || Ok(None)).unwrap(), None);
+        assert_eq!(cached_key(&cache, "retry", || panic!("missing credentials are cached")).unwrap(), None);
+    }
     #[derive(Default)]
     struct Keys(StdMutex<BTreeMap<String, String>>);
     impl KeyStore for Keys {
@@ -836,6 +909,70 @@ mod tests {
             .contains("Enable provider"));
     }
     #[test]
+    fn command_policy_round_trips_and_merges_without_changing_legacy_defaults() {
+        let base = AgentPolicy::default();
+        assert_eq!(base.subagents.mode, SubagentMode::Custom);
+        assert_eq!(base.subagents.max_run_minutes, 0);
+        assert_eq!(base.subagents.daily_token_limit, 0);
+        let over: AgentPolicyOverride = serde_json::from_value(json!({"subagents": {
+            "mode":"chain-of-command", "maxDepth":2, "maxRunMinutes":15, "dailyTokenLimit":25000,
+            "roles":[
+                {"name":"colonel","description":"Delegate","model":null,"toolAccess":"full","instructions":""},
+                {"name":"major","description":"QA","model":null,"toolAccess":"full","instructions":""},
+                {"name":"enlisted","description":"Work","model":null,"toolAccess":"full","instructions":""}
+            ]
+        }})).unwrap();
+        let mut policy = effective_policy(&base, Some(&over));
+        assert!(validate(&[], &policy).is_ok());
+        let saved = serde_json::to_value(&policy).unwrap();
+        assert_eq!(saved["subagents"]["mode"], "chain-of-command");
+        assert_eq!(saved["subagents"]["maxRunMinutes"], 15);
+        assert_eq!(saved["subagents"]["dailyTokenLimit"], 25000);
+        policy.subagents.daily_token_limit = 1_000_000_001;
+        assert!(validate(&[], &policy).unwrap_err().contains("Execution limits"));
+        policy.subagents.daily_token_limit = 25000;
+        assert_eq!(serde_json::from_value::<AgentPolicy>(saved).unwrap().subagents.mode, SubagentMode::ChainOfCommand);
+        policy.subagents.max_per_turn = 2;
+        assert!(validate(&[], &policy).unwrap_err().contains("at least 3"));
+        policy.subagents.max_per_turn = 8;
+        policy.subagents.roles.pop();
+        assert!(validate(&[], &policy).unwrap_err().contains("enlisted"));
+        policy.subagents.enabled = false;
+        assert!(validate(&[], &policy).is_ok());
+        assert!(serde_json::from_value::<AgentPolicy>(json!({"subagents":{"mode":"unknown"}})).is_err());
+    }
+    #[test]
+    fn command_specialists_preserve_ranks_and_reject_core_overrides() {
+        let mut policy = AgentPolicy::default();
+        let role: AgentRole = serde_json::from_value(json!({"name":"researcher","description":"Research","model":null,"toolAccess":"read-only","instructions":"Cite files","commandRank":"enlisted"})).unwrap();
+        policy.subagents.roles.push(role);
+        assert!(validate(&[], &policy).is_ok());
+        let saved = serde_json::to_value(&policy).unwrap();
+        assert_eq!(saved["subagents"]["roles"][3]["commandRank"], "enlisted");
+        let restored: AgentPolicy = serde_json::from_value(saved).unwrap();
+        assert_eq!(restored.subagents.roles[3].command_rank, Some(CommandRank::Enlisted));
+        assert_eq!(restored.subagents.roles[0].command_rank, None);
+        for name in ["commander", "colonel", "major"] {
+            policy.subagents.roles[3].name = name.into();
+            assert!(validate(&[], &policy).unwrap_err().contains("Core command ranks"));
+        }
+        let mut invalid = serde_json::to_value(&restored.subagents.roles[3]).unwrap();
+        invalid["commandRank"] = json!("commander");
+        assert!(serde_json::from_value::<AgentRole>(invalid).is_err());
+    }
+    #[test]
+    fn catalog_flags_only_the_policy_default_model() {
+        let mut p = provider(ProviderKind::Openai);
+        p.models.push(serde_json::from_value(json!({"id":"sol","enabled":true})).unwrap());
+        let mut list = catalog(&[p]);
+        mark_default(&mut list, Some(&ModelRef { provider_id: "test".into(), model_id: "sol".into() }));
+        let flags: Vec<_> = list["result"]["data"].as_array().unwrap().iter().map(|m| (m["modelId"].clone(), m["isDefault"].clone())).collect();
+        assert_eq!(flags, vec![(json!("model"), json!(false)), (json!("sol"), json!(true))]);
+        let before = list.clone();
+        mark_default(&mut list, None);
+        assert_eq!(list, before);
+    }
+    #[test]
     fn registry_only_catalog_and_codex_config_are_secret_free() {
         let mut p = provider(ProviderKind::Openai);
         p.name = "Name \"quoted\"\nline".into();
@@ -878,11 +1015,19 @@ mod tests {
         let keys = Keys::default();
         keys.set("test", "super-secret").unwrap();
         let home = std::env::temp_dir().join(format!("taucode-registry-{}", uuid::Uuid::new_v4()));
+        struct Locked;
+        impl KeyStore for Locked {
+            fn get(&self, _: &str) -> Result<Option<String>, String> { panic!("History must not request Keychain access") }
+            fn set(&self, _: &str, _: &str) -> Result<(), String> { panic!("History must not write credentials") }
+            fn delete(&self, _: &str) -> Result<(), String> { panic!("History must not delete credentials") }
+        }
+        assert!(crate::shared::engines::prepare_codex(&home, &[p.clone()], &AgentPolicy::default(), &Locked, false).unwrap().is_empty());
         let env = crate::shared::engines::prepare_codex(
             &home,
             &[p.clone()],
             &AgentPolicy::default(),
             &keys,
+            true,
         )
         .unwrap();
         assert_eq!(

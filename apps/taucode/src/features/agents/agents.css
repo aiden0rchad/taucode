@@ -1,10 +1,13 @@
 .agents-panel { padding: 12px; overflow: auto; min-height: 0; flex: 1; }
-.agents-panel ul { list-style: none; padding-left: 12px; margin: 0; border-left: 1px solid var(--border-subtle); }
-.agents-panel h3 { font-size: 13px; margin: 16px 0 8px; }
-.agent-node { display: flex; gap: 8px; text-align: left; width: 100%; padding: 10px 6px; border: 0; border-radius: 6px; color: var(--text-primary); background: transparent; overflow-wrap: anywhere; }
+.agents-panel > section ul { list-style: none; padding-left: 12px; margin: 0; border-left: 1px solid var(--border-subtle); }
+.agents-panel > h3, .agents-panel > section > h3 { font-size: 13px; margin: 16px 0 8px; }
+.agent-node { display: flex; gap: 8px; text-align: left; width: 100%; padding: 10px 6px; border: 0; border-radius: 6px; color: var(--text-primary); background: transparent; overflow-wrap: anywhere; font-weight: 400; }
+.agent-node > span:last-child { min-width: 0; flex: 1; }
+.agent-node small { display: block; font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
 .agent-node:hover { background: var(--surface-hover); }
 .agent-node:focus-visible { outline: 2px solid var(--text-accent); }
 .agent-detail { display: block; font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+.agent-preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; line-height: 1.4; }
 .agent-status { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; background: var(--surface-text-secondary); }
 .agent-status.running { background: var(--surface-text-accent); box-shadow: 0 0 0 3px var(--surface-hover); }
 .agent-status.completed { background: var(--surface-text-success, #4b9f75); }
@@ -12,4 +15,5 @@
 .agents-count { font-size: 11px; border-radius: 8px; padding: 1px 4px; background: var(--surface-hover); color: var(--text-accent); }
 
 .agents-panel .messages-full { padding: 8px 0; }
+.agents-panel .messages-inner { padding-inline: 12px; }
 .agents-panel .messages, .agents-panel .messages * { -webkit-user-select: text; user-select: text; }

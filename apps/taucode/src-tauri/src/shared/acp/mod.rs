@@ -277,6 +277,13 @@ impl ClaudeAcpEngine {
         }
         Ok((provider, model.into()))
     }
+    async fn policy_features(&self, workspace: &str) -> crate::types::Features {
+        let mut features = super::engine_registry::features(self.data.as_deref());
+        if self.registry.lock().await.get(workspace).is_some_and(|(_, policy)| !policy.subagents.enabled) {
+            features.subagents = false;
+        }
+        features
+    }
     async fn spawn(
         &self,
         workspace: &str,
@@ -289,8 +296,9 @@ impl ClaudeAcpEngine {
             .as_ref()
             .ok_or("Claude Code runtime is not configured")?;
         let connectors = super::connectors::load(data, workspace, self.graph.as_ref())?;
+        let features = self.policy_features(workspace).await;
         let fingerprint =
-            serde_json::to_string(&(provider, &connectors, super::engine_registry::features(self.data.as_deref()))).map_err(|e| e.to_string())?;
+            serde_json::to_string(&(provider, &connectors, &features)).map_err(|e| e.to_string())?;
         let mut runtimes = self.runtimes.lock().await;
         if let Some(runtime) = runtimes.get(workspace) {
             if runtime.client.alive.load(Ordering::SeqCst) && runtime.fingerprint == fingerprint {
@@ -357,7 +365,6 @@ impl ClaudeAcpEngine {
         let events = self.events.clone();
         let ws = workspace.to_string();
         let gates = connectors.clone();
-        let features = super::engine_registry::features(self.data.as_deref());
         let client = Client::spawn(command, Arc::new(move |message| {
             let (threads,dialogs,sink,events,workspace,gates) = (threads.clone(),dialogs.clone(),sink.clone(),events.clone(),ws.clone(),gates.clone());
             let features = features.clone();
@@ -447,7 +454,7 @@ impl ClaudeAcpEngine {
             return Err("This ACP agent does not support HTTP connectors".into());
         }
         let mut params = config::session_params(cwd, servers, model);
-        let features = super::engine_registry::features(self.data.as_deref());
+        let features = self.policy_features(workspace).await;
         let mut disabled = Vec::new();
         if !features.subagents { disabled.extend(["Task", "Agent"]); }
         if !features.browser { disabled.extend(["WebFetch", "WebSearch", "Browser"]); }

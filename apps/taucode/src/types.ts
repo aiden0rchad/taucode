@@ -12,10 +12,11 @@ export type ProviderEntry = {
   apiStyle?: "chat-completions" | "responses" | null; auth: ProviderAuth;
   models: ProviderModel[]; modelsFetchedAt?: number | null; enabled: boolean; extraHeaders?: Record<string, string>;
 };
-export type AgentRole = { name: string; description: string; model: ModelRef | null; toolAccess: "read-only" | "full"; instructions: string };
+export type CommandRank = "colonel" | "major" | "enlisted";
+export type AgentRole = { name: string; description: string; model: ModelRef | null; toolAccess: "read-only" | "full"; instructions: string; commandRank?: CommandRank | null };
 export type AgentPolicy = {
   defaultEngine: EngineKind; defaultModel: ModelRef | null;
-  subagents: { enabled: boolean; maxConcurrent: number; maxPerTurn: number; maxDepth: number; allowedModels: ModelRef[]; defaultModel: ModelRef | null; roles: AgentRole[] };
+  subagents: { enabled: boolean; mode?: "custom" | "chain-of-command"; maxConcurrent: number; maxPerTurn: number; maxDepth: number; maxRunMinutes?: number; dailyTokenLimit?: number; allowedModels: ModelRef[]; defaultModel: ModelRef | null; roles: AgentRole[] };
 };
 export type AgentPolicyOverride = Partial<Omit<AgentPolicy, "subagents">> & { subagents?: Partial<AgentPolicy["subagents"]> };
 export type WorkspaceSettings = {
@@ -124,7 +125,7 @@ export type AgentNode = {
   status: "pending" | "running" | "completed" | "failed" | "aborted";
   startedAt?: number | null;
   endedAt?: number | null;
-  usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number } | null;
+  usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number | null } | null;
   lastMessage?: string;
   errorMessage?: string | null;
   children: AgentNode[];
@@ -150,6 +151,8 @@ export type ConversationItem =
       role: "user" | "assistant";
       text: string;
       images?: string[];
+      isError?: boolean;
+      retryMessage?: { text: string; images?: string[] } | null;
     })
   | {
       id: string;
@@ -792,7 +795,7 @@ export type WorkSpace = {
   id: string; name: string; path: string; kind: "work"; readOnlyFolders: string[];
   readOnly?: boolean;
 };
-export type WorkStatus = "queued" | "running" | "needs-input" | "done" | "failed" | "stopped";
+export type WorkStatus = "queued" | "starting" | "stopping" | "running" | "needs-input" | "done" | "failed" | "stopped";
 export type WorkRequest = {
   id: string; method: string;
   params: { reason?: string; command?: string; diffPreview?: string; questions?: { question: string; options?: { label: string }[] }[] };
@@ -801,6 +804,8 @@ export type WorkTask = {
   /** Optional Unix timestamps in seconds. */
   createdAt?: number; updatedAt?: number;
   importId?: string | null;
+  pendingMessage?: string | null;
+  effort?: string | null;
   id: string; spaceId: string; threadId: string | null; title: string; brief: string;
   attachments: string[]; model: string; accessMode: "ask" | "read-only" | "full-access"; status: WorkStatus;
   plan: TurnPlanStep[]; outputs: string[]; pending: WorkRequest[]; error: string | null;

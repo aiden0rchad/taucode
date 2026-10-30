@@ -1641,6 +1641,9 @@ pub(crate) enum ToolAccess {
     ReadOnly,
     Full,
 }
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum CommandRank { Colonel, Major, Enlisted }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AgentRole {
@@ -1649,14 +1652,19 @@ pub(crate) struct AgentRole {
     pub model: Option<ModelRef>,
     pub tool_access: ToolAccess,
     pub instructions: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_rank: Option<CommandRank>,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct SubagentPolicy {
     pub enabled: bool,
+    pub mode: SubagentMode,
     pub max_concurrent: u8,
     pub max_per_turn: u8,
     pub max_depth: u8,
+    pub max_run_minutes: u16,
+    pub daily_token_limit: u64,
     pub allowed_models: Vec<ModelRef>,
     pub default_model: Option<ModelRef>,
     pub roles: Vec<AgentRole>,
@@ -1665,9 +1673,12 @@ impl Default for SubagentPolicy {
     fn default() -> Self {
         Self {
             enabled: true,
+            mode: SubagentMode::Custom,
             max_concurrent: 4,
             max_per_turn: 8,
             max_depth: 1,
+            max_run_minutes: 0,
+            daily_token_limit: 0,
             allowed_models: vec![],
             default_model: None,
             roles: [
@@ -1682,10 +1693,18 @@ impl Default for SubagentPolicy {
                 tool_access,
                 model: None,
                 instructions: String::new(),
+                command_rank: None,
             })
             .collect(),
         }
     }
+}
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum SubagentMode {
+    #[default]
+    Custom,
+    ChainOfCommand,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default, rename_all = "camelCase")]
@@ -1699,9 +1718,12 @@ impl Default for AgentPolicy { fn default() -> Self { Self { default_model: None
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct SubagentPolicyOverride {
     pub enabled: Option<bool>,
+    pub mode: Option<SubagentMode>,
     pub max_concurrent: Option<u8>,
     pub max_per_turn: Option<u8>,
     pub max_depth: Option<u8>,
+    pub max_run_minutes: Option<u16>,
+    pub daily_token_limit: Option<u64>,
     pub allowed_models: Option<Vec<ModelRef>>,
     pub default_model: Option<ModelRef>,
     pub roles: Option<Vec<AgentRole>>,

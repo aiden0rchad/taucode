@@ -16,7 +16,7 @@ import { DockWorkspace } from "./DockWorkspace";
 import "./side-panel.css";
 
 export type PanelTool = { id: string; label: string; shortcut?: string; content: ReactNode; target?: string; onOpen?: (tab: PanelTab) => void; onClose?: () => void };
-const icons = { git: GitBranch, files: Folder, terminal: Terminal, agents: Users, prompts: ScrollText, sidechat: MessageSquare, task: ListTodo, browser: Globe };
+const icons = { git: GitBranch, files: Folder, terminal: Terminal, agents: Users, prompts: ScrollText, sidechat: MessageSquare, task: ListTodo, previews: Globe, browser: Globe };
 const PanelContext = createContext<{ scope: string; openTool: (id: string, preserveActive?: boolean) => void; closeTool: (id: string) => void; openPage: (url?: string) => Promise<void> } | null>(null);
 export const useSidePanel = () => useContext(PanelContext);
 export function PanelToolRequest({ id, requestKey }: { id: string; requestKey: unknown }) {

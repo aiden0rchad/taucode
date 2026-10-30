@@ -139,7 +139,7 @@ mod tests {
         let data = std::env::temp_dir().join(format!("sidechat-{}", uuid::Uuid::new_v4()));
         let session = || {
             let mut s = WorkspaceSession::lazy(
-                Box::new(|| Box::pin(async { Err("not used".into()) })),
+                Box::new(|_| Box::pin(async { Err("not used".into()) })),
                 vec![],
                 Default::default(),
                 None,

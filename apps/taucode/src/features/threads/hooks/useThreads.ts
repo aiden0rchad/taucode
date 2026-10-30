@@ -157,11 +157,14 @@ export function useThreads({
   });
 
   const pushThreadErrorMessage = useCallback(
-    (threadId: string, message: string) => {
+    (threadId: string, message: string, retryMessage?: { text: string; images?: string[] }, id?: string) => {
       dispatch({
         type: "addAssistantMessage",
         threadId,
         text: message,
+        isError: true,
+        retryMessage,
+        id,
       });
       if (threadId !== activeThreadId) {
         dispatch({ type: "markUnread", threadId, hasUnread: true });

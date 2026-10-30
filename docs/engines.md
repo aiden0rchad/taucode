@@ -86,6 +86,39 @@ honors it, and these controls are not an OS sandbox for custom programs or their
 subprocesses. Custom agents must respect the protocol's permission boundary and
 must not implement independent account login or ambient credential discovery.
 
+## Composer commands
+
+In Code, type `/` at the start of the message to see five basic shortcuts.
+Type to filter, use Up/Down to choose, and Enter or Tab to insert; Escape dismisses.
+
+- `/sidechat` opens a side conversation when submitted. It needs an existing
+  conversation and an engine with fork support. Attachments stay with the main draft.
+- `/plan` inserts an editable request to plan first and wait before implementing.
+- `/goal` inserts an editable request with a clear outcome and verification.
+- `/new` starts a fresh conversation; text after the command becomes its first message.
+- `/compact` summarizes the active context on engines that support compaction.
+
+Plan and goal are prompt starters, not persistent modes or background goal loops.
+The objective comes first, with the caret ready to type, so conversation titles
+describe the task. The menu fits above or below the composer as space allows.
+Typing `/plan <task>` or `/goal <outcome>` directly works too. Existing advanced
+commands and custom prompts still work; the default menu stays small. Built-in
+suggestions do not appear for slashes in prose or filesystem paths.
+
+## Recovering from a failed request
+
+Code shows failed requests in a compact card, with the original provider error
+under **Error details**. Only the latest failure offers recovery actions:
+**Change model** opens the composer’s model picker; **Retry** resends the failed
+request and its images using the current model, reasoning and access settings.
+Retry preserves any unsent composer draft and existing file changes. It does not
+rewind work already completed by tools. Older failures remain readable without
+replay buttons. Failed turns are restored from history when reopening a conversation,
+without duplicating errors received live. A failed turn no longer shows a “Done” label.
+
+For a provider-free UI check, open the UI preview with `?failure=quota`, send one
+message, then change models and retry. The first send fails; the retry succeeds.
+
 ## Feature switches
 
 Settings → Features defaults every switch on for existing installations. Controls

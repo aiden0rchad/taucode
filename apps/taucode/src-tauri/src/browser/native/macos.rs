@@ -12,6 +12,15 @@ mod accessibility;
 pub use accessibility::expose as expose_accessibility;
 pub use accessibility::install_view as install_accessibility;
 pub use accessibility::release as release_accessibility;
+
+pub async fn ui_zoom(view: &Webview) -> Result<f64, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    view.with_webview(move |platform| unsafe {
+        let wk = &*(platform.inner() as *const WKWebView);
+        let _ = tx.send(wk.pageZoom());
+    }).map_err(|e| e.to_string())?;
+    rx.await.map_err(|_| "Main webview closed".into())
+}
 thread_local! {
     // Retain the named world for the app lifetime so refs survive separate calls.
     static WORLD: objc2::rc::Retained<WKContentWorld> = unsafe { WKContentWorld::worldWithName(&NSString::from_str("taucode.browser.private"), objc2::MainThreadMarker::new().expect("WebKit main thread")) };

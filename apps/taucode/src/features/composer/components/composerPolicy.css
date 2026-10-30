@@ -1,0 +1,118 @@
+.reasoning-popover .command-controls { display: flex; align-items: center; gap: 2px; position: relative; }
+.reasoning-popover .command-controls .command-toggle, .reasoning-popover .command-controls .command-configure { display: grid; place-items: center; padding: 0; height: 32px; flex-shrink: 0; }
+.reasoning-popover .command-toggle { position: relative; width: 32px; color: var(--text-muted); isolation: isolate; }
+.reasoning-popover .command-toggle[aria-pressed="true"] { color: #dbb56c; }
+.command-insignia { width: 20px; height: 20px; opacity: .72; }
+.command-toggle[aria-pressed="true"] .command-insignia { opacity: 1; }
+.command-toggle::before { content: ""; position: absolute; inset: 2px; border-radius: 50%; background: radial-gradient(circle, #e9ba6240, #e9ba6214 45%, transparent 72%); opacity: 0; pointer-events: none; }
+.command-toggle[aria-pressed="true"]::before { opacity: 1; }
+.command-toggle.is-activating .command-star { animation: command-star-light 120ms ease-out calc(var(--star-index) * 120ms) both; }
+.command-toggle.is-activating::before { animation: command-aura-in 450ms ease-out 600ms both; }
+@keyframes command-star-light { from { color: var(--text-muted); opacity: .25; } to { color: #dbb56c; opacity: 1; } }
+@keyframes command-aura-in { from { opacity: 0; transform: scale(.65); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .command-toggle.is-activating .command-star, .command-toggle.is-activating::before { animation: none; }
+}
+.reasoning-popover .command-configure { width: 24px; color: var(--text-secondary); }
+.reasoning-popover .command-controls button:hover:not(:disabled) { background: var(--surface-card-muted); }
+.reasoning-popover .command-controls button:disabled { opacity: .45; cursor: default; }
+.reasoning-model-heading .command-controls { margin-left: auto; }
+.command-toggle-error { position: absolute; top: 100%; left: 0; z-index: var(--z-popover); width: 240px; padding: 8px; background: var(--surface-card); border: 1px solid var(--border-muted); border-radius: 6px; font-size: 12px; }
+.command-editor { --ds-modal-card-bg: var(--surface-popover); width: min(740px, calc(100vw - 32px)); padding: 0; border-radius: 18px; overflow: hidden; }
+.command-editor > div { display: flex; flex-direction: column; height: min(650px, calc(100vh - 48px)); }
+.command-editor header, .command-editor footer { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.command-editor header { padding: 22px 24px 18px; background: linear-gradient(110deg, color-mix(in srgb, var(--text-accent) 8%, transparent), transparent 65%); }
+.command-editor-emblem { display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; border: 1px solid color-mix(in srgb, var(--text-accent) 25%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--text-accent) 10%, transparent); color: var(--text-accent); }
+.command-editor-title { min-width: 0; flex: 1; }
+.command-editor h2 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -.4px; }
+.command-editor header p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 5px 0 0; color: var(--text-subtle); font-size: 12px; }
+.command-editor header button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; flex-shrink: 0; border-radius: 8px; color: var(--text-subtle); }
+.command-editor fieldset { display: flex; flex: 1; flex-direction: column; border: 0; padding: 0; margin: 0; min-height: 0; min-width: 0; }
+.command-editor-navigation { flex-shrink: 0; padding: 0 24px; border-bottom: 1px solid var(--border-subtle); }
+.command-editor.settings-page .command-editor-navigation .settings-segmented { width: 100%; gap: 24px; padding: 0; margin: 0; border: 0; border-radius: 0; background: none; }
+.command-editor.settings-page .command-editor-navigation .settings-segmented-option { flex: 0 1 auto; padding: 12px 0; border-radius: 0; border-bottom: 2px solid transparent; background: none; box-shadow: none; font-size: 12px; white-space: nowrap; }
+.command-editor.settings-page .command-editor-navigation [aria-selected="true"] { border-bottom-color: var(--text-accent); color: var(--text-primary); }
+.command-editor-body { flex: 1; overflow-y: auto; min-height: 0; padding: 22px 24px; scrollbar-gutter: stable; }
+.command-editor footer { justify-content: flex-end; padding: 16px 24px; border-top: 1px solid var(--border-subtle); }
+.command-editor.settings-page footer .settings-button { padding: 9px 15px; font-weight: 550; }
+.command-editor.settings-page footer .primary { background: var(--text-primary); color: var(--surface-popover); border-color: transparent; }
+.command-save-note { margin-right: auto; color: var(--text-subtle); font-size: 11px; }
+.command-save-note[data-dirty="true"] { color: var(--text-accent); }
+.command-editor [role="alert"] { color: var(--text-error); font-size: 12px; margin: 0; padding: 10px 24px; }
+.command-editor h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-strong); }
+.command-editor h3 > span { margin-left: 8px; font-size: 11px; font-weight: 450; color: var(--text-subtle); }
+.command-editor p { line-height: 1.5; }
+.command-commander { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid color-mix(in srgb, #c6a05c 28%, var(--border-subtle)); border-radius: 12px; background: linear-gradient(110deg, color-mix(in srgb, #c6a05c 7%, var(--surface-card)), var(--surface-card)); }
+.command-commander p, .command-role-heading p { margin: 4px 0 0; font-size: 11px; color: var(--text-subtle); }
+.command-model-source { margin-left: auto; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.command-rank-icon { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 9px; color: var(--rank-color, #c6a05c); background: color-mix(in srgb, var(--rank-color, #c6a05c) 10%, transparent); }
+[data-rank="colonel"] { --rank-color: var(--text-accent); }
+[data-rank="major"] { --rank-color: color-mix(in srgb, #60b99c 80%, var(--text-primary)); }
+[data-rank="enlisted"] { --rank-color: color-mix(in srgb, #ce9f5b 80%, var(--text-primary)); }
+.command-team-list { display: grid; gap: 10px; margin: 0 0 0 30px; padding: 18px 0 0 18px; border-left: 1px solid var(--border-strong); }
+.command-role-card { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) minmax(180px, 42%); align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-card); }
+.command-role-card::before { content: ""; position: absolute; width: 18px; left: -19px; top: 50%; border-top: 1px solid var(--border-strong); }
+.command-role-card h3 > span { display: block; margin: 4px 0 0; font-size: 11px; }
+.command-team-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 0 49px; font-size: 12px; color: var(--text-muted); }
+.command-team-toolbar small { margin-left: 5px; font-variant-numeric: tabular-nums; color: var(--text-subtle); }
+.command-editor.settings-page .command-add-role { display: flex; align-items: center; gap: 6px; padding: 7px 10px; font-size: 12px; }
+.command-add-role[aria-expanded="true"] { color: var(--text-accent); border-color: var(--text-accent); }
+.command-presets { margin-top: 14px; padding: 14px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-card); }
+.command-presets > p { margin: 0 0 12px; color: var(--text-subtle); font-size: 12px; }
+.command-presets > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.command-editor.settings-page .command-preset { display: flex; align-items: flex-start; gap: 10px; padding: 12px; text-align: left; white-space: normal; background: var(--surface-control); }
+.command-preset > svg { flex-shrink: 0; margin-top: 2px; color: var(--text-accent); }
+.command-preset > svg:last-child { margin-left: auto; color: var(--text-subtle); }
+.command-preset strong, .command-preset small { display: block; }
+.command-preset strong { font-size: 12px; font-weight: 550; }
+.command-preset small { margin-top: 4px; font-size: 11px; line-height: 1.45; color: var(--text-subtle); }
+.command-role-model { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.command-role-model > .settings-select-control { flex: 1; min-width: 0; }
+.command-editor.settings-page .command-remove-role { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 30px; padding: 0; color: var(--text-subtle); border-color: transparent; background: transparent; }
+.command-editor.settings-page .command-remove-role:hover { color: var(--text-error); background: var(--surface-control); }
+.command-role-selector { margin-bottom: 14px; }
+.command-editor .settings-select-value { background: var(--surface-control); border-color: var(--border-strong); font-size: 12px; }
+.command-hint { margin: 14px 0 0 49px; font-size: 11px; color: var(--text-subtle); }
+.command-section-heading { margin-bottom: 18px; }
+.command-section-heading p { margin: 5px 0 0; color: var(--text-subtle); font-size: 12px; }
+.command-limit-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.command-limit-card { padding: 15px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-card); }
+.command-editor .settings-row { display: block; margin: 0; border: 0; padding: 0; }
+.command-editor .settings-field-row { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 0; }
+.command-limit-card .settings-input { font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; padding: 7px 10px; }
+.command-limit-card p { margin: 8px 0 0; font-size: 11px; color: var(--text-subtle); }
+.command-restrictions { margin-top: 18px; border: 1px solid var(--border-subtle); border-radius: 12px; }
+.command-restrictions summary { display: flex; align-items: center; gap: 8px; padding: 15px; cursor: pointer; font-size: 12px; list-style: none; }
+.command-restrictions summary::-webkit-details-marker { display: none; }
+.command-restrictions summary svg { color: var(--text-subtle); flex-shrink: 0; }
+.command-restrictions[open] summary svg { transform: rotate(90deg); }
+.command-restrictions summary small { margin-left: auto; }
+.command-restrictions > div { display: grid; gap: 18px; padding: 0 16px 16px; }
+.command-restrictions .settings-select-control.is-multiple select { padding: 6px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-control); color: var(--text-primary); }
+.command-restrictions select[multiple] option { padding: 7px; border-radius: 4px; }
+.command-editor.settings-page .command-roles .settings-segmented { width: 100%; margin-bottom: 14px; }
+.command-role-detail { border: 1px solid var(--border-subtle); border-radius: 12px; overflow: hidden; }
+.command-role-heading { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: color-mix(in srgb, var(--rank-color) 5%, var(--surface-card)); border-bottom: 1px solid var(--border-subtle); }
+.command-role-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 14px; }
+.command-role-fields > :has(.command-wide-field) { grid-column: 1 / -1; }
+.command-editor .settings-textarea { min-height: 76px; font-family: inherit; line-height: 1.5; }
+@media (max-width: 660px) {
+  .command-editor footer { flex-wrap: wrap; }
+  .command-editor .command-save-note { flex-basis: 100%; }
+  .command-editor header { padding: 18px; }
+  .command-editor-navigation { padding: 0 18px; }
+  .command-editor-body, .command-editor footer { padding: 16px 18px; }
+  .command-commander { flex-wrap: wrap; }
+  .command-model-source { margin-left: 44px; }
+  .command-role-card { grid-template-columns: 32px minmax(0, 1fr); }
+  .command-role-model { grid-column: 1 / -1; }
+  .command-role-card h3 > span { display: inline; margin-left: 8px; }
+  .command-team-list { margin-left: 16px; padding-left: 12px; }
+  .command-role-card::before { width: 12px; left: -13px; }
+  .command-hint { margin-left: 29px; }
+  .command-team-toolbar { margin-left: 29px; }
+  .command-presets > div { grid-template-columns: minmax(0, 1fr); }
+  .command-limit-grid { grid-template-columns: minmax(0, 1fr); }
+  .command-limit-card .settings-field-row { grid-template-columns: minmax(0, 1fr) 80px; }
+  .command-role-fields { grid-template-columns: minmax(0, 1fr); }
+}

@@ -5,11 +5,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WorkspaceShell, type PanelTool } from "./SidePanel";
 import { panelReducer, readPanel } from "./panelState";
 import { browserNativeBounds, browserRequest, subscribeBrowser } from "@services/tauri";
+import type { MenuViewAction } from "@services/events";
 import type { BrowserState } from "@/features/browser/browser";
 import { useSidebarToggles } from "@/features/layout/hooks/useSidebarToggles";
 
 vi.mock("@services/tauri", () => ({ browserRequest: vi.fn(), subscribeBrowser: vi.fn(), openBrowserDownloads: vi.fn(), browserNativeBounds: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@services/events", () => ({ subscribeAppServerEvents: () => () => {} }));
+const menu = vi.hoisted(() => ({ view: (_action: MenuViewAction) => {} }));
+vi.mock("@services/events", () => ({ subscribeMenuViewAction: (listener: typeof menu.view) => { menu.view = listener; return () => { menu.view = () => {}; }; }, subscribeAppServerEvents: () => () => {} }));
 let host: BrowserState;
 let callbacks: Set<(state: BrowserState) => void>;
 const tools: PanelTool[] = [
@@ -83,6 +85,17 @@ it("opens Task by default and validates corrupt saved tab data", () => {
   expect(readPanel("invalid").tabs).toEqual([]);
   const initial = { tabs: [{ id: "a", kind: "files", title: "Files" }, { id: "b", kind: "git", title: "Changes" }], active: "a", open: true };
   expect(panelReducer(initial, { type: "reorder", id: "a", before: "b", after: true }).tabs.map(tab => tab.id)).toEqual(["b", "a"]);
+});
+it("registers the first agent-created page as a tab without covering Task", async () => {
+  render(shell("work:task", [{ id: "task", label: "Task", content: <p>Plan and outputs</p> }]));
+  await waitFor(() => expect(subscribeBrowser).toHaveBeenCalled());
+  act(() => {
+    host = { backend: "native", tabs: [{ id: "agent-page", title: "Dashboard", url: "http://127.0.0.1:8765/", ready: true, loading: false }], active: "agent-page", agent: true };
+    callbacks.forEach(callback => callback(host));
+  });
+  expect(await screen.findByRole("tab", { name: "Dashboard" })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "Task", selected: true })).toBeTruthy();
+  expect(screen.queryByLabelText("Native browser page")).toBeNull();
 });
 it("resizes with the keyboard and retains mounted tools when the panel is hidden", () => {
   vi.stubGlobal("innerWidth", 1600);
@@ -341,4 +354,29 @@ it("excludes phone Projects and bottom navigation from focus until contraction w
   expect(projects.closest("[inert]")).toBeNull();
   expect(project.closest("[inert]")).toBeNull();
   expect(screen.getByRole("tab", { name: "Terminal", hidden: true }).isConnected).toBe(true);
+});
+
+it("routes native View commands through the current panel and conversation history", async () => {
+  const onNavigate = vi.fn();
+  const view = render(<WorkspaceShell scope="chat:one" title="One" tools={tools} onNavigate={onNavigate} onInterrupt={() => {}}><p>Conversation</p></WorkspaceShell>);
+  act(() => menu.view("back"));
+  expect(onNavigate).not.toHaveBeenCalled();
+  act(() => menu.view("toggle_side_panel"));
+  expect(screen.getByRole("button", { name: "Toggle side panel" }).getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: /Changes/ }));
+  act(() => menu.view("new_browser_tab"));
+  await screen.findByRole("tab", { name: "New page", selected: true });
+  act(() => menu.view("previous_tab"));
+  expect(screen.getByRole("tab", { name: "Changes", selected: true })).toBeTruthy();
+  act(() => menu.view("next_tab"));
+  expect(screen.getByRole("tab", { name: "New page", selected: true })).toBeTruthy();
+  view.rerender(<WorkspaceShell scope="chat:two" title="Two" tools={tools} onNavigate={onNavigate} onInterrupt={() => {}}><p>Conversation</p></WorkspaceShell>);
+  act(() => menu.view("back"));
+  expect(onNavigate).toHaveBeenLastCalledWith("chat:one");
+  act(() => menu.view("forward"));
+  expect(onNavigate).toHaveBeenLastCalledWith("chat:two");
+  view.unmount();
+  vi.mocked(browserRequest).mockClear();
+  act(() => menu.view("new_browser_tab"));
+  expect(browserRequest).not.toHaveBeenCalled();
 });

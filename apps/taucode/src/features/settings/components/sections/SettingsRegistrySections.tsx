@@ -4,11 +4,12 @@ import { SettingsPage, SettingsButton, SettingsTextField, SettingsSelect, Settin
 import { Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { formatRelativeTimeShort } from "@utils/time";
 import { ModelReasoningSettings } from "./ModelReasoningSettings";
+import { ExecutionLimits } from "./ExecutionLimits";
 import "./registry.css";
 import { useEffect, useState } from "react";
 import type { AppSettings, ProviderEntry, ProviderKind, ProviderAuth, AgentPolicy, WorkspaceInfo, WorkspaceSettings } from "@/types";
 import { providerSetApiKey, providerHasApiKey, providerDeleteApiKey, providerTestAndFetch } from "@services/tauri";
-import { defaultAgentPolicy, modelKey, modelRef, policyError, providerEngines } from "../../registry";
+import { commandRoles, commandRoleTitle, defaultAgentPolicy, isCommandRole, mergePolicy, modelKey, modelRef, policyError, providerEngines, setAgentMode } from "../../registry";
 
 type Props = { appSettings: AppSettings; onUpdateAppSettings: (s: AppSettings) => Promise<void> };
 const kinds: ProviderKind[] = ["openai", "anthropic", "google", "openrouter", "groq", "mistral", "xai", "deepseek", "zai", "ollama", "lmstudio", "openai-compatible"];
@@ -112,34 +113,49 @@ export function AgentPolicyEditor({ policy, providers, onChange, tab }: { tab?: 
   const engines = useEngines();
   const models = providers.filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => ({ value: p.id + "/" + m.id, label: p.name + " / " + (m.displayName || m.id) })));
   const sub = policy.subagents;
+  const chain = sub.enabled && sub.mode === "chain-of-command";
   const modelSelect = (label: string, value: string, change: (value: string) => void) => <SettingsFieldRow  title={<>{label}</>}><SettingsSelect value={value} onChange={e => change(e.target.value)}><option value="">Inherit</option>{models.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</SettingsSelect></SettingsFieldRow>;
   return <div className="registry-policy">
-    {(!tab || tab === "defaults") && <SettingsGroup title="Defaults" subtitle="Engine enforcement: pi enforces every field. Codex enforces max concurrent, max depth, default subagent model, and roles."><SettingsFieldRow  title={<>Default engine</>}><SettingsSelect value={policy.defaultEngine} onChange={e => onChange({ ...policy, defaultEngine: e.target.value as AgentPolicy["defaultEngine"] })}>{engines.filter(e => e.enabled).map(e => <option key={e.id} value={e.id} disabled={e.id === "claude" && !providers.some(p => p.enabled && providerEngines(p).includes("claude") && p.models.some(m => m.enabled))}>{e.name}</option>)}</SettingsSelect></SettingsFieldRow>
+    <SettingsGroup title="Working mode" subtitle="Choose one model or a team for Code. Chain of Command is available only in Code; Chat and Work use a single model when it is selected.">
+      <SettingsFieldRow title="Agent mode"><SettingsSelect value={!sub.enabled ? "single" : sub.mode ?? "custom"} onChange={e => {
+        const next = setAgentMode(policy, e.target.value as "single" | "custom" | "chain-of-command");
+        if (next.subagents.enabled && next.subagents.mode === "chain-of-command" && !engines.some(engine => engine.id === next.defaultEngine && engine.protocol === "pi-rpc")) next.defaultEngine = "pi";
+        onChange(next);
+      }}><option value="single">Single model</option><option value="chain-of-command">Chain of Command</option><option value="custom">Custom delegation</option></SettingsSelect></SettingsFieldRow>
+      {chain && <p>The conversation model is the commander. Colonels delegate, majors verify, and enlisted agents implement. Runs on Pi or OMP.</p>}
+      {!sub.enabled && <p>Subagent delegation is disabled. Your role and model choices are kept.</p>}
+    </SettingsGroup>
+    {(!tab || tab === "defaults") && <SettingsGroup title="Defaults" subtitle="Engine enforcement: pi enforces every field. Codex enforces max concurrent, max depth, default subagent model, and roles."><SettingsFieldRow  title={<>Default engine</>}><SettingsSelect value={policy.defaultEngine} onChange={e => onChange({ ...policy, defaultEngine: e.target.value as AgentPolicy["defaultEngine"] })}>{engines.filter(e => e.enabled).map(e => <option key={e.id} value={e.id} disabled={chain && e.protocol !== "pi-rpc" || e.id === "claude" && !providers.some(p => p.enabled && providerEngines(p).includes("claude") && p.models.some(m => m.enabled))}>{e.name}</option>)}</SettingsSelect></SettingsFieldRow>
     {!providers.some(p => p.enabled && providerEngines(p).includes("claude") && p.models.some(m => m.enabled)) && <small>Claude Code needs an enabled Anthropic or Anthropic-compatible provider and model.</small>}
 
     {modelSelect("Default model", modelKey(policy.defaultModel), v => onChange({ ...policy, defaultModel: modelRef(v) }))}
     </SettingsGroup>}
     {(!tab || tab === "subagents") && <SettingsGroup title="Subagents" subtitle="Pi enforces all limits; Codex supports concurrency, depth and default model.">
-    <SettingsToggleRow  title={<>Enable subagents</>}><SettingsToggleSwitch pressed={sub.enabled} onClick={() => onChange({ ...policy, subagents: { ...sub, enabled: !(sub.enabled) } })} /></SettingsToggleRow>
+    <p>{chain ? "Turn and concurrency limits are shared by the whole command tree. Waiting coordinators share their slots with workers." : "Limits apply to each delegator. Nested custom roles have their own per-turn budgets."}</p>
     {([["maxConcurrent", "Max concurrent", 16], ["maxPerTurn", "Max per turn", 32], ["maxDepth", "Max depth", 3]] as const).map(([field, label, max]) => <div key={field}><small>{label}: {field === "maxPerTurn" ? "pi" : "pi, codex"}</small><SettingsFieldRow  title={<>{label}</>}><SettingsNumberStepper type="number" min={1} max={max} value={sub[field]} onChange={e => onChange({ ...policy, subagents: { ...sub, [field]: Number(e.target.value) } })} /></SettingsFieldRow></div>)}
     <small>Allowed models: pi</small>
     <SettingsFieldRow  title={<>Allowed models (empty means any enabled model)</>}><SettingsSelect multiple value={sub.allowedModels.map(modelKey)} onChange={e => onChange({ ...policy, subagents: { ...sub, allowedModels: Array.from(e.target.selectedOptions).flatMap(o => { const m = modelRef(o.value); return m ? [m] : []; }) } })}>{models.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</SettingsSelect></SettingsFieldRow>
     <small>Default subagent model: pi, codex</small>
     {modelSelect("Default subagent model", modelKey(sub.defaultModel), v => onChange({ ...policy, subagents: { ...sub, defaultModel: modelRef(v) } }))}
     </SettingsGroup>}
+    {chain && (!tab || tab === "subagents") && <ExecutionLimits policy={policy} onChange={onChange} />}
+    {chain && tab === "defaults" && <SettingsGroup title="Team models" subtitle="Choose smaller cloud or local models where suitable. Inherit uses the default subagent model, then the parent's model. Edit tools and instructions in Roles.">
+      {sub.roles.filter(isCommandRole).map(role => <div key={role.name}>{modelSelect(`${commandRoleTitle(role.name)} model`, modelKey(role.model), value => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.map(r => r.name === role.name ? { ...r, model: modelRef(value) } : r) } }))}</div>)}
+    </SettingsGroup>}
     {(!tab || tab === "roles") && <SettingsGroup title="Roles" subtitle="Named specialists with their own model, tools and instructions.">
     {sub.roles.map((role, index) => {
+      if (chain && !isCommandRole(role)) return null;
       const change = (patch: Partial<typeof role>) => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.map((r, i) => i === index ? { ...r, ...patch } : r) } });
-      return <SettingsGroup key={index} title={<>Role {index + 1}</>}>
-        <SettingsFieldRow  title={<>Name</>}><SettingsTextField value={role.name} onChange={e => change({ name: e.target.value })} /></SettingsFieldRow>
+      return <SettingsGroup key={index} title={chain ? commandRoleTitle(role.name) : <>Role {index + 1}</>}>
+        <SettingsFieldRow  title={<>Name</>}><SettingsTextField readOnly={chain} value={role.name} onChange={e => change({ name: e.target.value })} /></SettingsFieldRow>
         <SettingsFieldRow  title={<>Description</>}><SettingsTextField value={role.description} onChange={e => change({ description: e.target.value })} /></SettingsFieldRow>
-        {modelSelect("Role model", modelKey(role.model), v => change({ model: modelRef(v) }))}
+        {modelSelect(chain ? `${commandRoleTitle(role.name)} model` : "Role model", modelKey(role.model), v => change({ model: modelRef(v) }))}
         <SettingsFieldRow  title={<>Tool access</>}><SettingsSelect value={role.toolAccess} onChange={e => change({ toolAccess: e.target.value as "read-only" | "full" })}><option value="read-only">Read only</option><option value="full">Full</option></SettingsSelect></SettingsFieldRow>
         <SettingsFieldRow title={<>Instructions</>} className="settings-field-row-long"><SettingsTextArea value={role.instructions} onChange={e => change({ instructions: e.target.value })} /></SettingsFieldRow>
-        <SettingsButton type="button" onClick={() => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.filter((_, i) => i !== index) } })}>Remove role</SettingsButton>
+        {(!chain || !commandRoles.some(core => core.name === role.name)) && <SettingsButton type="button" onClick={() => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.filter((_, i) => i !== index) } })}>Remove role</SettingsButton>}
       </SettingsGroup>;
     })}
-    <SettingsButton type="button" onClick={() => onChange({ ...policy, subagents: { ...sub, roles: [...sub.roles, { name: "role-" + (sub.roles.length + 1), description: "", model: null, toolAccess: "read-only", instructions: "" }] } })}>Add role</SettingsButton>
+    {!chain && <SettingsButton type="button" onClick={() => onChange({ ...policy, subagents: { ...sub, roles: [...sub.roles, { name: "role-" + (sub.roles.length + 1), description: "", model: null, toolAccess: "read-only", instructions: "" }] } })}>Add role</SettingsButton>}
     </SettingsGroup>}
   </div>;
 }
@@ -178,8 +194,4 @@ export function ProjectAgentPolicy({ workspace, appSettings, onUpdate }: { works
     <SettingsButton type="button" disabled={!!validation} onClick={() => void onUpdate(workspace.id, { agentPolicy: policy }).catch(e => setError(String(e)))}>Save project override</SettingsButton>
     <SettingsButton type="button" onClick={() => void onUpdate(workspace.id, { agentPolicy: null }).then(() => setPolicy(base)).catch(e => setError(String(e)))}>Use app policy</SettingsButton>
   </details>;
-}
-
-function mergePolicy(base: AgentPolicy, override: WorkspaceSettings["agentPolicy"]): AgentPolicy {
-  return { ...base, ...override, defaultModel: override?.defaultModel ?? base.defaultModel, subagents: { ...base.subagents, ...override?.subagents, defaultModel: override?.subagents?.defaultModel ?? base.subagents.defaultModel } };
 }

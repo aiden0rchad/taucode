@@ -108,6 +108,10 @@ export function createFixtures(now = Date.now()) {
     pending: status === "needs-input" ? [{ id: "approval-organize", method: "item/commandExecution/requestApproval", params: { reason: "Move the source notes into a dated archive?", command: "mv notes.md archive/notes.md" } }] : [],
   })) };
   const workThreads = work.tasks.filter(t => t.threadId).map(task => makeThread(task.threadId!, task.spaceId, task.title, [
+    ...(task.id === "task-running" ? [{ id: "work-delegate", type: "collabAgentToolCall", tool: "spawnAgent", status: "inProgress", senderThreadId: task.threadId!, receiverThreadIds: [], prompt: "Research and review the launch brief", model: "openai/gpt-5", reasoningEffort: null, agentsStates: {}, agentsTree: [
+      { id: "work-delegate:agent:0", agent: "Researcher", model: "openai/gpt-5", task: "Review the source notes and collect supporting evidence", status: "completed", startedAt: now - 60000, endedAt: now - 20000, usage: { input: 1800, output: 420, cost: null }, lastMessage: "Three themes identified with source references.", children: [] },
+      { id: "work-delegate:agent:1", agent: "Reviewer", model: "openai/gpt-5", task: "Check the brief against the source notes", status: "running", startedAt: now - 20000, usage: { input: 900, output: 120, cost: null }, children: [] },
+    ] }] satisfies PreviewItem[] : []),
     assistantMessage(`${task.id}-progress`, "I’ve reviewed the notes and identified three themes. The draft is ready in **outputs/brief.md**."),
   ], now));
   const checkpoints: Checkpoint[] = (["before", "after"] as const).map(kind => ({

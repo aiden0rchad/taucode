@@ -1,12 +1,15 @@
 import { useFeatures } from "@settings/features";
-import { exportMarkdownFile } from "@services/tauri";
+import { exportMarkdownFile, getAppSettings, updateAppSettings } from "@services/tauri";
 import { buildThreadTranscript } from "@utils/threadText";
 import { Checkpoints } from "@/features/checkpoints/Checkpoints";
 import { useModeSettings } from "@/features/chat/ModeShell";
 import { AgentsContext, agentThreadDetails } from "@/features/agents/agents";
 import { useSideChats, sideChatQuote } from "@/features/sidechats/useSideChats";
 import { SideChatPane, SideChatSplit } from "@/features/sidechats/SideChatPane";
-import { modelKey } from "@/features/settings/registry";
+import { ComposerPolicyProvider } from "@/features/composer/components/ComposerPolicy";
+import { useConversationPolicy } from "@/features/composer/hooks/useConversationPolicy";
+import { useEngines } from "@settings/engines";
+import { defaultAgentPolicy, mergePolicy, modelKey } from "@/features/settings/registry";
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import successSoundUrl from "@/assets/success-notification.mp3";
 import errorSoundUrl from "@/assets/error-notification.mp3";
@@ -275,6 +278,7 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     onExpandRightPanel: expandRightPanel,
   };
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [modelPickerRequest, setModelPickerRequest] = useState(0);
   const workspaceHomeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const getWorkspaceName = useCallback(
@@ -1756,6 +1760,10 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
 
   threadEngines.current = threadsByWorkspace;
   const parentEngine = threadsByWorkspace[activeWorkspaceId ?? ""]?.find(t => t.id === activeThreadId)?.engine ?? selectedEngine ?? activeWorkspace?.settings.agentPolicy?.defaultEngine ?? appSettings.agentPolicy?.defaultEngine ?? "pi";
+  const teamEngines = useEngines();
+  const conversationTeam = features.subagents && !!activeThreadId && teamEngines.some(engine => engine.id === parentEngine && engine.protocol === "pi-rpc");
+  const projectPolicy = useMemo(() => mergePolicy(appSettings.agentPolicy ?? defaultAgentPolicy, activeWorkspace?.settings.agentPolicy), [appSettings.agentPolicy, activeWorkspace?.settings.agentPolicy]);
+  const team = useConversationPolicy(conversationTeam ? activeWorkspaceId : null, conversationTeam ? activeThreadId : null, !!activeWorkspace?.connected, projectPolicy);
   const sideChats = useSideChats({
     workspace: activeWorkspace, threadId: activeThreadId,
     threads: threadsByWorkspace[activeWorkspaceId ?? ""] ?? [],
@@ -1788,6 +1796,12 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     ...layoutSurfaces,
     primary: {
       ...layoutSurfaces.primary,
+      composerProps: layoutSurfaces.primary.composerProps ? {
+        ...layoutSurfaces.primary.composerProps,
+        modelPickerRequest,
+        onSideChat: features.sideChats && activeThreadId ? () => void sideChats.create() : undefined,
+        sideChatDisabledReason: !features.sideChats ? "Enable side chats in Settings to use /sidechat." : sideChats.disabledReason ?? (sideChats.creating ? "Creating side chat…" : null),
+      } : null,
       sidebarProps: {
         ...layoutSurfaces.primary.sidebarProps,
         newThreadShortcut: appSettings.newAgentShortcut,
@@ -1811,6 +1825,12 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
       } : null,
       messagesProps: {
         ...layoutSurfaces.primary.messagesProps,
+        onChangeModel: layoutSurfaces.primary.composerProps ? () => setModelPickerRequest(request => request + 1) : undefined,
+        onRetryMessage: async (text, images) => {
+          if (!activeWorkspace || !activeThreadId || threadStatusById[activeThreadId]?.isProcessing) return false;
+          const result = await sendUserMessageToThread(activeWorkspace, activeThreadId, text, images, { skipPromptExpansion: true, sendIntent: "default" });
+          return result.status === "sent";
+        },
         onSideChat: features.sideChats ? itemId => void sideChats.create(itemId) : undefined,
         sideChatDisabledReason: sideChats.messageDisabledReason ?? (sideChats.creating ? "Creating side chat…" : undefined),
         hasOlderHistory: Boolean(activeThreadId && historyCursorByThread[activeThreadId]),
@@ -1980,8 +2000,14 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     tasks={managedTasks} tasksEnabled={features.terminal} onOpenSettings={modalActions.openSettings} onEditLaunchScripts={launchScriptsState.onOpenNew}
   /> : null;
   if (settingsOnly) return <div className="mode-settings-host" style={mainAppShellProps.appStyle}><AppModals {...mainAppShellProps.appModalsProps} settingsOpen settingsSection={initialSettingsSection ?? mainAppShellProps.appModalsProps.settingsSection} onCloseSettings={onCloseModeSettings ?? mainAppShellProps.appModalsProps.onCloseSettings} /></div>;
-  return <AgentsContext.Provider value={{ details: agentDetails, workspaceId: activeWorkspaceId, threadId: activeThreadId, itemsByThread,
-    policy: appSettings.agentPolicy ? { ...appSettings.agentPolicy.subagents, ...activeWorkspace?.settings.agentPolicy?.subagents } : undefined }}>
+  return <ComposerPolicyProvider policy={team.policy} conversation={conversationTeam} loading={team.loading} loadError={team.error}
+    scopeKey={`${activeWorkspaceId}:${activeThreadId}:${parentEngine}`} scope={conversationTeam ? `This conversation · ${team.overridden ? "Custom team" : "Project team"}` : activeWorkspace ? `Project defaults · ${activeWorkspace.name}` : "App defaults"}
+    onReset={conversationTeam && (team.overridden || team.error) ? () => team.change() : undefined} onChange={async agentPolicy => {
+    if (conversationTeam) await team.change(agentPolicy);
+    else if (activeWorkspace) await updateWorkspaceSettings(activeWorkspace.id, { agentPolicy });
+    else setAppSettings(await updateAppSettings({ ...await getAppSettings(), agentPolicy }));
+  }}><AgentsContext.Provider value={{ details: agentDetails, workspaceId: activeWorkspaceId, threadId: activeThreadId, itemsByThread,
+    policy: team.policy.subagents }}>
     {features.checkpoints && <Checkpoints running={threadStatusById} onChanged={async (workspace, thread, text) => {
     await refreshThread(workspace, thread);
     if (text !== undefined) composerWorkspaceState.restoreDraftForThread(thread, text);
@@ -2004,5 +2030,5 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
       { id: "sidechat", label: "Side chat", shortcut: "⌘⇧K", target: sideChat?.id, content: sideChatInSplit ? null : sideChatNode, onClose: sideChats.close,
         onOpen: (tab: import("@/features/panels/panelState").PanelTab) => { setSplitSideChatId(null); if (tab.target && sideChat?.id !== tab.target && activeThreadId) sideChats.open({ id: tab.target, name: "Side chat", updatedAt: Date.now(), engine: parentEngine, sideOf: { threadId: activeThreadId, workspaceId: activeWorkspace.id, atItemId: null } }); },
       },
-    ].filter(tool => tool.id === "git" ? features.git : tool.id === "agents" ? features.subagents : tool.id === "terminal" ? features.terminal : tool.id === "sidechat" ? features.sideChats : true) : []} searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><PanelToolRequest id="terminal" requestKey={layoutSurfaces.secondary.terminalDockProps.isOpen} /><PanelToolRequest id="sidechat" requestKey={sideChatInSplit ? null : sideChat?.id} /><MainAppShell {...mainAppShellProps} /></WorkspaceShell></AgentsContext.Provider>;
+    ].filter(tool => tool.id === "git" ? features.git : tool.id === "agents" ? features.subagents : tool.id === "terminal" ? features.terminal : tool.id === "sidechat" ? features.sideChats : true) : []} searchUrl={appSettings.browser?.searchUrl} onInterrupt={interruptTurn}><PanelToolRequest id="terminal" requestKey={layoutSurfaces.secondary.terminalDockProps.isOpen} /><PanelToolRequest id="sidechat" requestKey={sideChatInSplit ? null : sideChat?.id} /><MainAppShell {...mainAppShellProps} /></WorkspaceShell></AgentsContext.Provider></ComposerPolicyProvider>;
 }

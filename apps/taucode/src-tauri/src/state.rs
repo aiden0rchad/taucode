@@ -65,12 +65,13 @@ impl AppState {
         let settings_path = data_dir.join("settings.json");
         let workspaces = read_workspaces(&storage_path).unwrap_or_default();
         let app_settings = read_settings(&settings_path).unwrap_or_default();
+        let managed_tasks = crate::shared::managed_tasks::ManagedTasks::new();
         Self {
-            managed_tasks: crate::shared::managed_tasks::ManagedTasks::new(),
+            managed_tasks: managed_tasks.clone(),
             evals: crate::shared::evals::Evals::new(data_dir.clone(), crate::event_sink::TauriEventSink::new(app.clone())),
             imports: crate::shared::imports::Imports::new(data_dir.clone()),
             browser: crate::shared::browser::Browser::new(data_dir.clone()),
-            work: crate::shared::work::Work::new(data_dir.clone(), crate::event_sink::TauriEventSink::new(app.clone())),
+            work: crate::shared::work::Work::with_tasks(data_dir.clone(), crate::event_sink::TauriEventSink::new(app.clone()), managed_tasks),
             chats: crate::shared::chats::Chats::new(data_dir.clone(), crate::event_sink::TauriEventSink::new(app.clone())),
             computer: crate::shared::computer::Computer::new(data_dir.clone()),
             browser_streams: Mutex::new(HashMap::new()),

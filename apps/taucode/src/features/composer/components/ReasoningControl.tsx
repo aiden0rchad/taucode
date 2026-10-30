@@ -1,16 +1,19 @@
 import { IconButton } from "@/features/design-system/components/IconButton";
 import { useFeatures } from "@settings/features";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Flame, RotateCcw, Zap } from "lucide-react";
-import type { ReasoningCapability } from "@/types";
+import { ChevronDown, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
+import type { EngineKind, ReasoningCapability } from "@/types";
 import { useMenuController } from "@app/hooks/useMenuController";
 import { AnchoredPopover } from "@/features/design-system/components/popover/AnchoredPopover";
 import { clampReasoning, reasoningLabel } from "@/features/models/reasoning";
 import { useReasoningAnimationSpeed } from "./useReasoningAnimationSpeed";
 import { ComposerModelList, type ComposerModel } from "./ComposerModelList";
+import { ChainOfCommandControls } from "./ComposerPolicy";
 import "./reasoning.css";
 
 export type ReasoningControlProps = {
+  engine?: EngineKind;
+  teamControls?: boolean;
   capability?: ReasoningCapability | null;
   value?: string | null;
   onChange: (value: string) => void;
@@ -22,8 +25,9 @@ export type ReasoningControlProps = {
   selectedModelId?: string | null;
   defaultModelId?: string | null;
   onSelectModel?: (id: string) => void | boolean | Promise<void | boolean>;
+  modelPickerRequest?: number;
 };
-export function ReasoningControl({ capability, value, onChange, disabled, unavailable, onOpenSettings, modelName = "Model", models = [], selectedModelId, defaultModelId, onSelectModel }: ReasoningControlProps) {
+export function ReasoningControl({ engine, teamControls = true, capability, value, onChange, disabled, unavailable, onOpenSettings, modelName = "Model", models = [], selectedModelId, defaultModelId, onSelectModel, modelPickerRequest = 0 }: ReasoningControlProps) {
   const effects = useFeatures().reasoningEffects;
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
@@ -42,6 +46,18 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
   const [selecting, setSelecting] = useState(false);
   const [modelError, setModelError] = useState("");
   const menu = useMenuController({ closeOnEscape: view === "slider", popoverRef: popover, onDismiss: () => trigger.current?.focus() });
+  const lastModelPickerRequest = useRef(modelPickerRequest);
+  const openMenu = menu.open;
+  useEffect(() => {
+    if (lastModelPickerRequest.current === modelPickerRequest) return;
+    lastModelPickerRequest.current = modelPickerRequest;
+    if (disabled) return;
+    returning.current = false;
+    setOutgoing(null);
+    setView("models");
+    setModelError("");
+    openMenu();
+  }, [modelPickerRequest, disabled, openMenu]);
   useLayoutEffect(() => {
     if (!menu.isOpen || !outgoing) return;
     const surface = popover.current!;
@@ -104,9 +120,9 @@ export function ReasoningControl({ capability, value, onChange, disabled, unavai
     </button>
     {menu.isOpen && <AnchoredPopover anchorRef={trigger} surfaceRef={popover} className={`reasoning-popover${effects ? "" : " effects-off"}${burning ? " burning" : warm ? " warm" : ""}${drag !== null ? " dragging" : ""}`} style={sliderStyle} role="dialog" aria-label={view === "models" ? "Select model" : "Model and reasoning"} onKeyDown={event => { if (event.key === "Escape" && view === "models") { event.preventDefault(); event.stopPropagation(); switchView("slider"); } }}>
       {(["slider", "models"] as const).filter(panel => panel === view || panel === outgoing).map(panel => <div key={panel} className={`reasoning-view${outgoing ? ` ${view === "models" ? "forward" : "back"} ${panel === outgoing ? "outgoing" : "incoming"}` : ""}`} aria-hidden={panel === outgoing || undefined} inert={panel === outgoing ? true : undefined}>
-      {panel === "models" ? <><div className="reasoning-model-heading"><IconButton type="button" aria-label="Back to reasoning" onClick={() => switchView("slider")}><ChevronLeft size={16} aria-hidden /></IconButton><strong>Select model</strong></div><ComposerModelList models={models} selectedId={selectedModelId} defaultId={defaultModelId} disabled={disabled || selecting} onSelect={selectModel} />{modelError && <p role="alert">{modelError}</p>}</> : <>
+      {panel === "models" ? <><div className="reasoning-model-heading"><IconButton type="button" aria-label="Back to reasoning" onClick={() => switchView("slider")}><ChevronLeft size={16} aria-hidden /></IconButton><strong>Select model</strong>{teamControls && <ChainOfCommandControls engine={engine} disabled={disabled} onConfigure={() => { menu.close(); trigger.current?.focus(); }} />}</div><ComposerModelList models={models} selectedId={selectedModelId} defaultId={defaultModelId} disabled={disabled || selecting} onSelect={selectModel} />{modelError && <p role="alert">{modelError}</p>}</> : <>
         <div className="reasoning-heading">
-          <span className="reasoning-heading-icon" aria-hidden="true">{!noReasoning && (burning ? <Flame className="reasoning-flame" size={22} /> : <Zap size={22} />)}</span>
+          {teamControls && <ChainOfCommandControls engine={engine} disabled={disabled} onConfigure={() => { menu.close(); trigger.current?.focus(); }} />}
           <div className="reasoning-heading-center">
             <span className="reasoning-level">{noReasoning ? "Model" : label}</span>
             <button type="button" className="reasoning-model" title={modelName} disabled={!onSelectModel || disabled} onClick={() => switchView("models")}><span>{modelName}</span><ChevronRight size={12} aria-hidden /></button>

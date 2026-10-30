@@ -12,6 +12,136 @@ fn fixture(name: &str) -> String {
 }
 
 #[tokio::test]
+async fn conversation_teams_persist_fork_and_keep_project_allowances() {
+    for profile in ["pi", "omp"] {
+        let dir = temp();
+        let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_, _| {}));
+        engine.profile.definition = crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), profile).unwrap().0;
+        let mut base = AgentPolicy::default();
+        base.subagents.daily_token_limit = 10000;
+        engine.configure("workspace", vec![], base.clone()).await;
+        let sessions = engine.directory("workspace").unwrap();
+        std::fs::create_dir_all(&sessions).unwrap();
+        for id in ["one", "two"] {
+            std::fs::write(sessions.join(format!("{id}.jsonl")), format!("{}\n", json!({"type":"session","version":3,"id":id,"engine":profile,"cwd":dir}))).unwrap();
+        }
+        let mut team = base.subagents.clone();
+        team.max_run_minutes = 7;
+        team.daily_token_limit = 0;
+        let set = engine.request("workspace", "thread/agentPolicy", json!({"threadId":"one","action":"set","policy":team})).await.unwrap();
+        assert_eq!(set["overridden"], true);
+        assert_eq!(set["policy"]["subagents"]["dailyTokenLimit"], 10000);
+        assert_eq!(set["policy"]["subagents"]["maxRunMinutes"], 7);
+        let other = engine.request("workspace", "thread/agentPolicy", json!({"threadId":"two","action":"get"})).await.unwrap();
+        assert_eq!(other["overridden"], false);
+        assert_eq!(other["policy"]["subagents"]["maxRunMinutes"], 0);
+        assert!(engine.sessions.lock().await.values().all(|s| s.process.is_none()), "editing teams must not start models or read credentials");
+        assert!(engine.request("wrong-workspace", "thread/agentPolicy", json!({"threadId":"one","action":"get"})).await.is_err());
+        team.max_run_minutes = 1441;
+        assert!(engine.request("workspace", "thread/agentPolicy", json!({"threadId":"one","action":"set","policy":team})).await.is_err());
+        assert!(engine.request("workspace", "thread/agentPolicy", json!({"threadId":"one","action":"unknown"})).await.is_err());
+        let fork = engine.request("workspace", "thread/fork", json!({"threadId":"one","sideOf":{"threadId":"one","workspaceId":"workspace"}})).await.unwrap();
+        let fork_id = fork["result"]["thread"]["id"].as_str().unwrap();
+        let home = dir.join(format!("{profile}/agent/workspace"));
+        assert_eq!(config::read_team(&home, fork_id).unwrap().unwrap().max_run_minutes, 7);
+        engine.sessions.lock().await.clear();
+        base.subagents.daily_token_limit = 5000;
+        engine.configure("workspace", vec![], base).await;
+        let persisted = engine.request("workspace", "thread/agentPolicy", json!({"threadId":"one","action":"get"})).await.unwrap();
+        assert_eq!(persisted["policy"]["subagents"]["maxRunMinutes"], 7);
+        assert_eq!(persisted["policy"]["subagents"]["dailyTokenLimit"], 5000);
+        std::fs::write(home.join("taucode/teams/one.json"), "invalid json").unwrap();
+        assert!(engine.request("workspace", "thread/agentPolicy", json!({"threadId":"one","action":"get"})).await.is_err());
+        let reset = engine.request("workspace", "thread/agentPolicy", json!({"threadId":"one","action":"reset"})).await.unwrap();
+        assert_eq!(reset["overridden"], false);
+        assert_eq!(reset["policy"]["subagents"]["maxRunMinutes"], 0);
+        assert_eq!(config::read_team(&home, fork_id).unwrap().unwrap().max_run_minutes, 7);
+        assert!(config::write_team(&home, "../escape", None).is_err());
+        assert!(config::read_team(&home, "").is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn conversation_teams_snapshot_each_engine_session_until_next_spawn() {
+    let dir = temp();
+    let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_, _| {}));
+    engine.fake = true;
+    engine.keys = Arc::new(Keys);
+    let providers = serde_json::from_value(json!([{"id":"first","name":"First","kind":"ollama","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"fake","enabled":true}]}])).unwrap();
+    let base = AgentPolicy::default();
+    engine.configure("workspace", providers, base.clone()).await;
+    let first = engine.request("workspace", "thread/start", json!({"model":"first/fake"})).await.unwrap();
+    let one = first["result"]["thread"]["id"].as_str().unwrap();
+    let second = engine.request("workspace", "thread/start", json!({"model":"first/fake"})).await.unwrap();
+    let two = second["result"]["thread"]["id"].as_str().unwrap();
+    let home = dir.join("pi/agent/workspace");
+    let snapshot = |id: &str| -> Value { serde_json::from_slice(&std::fs::read(home.join("taucode/policies").join(format!("{id}.json"))).unwrap()).unwrap() };
+    let mut team = base.subagents.clone(); team.max_run_minutes = 7;
+    engine.request("workspace", "thread/agentPolicy", json!({"threadId":one,"action":"set","policy":team})).await.unwrap();
+    assert_eq!(snapshot(one)["maxRunMinutes"], 0, "saving must not alter a running session's policy");
+    engine.request("workspace", "turn/start", json!({"threadId":one,"input":[{"type":"text","text":"hello"}]})).await.unwrap();
+    assert_eq!(snapshot(one)["maxRunMinutes"], 7);
+    assert_eq!(snapshot(two)["maxRunMinutes"], 0);
+    team.max_run_minutes = 9; team.enabled = true;
+    engine.request("workspace", "thread/agentPolicy", json!({"threadId":one,"action":"set","policy":team})).await.unwrap();
+    config::write_policy(&home, &[], &base).unwrap();
+    assert_eq!(snapshot(one)["maxRunMinutes"], 7, "project and team edits apply to subsequent turns");
+    std::fs::write(home.join("taucode/teams").join(format!("{one}.json")), "broken").unwrap();
+    engine.request("workspace", "turn/interrupt", json!({"threadId":one})).await.unwrap();
+    config::write_team(&home, one, Some(&team)).unwrap();
+    std::fs::write(dir.join("settings.json"), json!({"features":{"subagents":false}}).to_string()).unwrap();
+    engine.request("workspace", "turn/start", json!({"threadId":one,"input":[{"type":"text","text":"hello"}]})).await.unwrap();
+    assert_eq!(snapshot(one)["enabled"], false, "conversation overrides must respect the global feature switch");
+    assert_eq!(snapshot(one)["maxConcurrent"], 0);
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn conversation_teams_reject_chat_and_work() {
+    let dir = temp();
+    for engine in [PiEngine::chat(dir.clone(), Arc::new(|_, _| {})), PiEngine::work(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), Arc::new(|_, _| {}))] {
+        let workspace = if engine.chat { "chats" } else { "workspace" };
+        engine.configure(workspace, vec![], AgentPolicy::default()).await;
+        let sessions = engine.directory(workspace).unwrap();
+        std::fs::create_dir_all(&sessions).unwrap();
+        std::fs::write(sessions.join("one.jsonl"), format!("{}\n", json!({"type":"session","version":3,"id":"one","cwd":dir}))).unwrap();
+        assert!(engine.request(workspace, "thread/agentPolicy", json!({"threadId":"one","action":"get"})).await.unwrap_err().contains("only in Code"));
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn chain_of_command_is_code_only_and_does_not_change_saved_policy() {
+    let dir = temp();
+    let mut policy = AgentPolicy::default();
+    policy.subagents.enabled = true;
+    policy.subagents.mode = crate::types::SubagentMode::ChainOfCommand;
+    policy.subagents.default_model = Some(crate::types::ModelRef { provider_id: "local".into(), model_id: "worker".into() });
+    let original = json!(policy);
+    for (engine, code) in [
+        (PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_, _| {})), true),
+        (PiEngine::chat(dir.clone(), Arc::new(|_, _| {})), false),
+        (PiEngine::work(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), Arc::new(|_, _| {})), false),
+    ] {
+        engine.configure("workspace", vec![], policy.clone()).await;
+        let effective = engine.registry.lock().await["workspace"].1.clone();
+        assert_eq!(effective.subagents.enabled, code);
+        assert_eq!(effective.subagents.mode == crate::types::SubagentMode::ChainOfCommand, code);
+        assert_eq!(json!(effective.subagents.roles), json!(policy.subagents.roles));
+        assert_eq!(json!(effective.subagents.default_model), json!(policy.subagents.default_model));
+        // Custom delegation remains independent of the Code-only hierarchy.
+        let mut custom = policy.clone();
+        custom.subagents.mode = crate::types::SubagentMode::Custom;
+        engine.configure("workspace", vec![], custom).await;
+        assert!(engine.registry.lock().await["workspace"].1.subagents.enabled);
+    }
+    assert_eq!(json!(policy), original);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
 async fn chat_profile_is_isolated_and_forks_models_and_last_user_without_changing_parent() {
     let dir = temp();
     let mut engine = PiEngine::chat(dir.clone(), Arc::new(|_, _| {}));
@@ -256,6 +386,50 @@ async fn gate_approvals_use_canonical_items_decisions_and_resolve() {
 }
 
 #[test]
+fn subagent_validation_failure_keeps_error_and_single_agent_with_empty_modes() {
+    let mut t = Translator::new("parent", "/tmp");
+    t.apply(&json!({"type":"agent_start"}));
+    t.apply(&json!({"type":"tool_execution_start","toolCallId":"spawn","toolName":"subagent",
+        "args":{"agent":"colonel","task":"delegate","tasks":[],"chain":[],"model":null}}));
+    let item = &t.turns[0]["items"][0];
+    assert_eq!(item["prompt"], "delegate");
+    assert_eq!(item["agentsTree"][0]["agent"], "colonel");
+    assert_eq!(item["agentsStates"].as_object().unwrap().len(), 1);
+    let events = t.apply(&json!({"type":"tool_execution_end","toolCallId":"spawn","toolName":"subagent",
+        "isError":true,"result":{"content":[{"type":"text","text":"Delegation budget exhausted"}]}}));
+    let item = &t.turns[0]["items"][0];
+    assert_eq!(item["status"], "failed");
+    assert_eq!(item["error"]["message"], "Delegation budget exhausted");
+    assert_eq!(item["agentsTree"][0]["status"], "failed");
+    assert!(events.iter().any(|e| e["method"] == "item/completed"
+        && e["params"]["item"]["error"]["message"] == "Delegation budget exhausted"));
+}
+
+#[test]
+fn late_subagent_progress_cannot_restart_a_finished_tool_or_turn() {
+    for aborted in [false, true] {
+        let mut t = Translator::new("test", "/workspace");
+        t.apply(&json!({"type":"agent_start"}));
+        t.apply(&json!({"type":"tool_execution_start","toolCallId":"child","toolName":"subagent","args":{"agent":"colonel","task":"delegate"}}));
+        let progress = json!({"type":"tool_execution_update","toolCallId":"child","partialResult":{"details":{"results":[{"agent":"colonel","status":"running","messages":[],"usage":{}}]}}});
+        assert!(t.apply(&progress).iter().any(|e| e["method"] == "item/started"));
+        if !aborted {
+            t.apply(&json!({"type":"tool_execution_end","toolCallId":"child","result":{"details":{"results":[]}}}));
+        }
+        t.apply(&json!({"type":"agent_settled","aborted":aborted}));
+        let settled = t.turns.clone();
+        assert!(t.apply(&progress).is_empty(), "late progress must not re-open Working");
+        assert_eq!(t.turns, settled);
+        t.apply(&json!({"type":"agent_start"}));
+        t.apply(&json!({"type":"tool_execution_start","toolCallId":"next","toolName":"subagent","args":{"agent":"major","task":"review"}}));
+        let mut next = progress.clone();
+        next["toolCallId"] = json!("next");
+        assert!(t.apply(&next).iter().any(|e| e["method"] == "item/started"));
+        assert!(t.apply(&progress).is_empty());
+    }
+}
+
+#[test]
 fn recorded_subagents_stream_states_outputs_and_usage_without_double_counting() {
     let (mut t, events) = replay("rpc_subagents.jsonl");
     let item = t
@@ -311,7 +485,43 @@ fn recorded_subagents_stream_states_outputs_and_usage_without_double_counting() 
     assert!(updated
         .iter()
         .any(|e| e["method"] == "thread/tokenUsage/updated"
-            && e["params"]["tokenUsage"]["total"]["cost"] == t.cost));
+            && e["params"]["tokenUsage"]["total"]["knownCost"] == t.cost
+            && e["params"]["tokenUsage"]["total"]["cost"].is_null()));
+}
+
+#[test]
+fn unknown_costs_survive_aggregation_without_hiding_known_subtotals() {
+    let mut t = Translator::new("cost", "/workspace");
+    t.apply(&json!({"type":"agent_start"}));
+    t.apply(&json!({"type":"tool_execution_start","toolCallId":"team","toolName":"subagent","args":{"agent":"colonel","task":"Check"}}));
+    let mut result = json!({"details":{"results":[{"agent":"colonel","status":"running","usage":{"input":10,"cost":0.25},"messages":[{"role":"toolResult","toolCallId":"child","details":{"results":[
+        {"agent":"major","status":"completed","usage":{"input":5,"cost":0.125}},
+        {"agent":"enlisted","status":"running","usage":{"input":3,"cost":0}}
+    ]}}]}]}});
+    t.apply(&json!({"type":"tool_execution_update","toolCallId":"team","partialResult":result}));
+    let usage = &t.turns[0]["items"][0]["agentsTree"][0]["usage"];
+    assert_eq!(usage["cost"], Value::Null);
+    assert_eq!(usage["knownCost"], 0.375);
+    assert_eq!(usage["input"], 18);
+    assert_eq!(t.total["cost"], Value::Null);
+    assert_eq!(t.total["knownCost"], 0.375);
+    // A later complete snapshot resolves that source's uncertainty without double counting.
+    result["details"]["results"][0]["messages"][0]["details"]["results"][1]["usage"]["cost"] = json!(0.5);
+    t.apply(&json!({"type":"tool_execution_end","toolCallId":"team","result":result}));
+    assert_eq!(t.total["cost"], 0.875);
+    let total = t.total.clone();
+    t.apply(&json!({"type":"tool_execution_end","toolCallId":"team","result":result}));
+    assert_eq!(t.total, total);
+    // Explicitly known zero is different from the old unpriced zero placeholder.
+    let zero = agents::tree("free", &[json!({"agent":"major","usage":{"input":2,"cost":0,"costKnown":true}})], &Value::Null, true, None, &mut Default::default());
+    assert_eq!(zero[0]["usage"]["cost"], 0.0);
+    // A separate unpriced commander response keeps the whole conversation total unknown.
+    t.apply(&json!({"type":"message_start","message":{"role":"assistant","timestamp":1}}));
+    t.apply(&json!({"type":"message_end","message":{"role":"assistant","content":[],"usage":{"input":7,"cost":{"total":0}}}}));
+    t.apply(&json!({"type":"message_start","message":{"role":"assistant","timestamp":2}}));
+    t.apply(&json!({"type":"message_end","message":{"role":"assistant","content":[],"usage":{"input":4,"cost":{"total":0.125}}}}));
+    assert_eq!(t.total["cost"], Value::Null);
+    assert_eq!(t.total["knownCost"], 1.0);
 }
 
 #[test]
@@ -509,6 +719,295 @@ fn virtual_mutating_tools_are_not_file_changes_in_live_or_replayed_transcripts()
     }
 }
 
+#[test]
+fn virtual_subagent_results_keep_nested_progress_usage_and_history() {
+    for transport in ["write", "edit"] {
+        let args = json!({"path":"xd://subagent","content":"{\"agent\":\"colonel\",\"task\":\"Delegate\"}"});
+        let wrap = |results: Value| json!({"xdev":{"tool":"subagent","mode":"execute","inner":{"results":results}}});
+        let mut child = json!({"agent":"enlisted","model":"local/worker","status":"running","usage":{"input":17,"output":3,"cost":0.25},"messages":[{"role":"assistant","content":[{"type":"text","text":"Nested worker evidence"}]}]});
+        let mut parent = json!({"agent":"colonel","model":"cloud/planner","status":"running","usage":{"input":11,"output":2,"cost":0.5},"messages":[{"role":"toolResult","toolCallId":"nested","toolName":transport,"details":wrap(json!([child]))}]});
+        let mut t = Translator::new("thread", "/workspace");
+        t.apply(&json!({"type":"agent_start"}));
+        t.apply(&json!({"type":"tool_execution_start","toolCallId":"call","toolName":transport,"args":args}));
+        let update = json!({"type":"tool_execution_update","toolCallId":"call","toolName":transport,"partialResult":{"details":wrap(json!([parent]))}});
+        let events = t.apply(&update);
+        assert!(events.iter().any(|e| e["params"]["item"]["agentsTree"][0]["children"][0]["status"] == "running"));
+        let started = t.turns[0]["items"][0]["agentsTree"][0]["startedAt"].clone();
+        child["status"] = json!("completed");
+        let failed = json!({"agent":"major","status":"failed","stderr":"QA failed","usage":{"input":5},"messages":[]});
+        parent["status"] = json!("completed");
+        parent["messages"][0]["details"] = wrap(json!([child, failed]));
+        let result = json!({"content":[{"type":"text","text":"Team returned"}],"details":wrap(json!([parent]))});
+        let end = json!({"type":"tool_execution_end","toolCallId":"call","toolName":transport,"result":result});
+        t.apply(&end);
+        let node = &t.turns[0]["items"][0]["agentsTree"][0];
+        assert_eq!(node["status"], "completed");
+        assert_eq!(node["startedAt"], started);
+        assert!(node["endedAt"].is_number());
+        assert_eq!(node["usage"]["input"], 33);
+        assert_eq!(node["usage"]["output"], 5);
+        assert_eq!(node["usage"]["cost"], Value::Null);
+        assert_eq!(node["usage"]["knownCost"], 0.75);
+        assert_eq!(node["children"][0]["id"], "call:agent:0/nested:agent:0");
+        assert_eq!(node["children"][0]["status"], "completed");
+        assert_eq!(node["children"][0]["model"], "local/worker");
+        assert_eq!(node["children"][1]["status"], "failed");
+        assert_eq!(node["children"][1]["errorMessage"], "QA failed");
+        let total = t.total.clone();
+        t.apply(&end);
+        assert_eq!(t.total, total);
+        assert!(!t.transcripts["call:agent:0"].to_string().contains("Nested worker evidence"));
+        assert!(t.transcripts["call:agent:0/nested:agent:0"].to_string().contains("Nested worker evidence"));
+        let history = Translator::history("thread", "/workspace", &[
+            json!({"role":"user","timestamp":1,"content":"Delegate"}),
+            json!({"role":"assistant","timestamp":2,"stopReason":"toolUse","content":[{"type":"toolCall","id":"call","name":transport,"arguments":args}]}),
+            json!({"role":"toolResult","toolCallId":"call","toolName":transport,"content":result["content"],"details":result["details"]}),
+        ]);
+        let restored = &history.turns[0]["items"][1]["agentsTree"][0];
+        assert_eq!(restored["status"], "completed");
+        assert_eq!(restored["usage"], t.turns[0]["items"][0]["agentsTree"][0]["usage"]);
+        assert_eq!(restored["children"][0]["status"], "completed");
+        assert_eq!(restored["children"][1]["status"], "failed");
+        assert_eq!(history.transcripts, t.transcripts);
+    }
+}
+
+#[test]
+fn cancelled_subagent_history_restores_timing_and_evidence_on_its_branch() {
+    let dir = temp();
+    let file = dir.join("session.jsonl");
+    let result = json!({"isError":true,"content":[],"details":{"results":[{
+        "agent":"colonel","status":"failed","stopReason":"aborted","startedAt":1000,"endedAt":9000,"usage":{"input":10},
+        "messages":[{"role":"toolResult","toolCallId":"nested","details":{"xdev":{"tool":"subagent","inner":{"results":[
+            {"agent":"enlisted","status":"running","startedAt":2000,"usage":{"input":4},"messages":[{"role":"assistant","content":[{"type":"text","text":"Partial worker evidence"}]}]},
+            {"agent":"major","status":"completed","startedAt":3000,"endedAt":6000,"messages":[]},
+            {"agent":"enlisted","status":"pending","messages":[]}
+        ]}}}}]
+    }]}});
+    let mut entries = vec![
+        json!({"type":"session","id":"timing","cwd":"/workspace"}),
+        json!({"type":"message","id":"user","parentId":null,"message":{"role":"user","timestamp":1,"content":"Delegate"}}),
+        json!({"type":"message","id":"call","parentId":"user","message":{"role":"assistant","timestamp":2,"stopReason":"toolUse","content":[{"type":"toolCall","id":"delegate","name":"write","arguments":{"path":"xd://subagent","content":"{\"agent\":\"colonel\",\"task\":\"Delegate\"}"}}]}}),
+        json!({"type":"custom","customType":"taucode-subagent-result","id":"saved","parentId":"call","data":{"toolCallId":"delegate","result":result}}),
+        json!({"type":"message","id":"cancelled","parentId":"saved","message":{"role":"toolResult","toolCallId":"delegate","toolName":"write","isError":true,"content":[{"type":"text","text":"Operation aborted"}],"details":{}}}),
+    ];
+    let write = |entries: &[Value]| std::fs::write(&file, entries.iter().map(|e| format!("{e}\n")).collect::<String>()).unwrap();
+    write(&entries);
+    let (_, restored) = read_session(&file, &[]).unwrap();
+    let node = &restored.turns[0]["items"][1]["agentsTree"][0];
+    assert_eq!(node["status"], "aborted");
+    assert_eq!(node["startedAt"], 1000);
+    assert_eq!(node["endedAt"], 9000);
+    assert_eq!(node["children"][0]["status"], "aborted");
+    assert_eq!(node["children"][0]["startedAt"], 2000);
+    assert_eq!(node["children"][0]["endedAt"], 9000);
+    assert_eq!(node["children"][1]["status"], "completed");
+    assert_eq!(node["children"][1]["endedAt"], 6000);
+    assert_eq!(node["children"][2]["startedAt"], Value::Null);
+    assert_eq!(node["usage"]["input"], 14);
+    assert_eq!(restored.turns[0]["status"], "interrupted");
+    assert!(restored.transcripts["delegate:agent:0/nested:agent:0"].to_string().contains("Partial worker evidence"));
+    // OMP may persist its generic cancellation before extension cleanup finishes.
+    entries[3]["parentId"] = json!("cancelled");
+    entries[4]["parentId"] = json!("call");
+    entries.swap(3, 4);
+    write(&entries);
+    let (_, late) = read_session(&file, &[]).unwrap();
+    assert_eq!(late.turns[0]["status"], restored.turns[0]["status"]);
+    assert_eq!(late.turns[0]["items"][1]["agentsTree"], restored.turns[0]["items"][1]["agentsTree"]);
+    assert_eq!(late.total, restored.total);
+    assert_eq!(late.transcripts, restored.transcripts);
+    // Rewinding before the tool call must not pull abandoned evidence into the branch.
+    entries.push(json!({"type":"message","id":"fork","parentId":"user","message":{"role":"assistant","timestamp":3,"stopReason":"stop","content":[{"type":"text","text":"Alternative"}]}}));
+    write(&entries);
+    let (_, branch) = read_session(&file, &[]).unwrap();
+    assert!(branch.transcripts.is_empty());
+    assert!(!json!(branch.turns).to_string().contains("Partial worker evidence"));
+    entries.push(json!({"type":"custom","customType":"taucode-subagent-result","id":"unmatched","parentId":"fork","data":{"toolCallId":"delegate","result":result}}));
+    write(&entries);
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns, branch.turns, "ignore checkpoints without a matching delegation on this branch");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn stopping_a_team_preserves_completed_children_without_reporting_a_failure() {
+    let mut t = Translator::new("thread", "/workspace");
+    t.apply(&json!({"type":"agent_start"}));
+    t.apply(&json!({"type":"tool_execution_start","toolCallId":"call","toolName":"subagent","args":{"agent":"colonel","task":"Delegate"}}));
+    let update = json!({"type":"tool_execution_update","toolCallId":"call","partialResult":{"details":{"results":[{"agent":"colonel","status":"running","messages":[{"role":"toolResult","toolCallId":"nested","details":{"results":[{"agent":"enlisted","status":"running"},{"agent":"major","status":"completed","startedAt":1000,"endedAt":2000}]}}]}]}}});
+    t.apply(&update);
+    t.apply(&json!({"type":"abort_requested"}));
+    t.apply(&json!({"type":"tool_execution_end","toolCallId":"call","result":{"isError":true,"content":[{"type":"text","text":"Operation aborted"}]}}));
+    t.apply(&update); // Late progress cannot reopen stopped nodes.
+    t.apply(&json!({"type":"agent_settled"}));
+    let node = &t.turns[0]["items"][0]["agentsTree"][0];
+    assert_eq!(node["status"], "aborted");
+    assert_eq!(node["children"][0]["status"], "aborted");
+    assert_eq!(node["children"][1]["status"], "completed");
+    assert_eq!(node["children"][1]["endedAt"], 2000);
+    assert_eq!(t.turns[0]["status"], "interrupted");
+    let never_started = json!([{"agent":"enlisted","status":"failed","stopReason":"aborted","endedAt":9000}]);
+    let queued = agents::tree("queued", never_started.as_array().unwrap(), &Value::Null, true, Some(10000), &mut t.transcripts);
+    assert_eq!(queued[0]["startedAt"], Value::Null, "a cancelled queue entry never acquires a synthetic start time");
+    assert_eq!(queued[0]["endedAt"], 9000);
+}
+
+#[test]
+fn crashed_delegation_recovers_only_unfinished_calls_on_the_current_branch() {
+    use sha2::{Digest, Sha256};
+    let dir = temp();
+    let file = dir.join("session.jsonl");
+    let mut entries = vec![
+        json!({"type":"session","id":"crash","cwd":"/workspace"}),
+        json!({"type":"message","id":"user","parentId":null,"message":{"role":"user","timestamp":1,"content":"Delegate"}}),
+        json!({"type":"message","id":"call","parentId":"user","message":{"role":"assistant","timestamp":2,"stopReason":"toolUse","content":[{"type":"toolCall","id":"delegate","name":"subagent","arguments":{"agent":"colonel","task":"Delegate"}}]}}),
+    ];
+    let write = |entries: &[Value]| std::fs::write(&file, entries.iter().map(|e| format!("{e}\n")).collect::<String>()).unwrap();
+    write(&entries);
+    let recovery = dir.join("session.jsonl.agents");
+    std::fs::create_dir(&recovery).unwrap();
+    let checkpoint = recovery.join(format!("{:x}.json", Sha256::digest(b"delegate")));
+    let saved = json!({"version":1,"toolCallId":"delegate","savedAt":9000,"result":{"details":{"results":[{
+        "agent":"colonel","status":"running","startedAt":1000,"usage":{"input":10},
+        "messages":[{"role":"toolResult","toolCallId":"nested","details":{"results":[
+            {"agent":"enlisted","status":"running","startedAt":2000,"messages":[{"role":"assistant","content":[{"type":"text","text":"Partial crash evidence"}]}]},
+            {"agent":"major","status":"completed","startedAt":3000,"endedAt":6000,"messages":[]}
+        ]}}]
+    }]}}});
+    std::fs::write(&checkpoint, saved.to_string()).unwrap();
+    let (_, restored) = read_session(&file, &[]).unwrap();
+    let node = &restored.turns[0]["items"][1]["agentsTree"][0];
+    assert_eq!(restored.turns[0]["status"], "interrupted");
+    assert_eq!(node["status"], "aborted");
+    assert_eq!(node["startedAt"], 1000);
+    assert_eq!(node["endedAt"], Value::Null, "a checkpoint is not an observed end time");
+    assert_eq!(node["children"][0]["status"], "aborted");
+    assert_eq!(node["children"][1]["status"], "completed");
+    assert_eq!(node["children"][1]["endedAt"], 6000);
+    assert!(restored.transcripts.values().any(|v| v.to_string().contains("Partial crash evidence")));
+    // A subsequent user turn must not merge into the interrupted one.
+    entries.push(json!({"type":"message","id":"next","parentId":"call","message":{"role":"user","timestamp":10000,"content":"Continue"}}));
+    write(&entries);
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns.len(), 2);
+    entries.pop();
+    // OMP may persist only a generic abort result when its desktop parent exits.
+    entries.push(json!({"type":"message","id":"abort","parentId":"call","message":{"role":"toolResult","toolCallId":"delegate","toolName":"subagent","isError":true,"content":[{"type":"text","text":"Aborted: The operation was aborted."}]}}));
+    write(&entries);
+    let (_, aborted) = read_session(&file, &[]).unwrap();
+    assert_eq!(aborted.turns[0]["status"], "interrupted");
+    let node = &aborted.turns[0]["items"][1]["agentsTree"][0];
+    assert_eq!(node["children"][0]["status"], "aborted");
+    assert_eq!(node["children"][1]["status"], "completed");
+    assert_eq!(node["children"][1]["endedAt"], 6000);
+    assert!(aborted.transcripts.values().any(|v| v.to_string().contains("Partial crash evidence")));
+    entries.pop();
+    // Durable final results always supersede a leftover checkpoint.
+    entries.push(json!({"type":"message","id":"done","parentId":"call","message":{"role":"toolResult","toolCallId":"delegate","toolName":"subagent","details":{"results":[{"agent":"colonel","status":"completed","startedAt":1000,"endedAt":10000,"messages":[]}]}}}));
+    write(&entries);
+    let (_, finished) = read_session(&file, &[]).unwrap();
+    assert_eq!(finished.turns[0]["items"][1]["agentsTree"][0]["status"], "completed");
+    assert!(!json!(finished.turns).to_string().contains("Partial crash evidence"));
+    // A different branch, malformed checkpoint or wrong call ID cannot restore it.
+    entries.pop();
+    entries.push(json!({"type":"message","id":"fork","parentId":"user","message":{"role":"assistant","timestamp":3,"stopReason":"stop","content":[{"type":"text","text":"Alternative"}]}}));
+    write(&entries);
+    assert!(read_session(&file, &[]).unwrap().1.transcripts.is_empty());
+    entries.pop(); write(&entries);
+    let mut wrong = saved.clone(); wrong["toolCallId"] = json!("unrelated");
+    for bad in ["{".to_string(), wrong.to_string()] {
+        std::fs::write(&checkpoint, bad).unwrap();
+        let (_, missing) = read_session(&file, &[]).unwrap();
+        assert!(!json!(missing.transcripts).to_string().contains("Partial crash evidence"));
+        assert_eq!(missing.turns[0]["status"], "interrupted");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn root_stream_recovery_preserves_branch_identity_and_durable_results() {
+    use sha2::{Digest, Sha256};
+    let dir = temp();
+    let file = dir.join("session.jsonl");
+    let folder = dir.join("session.jsonl.streams");
+    std::fs::create_dir(&folder).unwrap();
+    let save = |key: &str, value: Value| std::fs::write(folder.join(format!("{:x}.json", Sha256::digest(key.as_bytes()))), value.to_string()).unwrap();
+    let mut entries = vec![
+        json!({"type":"session","id":"root-crash","cwd":"/workspace"}),
+        json!({"type":"message","id":"user","parentId":null,"message":{"role":"user","timestamp":1,"content":"Start"}}),
+    ];
+    let write = |entries: &[Value]| std::fs::write(&file, entries.iter().map(|e| format!("{e}\n")).collect::<String>()).unwrap();
+    let partial = json!({"version":1,"savedAt":100,"anchor":"user","result":{"role":"assistant","timestamp":2,"content":[{"type":"text","text":"ROOT_PARTIAL"},{"type":"toolCall","id":"unsafe","name":"bash","arguments":{"command":"never executed"}}]}});
+    save("message:user", partial.clone()); write(&entries);
+    let original = std::fs::read(&file).unwrap();
+    let (_, restored) = read_session(&file, &[]).unwrap();
+    assert_eq!(restored.turns[0]["status"], "interrupted");
+    assert_eq!(restored.turns[0]["items"][1]["text"], "ROOT_PARTIAL");
+    assert_eq!(restored.turns[0]["items"].as_array().unwrap().len(), 2, "partial calls must not appear executed");
+    assert_eq!(std::fs::read(&file).unwrap(), original);
+    entries.push(json!({"type":"message","id":"next","parentId":"user","message":{"role":"user","timestamp":3,"content":"Continue"}}));
+    write(&entries);
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns.len(), 2);
+    entries.pop();
+    // A completed response, alternative branch or explicit rewind suppresses it.
+    for next in [
+        json!({"type":"message","id":"answer","parentId":"user","message":{"role":"assistant","timestamp":2,"stopReason":"stop","content":[{"type":"text","text":"Completed"}]}}),
+        json!({"type":"message","id":"alternative","parentId":"user","message":{"role":"assistant","timestamp":4,"stopReason":"stop","content":[{"type":"text","text":"Alternative"}]}}),
+        json!({"type":"custom","customType":"taucode-rewind","id":"rewind","parentId":"user"}),
+    ] {
+        entries.push(next); write(&entries);
+        assert!(!json!(read_session(&file, &[]).unwrap().1.turns).to_string().contains("ROOT_PARTIAL"));
+        entries.pop();
+    }
+    entries.push(json!({"type":"message","id":"abort","parentId":"user","message":{"role":"assistant","timestamp":2,"stopReason":"aborted","content":[]}}));
+    write(&entries);
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns[0]["items"][1]["text"], "ROOT_PARTIAL");
+    entries.pop();
+    save("message:user", json!({"version":1,"savedAt":100,"anchor":"wrong","result":partial["result"]}));
+    write(&entries);
+    assert!(!json!(read_session(&file, &[]).unwrap().1.turns).to_string().contains("ROOT_PARTIAL"));
+    entries.push(json!({"type":"message","id":"call","parentId":"user","message":{"role":"assistant","timestamp":2,"stopReason":"toolUse","content":[{"type":"toolCall","id":"shell","name":"bash","arguments":{"command":"timer"}}]}}));
+    save("tool:shell", json!({"version":1,"savedAt":100,"toolCallId":"shell","toolName":"bash","result":{"content":[{"type":"text","text":"TOOL_PARTIAL"}]}}));
+    write(&entries);
+    let (_, tool) = read_session(&file, &[]).unwrap();
+    assert_eq!(tool.turns[0]["status"], "interrupted");
+    assert_eq!(tool.turns[0]["items"][1]["aggregatedOutput"], "TOOL_PARTIAL");
+    assert_eq!(tool.turns[0]["items"][1]["exitCode"], Value::Null);
+    assert_eq!(tool.turns[0]["items"][1]["durationMs"], Value::Null);
+    entries.push(json!({"type":"message","id":"result","parentId":"call","message":{"role":"toolResult","toolCallId":"shell","toolName":"bash","content":[{"type":"text","text":"DURABLE_RESULT"}]}}));
+    write(&entries);
+    let (_, done) = read_session(&file, &[]).unwrap();
+    assert_eq!(done.turns[0]["items"][1]["aggregatedOutput"], "DURABLE_RESULT");
+    let last = entries.last_mut().unwrap();
+    last["message"]["isError"] = json!(true);
+    last["message"]["content"] = json!([{"type":"text","text":"Aborted: The operation was aborted."}]);
+    write(&entries);
+    assert_eq!(read_session(&file, &[]).unwrap().1.turns[0]["items"][1]["aggregatedOutput"], "TOOL_PARTIAL\nAborted: The operation was aborted.");
+    // OMP exits with a cancellation snapshot plus a durable copy of its output.
+    save("tool:shell", json!({"version":1,"savedAt":100,"toolCallId":"shell","toolName":"bash","result":{"content":[{"type":"text","text":"[Command cancelled]\nTOOL_PARTIAL\n"}]}}));
+    entries.last_mut().unwrap()["message"]["content"] = json!([{"type":"text","text":"TOOL_PARTIAL\n"}]);
+    entries.insert(entries.len()-1, json!({"type":"custom","customType":"session_exit","id":"exit","parentId":"call","data":{"pendingToolCalls":[{"toolCallId":"shell"}]}}));
+    entries.last_mut().unwrap()["parentId"] = json!("exit");
+    entries.push(json!({"type":"message","id":"followup","parentId":"result","message":{"role":"user","timestamp":3,"content":"Continue"}}));
+    entries.push(json!({"type":"message","id":"reply","parentId":"followup","message":{"role":"assistant","timestamp":4,"stopReason":"stop","content":[{"type":"text","text":"Follow-up complete"}]}}));
+    write(&entries);
+    let (_, stopped) = read_session(&file, &[]).unwrap();
+    assert_eq!(stopped.turns.len(), 2);
+    assert_eq!(stopped.turns[0]["status"], "interrupted");
+    assert_eq!(stopped.turns[1]["status"], "completed");
+    assert_eq!(stopped.turns[0]["items"][1]["aggregatedOutput"], "[Command cancelled]\nTOOL_PARTIAL\n");
+    assert_eq!(stopped.turns[0]["items"][1]["exitCode"], Value::Null);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn supervised_commands_display_the_requested_command() {
+    let mut t = Translator::new("thread", "/workspace");
+    t.apply(&json!({"type":"agent_start"}));
+    t.apply(&json!({"type":"message_end","message":{"role":"assistant","timestamp":1,"content":[{"type":"toolCall","id":"call","name":"bash","arguments":{"command":"printf hello"}}]}}));
+    t.apply(&json!({"type":"tool_execution_start","toolCallId":"call","toolName":"bash","args":{"command":"'/runtime' '/extensions/lib/commandGuard.ts' '123' '/bin/bash' 'printf hello'"}}));
+    assert_eq!(t.turns[0]["items"][0]["command"], "printf hello");
+}
+
 #[tokio::test]
 async fn native_tool_gate_approvals_are_decisions_instead_of_user_questions() {
     let dir = temp();
@@ -540,6 +1039,11 @@ fn managed_policy_and_access_files_update_and_preserve_session_rules() {
     policy.subagents.max_concurrent = 2;
     config::write_policy(&home, &[], &policy).unwrap();
     assert_eq!(read(&home.join("taucode/policy.json"))["maxConcurrent"], 2);
+    policy.subagents.mode = crate::types::SubagentMode::ChainOfCommand;
+    policy.subagents.roles[0].command_rank = Some(crate::types::CommandRank::Enlisted);
+    config::write_policy(&home, &[], &policy).unwrap();
+    assert_eq!(read(&home.join("taucode/policy.json"))["mode"], "chain-of-command");
+    assert_eq!(read(&home.join("taucode/policy.json"))["roles"][0]["commandRank"], "enlisted");
     config::write_access(&home, "thread", Some("current")).unwrap();
     let file = home.join("taucode/threads/thread.json");
     assert_eq!(read(&file)["accessMode"], "ask");
@@ -610,7 +1114,8 @@ fn every_provider_and_auth_config_is_secret_free() {
             let models = config::models(&registry);
             let id = config::provider_id(&registry[0], &registry);
             assert_eq!(models["providers"][&id]["models"][0]["id"], "fake");
-            let env = config::prepare(&dir, &registry, None, &Keys).unwrap();
+            let mut env = config::prepare(&dir, &registry, None).unwrap();
+            env.extend(config::credentials(&registry, &Keys).unwrap());
             if auth["type"] == "apiKey" {
                 assert_eq!(env["TAUCODE_PROVIDER_LOCAL_KEY"], "keychain-secret-canary");
                 assert_eq!(
@@ -652,6 +1157,7 @@ async fn fake(idle: Duration, marker: &Path) -> (Arc<Process>, Arc<StdMutex<Vec<
         .arg("--session")
         .arg("session.jsonl")
         .env("FAKE_PI_EOF", marker)
+        .env("FAKE_PI_REQUESTS", marker.with_extension("requests"))
         .env("TAUCODE_SESSION_KEY", "fake-thread");
     let events = Arc::new(StdMutex::new(vec![]));
     let sink = events.clone();
@@ -724,6 +1230,23 @@ async fn fake_crash_fails_turn_and_idle_closes_stdin() {
     .await
     .unwrap();
     assert_eq!(std::fs::read_to_string(marker).unwrap(), "graceful");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn interrupt_cancels_pending_ui_before_waiting_for_pi_to_settle() {
+    let dir = temp();
+    let (p, events) = fake(Duration::from_secs(600), &dir.join("eof")).await;
+    p.request(json!({"type":"prompt","message":"approval"})).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !events.lock().unwrap().iter().any(|e| e["method"] == "item/tool/requestUserInput") {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(1), p.request(json!({"type":"abort"}))).await.unwrap().unwrap();
+    assert!(events.lock().unwrap().iter().any(|e| e["method"] == "serverRequest/resolved"));
+    assert!(p.answer("pi:fake-thread:blocked", json!({"decision":"accept"})).await.is_err());
+    p.shutdown().await.unwrap();
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -1156,6 +1679,20 @@ async fn stored_pi_and_omp_resume_without_credentials_and_spawn_only_when_sendin
         assert!(engine.sessions.lock().await["stored"].process.is_none());
         assert!(!dir.join(format!("{profile}/agent/workspace/models.json")).exists());
         assert!(engine.request("other-workspace", "thread/resume", json!({"threadId":"stored"})).await.is_err());
+        let mut crashed = entries.to_vec();
+        crashed.extend([
+            json!({"type":"message","id":"crash-user","parentId":"a","message":{"role":"user","timestamp":3,"content":"Delegate"}}),
+            json!({"type":"message","id":"crash-call","parentId":"crash-user","message":{"role":"assistant","timestamp":4,"stopReason":"toolUse","content":[{"type":"toolCall","id":"interrupted","name":"subagent","arguments":{"agent":"major","task":"Check"}}]}}),
+        ]);
+        std::fs::write(&file, crashed.iter().map(Value::to_string).collect::<Vec<_>>().join("\n") + "\n").unwrap();
+        use sha2::{Digest, Sha256};
+        let recovery = sessions.join("stored.jsonl.agents");
+        std::fs::create_dir(&recovery).unwrap();
+        std::fs::write(recovery.join(format!("{:x}.json", Sha256::digest(b"interrupted"))), json!({"version":1,"toolCallId":"interrupted","savedAt":5,"result":{"details":{"results":[{"agent":"major","status":"running","startedAt":4,"messages":[{"role":"assistant","content":[{"type":"text","text":"Offline recovery evidence"}]}]}]}}}).to_string()).unwrap();
+        let recovered = engine.request("workspace", "thread/resume", json!({"threadId":"stored"})).await.unwrap();
+        assert_eq!(recovered["result"]["thread"]["turns"][1]["status"], "interrupted");
+        assert!(recovered.to_string().contains("Offline recovery evidence"));
+        assert!(engine.sessions.lock().await["stored"].process.is_none(), "recovery must not restart agent work or request credentials");
         if profile == "pi" {
             engine.fake = true; engine.keys = Arc::new(Keys);
             engine.request("workspace", "turn/start", json!({"threadId":"stored","input":[{"type":"text","text":"Continue"}]})).await.unwrap();
@@ -1200,13 +1737,15 @@ fn work_spawn_profile_loads_only_bundled_skills_and_preserves_connectors_and_sub
     let mut command = Command::new("node");
     work_profile(&mut command, Path::new("/synthetic/work"), Some(Path::new("/synthetic/work/.venv/bin/python")));
     let args: Vec<_> = command.as_std().get_args().map(|s| s.to_string_lossy().into_owned()).collect();
-    assert!(args.contains(&"read,write,edit,ls,find,grep,bash,subagent,ask_user,mcp__*".into()));
+    assert!(args.contains(&"read,write,edit,ls,find,grep,bash,subagent,ask_user,preview_server,mcp__*".into()));
     assert!(args.contains(&"/synthetic/work/skills".into()));
     assert!(args.contains(&"--no-context-files".into()));
     assert!(args.contains(&"--no-skills".into()));
     assert!(args.contains(&WORK_PROMPT.into()));
-    assert!(WORK_PROMPT.contains("outputs/") && WORK_PROMPT.contains("Ask before deleting or overwriting"));
+    assert!(WORK_PROMPT.contains("outputs/") && WORK_PROMPT.contains("In Ask mode, ask before deleting or overwriting"));
+    assert!(WORK_PROMPT.contains("Do not use ask_user to request tool permission"));
     assert!(command.as_std().get_envs().any(|(k, v)| k == "TAUCODE_WORK" && v == Some(std::ffi::OsStr::new("1"))));
+    assert!(command.as_std().get_envs().any(|(k, v)| k == "TAUCODE_WORK_PYTHON" && v == Some(std::ffi::OsStr::new("/synthetic/work/.venv/bin/python"))));
 }
 #[test]
 fn markdown_checklists_translate_to_plan_items_and_updates() {
@@ -1226,11 +1765,26 @@ async fn real_pi_work_starts_offline_with_work_policy_and_skills() {
     let dir = temp();
     let space = dir.join("space");
     std::fs::create_dir(&space).unwrap();
-    let engine = PiEngine::work(dir.join("data"), "workspace".into(), space.to_string_lossy().into_owned(), Arc::new(|_, _| {}));
+    let mut engine = PiEngine::work(dir.join("data"), "workspace".into(), space.to_string_lossy().into_owned(), Arc::new(|_, _| {}));
+    engine.previews = Some(crate::shared::managed_tasks::ManagedTasks::new());
     let provider: ProviderEntry = serde_json::from_value(json!({"id":"local","name":"Offline","kind":"ollama","enabled":true,"auth":{"type":"none"},"models":[{"id":"offline","enabled":true}]})).unwrap();
-    engine.configure("workspace", vec![provider], AgentPolicy::default()).await;
+    let mut policy = AgentPolicy::default();
+    policy.subagents.mode = crate::types::SubagentMode::ChainOfCommand;
+    policy.subagents.enabled = true;
+    engine.configure("workspace", vec![provider], policy).await;
     let response = engine.request("workspace", "thread/start", json!({"model":"local/offline"})).await.unwrap();
     let id = response["result"]["thread"]["id"].as_str().unwrap();
+    assert!(engine.sessions.lock().await[id].process.is_none());
+    let (registry, policy) = engine.registry.lock().await["workspace"].clone();
+    let process = engine.spawn(engine.sessions.lock().await.get_mut(id).unwrap(), &registry, &policy).await.unwrap();
+    let preview = process.preview.lock().await.clone().unwrap();
+    assert!(preview.runtime.guard.as_ref().unwrap().1.is_file());
+    let env: HashMap<_, _> = preview.runtime.env.as_ref().unwrap().iter().cloned().collect();
+    assert_eq!(env["HOME"], dir.join("data/pi/agent/workspace").to_string_lossy());
+    assert!(env.keys().all(|key| matches!(key.as_str(), "PATH" | "LANG" | "TMPDIR" | "SYSTEMROOT" | "WINDIR" | "TERM" | "HOME" | "XDG_CONFIG_HOME" | "OTEL_SDK_DISABLED" | "TAUCODE_WORK_PYTHON")));
+    let delivered: Value = serde_json::from_slice(&std::fs::read(dir.join("data/pi/agent/workspace/taucode/policy.json")).unwrap()).unwrap();
+    assert_eq!(delivered["enabled"], false);
+    assert_eq!(delivered["mode"], "custom");
     let access: Value = serde_json::from_slice(&std::fs::read(dir.join("data/pi/agent/workspace/taucode/threads").join(format!("{id}.json"))).unwrap()).unwrap();
     assert_eq!(access["kind"], "work");
     assert_eq!(access["accessMode"], "ask");
@@ -1255,7 +1809,7 @@ async fn side_chat_current_blocks_mutations_and_two_turn_checkpoints_bind_real_i
     let observer = checkpoints.clone();
     let (tx, mut completions) = tokio::sync::mpsc::unbounded_channel();
     let providers = vec![serde_json::from_value(json!({"id":"first","name":"First","kind":"ollama","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"fake","enabled":true}]})).unwrap()];
-    let mut session = WorkspaceSession::lazy(Box::new(|| Box::pin(async { Err("Codex must not be used".into()) })),
+    let mut session = WorkspaceSession::lazy(Box::new(|_| Box::pin(async { Err("Codex must not be used".into()) })),
         providers, AgentPolicy::default(), None, None, "workspace".into());
     session.checkpoints = Some(checkpoints.clone());
     session.pi = PiEngine::new(dir.clone(), "workspace".into(), root.to_string_lossy().into(), None,
@@ -1420,6 +1974,145 @@ fn omp_models_are_yaml_compatible_and_do_not_contain_credentials() {
 }
 
 #[tokio::test]
+#[cfg(unix)]
+async fn command_deadline_stops_a_real_delegated_shell_tree() {
+    use tokio::io::AsyncBufReadExt;
+    if !Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/omp/node_modules/.bin/bun").exists() { return; }
+    let mut server = tokio::process::Command::new("node").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/omp_fetch.mjs")).arg("--serve").stdout(std::process::Stdio::piped()).kill_on_drop(true).spawn().unwrap();
+    let port = tokio::io::BufReader::new(server.stdout.take().unwrap()).lines().next_line().await.unwrap().unwrap();
+    let dir = temp();
+    let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_,_| {}));
+    engine.profile.definition = crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), "omp").unwrap().0;
+    let provider = serde_json::from_value(json!({"id":"local","name":"Stub","kind":"openai-compatible","baseUrl":format!("http://127.0.0.1:{port}/v1"),"enabled":true,"auth":{"type":"none"},"models":[{"id":"stub","enabled":true,"contextWindow":8192}]})).unwrap();
+    let policy = serde_json::from_value(json!({"subagents":{"mode":"chain-of-command","maxRunMinutes":1,"roles":[{"name":"enlisted","description":"Work","toolAccess":"full","instructions":""}]}})).unwrap();
+    engine.configure("workspace", vec![provider], policy).await;
+    let mut events = engine.events();
+    let start = engine.request("workspace", "thread/start", json!({"model":"local/stub"})).await.unwrap();
+    let id = start["result"]["thread"]["id"].as_str().unwrap();
+    let started = std::time::Instant::now();
+    engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"LIMIT_TIMER_ROOT"}],"accessMode":"full-access"})).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        while !dir.join("timer.pid").exists() { tokio::time::sleep(Duration::from_millis(50)).await; }
+    }).await.unwrap();
+    let pid: i32 = std::fs::read_to_string(dir.join("timer.pid")).unwrap().parse().unwrap();
+    tokio::time::timeout(Duration::from_secs(70), async {
+        loop {
+            let event = events.recv().await.unwrap();
+            if event["method"] == "turn/completed" {
+                assert_eq!(event["params"]["turn"]["status"], "interrupted", "{event}");
+                assert!(event.to_string().contains("time limit"), "{event}");
+                break;
+            }
+        }
+    }).await.unwrap();
+    assert!(started.elapsed() >= Duration::from_secs(59) && started.elapsed() < Duration::from_secs(75));
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while unsafe { libc::kill(pid, 0) } == 0 { tokio::time::sleep(Duration::from_millis(30)).await; }
+    }).await.expect("deadline must stop the delegated command's child process");
+    engine.shutdown().await.unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn project_token_allowance_survives_engine_restart_and_blocks_new_provider_calls() {
+    use tokio::io::AsyncBufReadExt;
+    if !Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/omp/node_modules/.bin/bun").exists() { return; }
+    let mut server = tokio::process::Command::new("node").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/omp_fetch.mjs")).arg("--serve").stdout(std::process::Stdio::piped()).kill_on_drop(true).spawn().unwrap();
+    let port = tokio::io::BufReader::new(server.stdout.take().unwrap()).lines().next_line().await.unwrap().unwrap();
+    let dir = temp();
+    for profile in ["pi", "omp"] {
+        let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_,_| {}));
+        engine.profile.definition = crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), profile).unwrap().0;
+        let provider = serde_json::from_value(json!({"id":"local","name":"Stub","kind":"openai-compatible","baseUrl":format!("http://127.0.0.1:{port}/v1"),"enabled":true,"auth":{"type":"none"},"models":[{"id":"stub","enabled":true,"contextWindow":8192}]})).unwrap();
+        let policy = serde_json::from_value(json!({"subagents":{"mode":"chain-of-command","dailyTokenLimit":1}})).unwrap();
+        engine.configure("workspace", vec![provider], policy).await;
+        let mut events = engine.events();
+        let start = engine.request("workspace", "thread/start", json!({"model":"local/stub"})).await.unwrap();
+        let id = start["result"]["thread"]["id"].as_str().unwrap();
+        engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"QA_MISSING_FIXTURE"}],"accessMode":"full-access"})).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                let event = events.recv().await.unwrap();
+                if event["method"] == "turn/completed" {
+                    assert_eq!(event["params"]["turn"]["status"], "interrupted", "{profile}: {event}");
+                    assert!(event.to_string().contains("daily token allowance"), "{profile}: {event}");
+                    break;
+                }
+            }
+        }).await.unwrap();
+        let file = engine.sessions.lock().await[id].file.clone();
+        let (_, restored) = read_session(&file, &[]).unwrap();
+        assert_eq!(restored.turns.last().unwrap()["status"], "interrupted");
+        assert!(json!(restored.turns).to_string().contains("daily token allowance"));
+        let count = reqwest::get(format!("http://127.0.0.1:{port}/count")).await.unwrap().text().await.unwrap();
+        assert_eq!(count, "1", "an exhausted project allowance must block the restarted engine's first provider request");
+        engine.shutdown().await.unwrap();
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn execution_limit_replay_keeps_the_reason_on_its_own_turn() {
+    let history = Translator::history("thread", "/workspace", &[
+        json!({"role":"user","timestamp":1,"content":"First"}),
+        json!({"role":"assistant","timestamp":2,"stopReason":"toolUse","content":[]}),
+        json!({"role":"taucodeExecutionLimit","record":{"message":"First allowance","beforeUser":false}}),
+        json!({"role":"user","timestamp":3,"content":"Second"}),
+        json!({"role":"assistant","timestamp":4,"stopReason":"stop","content":[{"type":"text","text":"OK"}]}),
+        json!({"role":"taucodeExecutionLimit","record":{"message":"Third allowance","beforeUser":true}}),
+        json!({"role":"user","timestamp":5,"content":"Third"}),
+    ]);
+    assert_eq!(history.turns.len(), 3);
+    for (index, status) in ["interrupted", "completed", "interrupted"].iter().enumerate() {
+        assert_eq!(history.turns[index]["status"], *status);
+    }
+    assert!(history.turns[0].to_string().contains("First allowance"));
+    assert!(!history.turns[1].to_string().contains("allowance"));
+    assert!(history.turns[2].to_string().contains("Third allowance"));
+}
+
+#[tokio::test]
+async fn real_pi_and_omp_verification_gates_completion_and_survives_reload() {
+    use tokio::io::AsyncBufReadExt;
+    if !Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/omp/node_modules/.bin/bun").exists() { return; }
+    let mut server = tokio::process::Command::new("node").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/omp_fetch.mjs")).arg("--serve").stdout(std::process::Stdio::piped()).kill_on_drop(true).spawn().unwrap();
+    let port = tokio::io::BufReader::new(server.stdout.take().unwrap()).lines().next_line().await.unwrap().unwrap();
+    for profile in ["pi", "omp"] {
+        let dir = temp();
+        std::fs::write(dir.join("answer.txt"), "42\n").unwrap();
+        let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_,_| {}));
+        engine.profile.definition = crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), profile).unwrap().0;
+        let provider = serde_json::from_value(json!({"id":"local","name":"Stub","kind":"openai-compatible","baseUrl":format!("http://127.0.0.1:{port}/v1"),"enabled":true,"auth":{"type":"none"},"models":[{"id":"stub","enabled":true,"contextWindow":8192}]})).unwrap();
+        let policy = serde_json::from_value(json!({"subagents":{"mode":"chain-of-command","roles":[{"name":"major","description":"QA","toolAccess":"read-only","instructions":""}]}})).unwrap();
+        engine.configure("workspace", vec![provider], policy).await;
+        let mut events = engine.events();
+        for (marker, expected) in [("QA_MISSING_FIXTURE", "failed"), ("QA_PASS_FIXTURE", "completed"), ("QA_FAIL_FIXTURE", "failed")] {
+            let start = engine.request("workspace", "thread/start", json!({"model":"local/stub"})).await.unwrap();
+            let id = start["result"]["thread"]["id"].as_str().unwrap();
+            engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":marker}],"accessMode":"full-access"})).await.unwrap();
+            let mut verification = false;
+            tokio::time::timeout(Duration::from_secs(45), async {
+                loop {
+                    let event = events.recv().await.unwrap();
+                    if event["method"] == "item/completed" && event["params"]["item"]["text"].as_str().is_some_and(|text| text.contains("Chain of Command verification")) { verification = true; }
+                    if event["method"] == "turn/completed" {
+                        assert_eq!(event["params"]["turn"]["status"], expected, "{profile} {marker}: {event}");
+                        assert!(verification, "QA status must arrive before turn completion: {profile} {marker} {event}");
+                        break;
+                    }
+                }
+            }).await.unwrap();
+            let file = engine.sessions.lock().await[id].file.clone();
+            let (_, restored) = read_session(&file, &[]).unwrap();
+            assert_eq!(restored.turns.last().unwrap()["status"], expected, "reloaded {marker}");
+            assert!(json!(restored.turns).to_string().contains("Chain of Command verification"));
+        }
+        engine.shutdown().await.unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[tokio::test]
 async fn real_omp_profile_with_offline_transport_fixture() {
     if !Path::new(env!("CARGO_MANIFEST_DIR")).join("../engines/omp/node_modules/.bin/bun").exists() { return; }
     let dir = temp();
@@ -1442,6 +2135,70 @@ async fn real_omp_profile_with_offline_transport_fixture() {
         }
     }).await.unwrap();
     assert!(streamed);
+    if cfg!(unix) {
+        engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"STREAM_CRASH_FIXTURE"}],"accessMode":"read-only"})).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while events.recv().await.unwrap()["method"] != "turn/completed" {}
+        }).await.unwrap();
+        let file = engine.sessions.lock().await[id].file.clone();
+        let (_, recovered) = read_session(&file, &[]).unwrap();
+        assert_eq!(recovered.turns.last().unwrap()["status"], "interrupted");
+        assert!(json!(recovered.turns).to_string().contains("ROOT_PARTIAL"), "real OMP extension must save streaming evidence before termination");
+        assert!(!std::fs::read_to_string(&file).unwrap().contains("ROOT_PARTIAL"), "partial output stays outside model context");
+        engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"Say hello again"}],"accessMode":"read-only"})).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let event = events.recv().await.unwrap();
+                if event["method"] == "turn/completed" { assert_eq!(event["params"]["turn"]["status"], "completed", "{event}"); break; }
+            }
+        }).await.unwrap();
+        let (_, followed_up) = read_session(&file, &[]).unwrap();
+        assert_eq!(followed_up.turns.len(), 3);
+        assert_eq!(followed_up.turns[1]["status"], "interrupted");
+        assert_eq!(followed_up.turns[2]["status"], "completed");
+        #[cfg(unix)] {
+            engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"GUARD_NATIVE_FIXTURE"}],"accessMode":"full-access"})).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(15), async {
+                while events.recv().await.unwrap()["method"] != "turn/completed" {}
+            }).await.unwrap();
+            let (_, recovered) = read_session(&file, &[]).unwrap();
+            let turn = recovered.turns.last().unwrap();
+            assert_eq!(turn["status"], "interrupted");
+            let output = turn["items"].as_array().unwrap().iter().find_map(|item| item["aggregatedOutput"].as_str()).unwrap();
+            let pid: i32 = output.trim().strip_prefix("GUARD_NATIVE_READY ").expect(output).parse().unwrap();
+            tokio::time::timeout(Duration::from_secs(4), async {
+                while unsafe { libc::kill(pid, 0) } == 0 { tokio::time::sleep(Duration::from_millis(30)).await; }
+            }).await.expect("native OMP foreground command survived engine SIGKILL");
+            engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"Say hello after supervisor"}],"accessMode":"read-only"})).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(15), async {
+                loop {
+                    let event = events.recv().await.unwrap();
+                    if event["method"] == "turn/completed" { assert_eq!(event["params"]["turn"]["status"], "completed"); break; }
+                }
+            }).await.unwrap();
+            let (_, final_history) = read_session(&file, &[]).unwrap();
+            assert_eq!(final_history.turns.len(), 5);
+            assert_eq!(final_history.turns[3]["status"], "interrupted");
+            assert_eq!(final_history.turns[4]["status"], "completed");
+            engine.request("workspace", "turn/start", json!({"threadId":id,"input":[{"type":"text","text":"GUARD_STOP_FIXTURE"}],"accessMode":"full-access"})).await.unwrap();
+            let pid: i32 = tokio::time::timeout(Duration::from_secs(15), async {
+                loop {
+                    let event = events.recv().await.unwrap();
+                    if event["method"] == "item/commandExecution/outputDelta" {
+                        if let Some(pid) = event["params"]["delta"].as_str().and_then(|s| s.trim().strip_prefix("GUARD_NATIVE_READY ")) { break pid.parse().unwrap(); }
+                    }
+                }
+            }).await.unwrap();
+            engine.request("workspace", "turn/interrupt", json!({"threadId":id})).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(15), async {
+                while events.recv().await.unwrap()["method"] != "turn/completed" {}
+            }).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(4), async {
+                while unsafe { libc::kill(pid, 0) } == 0 { tokio::time::sleep(Duration::from_millis(30)).await; }
+            }).await.expect("native OMP Stop left its foreground command alive");
+            assert_eq!(read_session(&file, &[]).unwrap().1.turns.last().unwrap()["status"], "interrupted");
+        }
+    }
     engine.shutdown().await.unwrap();
     assert!(dir.join("omp/agent/workspace/models.yml").exists());
     assert!(!dir.join("omp/agent/workspace/auth.json").exists());
@@ -1461,4 +2218,87 @@ fn omp_preload_blocks_auth_and_unconfigured_network() {
         .env("PI_CODING_AGENT_DIR", &dir).output().unwrap();
     assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn managed_preview_bridge_serves_restarts_and_stops_without_user_dialogs() {
+    use crate::shared::managed_tasks::{ManagedTasks, TaskRuntime};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let root = temp();
+    std::fs::write(root.join("package.json"), "{}").unwrap();
+    config::prepare(&root, &[], None).unwrap();
+    let guard = root.join("extensions/lib/commandGuard.ts");
+    let access = root.join("access.json");
+    std::fs::write(&access, r#"{"kind":"work","accessMode":"full-access"}"#).unwrap();
+    let manager = ManagedTasks::new();
+    let node = crate::shared::engine_runtime::node_path();
+    let preview = Arc::new(preview::Preview { manager: manager.clone(), data: root.clone(), access: access.clone(), workspace: "work".into(), thread: "fake-thread".into(), cwd: root.clone(),
+        runtime: TaskRuntime { guard: Some((node, guard)), env: Some(crate::shared::engine_registry::environment(std::env::vars(), &root).into_iter().chain([("TAUCODE_PREVIEW_TEST".into(), "owned ✓".into())]).collect()) }, secrets: vec!["secret-canary".into()] });
+    let (process, events) = fake(Duration::from_secs(600), &root.join("eof")).await;
+    *process.preview.lock().await = Some(preview.clone());
+    let script = root.join("server.cjs");
+    std::fs::write(&script, r#"const http = require('node:http'); const server = http.createServer((_, res) => res.end(process.env.TAUCODE_PREVIEW_TEST)); server.listen(0, '127.0.0.1', () => console.log('http://127.0.0.1:' + server.address().port + '/ secret-canary'));"#).unwrap();
+    let message = |id: &str, params: Value| json!({"type":"extension_ui_request","method":"select","id":id,"title":format!("taucode:preview:{params}"),"options":["Continue"]});
+    process.receive(message("start", json!({"action":"start","command":"node server.cjs","label":"Preview","workspace":"unowned","cwd":"/"}))).await;
+    let wait_url = || async {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let tasks = preview.request(json!({"action":"list"})).await.unwrap();
+                if tasks.as_array().unwrap().iter().any(|t| t["status"] == "running" && t["urls"][0].is_string()) { break tasks; }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }).await.unwrap()
+    };
+    let tasks = wait_url().await;
+    assert!(!tasks[0]["output"].as_str().unwrap().contains("MODULE_TYPELESS_PACKAGE_JSON"));
+    let id = tasks[0]["id"].as_str().unwrap().to_string();
+    assert_eq!(tasks[0]["workspaceId"], "work");
+    assert_eq!(tasks[0]["cwd"], root.canonicalize().unwrap().to_string_lossy().as_ref());
+    let url = tasks[0]["urls"][0].as_str().unwrap();
+    let addr = url.trim_start_matches("http://").trim_end_matches('/');
+    let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    stream.write_all(b"GET / HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n").await.unwrap();
+    let mut body = String::new(); stream.read_to_string(&mut body).await.unwrap();
+    assert!(body.contains("owned ✓"));
+    assert!(manager.request_owned("work", "other", &root, "stop", json!({"id":id}), Default::default()).await.is_err());
+    process.receive(message("list", json!({"action":"list"}))).await;
+    let records = root.join("eof.requests");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if std::fs::read_to_string(&records).unwrap_or_default().contains("[REDACTED]") { break; }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.unwrap();
+    assert!(!std::fs::read_to_string(&records).unwrap().contains("secret-canary"));
+    assert!(events.lock().unwrap().iter().all(|e| e["method"] != "item/tool/requestUserInput"));
+    // Late requests must not launch a command after cancellation.
+    process.request(json!({"type":"abort"})).await.unwrap();
+    assert!(tokio::net::TcpStream::connect(addr).await.is_err());
+    process.receive(message("late", json!({"action":"start","command":"touch late-start"}))).await;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if std::fs::read_to_string(&records).unwrap_or_default().contains("\"id\": \"late\"") { break; }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await.unwrap();
+    assert!(!root.join("late-start").exists());
+    assert_eq!(preview.request(json!({"action":"list"})).await.unwrap()[0]["status"], "stopped");
+    // A restarted preview retains the Work environment and survives engine shutdown.
+    manager.request_owned("work", "fake-thread", &root, "restart", json!({"id":id}), Default::default()).await.unwrap();
+    let restarted = wait_url().await;
+    assert_eq!(restarted.as_array().unwrap().len(), 2);
+    process.shutdown().await.unwrap();
+    assert_eq!(preview.request(json!({"action":"list"})).await.unwrap()[0]["status"], "running");
+    std::fs::write(&access, r#"{"kind":"work","accessMode":"read-only"}"#).unwrap();
+    assert!(preview.request(json!({"action":"start","command":"touch read-only"})).await.unwrap_err().contains("write access"));
+    std::fs::write(&access, r#"{"kind":"code","accessMode":"full-access"}"#).unwrap();
+    assert!(preview.request(json!({"action":"start","command":"touch wrong-mode"})).await.is_err());
+    std::fs::write(&access, r#"{"kind":"work","accessMode":"full-access"}"#).unwrap();
+    std::fs::write(root.join("settings.json"), r#"{"features":{"terminal":false}}"#).unwrap();
+    assert!(preview.request(json!({"action":"start","command":"touch disabled"})).await.is_err());
+    assert!(preview.request(json!({"action":"restart","id":id})).await.is_err());
+    preview.stop().await.unwrap();
+    manager.shutdown().await.unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }

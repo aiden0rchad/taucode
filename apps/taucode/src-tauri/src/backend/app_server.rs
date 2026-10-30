@@ -975,7 +975,7 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
     let checkpoints = crate::shared::checkpoints::Checkpoints::new(pi_data.clone(), workspace_id.clone(), pi_cwd.clone(), Arc::new(move |event| emit_sink.emit_app_server_event(event)));
     let event_sink = crate::shared::checkpoints::CheckpointSink { inner: event_sink, checkpoints: checkpoints.clone() };
     let sink = event_sink.clone();
-    let factory = Box::new(move || {
+    let factory = Box::new(move |credentials| {
         let (mut entry, bin, args, home, version, sink, graph, mut settings) = (
             entry.clone(),
             default_codex_bin.clone(),
@@ -1001,7 +1001,7 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
             }
         }
         Box::pin(spawn_codex_engine(
-            entry, bin, args, home, version, sink, graph, settings,
+            entry, bin, args, home, version, sink, graph, settings, credentials,
         )) as crate::shared::providers::BoxFuture<'static, Result<Arc<CodexEngine>, String>>
     });
     let mut session = WorkspaceSession::lazy(
@@ -1049,6 +1049,7 @@ async fn spawn_codex_engine<E: EventSink>(
     event_sink: E,
     codegraph: Option<crate::codegraph::CodegraphSetup>,
     settings: crate::types::AppSettings,
+    credentials: bool,
 ) -> Result<Arc<CodexEngine>, String> {
     if !settings.providers.iter().any(|p| {
         p.enabled && crate::shared::providers::codex_usable(p) && p.models.iter().any(|m| m.enabled)
@@ -1084,8 +1085,9 @@ async fn spawn_codex_engine<E: EventSink>(
         &settings.providers,
         &policy,
         &crate::shared::providers::Keychain,
+        credentials,
     )?;
-    for p in settings.providers.iter().filter(|p| p.enabled && crate::shared::providers::codex_usable(p)) {
+    for p in settings.providers.iter().filter(|p| credentials && p.enabled && crate::shared::providers::codex_usable(p)) {
         if matches!(p.auth, crate::types::ProviderAuth::Command { .. }) {
             if let Some(key) = crate::shared::providers::token(p, &crate::shared::providers::Keychain).await? {
                 provider_env.push((crate::shared::engines::key_env(&p.id), key));
@@ -1105,8 +1107,10 @@ async fn spawn_codex_engine<E: EventSink>(
         &policy,
         &home,
     )?);
-    let mut connectors =
-        crate::shared::connectors::effective(&settings, &entry.settings, codegraph.as_ref())?;
+    // History reads neither run models nor connect external tools.
+    let mut connectors = if credentials {
+        crate::shared::connectors::effective(&settings, &entry.settings, codegraph.as_ref())?
+    } else { vec![] };
     crate::shared::connectors::configure_browser(
         &mut connectors,
         home.parent()

@@ -7,10 +7,16 @@ import { Squircle } from "@/features/design-system/components/squircle/Squircle"
 import { SidebarTree } from "@app/components/SidebarTree";
 import { formatRelativeTimeShort } from "@utils/time";
 import { buildThreadTranscript } from "@utils/threadText";
+import type { ParsedFileLocation } from "@utils/fileLinks";
+import { describeTool } from "@/features/messages/utils/messageRenderUtils";
 import { exportMarkdownFile } from "@services/tauri";
 import { WorkConcurrency } from "./WorkConcurrency";
 import { WorkFiles } from "./WorkFiles";
-import { useReasoningSelection } from "@/features/models/reasoning";
+import { BackgroundTasks } from "@/features/tasks/BackgroundTasks";
+import { useManagedTasks, type ManagedTasksTransport, type ManagedTasksController } from "@/features/tasks/useManagedTasks";
+import { AgentActivity } from "@/features/agents/AgentsPanel";
+import { AgentsContext, agentGroups, runningAgents } from "@/features/agents/agents";
+import { clampReasoning, useReasoningSelection } from "@/features/models/reasoning";
 import { SidebarResizeHandle } from "@/features/layout/components/SidebarResizeHandle";
 import { useSidebarState } from "@/features/layout/hooks/useSidebarState";
 import { ComposerDictation } from "@/features/composer/components/ComposerDictation";
@@ -18,20 +24,22 @@ import { NewConversationRow } from "@/features/chat/NewConversationRow";
 import { Folder, FolderLock, X, FolderTree, FileSearch, Table, Presentation, Trash2, CheckCircle2, Circle, ExternalLink, FolderOpen, Eye, Copy, Terminal, LoaderCircle, Search, ChevronDown, FilePenLine, Globe, Bot, ListChecks, CircleAlert } from "lucide-react";
 import { ComposerShell, ComposerSendButton, ComposerAccessControl } from "@/features/composer/components/ComposerShell";
 import { getFileTypeIconUrl } from "@utils/fileTypeIcons";
-import { createElement, useCallback, useEffect, useRef, useState } from "react";
+import { createElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AppSettings, WorkRequest, WorkTask } from "@/types";
 import { checkpointRequest, pickWorkspacePath, pickWorkspacePaths, pickWorkAttachments, workAttachment, workOutput, workRequest } from "@services/tauri";
 import { subscribeWindowDragDrop } from "@services/dragDrop";
 import { Markdown } from "@/features/messages/components/Markdown";
+import { isTurnError, TurnErrorCard } from "@/features/messages/components/TurnErrorCard";
 import { Checkpoints, RewindAction } from "@/features/checkpoints/Checkpoints";
 import { ModeSwitcher } from "@/features/chat/ModeShell";
 import { templates, useWork, workGroups } from "./useWork";
 import "./work.css";
 import Square from "lucide-react/dist/esm/icons/square";
 import Plus from "lucide-react/dist/esm/icons/plus";
-import { WorkspaceShell } from "@/features/panels/SidePanel";
+import { WorkspaceShell, useSidePanel } from "@/features/panels/SidePanel";
 import { SidebarBottomRail } from "@app/components/SidebarBottomRail";
 import { RowMenu } from "@/features/chat/RowMenu";
+import { RenameThreadPrompt } from "@threads/components/RenameThreadPrompt";
 
 const templateIcons = { "Organize a folder": FolderTree, "Research brief": FileSearch, "Spreadsheet from documents": Table, "Slide deck from notes": Presentation, "Clean up downloads": Trash2 };
 const workToolIcons: Record<string, typeof Terminal> = { commandExecution: Terminal, fileChange: FilePenLine, webSearch: Globe, collabToolCall: Bot, subAgentActivity: Bot, plan: ListChecks };
@@ -51,6 +59,19 @@ function InputRequest({ request, busy, respond }: { request: WorkRequest; busy: 
   </section>;
 }
 
+function WorkPreviews({ controller, commandsEnabled }: { controller: ManagedTasksController; commandsEnabled: boolean }) {
+  const panel = useSidePanel();
+  return <BackgroundTasks controller={controller} commandsEnabled={commandsEnabled} showCommandInput={false} onOpenUrl={url => { void panel?.openPage(url); }} />;
+}
+function WorkPreviewsLink({ running }: { running: number }) {
+  const panel = useSidePanel();
+  return <section aria-label="Preview servers"><h2>Previews{running > 0 && <small> · {running} running</small>}</h2><button type="button" className="ghost work-agents-link" onClick={() => panel?.openTool("previews")}>View previews</button></section>;
+}
+function WorkAgentsLink() {
+  const panel = useSidePanel();
+  return <button type="button" className="ghost work-agents-link" onClick={() => panel?.openTool("agents")}><Bot size={16} aria-hidden />View agents</button>;
+}
+
 export function WorkView({ settings, onOpenSettings = () => {} }: { settings: AppSettings; onOpenSettings?: () => void }) {
   const features = useFeatures();
   const work = useWork();
@@ -65,12 +86,19 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const [dragOver, setDragOver] = useState(false);
   const [brief, setBrief] = useState("");
   const [spaceId, setSpaceId] = useState("");
-  const [access, setAccess] = useState<WorkTask["accessMode"]>("ask");
+  const [access, setAccess] = useState<WorkTask["accessMode"]>(settings.defaultAccessMode === "full-access" || settings.defaultAccessMode === "read-only" ? settings.defaultAccessMode : "ask");
   const models = (settings.providers ?? []).filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => ({ ...m, provider: p.name, key: p.id + "/" + m.id, label: p.name + " · " + (m.displayName || m.id) })));
-  const [model, setModel] = useState(models[0]?.key ?? "");
+  const policyModel = settings.agentPolicy?.defaultModel ? settings.agentPolicy.defaultModel.providerId + "/" + settings.agentPolicy.defaultModel.modelId : "";
+  const [model, setModel] = useState(models.find(m => m.key === policyModel)?.key ?? models[0]?.key ?? "");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [rename, setRename] = useState<{ id: string; title: string } | null>(null);
+  const [taskName, setTaskName] = useState("");
   const [dictating, setDictating] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [followAccess, setFollowAccess] = useState<WorkTask["accessMode"]>("ask");
+  const [followSelections, setFollowSelections] = useState<Record<string, { model: string; effort: string | null }>>({});
+  const [modelPickerRequest, setModelPickerRequest] = useState(0);
 
   const [folder, setFolder] = useState("");
   const [readOnlyFolders, setReadOnlyFolders] = useState<string[]>([]);
@@ -80,15 +108,53 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
   const selectedSpace = writableSpaces.find(s => s.id === spaceId)?.id || "";
   const needs = work.state.tasks.filter(t => t.status === "needs-input");
   const task = work.task;
+  const taskId = task?.id;
+  const previewRequest = useCallback<ManagedTasksTransport>((_workspace, _thread, action, params) => workRequest("preview", { ...params, taskId, action }), [taskId]);
+  const previews = useManagedTasks(task && !task.importId ? task.spaceId : null, task && !task.importId ? task.threadId : null, previewRequest);
+  const loadAgentTranscript = useCallback((_workspace: string, _thread: string, nodeId: string) => workRequest<{ messages: Record<string, unknown>[]; truncated: boolean }>("subagent-transcript", { taskId, nodeId }), [taskId]);
+  const agents = agentGroups(work.items).flatMap(group => group.nodes);
+  const liveAgents = runningAgents(agents);
+  const progressRef = useRef<HTMLDivElement>(null);
+  const progressContentRef = useRef<HTMLDivElement>(null);
+  const followProgress = useRef(true);
+  const [showLatest, setShowLatest] = useState(false);
+  const scrollToLatest = useCallback(() => {
+    followProgress.current = true;
+    if (progressRef.current) progressRef.current.scrollTop = progressRef.current.scrollHeight;
+    setShowLatest(false);
+  }, []);
+  useLayoutEffect(scrollToLatest, [task?.id, scrollToLatest]);
+  useLayoutEffect(() => {
+    if (followProgress.current) scrollToLatest();
+  }, [work.items, task?.status, task?.pending, task?.error, scrollToLatest]);
+  useEffect(() => {
+    if (!progressRef.current || !progressContentRef.current || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => { if (followProgress.current) scrollToLatest(); });
+    observer.observe(progressRef.current);
+    observer.observe(progressContentRef.current);
+    return () => observer.disconnect();
+  }, [task?.id, scrollToLatest]);
+  useEffect(() => { setFollowAccess(task?.accessMode ?? "ask"); }, [task?.id, task?.accessMode]);
+  const followUp = task ? drafts[task.id] ?? task.pendingMessage ?? "" : "";
+  const followBlocked = busy || !task?.threadId || ["queued", "starting", "stopping", "needs-input"].includes(task.status);
   const capability = models.find(m => m.key === model)?.reasoning;
   const reasoning = useReasoningSelection(model, work.active, capability);
   const continuationSpace = writableSpaces.find(s => s.id === spaceId)?.id || writableSpaces.find(s => s.id === task?.spaceId)?.id || writableSpaces[0]?.id || "";
-  const active = task?.status === "running" || task?.status === "needs-input";
+  const active = task != null && ["starting", "running", "stopping", "needs-input"].includes(task.status);
+  const followSelection = task && !active && task.status !== "queued" ? followSelections[task.id] : undefined;
+  const followModel = followSelection?.model ?? task?.model ?? "";
+  const followCapability = models.find(m => m.key === followModel)?.reasoning;
+  const followEffort = clampReasoning(followCapability, followSelection ? followSelection.effort : task?.effort);
   const nativeDrop = useRef<(paths: string[]) => void>(() => {});
   useEffect(() => subscribeWindowDragDrop(event => { setDragOver(event.payload.type === "enter" || event.payload.type === "over"); if (event.payload.type === "drop") nativeDrop.current(event.payload.paths ?? []); }), []);
   const run = async (operation: () => Promise<unknown>) => {
     setBusy(true); work.setError("");
-    try { await operation(); } catch (error) { work.setError(String(error)); } finally { setBusy(false); }
+    try { await operation(); return true; } catch (error) { work.setError(String(error)); return false; } finally { setBusy(false); }
+  };
+  const openRename = (entry: WorkTask) => {
+    work.setError("");
+    setTaskName(entry.title);
+    setRename({ id: entry.id, title: entry.title });
   };
   const attach = (paths: string[]) => run(async () => {
     if (!selectedSpace) throw new Error("Choose a space first.");
@@ -103,6 +169,16 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     const created = await work.mutate<WorkTask>("create", { spaceId: selectedSpace, brief, model, accessMode: access, attachments, runNow, effort: reasoning.level });
     work.setActive(created.id); setBrief(""); setAttachments([]); if (window.innerWidth < 760) setSidebarCollapsed(true);
   });
+  const continueTask = async (message: string, clearDraft: boolean) => {
+    if (!task || followBlocked || !message.trim()) return false;
+    const id = task.id;
+    return run(async () => {
+      await work.mutate("follow-up", { taskId: id, message, accessMode: followAccess, ...(!active ? { model: followModel, effort: followEffort } : {}) });
+      if (clearDraft) setDrafts(current => { const next = { ...current }; delete next[id]; return next; });
+      setFollowSelections(current => { const next = { ...current }; delete next[id]; return next; });
+    });
+  };
+  const sendFollowUp = () => { void continueTask(followUp, true); };
   const selectTask = (id: string) => { work.setActive(id); setSpaceId(""); if (window.innerWidth < 760) setSidebarCollapsed(true); };
   const jumpToInput = () => {
     const entry = needs[(needs.findIndex(t => t.id === lastInputTask.current) + 1) % needs.length];
@@ -113,6 +189,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     work.setActive(entry.id);
     setSpaceId("");
     setScrollTask(entry.id);
+    if (work.active === entry.id) scrollToLatest();
   };
   useEffect(() => {
     if (!scrollTask) return;
@@ -130,27 +207,59 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     ].filter(Boolean).join(" · ");
     return <RowMenu key={entry.id} label={entry.title} actions={[
     { label: "Open task", onClick: () => selectTask(entry.id) },
-    ...(["running", "needs-input", "queued"].includes(entry.status) ? [{ label: "Stop task", disabled: busy, onClick: () => { void run(() => work.mutate("stop", { taskId: entry.id })); } }] : []),
+    ...(["starting", "running", "needs-input", "queued"].includes(entry.status) ? [{ label: "Stop task", disabled: busy, onClick: () => { void run(() => work.mutate("stop", { taskId: entry.id })); } }] : []),
+    ...(!entry.importId ? [{ label: "Rename", disabled: busy, onClick: () => openRename(entry) }] : []),
   ]}><button className={`thread-row work-task-row is-nested${work.active === entry.id ? " active" : ""}`} data-task-id={entry.id} data-depth={1} title={title} aria-label={entry.title} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}><span className={`thread-status work-status-${entry.status}`} aria-label={status} /><span className="thread-name">{entry.title}</span>{(attention || timestamp != null) && <span className={`thread-time${attention ? ` work-attention-${entry.status}` : ""}`}>{attention ? status : formatRelativeTimeShort(timestamp! * 1000)}</span>}</button></RowMenu>;
   };
   const checkpoints = useCallback<typeof checkpointRequest>((_space, params) => {
     const task = tasksRef.current.find(t => t.threadId === params.threadId);
     return workRequest("checkpoint", { taskId: task?.id, request: params });
   }, []);
-  const taskMarkdown = task ? `# ${task.title}\n\n${task.brief}\n\n${buildThreadTranscript(work.items)}` : "";
+  const initialPrompt = work.items.findIndex(item => item.kind === "message" && item.role === "user");
+  const items = work.items.filter((item, index) => {
+    if (!task || index !== initialPrompt || item.kind !== "message") return true;
+    return item.text !== task.brief && (Boolean(task.importId) || !item.text.startsWith(`${task.brief}\n\nAttached files (inside this space):\n`));
+  });
+  const lastItem = work.items[work.items.length - 1];
+  const lastError = lastItem?.kind === "message" && isTurnError(lastItem) ? lastItem : undefined;
+  const errorMessage = task?.error || (task?.status === "failed" ? lastError?.text : undefined);
+  const originalError = lastError?.text.replace(/^Turn failed(?: to start)?[:.]\s*/, "").trim();
+  const duplicateError = lastError && (errorMessage === lastError.text || errorMessage === originalError || (originalError && errorMessage?.startsWith(`${originalError}\n`))) ? lastError : undefined;
+  const lastUser = [...work.items].reverse().find(item => item.kind === "message" && item.role === "user");
+  const historyRequest = duplicateError?.retryMessage !== undefined ? duplicateError.retryMessage?.text
+    : (!lastError || (duplicateError && /^Turn failed[:.]/.test(duplicateError.text))) && lastUser?.kind === "message" ? lastUser.text : undefined;
+  const requestText = task?.pendingMessage ?? historyRequest;
+  const contextFolders = work.state.spaces.find(space => space.id === task?.spaceId)?.readOnlyFolders ?? [];
+  // Work appends this context on every turn; keep retries from appending it twice.
+  const contextSuffix = (task?.attachments.length ? `\n\nAttached files (inside this space):\n${task.attachments.join("\n")}` : "")
+    + (contextFolders.length ? `\n\nRead-only folders:\n${contextFolders.join("\n")}` : "");
+  const retryText = contextSuffix && requestText?.endsWith(contextSuffix) ? requestText.slice(0, -contextSuffix.length) : requestText;
+  const canRecover = task?.status === "failed" && Boolean(task.threadId) && !task.importId;
+  const fileLinks = {
+    workspacePath: work.state.spaces.find(space => space.id === task?.spaceId)?.path,
+    onOpenFileLink: ({ path }: ParsedFileLocation) => {
+      if (!task || busy) return;
+      const root = work.state.spaces.find(space => space.id === task.spaceId)?.path;
+      const relative = root && path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path.replace(/^\.\//, "");
+      void run(() => workOutput(task.id, relative, "open"));
+    },
+  };
+  const taskMarkdown = task ? `# ${task.title}\n\n${task.brief}\n\n${buildThreadTranscript(items)}` : "";
   const taskPanel = task ? (<aside className="work-inspector" aria-label="Task details">
-          <section aria-label="Plan"><h2>Plan</h2>{task.plan.length ? <><progress className="plan-progress" aria-label="Plan completion" max={task.plan.length} value={task.plan.filter(step => step.status === "completed").length} /><ul className="work-plan">{task.plan.map((step, index) => <li key={index}><span role="checkbox" aria-label={step.step} aria-checked={step.status === "completed"}>{step.status === "completed" ? <CheckCircle2 aria-hidden /> : <Circle aria-hidden />}</span><span>{step.step}</span></li>)}</ul></> : <p className="chat-muted">The task’s checklist will appear here.</p>}</section>
+          {features.subagents && !task.importId && agents.length > 0 && <section aria-label="Agents"><h2>Agents{liveAgents > 0 && <small> · {liveAgents} running</small>}</h2><p className="chat-muted">Inspect delegated work, model usage, and results.</p><WorkAgentsLink /></section>}
+          {previews.tasks.length > 0 && <WorkPreviewsLink running={previews.tasks.filter(preview => preview.status === "running").length} />}
+          <section aria-label="Plan"><h2>Plan</h2>{task.plan.length ? <><progress className="plan-progress" aria-label="Plan completion" max={task.plan.length} value={task.plan.filter(step => step.status === "completed").length} /><ul className="work-plan">{task.plan.map((step, index) => <li key={index}><span role="checkbox" aria-labelledby={`work-plan-${index}`} aria-readonly="true" aria-checked={step.status === "completed"}>{step.status === "completed" ? <CheckCircle2 aria-hidden /> : <Circle aria-hidden />}</span><div id={`work-plan-${index}`}><Markdown {...fileLinks} value={step.step} className="markdown" showFilePath={false} /></div></li>)}</ul></> : <p className="chat-muted">The task’s checklist will appear here.</p>}</section>
           <section aria-label="Outputs"><h2>Outputs <small>{task.outputs.length}</small></h2>{!task.outputs.length && <p className="chat-muted">Created and modified files will appear here.</p>}
             {task.outputs.map(path => <div className="work-output" key={path}><img className="file-type-icon" src={getFileTypeIconUrl(path)} alt="" /><strong title={path}>{path.split("/").pop()}</strong><div className="work-actions">{(["open", "reveal", ...(/\.(png|jpe?g|gif|webp|pdf)$/i.test(path) ? ["preview"] : [])] as const).map(action => <IconButton className="ghost" key={action} aria-label={action === "open" ? "Open" : action === "reveal" ? "Reveal in Finder" : "Quick Look"} title={action === "open" ? "Open" : action === "reveal" ? "Reveal in Finder" : "Quick Look"} disabled={busy} onClick={() => { void run(() => workOutput(task.id, path, action as "open" | "reveal" | "preview")); }}>{action === "open" ? <ExternalLink aria-hidden /> : action === "reveal" ? <FolderOpen aria-hidden /> : <Eye aria-hidden />}</IconButton>)}</div></div>)}
           </section>
         </aside>) : null;
-  return <WorkspaceShell titleActions={<>
+  return <AgentsContext.Provider value={{ workspaceId: task?.spaceId ?? null, threadId: task?.threadId ?? null, itemsByThread: task?.threadId ? { [task.threadId]: work.items } : {} }}><WorkspaceShell titleActions={<>
         <span className="thread-header-model" title={formatModelRef(settings, task?.model ?? model).title}>pi · {formatModelRef(settings, task?.model ?? model).name}</span>
-        {task && <div className="work-actions"><span className={`thread-state-chip ${task.status === "running" ? "processing" : task.status === "needs-input" ? "reviewing" : "ready"}`} role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && <button className="ghost main-header-action" aria-label="Stop task" title="Stop task" disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop</button>}
+        {task && <div className="work-actions"><span className={`thread-state-chip ${["starting", "running", "stopping"].includes(task.status) ? "processing" : task.status === "needs-input" ? "reviewing" : "ready"}`} role="status">{task.status.replace("-", " ")}</span>{(active || task.status === "queued") && task.status !== "stopping" && <button className="ghost main-header-action" aria-label="Stop task" title="Stop task" disabled={busy} onClick={() => { void run(() => work.mutate("stop", { taskId: task.id })); }}>Stop</button>}
           {task.threadId && !task.importId && <RewindAction workspaceId={task.spaceId} threadId={task.threadId} running={active} />}
         </div>}
-        {work.state.tasks.some(t => ["running", "needs-input"].includes(t.status)) && <IconButton className="ghost main-header-action" aria-label="Stop all tasks" title="Stop all tasks" disabled={busy} onClick={() => { void run(() => work.mutate("stop-all")); }}><Square size={14} aria-hidden /></IconButton>}
-      </>} reservedShortcuts={Object.entries(settings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`work:${work.active ?? "new"}`} title={task?.title || "New task"} actions={task ? [{ label: "Copy", onClick: () => { void run(() => navigator.clipboard.writeText(taskMarkdown)); } }, { label: "Export", onClick: () => { void run(() => exportMarkdownFile(taskMarkdown, "task.md", "Export task")); } }] : []} onNavigate={scope => work.setActive(scope.slice(5) === "new" ? null : scope.slice(5))} tools={task ? [{ id: "task", label: "Task", content: taskPanel }, { id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={task.spaceId} /> }] : selectedSpace ? [{ id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={selectedSpace} /> }] : []} searchUrl={settings.browser?.searchUrl} onInterrupt={() => work.active ? workRequest("stop", { taskId: work.active }).then(() => {}) : undefined}><div className={"chat-layout work-layout" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
+        {work.state.tasks.some(t => ["starting", "running", "needs-input"].includes(t.status)) && <IconButton className="ghost main-header-action" aria-label="Stop all tasks" title="Stop all tasks" disabled={busy} onClick={() => { void run(() => work.mutate("stop-all")); }}><Square size={14} aria-hidden /></IconButton>}
+      </>} reservedShortcuts={Object.entries(settings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`work:${work.active ?? "new"}`} title={task?.title || "New task"} actions={task ? [...(!task.importId ? [{ label: "Rename", disabled: busy, onClick: () => openRename(task) }] : []), { label: "Copy", onClick: () => { void run(() => navigator.clipboard.writeText(taskMarkdown)); } }, { label: "Export", onClick: () => { void run(() => exportMarkdownFile(taskMarkdown, "task.md", "Export task")); } }] : []} onNavigate={scope => work.setActive(scope.slice(5) === "new" ? null : scope.slice(5))} tools={task ? [{ id: "task", label: "Task", content: taskPanel }, ...(features.subagents && task.threadId && !task.importId ? [{ id: "agents", label: "Agents", content: <AgentActivity key={task.id} loadTranscript={loadAgentTranscript} /> }] : []), ...(!task.importId && task.threadId ? [{ id: "previews", label: "Previews", content: <WorkPreviews controller={previews} commandsEnabled={features.terminal && features.workMode && task.accessMode !== "read-only"} /> }] : []), { id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={task.spaceId} /> }] : selectedSpace ? [{ id: "files", label: "Files", content: <WorkFiles tasks={work.state.tasks} spaceId={selectedSpace} /> }] : []} searchUrl={settings.browser?.searchUrl} onInterrupt={() => work.active ? workRequest("stop", { taskId: work.active }).then(() => {}) : undefined}><div className={"chat-layout work-layout" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
     <SidebarResizeHandle />
     <aside className="sidebar chat-sidebar" aria-label="Spaces and tasks">
       <ModeSwitcher />
@@ -170,7 +279,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     </aside>
     <main className={`chat-main${task ? "" : " is-empty"}`}>
 
-      {work.error && <p role="alert" className="work-error">{work.error}</p>}
+      {work.error && !rename && <p role="alert" className="work-error">{work.error}</p>}
       {folder && <section className="work-add-space" aria-label="New space"><h2>New space</h2><p>{folder}</p><p className="chat-muted">This is the folder where tasks can create files. Add other folders for reading only.</p>
         {readOnlyFolders.map(path => <p key={path}>{path}<button onClick={() => setReadOnlyFolders(current => current.filter(p => p !== path))}>Remove</button></p>)}
         <div className="work-actions"><button disabled={busy} onClick={() => { void run(async () => { const paths = await pickWorkspacePaths(); setReadOnlyFolders(current => [...new Set([...current, ...paths])]); }); }}>Add read-only folders…</button>
@@ -178,13 +287,24 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           <button onClick={() => setFolder("")}>Cancel</button></div>
       </section>}
       {task ? <div className="work-task-view">
-        <div className="chat-scroll" role="log" aria-label="Task progress" aria-live="polite"><div className="chat-column">
-          <article className="message chat-message user"><h2>Task brief</h2><Markdown codeBlockStyle="message" className="markdown" value={task.brief} showFilePath={false} /><ul>{task.attachments.map(path => <li key={path}>{path}</li>)}</ul></article>
+        <div className="work-progress"><div ref={progressRef} className="chat-scroll" role="log" aria-label="Task progress" aria-live="polite" onScroll={event => {
+          const node = event.currentTarget;
+          followProgress.current = node.scrollHeight - node.scrollTop - node.clientHeight <= 64;
+          setShowLatest(!followProgress.current);
+        }}><div ref={progressContentRef} className="chat-column">
+          <article className="message chat-message user"><h2>Task brief</h2><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={task.brief} showFilePath={false} /><ul>{task.attachments.map(path => <li key={path}>{path}</li>)}</ul></article>
+          {items.map(item => {
+            if (item === duplicateError) return null;
+            if (item.kind === "message" && isTurnError(item)) return <TurnErrorCard key={item.id} message={item.text} />;
+            const description = item.kind === "tool" ? describeTool(item) : null; return item.kind === "message" ? <article className={"message chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.text} showFilePath={false} /><div className="message-hover-actions"><IconButton className="ghost" title="Copy message" aria-label="Copy message" onClick={() => { void navigator.clipboard.writeText(item.text).catch(() => work.setError("Could not copy message.")); }}><Copy aria-hidden /></IconButton></div></article> : item.kind === "tool" ? <details className={`work-tool${/fail|error/i.test(item.status ?? "") ? " is-error" : ""}`} key={item.id}><summary>{createElement(/fail|error/i.test(item.status ?? "") ? CircleAlert : item.status === "inProgress" ? LoaderCircle : workToolIcons[item.toolType] ?? Search, { "aria-hidden": true, className: item.status === "inProgress" ? "tool-spinner" : undefined })}<span className="work-tool-label" title={item.title}>{description?.verb}{description?.target ? ` ${description.target}` : ""}</span>{/fail|error/i.test(item.status ?? "") && <span>Failed</span>}<ChevronDown aria-hidden /></summary><pre>{item.detail}</pre>{features.subagents && !task.importId && item.agentsTree?.length ? <WorkAgentsLink /> : null}{item.output && <Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown {...fileLinks} codeBlockStyle="message" className="markdown" value={item.content || item.summary} showFilePath={false} /></details> : null; })}
+          {errorMessage && <TurnErrorCard key={task.id} message={errorMessage} disabled={followBlocked}
+            onRetry={canRecover && retryText ? () => continueTask(retryText, false) : undefined}
+            onChangeModel={canRecover ? () => setModelPickerRequest(current => current + 1) : undefined} />}
           {task.pending.map(request => <InputRequest key={request.id} request={request} busy={busy} respond={answer => { void run(() => work.mutate("respond", { taskId: task.id, requestId: request.id, answer })); }} />)}
-          {task.error && <p role="alert">{task.error}</p>}
-          {work.items.map(item => item.kind === "message" ? <article className={"message chat-message " + item.role} key={item.id}><h2>{item.role === "user" ? "You" : "Assistant"}</h2><Markdown codeBlockStyle="message" className="markdown" value={item.text} showFilePath={false} /><div className="message-hover-actions"><IconButton className="ghost" title="Copy message" aria-label="Copy message" onClick={() => { void navigator.clipboard.writeText(item.text).catch(() => work.setError("Could not copy message.")); }}><Copy aria-hidden /></IconButton></div></article> : item.kind === "tool" ? <details className={`work-tool${/fail|error/i.test(item.status ?? "") ? " is-error" : ""}`} key={item.id}><summary>{createElement(/fail|error/i.test(item.status ?? "") ? CircleAlert : item.status === "inProgress" ? LoaderCircle : workToolIcons[item.toolType] ?? Search, { "aria-hidden": true, className: item.status === "inProgress" ? "tool-spinner" : undefined })}{item.title} · {item.status}<ChevronDown aria-hidden /></summary><pre>{item.detail}</pre>{item.output && <Markdown codeBlockStyle="message" className="markdown" value={item.output} showFilePath={false} />}</details> : item.kind === "reasoning" ? <details key={item.id}><summary>Thinking</summary><Markdown codeBlockStyle="message" className="markdown" value={item.content || item.summary} showFilePath={false} /></details> : null)}
           {task.status === "queued" && <p className="chat-muted">Waiting for an available slot. One task runs in each space at a time.</p>}
-          {active && <p className="chat-muted">This task keeps running when you switch modes or hide the window.</p>}
+          {task.status === "starting" && <p role="status" className="chat-muted">Starting the model. If macOS requests Keychain access, respond to its prompt. You can stop this launch and keep your message.</p>}
+          {task.status === "stopping" && <p role="status" className="chat-muted">Stopping the launch… Your message is kept for retry.</p>}
+          {active && task.status !== "stopping" && <p className="chat-muted">This task keeps running when you switch modes or hide the window.</p>}
           {task.importId ? <section aria-label="Continue imported task">
             <p className="chat-muted">Read-only Cowork history. Continue starts a new task with summarized context and the last 10 messages.</p>
             <label>Space <select aria-label="Continuation space" value={continuationSpace} onChange={e => setSpaceId(e.target.value)} disabled={busy}><option value="" disabled>Choose an available space</option>{writableSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
@@ -193,9 +313,26 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
               const created = await work.mutate<WorkTask>("continue", { taskId: task.id, spaceId: continuationSpace, model, ...(reasoning.level ? { effort: reasoning.level } : {}) });
               work.setActive(created.id);
             }); }}>Continue</button>
-          </section> : !active && task.status !== "queued" && <button onClick={() => { setBrief("Continue this task:\n" + task.brief + "\n\nReviewed plan:\n" + task.plan.map(p => "- " + p.step).join("\n") + "\n\nAsk before changing any existing files."); setSpaceId(task.spaceId); setAccess("ask"); setModel(task.model); work.setActive(null); }}>Continue as a new task…</button>}
-        </div></div>
-
+          </section> : null}
+        </div></div>{showLatest && <button className="secondary work-jump-latest" onClick={scrollToLatest}>Jump to latest</button>}</div>
+        {!task.importId && <form className="work-follow-up" aria-label="Task conversation" onSubmit={e => { e.preventDefault(); sendFollowUp(); }}>
+          <ComposerShell
+            toolbar={<ComposerAccessControl value={followAccess} onChange={setFollowAccess} disabled={busy || active || task.status === "queued"} />}
+            reasoning={{
+              modelName: formatModelRef(settings, followModel).name,
+              models: models.map(m => ({ id: m.key, name: m.displayName || m.id, provider: m.provider })),
+              selectedModelId: followModel, defaultModelId: policyModel,
+              modelPickerRequest,
+              onSelectModel: next => setFollowSelections(current => ({ ...current, [task.id]: { model: next, effort: clampReasoning(models.find(m => m.key === next)?.reasoning, followEffort) } })),
+              capability: followCapability, value: followEffort,
+              onChange: effort => setFollowSelections(current => ({ ...current, [task.id]: { model: followModel, effort } })),
+              disabled: busy || active || task.status === "queued", onOpenSettings,
+            }}
+            actions={<ComposerSendButton label={task.status === "running" ? "Send instruction" : "Send follow-up"} disabled={followBlocked || !followUp.trim()} disabledReason={task.status === "needs-input" ? "Answer the pending request first" : ["queued", "starting", "stopping"].includes(task.status) ? "Waiting for this task to start or finish stopping" : busy ? "Please wait" : "Write a message"} onSend={sendFollowUp} />}>
+            <textarea aria-label="Message task" placeholder={task.status === "running" ? "Add an instruction…" : "Ask for changes or continue this task…"} rows={2} value={followUp} disabled={busy} onChange={e => setDrafts(current => ({ ...current, [task.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); sendFollowUp(); } }} />
+          </ComposerShell>
+          {task.status === "needs-input" && <button className="ghost" type="button" onClick={jumpToInput}>Answer the pending request above to continue</button>}
+        </form>}
       </div> : <div className="chat-scroll"><div className="chat-column">
         <div className="chat-empty work-empty"><DigitalRain /><span className="chat-eyebrow">A space for getting things done</span><h1>What would you like to make?</h1><p>Bring a folder and a brief. Follow the plan, review requests, and find the finished files here.</p>
 
@@ -214,7 +351,11 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
           <div className="chat-examples work-templates starter-pills">{templates.map(template => <button key={template.title} onClick={() => { setBrief(template.brief); setAccess(template.access); }}>{createElement(templateIcons[template.title], { "aria-hidden": true })}{template.title}</button>)}</div>
       </div></div>}
     </main>
-    {features.checkpoints && <Checkpoints requestCheckpoint={checkpoints} running={Object.fromEntries(work.state.tasks.filter(t => t.threadId).map(t => [t.threadId!, { isProcessing: ["running","needs-input"].includes(t.status) }]))} onChanged={async (_space, thread) => { const task = tasksRef.current.find(t => t.threadId === thread); if (task) await work.read(task); await work.refresh(); }} />}
-  </div></WorkspaceShell>;
+    {features.checkpoints && <Checkpoints requestCheckpoint={checkpoints} running={Object.fromEntries(work.state.tasks.filter(t => t.threadId).map(t => [t.threadId!, { isProcessing: ["starting","stopping","running","needs-input"].includes(t.status) }]))} onChanged={async (_space, thread) => { const task = tasksRef.current.find(t => t.threadId === thread); if (task) await work.read(task); await work.refresh(); }} />}
+    {rename && <RenameThreadPrompt title="Rename task" currentName={rename.title} name={taskName} onChange={setTaskName} maxLength={200} busy={busy} error={work.error} onCancel={() => { if (!busy) { setRename(null); work.setError(""); } }} onConfirm={() => {
+      if (busy || !taskName.trim()) return;
+      void run(() => work.mutate("rename", { taskId: rename.id, title: taskName })).then(success => { if (success) setRename(null); });
+    }} />}
+  </div></WorkspaceShell></AgentsContext.Provider>;
 }
 

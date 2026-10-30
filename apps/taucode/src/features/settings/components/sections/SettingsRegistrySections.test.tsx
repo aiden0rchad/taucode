@@ -17,6 +17,21 @@ function Providers({ initial = [] }: { initial?: ProviderEntry[] }) {
 describe("provider registry settings", () => {
   afterEach(cleanup);
   beforeEach(() => { vi.resetAllMocks(); vi.mocked(providerHasApiKey).mockResolvedValue(false); });
+  it("saves Chain of Command role models and disables delegation without losing them", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(<SettingsAgentPolicySection appSettings={{ providers: [provider], agentPolicy: { ...defaultAgentPolicy, defaultEngine: "codex" } } as AppSettings} onUpdateAppSettings={save} tab="defaults" />);
+    fireEvent.change(screen.getByLabelText("Agent mode"), { target: { value: "chain-of-command" } });
+    expect((screen.getByLabelText("Default engine") as HTMLSelectElement).value).toBe("pi");
+    expect((screen.getByRole("option", { name: "Codex" }) as HTMLOptionElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Enlisted model"), { target: { value: "local/small" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save policy" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ agentPolicy: expect.objectContaining({ subagents: expect.objectContaining({ enabled: true, mode: "chain-of-command", maxDepth: 2, roles: expect.arrayContaining([expect.objectContaining({ name: "enlisted", model: { providerId: "local", modelId: "small" } })]) }) }) })));
+    fireEvent.change(screen.getByLabelText("Agent mode"), { target: { value: "single" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save policy" }));
+    await waitFor(() => expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ agentPolicy: expect.objectContaining({ subagents: expect.objectContaining({ enabled: false }) }) })));
+    fireEvent.change(screen.getByLabelText("Agent mode"), { target: { value: "chain-of-command" } });
+    expect((screen.getByLabelText("Enlisted model") as HTMLSelectElement).value).toBe("local/small");
+  });
   it("saves only changed policy, acknowledges success, and preserves edits after failure", async () => {
     const save = vi.fn().mockRejectedValueOnce(new Error("Save failed")).mockResolvedValue(undefined);
     render(<SettingsAgentPolicySection appSettings={{ agentPolicy: defaultAgentPolicy } as AppSettings} onUpdateAppSettings={save} tab="defaults" />);

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { createRef } from "react";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { useComposerAutocompleteState } from "./useComposerAutocompleteState";
 
@@ -71,7 +71,7 @@ describe("useComposerAutocompleteState file mentions", () => {
 });
 
 describe("useComposerAutocompleteState slash commands", () => {
-  it("includes built-in slash commands in alphabetical order", () => {
+  it("keeps the basic commands in discovery order", () => {
     const text = "/";
     const selectionStart = text.length;
     const textareaRef = createRef<HTMLTextAreaElement>();
@@ -100,25 +100,39 @@ describe("useComposerAutocompleteState slash commands", () => {
     expect(labels).toEqual(
       expect.arrayContaining([
         "compact",
-        "fast",
-        "fork",
-        "mcp",
+        "goal",
         "new",
-        "resume",
-        "review",
-        "status",
+        "plan",
+        "sidechat",
       ]),
     );
-    expect(labels.slice(0, 8)).toEqual([
-      "compact",
-      "fast",
-      "fork",
-      "mcp",
+    expect(labels).toEqual([
+      "sidechat",
+      "plan",
+      "goal",
       "new",
-      "resume",
-      "review",
-      "status",
+      "compact",
     ]);
+  });
+
+  it("does not offer app commands inside prose or paths", () => {
+    const { result, rerender } = renderHook(({ text }) => useComposerAutocompleteState({
+      text, selectionStart: text.length, disabled: false, skills: [], prompts: [], files: [],
+      textareaRef: createRef(), setText: vi.fn(), setSelectionStart: vi.fn(),
+    }), { initialProps: { text: "Look at /" } });
+    expect(result.current.isAutocompleteOpen).toBe(false);
+    rerender({ text: "/Users/" });
+    expect(result.current.isAutocompleteOpen).toBe(false);
+  });
+
+  it("inserts a readable plan without the slash and preserves trailing draft text", () => {
+    const setText = vi.fn();
+    const { result } = renderHook(() => useComposerAutocompleteState({
+      text: "/plan build a timer", selectionStart: 5, disabled: false, skills: [], prompts: [], files: [],
+      textareaRef: createRef(), setText, setSelectionStart: vi.fn(),
+    }));
+    act(() => result.current.applyAutocomplete(result.current.autocompleteMatches[0]));
+    expect(setText).toHaveBeenCalledWith(expect.stringMatching(/^Plan: build a timer\n\nPlan this task/));
   });
 
 

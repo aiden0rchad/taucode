@@ -159,3 +159,14 @@ it("streams setup engine progress for three seconds and supports cancel", async 
   expect(await cancelled).toContainEqual(expect.objectContaining({ engine: "omp", state: "pending" }));
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("keeps conversation teams separate, inherits the project allowance, and resets", () => {
+  const { handler, state } = createPreviewHandler();
+  const one = state.threads[0], two = state.threads.find(t => t.workspaceId === one.workspaceId && t.id !== one.id)!;
+  const policy = { ...state.settings.agentPolicy!.subagents, maxRunMinutes: 7, dailyTokenLimit: 999999 };
+  const args = { workspaceId: one.workspaceId, threadId: one.id };
+  expect(handler("thread_agent_policy", { ...args, action: "set", policy })).toMatchObject({ overridden: true, policy: { subagents: { maxRunMinutes: 7, dailyTokenLimit: state.settings.agentPolicy!.subagents.dailyTokenLimit } } });
+  expect(handler("thread_agent_policy", { ...args, threadId: two.id, action: "get" })).toMatchObject({ overridden: false });
+  expect(handler("thread_agent_policy", { ...args, action: "reset" })).toMatchObject({ overridden: false });
+  expect(state.settings.agentPolicy!.subagents.maxRunMinutes).not.toBe(7);
+});

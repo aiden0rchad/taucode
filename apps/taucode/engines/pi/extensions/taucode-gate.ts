@@ -1,14 +1,17 @@
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { decide, normalizeRule, safeReadOnlyCommand, type Access } from "./lib/policy.ts";
+import { decide, inside, normalizeRule, protectedPath, safeReadOnlyCommand, type Access } from "./lib/policy.ts";
 import { connectorDecision, type Connector } from "./lib/connectors.ts";
+import { registerStreamRecovery } from "./lib/streamRecovery.ts";
+import { ownedCommand } from "./lib/commandGuard.ts";
 
 export default function (pi: ExtensionAPI) {
+  registerStreamRecovery(pi);
   pi.on("session_start", async (_event, ctx) => {
     if (process.env.TAUCODE_OMP === "1") {
       const features = JSON.parse(process.env.TAUCODE_FEATURES || "{}");
-      await pi.setActiveTools(pi.getActiveTools().filter(name => ["read", "bash", "edit", "write", "grep", "glob", "lsp", "debug", "eval"].includes(name) || (name === "subagent" && features.subagents !== false) || (name.startsWith("mcp__") && features.connectors !== false)));
+      await pi.setActiveTools(pi.getActiveTools().filter(name => ["read", "bash", "edit", "write", "grep", "glob", "lsp", "debug", "eval"].includes(name) || (["subagent", "report_verification"].includes(name) && features.subagents !== false) || (name.startsWith("mcp__") && features.connectors !== false)));
     }
     ctx.ui.setStatus("taucode-gate", "ready");
   });
@@ -22,20 +25,33 @@ export default function (pi: ExtensionAPI) {
         const prefix = `mcp__${connector.id.replace(/-/g, "_")}_`;
         event = { ...event, toolName: prefix.slice(0, -1) + "__" + event.toolName.slice(prefix.length) };
       }
-      if (!["read", "grep", "find", "glob", "bash", "write", "edit", "subagent"].includes(event.toolName) && !event.toolName.startsWith("mcp__")) {
-        const home = process.env.PI_CODING_AGENT_DIR!, session = process.env.TAUCODE_SESSION_KEY!;
-        const access = JSON.parse(readFileSync(join(home, "taucode/threads", `${session}.json`), "utf8")) as Access;
-        if (access.accessMode === "read-only" || process.env.TAUCODE_SUBAGENT_DEPTH || !ctx.hasUI) return { block: true, reason: "Native tool requires interactive approval" };
-        const title = "taucode:approval:" + JSON.stringify({ toolCallId: event.toolCallId, tool: event.toolName, command: event.toolName, cwd: ctx.cwd });
-        if (await ctx.ui.select(title, ["Allow", "Block"]) !== "Allow") return { block: true, reason: "Native tool denied" };
-        return;
-      }
     }
     if (process.env.TAUCODE_CHAT === "1" && !(process.env.TAUCODE_CHAT_WEB === "1" && ["mcp__taucode_browser__browser_navigate", "mcp__taucode_browser__browser_snapshot", "mcp__taucode_browser__browser_take_screenshot"].includes(event.toolName))) return { block: true, reason: "Tools are disabled in Chat mode" };
+    if (process.env.TAUCODE_OMP === "1" && !["read", "grep", "find", "glob", "bash", "write", "edit", "subagent", "report_verification"].includes(event.toolName) && !event.toolName.startsWith("mcp__")) {
+      const home = process.env.PI_CODING_AGENT_DIR!, session = process.env.TAUCODE_SESSION_KEY!;
+      const access = JSON.parse(readFileSync(join(home, "taucode/threads", `${session}.json`), "utf8")) as Access;
+      const input = (event.input ?? {}) as Record<string, unknown>;
+      // OMP expands @/~ prefixes and file URLs; only auto-allow plain local paths.
+      if (event.toolName === "lsp" && access.accessMode === "full-access" && !process.env.TAUCODE_WORK && !process.env.TAUCODE_SUBAGENT_DEPTH
+        && ["definition", "type_definition", "implementation", "references", "hover", "symbols"].includes(String(input.action))
+        && typeof input.file === "string" && /^[\w ./-]+$/.test(input.file) && input.file.trim()
+        && inside(resolve(ctx.cwd, input.file), ctx.cwd) && !protectedPath(resolve(ctx.cwd, input.file), home)) return;
+      if (access.accessMode === "read-only" || process.env.TAUCODE_SUBAGENT_DEPTH || !ctx.hasUI) return { block: true, reason: "Native tool requires interactive approval" };
+      const title = "taucode:approval:" + JSON.stringify({ toolCallId: event.toolCallId, tool: event.toolName, command: event.toolName, cwd: ctx.cwd });
+      if (await ctx.ui.select(title, ["Allow", "Block"]) !== "Allow") return { block: true, reason: "Native tool denied" };
+      return;
+    }
     // OMP dispatches this write through the inner MCP tool's tool_call hook.
     // Apply connector policy there once, rather than prompting for a filesystem write first.
     if (process.env.TAUCODE_OMP === "1" && event.toolName === "write" && typeof event.input?.path === "string" && event.input.path.startsWith("xd://mcp__")) return;
-    if (!["bash", "write", "edit", ...(process.env.TAUCODE_WORK === "1" ? ["read", "ls", "find", "grep"] : [])].includes(event.toolName) && !event.toolName.startsWith("mcp__")) return;
+    const input = event.input as Record<string, unknown>;
+    const preview = event.toolName === "preview_server";
+    if (preview) {
+      if (process.env.TAUCODE_WORK !== "1" || process.env.TAUCODE_SUBAGENT_DEPTH || !ctx.hasUI) return { block: true, reason: "Preview servers belong to the parent Work task" };
+      if (input.action !== "start") return;
+      if (typeof input.command !== "string" || !input.command.trim()) return { block: true, reason: "A preview command is required" };
+    }
+    if (!preview && !["bash", "write", "edit", ...(process.env.TAUCODE_WORK === "1" ? ["read", "ls", "find", "grep"] : [])].includes(event.toolName) && !event.toolName.startsWith("mcp__")) return;
     const home = process.env.PI_CODING_AGENT_DIR!;
     const session = process.env.TAUCODE_SESSION_KEY;
     if (!home || !session || !/^[\w-]+$/.test(session)) return { block: true, reason: "Missing taucode thread access policy" };
@@ -55,12 +71,11 @@ export default function (pi: ExtensionAPI) {
       if (answer !== "Allow" || decideMcp() === "block") return { block: true, reason: "Connector call denied" };
       return;
     }
-    const input = event.input as Record<string, unknown>;
-    const call = { tool: event.toolName, cwd: ctx.cwd, command: input.command as string, path: input.path as string };
+    const call = { tool: preview ? "bash" : event.toolName, cwd: ctx.cwd, command: input.command as string, path: input.path as string };
     const child = process.env.TAUCODE_SUBAGENT_DEPTH ? { workspace: process.env.TAUCODE_WORKSPACE!, toolAccess: process.env.TAUCODE_TOOL_ACCESS ?? "read-only" } : undefined;
     const decision = decide(read(), call, home, ctx.hasUI, child);
     if (decision === "allow") {
-      if (call.tool === "bash") input.command = safeReadOnlyCommand(call.command);
+      if (call.tool === "bash" && !preview) input.command = ownedCommand(safeReadOnlyCommand(call.command));
       return;
     }
     if (decision === "block") return { block: true, reason: "Blocked by taucode access policy (read-only, protected path, or no interactive approval)" };
@@ -77,5 +92,6 @@ export default function (pi: ExtensionAPI) {
       renameSync(temp, file);
     }
     if (answer !== "Allow" && answer !== "Allow for session") return { block: true, reason: "Blocked by user" };
+    if (call.tool === "bash" && !preview) input.command = ownedCommand(safeReadOnlyCommand(call.command));
   });
 }
