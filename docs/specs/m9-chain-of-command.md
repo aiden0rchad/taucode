@@ -72,6 +72,9 @@ same restriction to permission requests, with a runtime refresh when policy chan
 - Root and child tools retain the thread's access restrictions. Full-access
   children can run ordinary validation commands. Read-only roles and protected
   writes remain restricted; non-interactive children cannot approve protected work.
+- Child processes explicitly inherit the parent's current reasoning level through
+  the Pi/OMP CLI, including Low and Off. Each engine handles the chosen model's
+  supported levels; a child no longer silently starts with its own default.
 - Empty or ambiguous delegation requests fail before launching processes. Empty
   arrays/nulls in unused optional modes are accepted for strict-schema providers.
   The activity tree uses the same nonempty-mode selection and preserves actual
@@ -111,9 +114,24 @@ returned `SHARED_SLOT_OK`. A 100 ms filesystem trace observed at most one held s
 ownership passing through the coordinator and both children, then budget cleanup.
 This sampled trace supplements the deterministic process stress tests. All roles
 used GPT 6.1 Sol (Account 2), with Full access and Low selected for the commander.
-The run also exposed missing explicit child reasoning inheritance, tracked for the
-next fix. Validation: 1,794 frontend tests, 23 extension tests, 42 Pi Rust tests
+The run also exposed missing explicit child reasoning inheritance, fixed in the
+follow-up below. Validation: 1,794 frontend tests, 23 extension tests, 42 Pi Rust tests
 (one live test ignored), typechecks, changed-file lint, cargo check, build and signing.
+
+After the reasoning fix, a second signed build ran two colonels, each delegating to
+an enlisted agent and an independent major, with the shared cap set to two. All six
+subprocesses used GPT 6.1 Sol (Account 2) and `--thinking low`; all six completed,
+and the UI returned `SHARED_TWO_OK`. The sampled trace peaked at two held slots and
+ended with no turn budget. All 12 fixture files were unchanged. Regression tests
+prove reasoning reaches grandchildren and follows a change from Low to Off on the
+next turn; they fail without the fix. The 23 extension tests, engine typecheck,
+native build and signature verification passed again.
+
+Live Stop verification on that build interrupted a colonel with two enlisted
+agents running foreground Node timers. Both observed worker PIDs and their agent
+parents exited, the budget disappeared, and a new major delegation completed with
+`STOP_RECOVERY_OK`. The original team models and concurrency of four were restored
+after testing; the test conversation retains Account 2 Sol, Low and Full access.
 
 Live macOS verification used the signed app, OMP, GPT 6.1 Sol and Full access in a
 disposable Code workspace. A colonel delegated a foreground Node worker through an

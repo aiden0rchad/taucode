@@ -60,6 +60,7 @@ export default function (pi: ExtensionAPI) {
       const update = () => onUpdate?.(structuredClone(snapshot()));
       const parentActual = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
       const parent = Object.entries(policy.models ?? {}).find(([, actual]) => actual === parentActual)?.[0] ?? parentActual;
+      const thinking = pi.getThinkingLevel?.();
       const run = async (r: Result) => {
         let acquired = false;
         let slot: string | undefined;
@@ -94,6 +95,7 @@ export default function (pi: ExtensionAPI) {
           if (!cli) throw new Error("Missing managed pi CLI");
           const args = [...process.execArgv, cli, "--mode", "json", "-p", "--no-session", ...(process.env.TAUCODE_OMP === "1" ? ["--no-lsp", "--no-pty", "--no-title", "--no-skills", "--no-rules"] : ["--no-approve"]), "--no-extensions", "-e", join(home, "extensions/taucode-gate.ts"), "-e", join(home, "extensions/taucode-subagents.ts"), "--provider", provider, "--model", modelId];
           const toolAccess = process.env.TAUCODE_TOOL_ACCESS === "read-only" ? "read-only" : role.toolAccess;
+          if (thinking) args.push("--thinking", thinking);
           if (toolAccess === "read-only") args.push("--tools", process.env.TAUCODE_OMP === "1" ? "read,grep,glob" : "read,grep,find,ls");
           if (role.instructions) args.push("--append-system-prompt", role.instructions);
           args.push(`Task: ${r.task}`);

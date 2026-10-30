@@ -49,14 +49,15 @@ test("nested subprocesses share one turn budget, reset it, route models and fail
   writeFileSync(cli, `import subagents from ${JSON.stringify(new URL("../extensions/taucode-subagents.ts", import.meta.url).href)};
     const args = process.argv.slice(2), role = process.env.TAUCODE_SUBAGENT_ROLE;
     if (role === "colonel") {
-      let tool; subagents({ on() {}, registerTool(t) { tool = t; } });
+      let tool; subagents({ on() {}, registerTool(t) { tool = t; }, getThinkingLevel() { return args[args.indexOf("--thinking")+1]; } });
       const result = await tool.execute("nested", { tasks: [1,2].map(n => ({agent:"enlisted",task:"task "+n})) }, undefined, undefined, {cwd:process.cwd(),model:{provider:"taucode-cloud",id:"mid"}});
       console.log(JSON.stringify({type:"tool_execution_end",toolName:"subagent",toolCallId:"nested",result}));
     }
-    console.log(JSON.stringify({type:"message_end",message:{role:"assistant",content:[{type:"text",text:JSON.stringify({role,provider:args[args.indexOf("--provider")+1],model:args[args.indexOf("--model")+1]})}],stopReason:"stop"}}));`);
+    console.log(JSON.stringify({type:"message_end",message:{role:"assistant",content:[{type:"text",text:JSON.stringify({role,provider:args[args.indexOf("--provider")+1],model:args[args.indexOf("--model")+1],thinking:args[args.indexOf("--thinking")+1]})}],stopReason:"stop"}}));`);
   let tool: any;
+  let thinking = "low";
   const events: Record<string, (...args: any[]) => any> = {};
-  subagents({ on: (name: string, fn: any) => { events[name] = fn; }, registerTool: (value: any) => { tool = value; } } as any);
+  subagents({ on: (name: string, fn: any) => { events[name] = fn; }, registerTool: (value: any) => { tool = value; }, getThinkingLevel: () => thinking } as any);
   const ctx = { cwd, model: { provider: "taucode-cloud", id: "strong" } };
   events.agent_start();
   const prompt = events.before_agent_start().message.content;
@@ -67,15 +68,16 @@ test("nested subprocesses share one turn budget, reset it, route models and fail
   assert.equal(children.filter((r: any) => r.status === "completed").length, 3);
   assert.match(children.find((r: any) => r.status === "failed").stderr, /across the command tree/);
   for (const child of children.filter((r: any) => r.status === "completed")) {
-    assert.deepEqual(JSON.parse(child.messages[0].content[0].text), { role: "enlisted", provider: "taucode-local", model: "small" });
+    assert.deepEqual(JSON.parse(child.messages[0].content[0].text), { role: "enlisted", provider: "taucode-local", model: "small", thinking: "low" });
   }
   assert.match((await tool.execute("qa", { agent: "major", task: "review" }, undefined, undefined, ctx)).details.results[0].stderr, /across the command tree/);
   events.agent_end();
   assert.deepEqual(readdirSync(join(home, "taucode")), ["policy.json"]);
+  thinking = "off";
   events.agent_start();
   const qa = await tool.execute("qa", { agent: "major", task: "review", model: "cloud/strong", cwd, tasks: [], chain: [] }, undefined, undefined, ctx);
   assert.equal(qa.isError, false);
-  assert.deepEqual(JSON.parse(qa.details.results[0].messages[0].content[0].text), { role: "major", provider: "taucode-cloud", model: "strong" });
+  assert.deepEqual(JSON.parse(qa.details.results[0].messages[0].content[0].text), { role: "major", provider: "taucode-cloud", model: "strong", thinking: "off" });
   const nullable = await tool.execute("nullable", { agent: null, task: null, model: null, cwd: null, tasks: [{ agent: "major", task: "review", model: null, cwd: null }], chain: [] }, undefined, undefined, ctx);
   assert.equal(nullable.isError, false);
   assert.equal(nullable.details.mode, "parallel");
