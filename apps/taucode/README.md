@@ -227,9 +227,10 @@ The **Windows x64** GitHub Actions workflow builds `.exe` and `.msi` installers 
 
 To build locally on Windows x64, install Node >=22.19, Rust, Visual Studio C++ Build Tools, LLVM/Clang and CMake. Set `LIBCLANG_PATH` to the LLVM `bin` directory and `TAUCODE_BUNDLE_UV` to a directory containing Windows x64 `uv.exe`, `LICENSE-APACHE` and `LICENSE-MIT` from the uv distribution. Then run:
 
-```bash
+```powershell
 npm ci
-CARGO_NET_OFFLINE=false cargo fetch --manifest-path src-tauri/Cargo.toml --locked
+$env:CARGO_NET_OFFLINE = "false"
+cargo fetch --manifest-path src-tauri/Cargo.toml --locked
 npm run tauri:build:win -- --bundles nsis,msi
 ```
 
