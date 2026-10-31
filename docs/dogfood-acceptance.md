@@ -550,3 +550,75 @@ Independent Calculator inspection confirmed 42. Screenshot
 Native overlay panels are excluded from automated captures, so the cursor's final
 appearance and absence over unrelated apps are not claimed as screenshot evidence;
 their visibility policy is covered by the regression tests above.
+
+## Computer-use reliability, progress, and latency — October 30
+
+Expanded the user-approved live scope to Calculator and the disposable TextEdit
+`Background QA.txt` fixture. Main conversation: GPT 6.1 Sol (Account 2), Low,
+Full access. Computer planner and grounding use the same model/account; their
+separate sidecar configuration does not expose the conversation's reasoning setting.
+Background mode and per-action typing approvals remain enabled; no foreground
+fallback was authorized. No personal documents were used.
+
+Implemented Observing / Planning / Acting / Waiting for approval / Waiting for the
+app phases in the inline controls. Removed AgentS3's separate reflection request:
+the primary planner already verifies the previous action from each fresh screenshot.
+Its instructions now explicitly preserve partial work and avoid replaying uncertain
+actions. A pause during input supplies that same recovery context on resume.
+
+Matched Calculator task, 12 × 7 = 84:
+
+| Run | Steps | Prediction wait | Input execution |
+| --- | ---: | ---: | ---: |
+| `092ae7c9-4984-4ca7-aa22-265726a571d0` (baseline) | 8 | 72.058 s | 2.641 s |
+| `839a0fe6-e91e-4c5b-83a7-87a079d0a13d` | 7 | 47.516 s | 2.278 s |
+
+This single comparison also differs in step count; it is evidence of lower latency
+in this run, not a general performance guarantee. Independent Calculator inspection
+confirmed 84 while a concurrent taucode draft remained intact. No focus restorations
+or input errors were recorded.
+
+TextEdit checks:
+
+- Scrolling: `1e680c55-5ca6-4740-87f6-f5d212532f22`; two background scrolls,
+  independently observed later fixture lines.
+- About dialog: `852e48ff-0832-45e5-92ed-c2c2421a8f66`; opened from the app
+  menu, observed TextEdit 1.20 (415), closed only About, returned to the fixture.
+- Window switching: `2411c34b-6d17-4c06-aaaa-e258f3f7debe`; created one empty
+  Untitled, switched between it and the fixture using Window menu, closed only
+  Untitled. All 120 sample lines remained and the concurrent taucode draft
+  `Window switching isolation 8426` stayed in taucode.
+
+Live testing found and fixed two native bugs. Open submenus were labeled
+`Context > Find…` while verification reconstructed `Edit > Find > Find…`, causing
+false stale-target failures. Snapshot labels now use the same native ancestry;
+genuine changes use bounded fresh-observation recovery. The next run
+`14202901-7772-4e11-b123-d4ac8f402c1d` passed the submenu and located Line 100,
+but stopped after Escape dismissed Find: key-up incorrectly required the dismissed
+field's focus. Keys already held now release through the same bound input as cleanup;
+new key-downs retain all context checks. Regression coverage distinguishes cleanup
+from a genuinely stale second key-down, which remains non-replayable after input.
+
+Finished run cards were also missing: compact stored tool replies intentionally omit
+thumbnails, but the frontend required them. Valid stored references now load their
+full run log. Errors show a compact explanation, expandable diagnostics, and a
+Copy continuation request action. The copied request records uncertain effects and
+requires a fresh observation; it never sends or replays anything automatically.
+
+An initial broad TextEdit run (`acedb161-1612-4ea8-9d6f-ff3d2e6ae821`) failed in
+model planning before GUI input. Its claim about an unavailable image tool was model
+output, not an observed native failure. A pre-existing extra `I` at the fixture's
+start was observed before the final typing checks; its origin is unestablished and
+it was preserved. Do not count either as a successful typing test.
+
+Validation: 1,874 frontend tests / 226 files, 114 targeted Rust computer tests,
+132 Python tests, TypeScript, changed-file ESLint, and `cargo check` passed.
+The rebuilt Apple Development-signed bundle passed `codesign --verify --deep --strict`.
+Logs: `/tmp/taucode-recovery-suite.log`, `/tmp/taucode-release-rust.log`,
+`/tmp/taucode-release-check.log`, `/tmp/taucode-final-reliability-build.log`.
+The final build's live append and recovery-card verification is pending a Mac unlock;
+do not treat the earlier Find success as proof of append or the key-release fix.
+
+Separate follow-ups observed, not diagnosed in this batch: startup briefly restored
+the wrong thread after creating a task; an internal metadata-generation prompt
+appeared as a sidebar conversation. These need focused reproduction before changes.

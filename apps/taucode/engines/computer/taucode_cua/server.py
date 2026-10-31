@@ -54,7 +54,8 @@ class Server:
             planner = engine_params(params['planner'], 'planner')
             grounding = engine_params(params['grounding'], 'grounding')
             aci = StructuredACI(None, 'darwin', planner, grounding)
-            self.agent = AgentS3(planner, aci, platform='darwin')
+            # The planner already verifies the previous action from each fresh screenshot.
+            self.agent = AgentS3(planner, aci, platform='darwin', enable_reflection=False)
             self.size = [grounding['grounding_width'], grounding['grounding_height']]
             self.mode = grounding['grounding_mode']
             return {'ok': True}

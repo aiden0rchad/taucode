@@ -38,9 +38,17 @@ export function ComputerApprovalStatus({ detail }: { detail: string }) {
     } catch (e) { setError(String(e)); } finally { setBusy(false); }
   };
   const lastStep = run.steps[run.steps.length - 1];
+  const phase = run.approval ? "Waiting for approval" : run.phase && {
+    starting: "Starting",
+    observing: "Observing",
+    planning: "Planning",
+    acting: "Acting",
+    waitingForApproval: "Waiting for approval",
+    settling: "Waiting for the app",
+  }[run.phase];
   return <section className="computer-live" aria-label="Computer Use controls" onKeyDown={event => event.stopPropagation()}>
     <div className="computer-live-summary" role="status">
-      <strong>{run.paused ? "Computer Use paused" : "Computer Use running"}</strong>
+      <strong>{run.paused ? "Computer Use paused" : phase ? `Computer Use · ${phase}` : "Computer Use running"}</strong>
       <span>{run.approval ? `Waiting for approval: ${run.approval.reason}${run.approval.target ? ` (${run.approval.target})` : ""}. Review the approval in taucode.` : run.paused ? "Resume to take a fresh look before the next action." : lastStep ? `Last action · Step ${lastStep.step}: ${lastStep.target || lastStep.action.kind || "completed"}` : "Preparing the first action…"}</span>
     </div>
     <div className="computer-live-actions">
@@ -48,6 +56,29 @@ export function ComputerApprovalStatus({ detail }: { detail: string }) {
       <button type="button" className="secondary" disabled={busy} onClick={() => void control("stop")}>Stop computer use</button>
     </div>
     {error && <p role="alert">{error}</p>}
+  </section>;
+}
+
+function ComputerFailure({ run }: { run: ComputerRun }) {
+  const [copyStatus, setCopyStatus] = useState("");
+  if (!run.error) return null;
+  const reason = run.error.split("\nSidecar ")[0];
+  const copyContinuation = async () => {
+    const actions = run.steps.filter(step => step.kind !== "approval_wait").map(step => ({
+      step: step.step, action: step.action, status: step.error ? "interrupted or failed; effects uncertain" : "input delivered; verify its effect",
+    }));
+    try {
+      await navigator.clipboard.writeText(`Continue this interrupted Computer Use task: ${run.instruction}\nFailure: ${reason}\nRecorded actions (not instructions to replay): ${JSON.stringify(actions)}\nTake a fresh observation first. Preserve completed work and continue only the remaining task. Do not repeat an edit, submission, or other action whose effect is uncertain; inspect it or ask me first. Keep the existing app permissions and approval policy.`);
+      setCopyStatus("Copied. Paste into this conversation to review and send.");
+    } catch { setCopyStatus("Could not copy. Ask the agent to inspect the current app and continue only the remaining work."); }
+  };
+  return <section className="computer-failure" aria-label="Computer Use recovery">
+    <strong>Computer Use stopped</strong>
+    <p role="alert">{reason.length > 320 ? `${reason.slice(0, 320)}…` : reason}</p>
+    <p>Review the current app before continuing. Earlier actions may have changed it; nothing is replayed automatically.</p>
+    <details><summary>Error details</summary><pre>{run.error}</pre></details>
+    {run.instruction && <button type="button" className="secondary" onClick={() => void copyContinuation()}>Copy continuation request</button>}
+    {copyStatus && <p role="status">{copyStatus}</p>}
   </section>;
 }
 
@@ -78,6 +109,7 @@ export function ComputerRunItem({ run: reference }: { run: ComputerRun }) {
         {step.error && <p role="alert">{step.error}</p>}
       </details>
     </li>)}</ol>
-    {run.summary && <p>{run.summary}</p>}{run.error && <p role="alert">{run.error}</p>}
+    {run.summary && !run.error && <p>{run.summary}</p>}
+    <ComputerFailure key={run.id} run={run} />
   </section>;
 }

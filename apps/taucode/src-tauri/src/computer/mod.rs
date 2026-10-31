@@ -249,7 +249,7 @@ impl Computer {
             self.control.start();
             let _stop = StopOnDrop(self.clone());
             let id = uuid::Uuid::new_v4().to_string();
-            self.state.send_replace(json!({"id":id,"running":true,"paused":false,"mode":limits.mode,"steps":[],"instruction":instruction,"shortcut":limits.shortcut}));
+            self.state.send_replace(json!({"id":id,"running":true,"paused":false,"phase":"starting","mode":limits.mode,"steps":[],"instruction":instruction,"shortcut":limits.shortcut}));
             let resource = app.path().resource_dir().ok();
             let start = std::time::Instant::now();
             let result = async {
@@ -718,6 +718,9 @@ impl runner::Environment for Live {
                 Err("Approval declined or cancelled".into())
             }
         })
+    }
+    fn phase(&mut self, phase: runner::Phase) {
+        self.computer.state.send_modify(|s| s["phase"] = json!(phase));
     }
     fn progress(&mut self, mut step: Value) -> Result<(), String> {
         if let Some(s) = &self.session {

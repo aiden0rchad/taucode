@@ -271,6 +271,7 @@ struct Fake {
     pause_during_predict: Option<Arc<Control>>,
     pause_during_approval: Option<Arc<Control>>,
     instructions: Vec<String>,
+    phases: Vec<runner::Phase>,
     prepare_error: Option<String>,
     ax_handled: bool,
     event_errors: std::cell::RefCell<std::collections::VecDeque<Option<String>>>,
@@ -529,6 +530,9 @@ impl Environment for Fake {
     fn open(&self, _: &str, _: &str) -> Result<(), String> {
         Ok(())
     }
+    fn phase(&mut self, phase: runner::Phase) {
+        self.phases.push(phase);
+    }
     fn progress(&mut self, v: Value) -> Result<(), String> {
         if let Some(previous) = self
             .steps
@@ -548,6 +552,7 @@ fn fake(actions: Vec<Value>) -> Fake {
         pause_during_predict: None,
         pause_during_approval: None,
         instructions: vec![],
+        phases: vec![],
         prepare_error: None,
         ax_handled: false,
         event_errors: Default::default(),
@@ -715,7 +720,7 @@ async fn stale_before_first_event_replans_but_partial_input_is_never_replayed() 
         let control = Control::new(input);
         control.start();
         let mut env = fake(vec![
-            json!({"kind":"hotkey","keys":["escape"]}),
+            json!({"kind":"hold_and_press","hold":[],"press":["escape", "tab"]}),
             json!({"kind":"done","summary":"fresh"}),
         ]);
         let mut errors = env.event_errors.borrow_mut();
@@ -751,6 +756,35 @@ async fn stale_before_first_event_replans_but_partial_input_is_never_replayed() 
             assert!(events.lock().unwrap().is_empty());
         }
     }
+}
+
+#[tokio::test]
+async fn escape_releases_its_key_after_dismissing_the_focused_field() {
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let mut env = fake(vec![
+        json!({"kind":"hotkey","keys":["escape"]}),
+        json!({"kind":"done","summary":"Find dismissed"}),
+    ]);
+    *env.event_errors.borrow_mut() = vec![
+        None,
+        Some("Target window no longer has the app's keyboard focus".into()),
+    ]
+    .into();
+    let s = settings();
+    runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap();
+    assert_eq!(
+        *input.0.lock().unwrap(),
+        [Event::Key(53, true), Event::Key(53, false)]
+    );
+    assert_eq!(env.event_errors.borrow().len(), 1);
+    // Cleanup never synthesizes a release for a key it does not own.
+    control.release_key(48).unwrap();
+    control.release_key(53).unwrap();
+    assert_eq!(input.0.lock().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -975,6 +1009,11 @@ async fn loop_fake_capture_planner_input_and_progress() {
     assert_eq!(result["summary"], "Complete");
     assert_eq!(env.steps.len(), 2);
     assert_eq!(env.captures, 3);
+    use runner::Phase::*;
+    assert_eq!(
+        env.phases,
+        [Observing, Planning, Acting, Settling, Observing, Planning, Acting, Settling, Observing]
+    );
     assert!(input.0.lock().unwrap().contains(&Event::Mouse {
         point: [720., 450.],
         button: 0,
@@ -1001,6 +1040,14 @@ async fn declined_approval_and_changed_focus_never_type() {
                 .is_err()
         );
         assert_eq!(env.approved, 1);
+        assert_eq!(
+            env.phases,
+            [
+                runner::Phase::Observing,
+                runner::Phase::Planning,
+                runner::Phase::WaitingForApproval
+            ]
+        );
         assert!(input.0.lock().unwrap().is_empty());
     }
 }
@@ -1674,4 +1721,45 @@ async fn grounded_secure_and_sensitive_fields_still_require_confirmation() {
         assert!(result.is_ok(), "{result:?}");
         assert_eq!(env.approved, 1);
     }
+}
+
+#[tokio::test]
+async fn interrupted_typing_replans_with_partial_input_feedback() {
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let mut env = fake(vec![
+        json!({"kind":"type","text":"abc","overwrite":false,"enter":false}),
+        json!({"kind":"type","text":"bc","overwrite":false,"enter":false}),
+        json!({"kind":"done","summary":"Complete"}),
+    ]);
+    env.event_errors
+        .borrow_mut()
+        .extend([None, Some("Action interrupted by Pause".into())]);
+    let s = settings();
+    runner::run(
+        &mut env,
+        &control,
+        &s,
+        &s.app_ids(),
+        "type abc",
+        Instant::now(),
+    )
+    .await
+    .unwrap();
+    assert!(env.instructions[1].starts_with("Previous action was interrupted after input started:"));
+    assert!(env.instructions[1].contains("Do not replay the original action"));
+    assert!(!env.instructions[2].contains("interrupted after input started"));
+    let typed: String = input
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|event| match event {
+            Event::Text(text) => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(typed, "abc");
+    assert_eq!(env.captures, 4);
 }

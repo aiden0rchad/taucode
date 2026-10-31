@@ -372,8 +372,12 @@ impl Session {
             snapshot.resolve_bound(id, index, self.pid, window.id, ax_actions::Element::alive)?;
         let mut current = ax_tree::Native(&window).read(element);
         if prior.role == "AXMenuItem" {
-            current.label =
-                menus::path(element).ok_or("AX menu path unavailable; capture again")?;
+            current.label = menus::path(element).ok_or_else(|| {
+                format!(
+                    "{}AX menu path unavailable; capture again",
+                    super::runner::STALE_OBSERVATION
+                )
+            })?;
         }
         if prior.role != current.role
             || prior.label != current.label
@@ -381,8 +385,8 @@ impl Session {
             || (prior.role != "AXMenuItem" && prior.frame != current.frame)
             || !current.enabled
         {
-            return Err(format!("AX target changed after planning: snapshot={id}, index={index}, role before={} after={}, label_changed={}, secure before={} after={}, frame before={:?} after={:?}, enabled={}; capture again",
-                prior.role, current.role, prior.label != current.label, prior.secure, current.secure,
+            return Err(format!("{}AX target changed after planning: snapshot={id}, index={index}, role before={} after={}, label_changed={}, secure before={} after={}, frame before={:?} after={:?}, enabled={}; capture again",
+                super::runner::STALE_OBSERVATION, prior.role, current.role, prior.label != current.label, prior.secure, current.secure,
                 prior.frame, current.frame, current.enabled));
         }
         Ok(())

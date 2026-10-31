@@ -11,3 +11,8 @@
 .computer-live-actions button { min-height: 36px; }
 .computer-live-actions button:focus-visible { outline: 2px solid var(--border-accent); outline-offset: 3px; }
 .computer-live > [role="alert"] { flex-basis: 100%; margin: 0; }
+
+.computer-failure { padding: 12px 14px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-card-strong); overflow-wrap: anywhere; }
+.computer-failure p { margin: 8px 0; }
+.computer-failure details { margin: 12px 0; }
+.computer-failure button { min-height: 36px; }

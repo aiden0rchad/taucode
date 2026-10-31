@@ -50,7 +50,7 @@ class PROCEDURAL_MEMORY:
         procedural_memory += textwrap.dedent("""
         Your response should be formatted like this:
         (Previous action verification)
-        Carefully analyze based on the screenshot if the previous action was successful. If the previous action was not successful, provide a reason for the failure.
+        Check the fresh screenshot against the previous action and the task. Briefly state whether it succeeded, failed, or is uncertain. Detect repeated actions without progress and change approach. Preserve completed work; never repeat an action merely because its result is uncertain.
 
         (Screenshot Analysis)
         Closely examine and describe the current state of the desktop along with the currently open applications.

@@ -120,3 +120,27 @@ def test_rejected_plan_is_returned_as_fail_and_fed_back(monkeypatch):
     assert actions[0]['kind']=='fail'
     messages=server.agent.executor.generator_agent.messages
     assert 'Action rejected:' in json.dumps(messages[-1])
+
+
+def test_each_step_verifies_previous_action_without_a_second_reflection_request(monkeypatch):
+    from taucode_cua.vendor.agent_s3.agents import worker
+    calls = []
+    def plan(agent, *args, **kwargs):
+        calls.append(json.dumps(agent.messages))
+        return '```python\nagent.wait(0.1)\n```'
+    monkeypatch.setattr(worker, 'call_llm_formatted', plan)
+    monkeypatch.setattr(worker, 'call_llm_safe', lambda *a, **k: pytest.fail('Redundant reflection request'))
+    server = Server()
+    config = {'kind': 'openai', 'model': 'test'}
+    server.dispatch('configure', {'planner': config, 'grounding': config, 'platform': 'darwin'})
+    buf = io.BytesIO(); Image.new('RGB', (4, 4)).save(buf, format='PNG')
+    obs = {'screenshot': buf.getvalue()}
+    for instruction in ('test', 'Previous action was NOT executed: target moved.\n\ntest', 'Previous action was interrupted after input started: preserve partial text.\n\ntest'):
+        _, actions = server.agent.predict(instruction, obs)
+        assert actions[0]['kind'] == 'wait'
+    assert len(calls) == 3
+    assert 'Check the fresh screenshot against the previous action' in calls[1]
+    assert 'Detect repeated actions without progress' in calls[1]
+    assert 'Previous action was NOT executed: target moved.' in calls[1]
+    assert 'agent.wait(0.1)' in calls[1]
+    assert 'Previous action was interrupted after input started: preserve partial text.' in calls[2]

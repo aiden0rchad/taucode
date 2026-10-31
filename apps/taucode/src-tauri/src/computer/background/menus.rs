@@ -131,6 +131,9 @@ pub trait Provider {
         Instant::now()
     }
     fn read(&self, handle: &Self::Handle) -> Metadata;
+    fn path(&self, _: &Self::Handle) -> Option<String> {
+        None
+    }
     fn children(&self, handle: &Self::Handle, limit: usize) -> Vec<Self::Handle>;
 }
 pub struct Item<H> {
@@ -311,6 +314,9 @@ impl Provider for Native {
                 .and_then(|s| s.parse().ok()),
         }
     }
+    fn path(&self, e: &Element) -> Option<String> {
+        path(e)
+    }
     fn children(&self, e: &Element, limit: usize) -> Vec<Element> {
         e.children("AXChildren", limit)
     }
@@ -380,7 +386,11 @@ fn open_menu_elements<P: Provider>(
                 return result;
             }
             let mut node = item.node();
-            node.label = format!("Context > {}", item.path);
+            // An open submenu can still belong to the menu bar. Use the same
+            // ancestry as verification instead of relabeling it as a context menu.
+            node.label = provider
+                .path(&item.handle)
+                .unwrap_or_else(|| format!("Context > {}", item.path));
             result.push((node, item.handle));
         }
     }
@@ -455,6 +465,35 @@ mod tests {
         }
         assert_eq!(*snapshot.resolve_bound(1, 1, 42, 3, |_| true).unwrap().1, 1);
     }
+    #[test]
+    fn open_submenus_keep_their_full_menu_bar_path() {
+        struct Submenu;
+        impl Provider for Submenu {
+            type Handle = usize;
+            fn read(&self, handle: &usize) -> Metadata {
+                Metadata {
+                    role: if *handle == 0 { "AXMenu" } else { "AXMenuItem" }.into(),
+                    title: if *handle == 0 { "" } else { "Find…" }.into(),
+                    enabled: true,
+                    ..Default::default()
+                }
+            }
+            fn children(&self, handle: &usize, _: usize) -> Vec<usize> {
+                if *handle == 0 {
+                    vec![1]
+                } else {
+                    vec![]
+                }
+            }
+            fn path(&self, _: &usize) -> Option<String> {
+                Some("Edit > Find > Find…".into())
+            }
+        }
+        let entries = open_menu_elements(&Submenu, vec![0]);
+        assert_eq!(entries[1].0.label, "Edit > Find > Find…");
+        assert_eq!(entries[1].0.actions, ["AXPress"]);
+    }
+
     #[test]
     fn large_application_menu_cannot_starve_file_commands() {
         let meta = |role: &str, title: &str| Metadata {

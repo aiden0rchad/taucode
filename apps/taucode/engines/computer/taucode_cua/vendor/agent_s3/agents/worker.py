@@ -199,7 +199,7 @@ class Worker(BaseModule):
         )
 
         generator_message += '\n' + obs.get('element_summary', '')
-        if instruction.startswith('Previous action was NOT executed:'):
+        if instruction.startswith(('Previous action was NOT executed:', 'Previous action was interrupted after input started:')):
             generator_message = instruction.split('\n\n', 1)[0] + '\n\n' + generator_message
 
         # Finalize the generator message

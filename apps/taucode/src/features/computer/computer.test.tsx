@@ -30,6 +30,38 @@ describe("computer use", () => {
     expect(computerRequest).toHaveBeenCalledWith({ action: "pause", paused: false });
     expect(computerRequest).toHaveBeenCalledWith({ action: "stop" });
   });
+  it.each([
+    ["observing", "Observing"], ["planning", "Planning"], ["acting", "Acting"],
+    ["waitingForApproval", "Waiting for approval"], ["settling", "Waiting for the app"],
+  ])("shows the live %s phase", async (phase, label) => {
+    vi.mocked(computerRequest).mockResolvedValue({ id: "run", instruction: "Calculate", running: true, phase, steps: [] });
+    render(<ComputerApprovalStatus detail='{"instruction":"Calculate"}' />);
+    expect(await screen.findByText(`Computer Use · ${label}`)).toBeTruthy();
+  });
+  it("gives pause and approval precedence over the underlying phase", async () => {
+    vi.mocked(computerRequest).mockResolvedValue({ id: "run", instruction: "Calculate", running: true, paused: true, phase: "planning", steps: [] });
+    render(<ComputerApprovalStatus detail='{"instruction":"Calculate"}' />);
+    expect(await screen.findByText("Computer Use paused")).toBeTruthy();
+    cleanup();
+    vi.mocked(computerRequest).mockResolvedValue({ id: "run", instruction: "Calculate", running: true, phase: "acting", steps: [], approval: { reason: "Confirm typing" } });
+    render(<ComputerApprovalStatus detail='{"instruction":"Calculate"}' />);
+    expect(await screen.findByText("Computer Use · Waiting for approval")).toBeTruthy();
+    expect(screen.getByText(/Waiting for approval: Confirm typing/)).toBeTruthy();
+  });
+  it("keeps diagnostics collapsed and prepares a continuation without replaying input", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<ComputerRunItem run={{ id: "failed", instruction: "Append once", error: "Input interrupted\nSidecar stderr (last 20 lines):\nraw diagnostic", summary: "Input interrupted", steps: [{ ...step, action: { kind: "type", text: "partial" }, error: "Paused" }] }} />);
+    expect(screen.getByText("Computer Use stopped")).toBeTruthy();
+    expect(screen.getByText("Error details").closest("details")?.open).toBe(false);
+    expect(screen.getByText("Input interrupted", { selector: 'p[role="alert"]' })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Copy continuation request" }));
+    await screen.findByText("Copied. Paste into this conversation to review and send.");
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Take a fresh observation first"));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("interrupted or failed; effects uncertain"));
+    expect(writeText).not.toHaveBeenCalledWith(expect.stringContaining("raw diagnostic"));
+    expect(computerRequest).not.toHaveBeenCalled();
+  });
   it("does not control a replacement run from stale displayed controls", async () => {
     vi.mocked(computerRequest).mockResolvedValue({ id: "old", instruction: "Calculate", running: true, steps: [] });
     render(<ComputerApprovalStatus detail='{"instruction":"Calculate"}' />);
@@ -156,6 +188,20 @@ describe("computer use", () => {
     expect(run).not.toBeNull(); expect(parseComputerRun('{"computerRun":{"steps":[{}]}}')).toBeNull();
     render(<ComputerRunItem run={run!} />);
     expect(screen.getByText("Step 1: click")).toBeTruthy(); expect(screen.getByAltText("Screen before step 1")).toBeTruthy(); expect(screen.getByText("Done")).toBeTruthy();
+  });
+  it("loads a compact stored result without inline thumbnails", async () => {
+    const { thumbnail: _thumbnail, ...compactStep } = step;
+    const compact = { id: "stored-run", stored: true, steps: [compactStep], error: "Input interrupted" };
+    vi.mocked(computerRequest).mockResolvedValue({ ...compact, steps: [step] });
+    const run = parseComputerRun(JSON.stringify({ computerRun: compact }));
+    expect(run).not.toBeNull();
+    render(<ComputerRunItem run={run!} />);
+    await waitFor(() => expect(computerRequest).toHaveBeenCalledWith({ action: "runLog", id: "stored-run" }));
+    expect(await screen.findByAltText("Screen before step 1")).toBeTruthy();
+    expect(screen.getByText("Computer Use stopped")).toBeTruthy();
+    for (const invalid of [{ ...compact, stored: false }, { ...compact, id: "" }, { ...compact, steps: [null] }]) {
+      expect(parseComputerRun(JSON.stringify({ computerRun: invalid }))).toBeNull();
+    }
   });
   it("shows provider failures from a stored run in the thread item", async () => {
     const error = "Provider error: Model unavailable";

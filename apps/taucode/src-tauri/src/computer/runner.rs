@@ -58,7 +58,17 @@ pub enum Preparation {
     Handled,
     NeedsForeground,
 }
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Phase {
+    Observing,
+    Planning,
+    Acting,
+    WaitingForApproval,
+    Settling,
+}
 pub trait Environment {
+    fn phase(&mut self, _: Phase) {}
     fn capture(&mut self) -> BoxFuture<'_, Result<Frame, String>>;
     fn predict<'a>(
         &'a mut self,
@@ -165,10 +175,13 @@ async fn execute(
         Ok(())
     };
     let key = |name: &str, down| {
+        let code = keycode(name).ok_or("Unknown key")?;
         if down {
             verify_typing()?;
+            post(Event::Key(code, true))
+        } else {
+            control.release_key(code)
         }
-        post(Event::Key(keycode(name).ok_or("Unknown key")?, down))
     };
     let click = |point, button, clicks| -> Result<(), String> {
         post(Event::Mouse {
@@ -432,6 +445,7 @@ pub async fn run(
             {
                 return Err(format!("App blocked: {}", context.app));
             }
+            env.phase(Phase::Observing);
             let frame = control
                 .until(env.capture())
                 .await
@@ -445,6 +459,7 @@ pub async fn run(
             pending = Some(
                 json!({"step":step+1,"staleRetries":stale_retries,"thumbnail":frame.thumbnail,"action":{"kind":"predict"},"reflection":"","predictMs":0,"executeMs":0,"waitMs":0}),
             );
+            env.phase(Phase::Planning);
             let prediction = match control.until(env.predict(&scoped, &frame)).await {
                 Ok(prediction) => prediction,
                 Err(error) => {
@@ -543,6 +558,7 @@ pub async fn run(
                         entry["kind"] = json!("approval_wait");
                         entry["reason"] = json!(reason);
                         env.progress(entry.clone())?;
+                        env.phase(Phase::WaitingForApproval);
                         let approved = control.until(env.approve(reason, &action, &current)).await;
                         let entry = pending.as_mut().unwrap();
                         entry["waitMs"] = json!(phase_start.elapsed().as_millis() as u64);
@@ -591,6 +607,7 @@ pub async fn run(
             phase_start = Instant::now();
             observation!(verify_observation());
             observation!(env.verify_target());
+            env.phase(Phase::Acting);
             env.begin_action();
             let preparation = observation!(env.prepare(&action, control, &after));
             if preparation == Preparation::NeedsForeground {
@@ -607,6 +624,7 @@ pub async fn run(
                 entry["kind"] = json!("approval_wait");
                 entry["reason"] = json!(reason);
                 env.progress(entry.clone())?;
+                env.phase(Phase::WaitingForApproval);
                 control.until(env.approve(reason, &action, &after)).await?;
                 control.checkpoint().await?;
                 observation!(verify_observation());
@@ -633,6 +651,7 @@ pub async fn run(
                     &policy_target,
                     &observation!(env.policy_target(&action)),
                 )?;
+                env.phase(Phase::Acting);
                 observation!(env.begin_foreground(control, &after));
                 entry["waitMs"] = json!(
                     entry["waitMs"].as_u64().unwrap_or(0)
@@ -704,15 +723,18 @@ pub async fn run(
                 .err()
                 .is_some_and(|e| e == "Action interrupted by Pause")
             {
+                recovery.previous = Some("Previous action was interrupted after input started: Pause may have left partial changes. Inspect the fresh observation, preserve completed work, and continue only the remaining action. Do not replay the original action.\n\n".into());
                 control.checkpoint().await?;
                 continue;
             }
             outcome?;
             recovery.consecutive = 0;
             recovery.previous = None;
+            env.phase(Phase::Settling);
             control.until(env.settle()).await?;
             match action {
                 Action::Done { summary } => {
+                    env.phase(Phase::Observing);
                     let last = control.until(env.capture()).await?;
                     return Ok(json!({"summary":summary,"screenshot":last.png}));
                 }
