@@ -904,7 +904,7 @@ async fn stale_observations_replan_without_consuming_steps_and_enforce_both_caps
             predictions,
             retries.iter().sum::<u64>() as usize + retries.len()
         );
-        assert_eq!(env.captures, predictions + usize::from(succeeds));
+        assert_eq!(env.captures, predictions);
         assert!(
             events.lock().unwrap().is_empty(),
             "discarded predictions must not dispatch input"
@@ -1049,11 +1049,11 @@ async fn loop_fake_capture_planner_input_and_progress() {
         .unwrap();
     assert_eq!(result["summary"], "Complete");
     assert_eq!(env.steps.len(), 2);
-    assert_eq!(env.captures, 3);
+    assert_eq!(env.captures, 2);
     use runner::Phase::*;
     assert_eq!(
         env.phases,
-        [Observing, Planning, Acting, Settling, Observing, Planning, Acting, Settling, Observing]
+        [Observing, Planning, Acting, Settling, Observing, Planning, Acting]
     );
     assert!(input.0.lock().unwrap().contains(&Event::Mouse {
         point: [720., 450.],
@@ -1235,7 +1235,7 @@ async fn resume_discards_predictions_from_before_pause_without_sending_input() {
             "{phase}: stale input was delivered"
         );
         assert_eq!(result.unwrap()["summary"], "Fresh observation", "{phase}");
-        assert_eq!(env.captures, 3, "{phase}: capture again before replanning");
+        assert_eq!(env.captures, 2, "{phase}: capture again before replanning");
         assert_eq!(
             env.instructions.len(),
             if phase == "capture" { 1 } else { 2 }
@@ -1849,5 +1849,25 @@ async fn interrupted_typing_replans_with_partial_input_feedback() {
         })
         .collect();
     assert_eq!(typed, "abc");
-    assert_eq!(env.captures, 4);
+    assert_eq!(env.captures, 3);
+}
+
+#[tokio::test]
+async fn completion_returns_verified_observation_without_another_capture() {
+    let mut env = fake(vec![json!({"kind":"done","summary":"Verified 54"})]);
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let s = settings();
+    let result = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap();
+    assert_eq!(result["summary"], "Verified 54");
+    assert_eq!(result["screenshot"], "fake-png");
+    assert_eq!(
+        env.captures, 1,
+        "a redundant capture can fail after verified completion"
+    );
+    assert!(!env.phases.contains(&runner::Phase::Settling));
+    assert!(input.0.lock().unwrap().is_empty());
 }

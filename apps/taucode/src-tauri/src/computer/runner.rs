@@ -739,17 +739,16 @@ pub async fn run(
             outcome?;
             recovery.consecutive = 0;
             recovery.previous = None;
-            env.phase(Phase::Settling);
-            control.until(env.settle()).await?;
             match action {
                 Action::Done { summary } => {
-                    env.phase(Phase::Observing);
-                    let last = control.until(env.capture()).await?;
-                    return Ok(json!({"summary":summary,"screenshot":last.png}));
+                    // Done sends no input: return the observation the planner verified.
+                    return Ok(json!({"summary":summary,"screenshot":frame.png}));
                 }
                 Action::Fail { reason } => return Err(reason),
                 _ => (),
             }
+            env.phase(Phase::Settling);
+            control.until(env.settle()).await?;
         }
         Err("Maximum steps reached".into())
     };

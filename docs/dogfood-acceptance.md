@@ -699,11 +699,30 @@ typing approval is requested again. Regressions verify that only the newly
 predicted text is delivered, and that a changed AX binding still stops without
 input. Partial-input and later target checks retain their fail-closed behavior.
 
-Validation: 1,877 frontend tests, 117 computer-use Rust tests, TypeScript,
+Validation: 1,877 frontend tests, 118 computer-use Rust tests, TypeScript,
 changed-file ESLint and `cargo check` passed. Logs are
 `/tmp/taucode-reliability-{frontend,rust,typecheck,check,build}.log`.
 The debug app was rebuilt, signed with the configured Apple Development identity,
-and passed strict signature verification. Live verification of this batch is
-pending an unlocked Mac. Native overlay panels
-are excluded from captures, so automated screenshots cannot establish the cursor's
-appearance; geometry and fade behavior have regression coverage.
+and passed strict signature verification. Live workspace refresh preserved an
+empty selection and an unsent draft. The test draft was cleared without sending.
+
+Calculator run `8379bacb-3535-4789-a535-63eebabffd0a` used background button clicks
+to produce 6×9=54 while an independent unsent taucode draft remained intact. Both
+the planner and independent AX inspection verified 54. A redundant capture after
+the Done action then timed out in ScreenCaptureKit and incorrectly failed the run.
+Done now returns the same fresh observation the planner verified, without another
+capture or settling delay. Its regression also checks that no input is sent.
+Native validation logs: `/tmp/taucode-completion-{rust,check,build}.log`.
+
+The signed completion-fix build passed strict signature verification. Live run
+`1e5fbb27-e19f-4243-b218-da9e30f9db9a` completed in background mode with five button
+clicks followed by Done, no errors, and a verified 6×8=48 result. An independent
+Calculator AX read also showed 48. The concurrent `FINAL_QA_DRAFT` remained intact
+in taucode; it was cleared without sending, leaving Send disabled. The main agent
+used GPT 6.1 Sol (Account 2), Low, Full access. Evidence in this chat's visualization
+directory: `taucode-completion-background-pass.png` and
+`taucode-calculator-background-48.png`.
+
+Native overlay panels are excluded from captures. Cursor geometry/fade have
+regression coverage, but appearance remains unconfirmed: the user was not watching
+the run. No claim of live cursor appearance verification is made.
