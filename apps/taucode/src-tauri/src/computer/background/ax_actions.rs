@@ -14,6 +14,7 @@ extern "C" {
     fn AXValueGetType(value: Ref) -> u32;
     fn AXValueGetTypeID() -> usize;
     fn AXUIElementCreateApplication(pid: i32) -> Ref;
+    fn AXUIElementCreateSystemWide() -> Ref;
     fn AXUIElementSetMessagingTimeout(element: Ref, seconds: f32) -> i32;
     fn AXUIElementCopyAttributeValue(element: Ref, attribute: Ref, value: *mut Ref) -> i32;
     fn AXUIElementGetAttributeValueCount(element: Ref, attribute: Ref, count: *mut isize) -> i32;
@@ -374,6 +375,21 @@ impl Element {
         action_result(attribute, self.apply(attribute, Some(text)), reason)
     }
 }
+pub(super) fn visible_owner(point: [f64; 2]) -> Option<i32> {
+    let root = Element::owned(unsafe { AXUIElementCreateSystemWide() })?;
+    unsafe {
+        AXUIElementSetMessagingTimeout(root.0, 0.005);
+    }
+    let mut element = std::ptr::null();
+    let status = unsafe {
+        AXUIElementCopyElementAtPosition(root.0, point[0] as f32, point[1] as f32, &mut element)
+    };
+    if status != 0 {
+        return None;
+    }
+    Element::owned(element)?.owner()
+}
+
 pub(super) fn target(pid: i32, point: Option<[f64; 2]>) -> Option<Element> {
     let app = Element::app(pid)?;
     let element = if let Some(p) = point {

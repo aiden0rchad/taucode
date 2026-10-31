@@ -9,7 +9,7 @@ use objc2_foundation::{NSArray, NSPoint, NSRect, NSSize};
 use std::{
     cell::RefCell,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
     },
     time::{Duration, Instant},
@@ -23,6 +23,7 @@ struct Motion {
     to: [f64; 2],
     began: Instant,
     click: bool,
+    shown: bool,
 }
 pub struct Overlay {
     app: tauri::AppHandle,
@@ -30,6 +31,7 @@ pub struct Overlay {
     active: Arc<AtomicBool>,
     visible: Arc<AtomicBool>,
     motion: Arc<Mutex<Option<Motion>>>,
+    presented: Arc<AtomicUsize>,
 }
 struct Panel {
     window: Retained<AnyObject>,
@@ -65,12 +67,14 @@ impl Overlay {
             active: Arc::new(AtomicBool::new(true)),
             visible: Arc::new(AtomicBool::new(false)),
             motion: Arc::new(Mutex::new(None)),
+            presented: Arc::new(AtomicUsize::new(0)),
         };
         if enabled {
             let active = this.active.clone();
             let motion = this.motion.clone();
             let visible = this.visible.clone();
             let app = this.app.clone();
+            let presented = this.presented.clone();
             std::thread::spawn(move || {
                 while active.load(Ordering::SeqCst) {
                     let animating = motion
@@ -81,19 +85,15 @@ impl Overlay {
                     let active = active.clone();
                     let motion = motion.clone();
                     let visible = visible.clone();
+                    let presented = presented.clone();
                     let _ = app.run_on_main_thread(move || {
                         if !active.load(Ordering::SeqCst) { return; }
-                        let motion = motion.lock().unwrap();
+                        let mut motion = motion.lock().unwrap();
                         let elapsed = motion.as_ref().map(|m| m.began.elapsed().as_secs_f64()).unwrap_or(f64::INFINITY);
                         let point = motion.as_ref().map(|m| glide(m.from, m.to, elapsed / 0.16));
-                        let uncovered = elapsed < 1.8 && point.is_some_and(|point| {
-                            let ignored = PANELS.with(|panels| panels.borrow().iter().map(|panel| unsafe {
-                                let number: isize = msg_send![&*panel.window, windowNumber];
-                                number as u32
-                            }).collect::<Vec<u32>>());
-                            super::windows::point_visible(pid, point, &ignored)
-                        });
-                        let opacity = cursor_opacity(visible.load(Ordering::SeqCst), uncovered, elapsed);
+                        // Hit testing sees through transparent Dock/system windows.
+                        let owner = point.filter(|_| elapsed < 1.8).and_then(super::ax_actions::visible_owner);
+                        let opacity = cursor_opacity(visible.load(Ordering::SeqCst), owner, pid, elapsed);
                         if opacity == 0. {
                             PANELS.with(|panels| {
                                 for panel in panels.borrow().iter() {
@@ -105,10 +105,10 @@ impl Overlay {
                             });
                             return;
                         }
-                        if let Some(m) = motion.as_ref() {
+                        if let Some(m) = motion.as_mut() {
                             let point = glide(m.from, m.to, elapsed / 0.16);
                             unsafe {
-                                draw(
+                                let shown = draw(
                                     point,
                                     opacity,
                                     if m.click && elapsed < 0.5 {
@@ -117,6 +117,10 @@ impl Overlay {
                                         None
                                     },
                                 );
+                                if shown && !m.shown {
+                                    m.shown = true;
+                                    presented.fetch_add(1, Ordering::SeqCst);
+                                }
                             }
                         }
                     });
@@ -146,7 +150,11 @@ impl Overlay {
             to: point,
             began: Instant::now(),
             click,
+            shown: false,
         });
+    }
+    pub fn presented(&self) -> usize {
+        self.presented.load(Ordering::SeqCst)
     }
     // Cursor visibility is independent of the HUD and the session lifetime.
     pub fn set_visible(&self, visible: bool) {
@@ -191,10 +199,10 @@ impl Drop for Overlay {
     }
 }
 
-unsafe fn draw(point: [f64; 2], opacity: f64, ripple: Option<f64>) {
+unsafe fn draw(point: [f64; 2], opacity: f64, ripple: Option<f64>) -> bool {
     let screens: Retained<NSArray<AnyObject>> = msg_send![class!(NSScreen), screens];
     let Some(main) = screens.iter().next() else {
-        return;
+        return false;
     };
     let main_frame: NSRect = msg_send![&*main, frame];
     let cocoa = [point[0], main_frame.size.height - point[1]];
@@ -211,11 +219,13 @@ unsafe fn draw(point: [f64; 2], opacity: f64, ripple: Option<f64>) {
                 let _: () = msg_send![&*window, setBackgroundColor:clear];
                 let _: () = msg_send![&*window, setHasShadow:false];
                 let _: () = msg_send![&*window, setIgnoresMouseEvents:IGNORE_MOUSE];
+                let _: () = msg_send![&*window, setAccessibilityElement:false];
                 let _: () = msg_send![&*window, setSharingType:SHARING_TYPE];
                 panels::configure(&window);
                 let allocated: *mut AnyObject = msg_send![class!(NSImageView), alloc];
                 let raw: *mut AnyObject = msg_send![allocated, initWithFrame:NSRect::new(NSPoint::new(0., 0.), NSSize::new(40., 40.))];
                 let Some(view) = Retained::from_raw(raw) else { continue; };
+                let _: () = msg_send![&*view, setAccessibilityElement:false];
                 let content: *mut AnyObject = msg_send![&*window, contentView];
                 let _: () = msg_send![content, addSubview:&*view];
                 panels.push(Panel { window, view, frame });
@@ -223,7 +233,7 @@ unsafe fn draw(point: [f64; 2], opacity: f64, ripple: Option<f64>) {
         }
         let allocated: *mut AnyObject = msg_send![class!(NSImage), alloc];
         let raw: *mut AnyObject = msg_send![allocated, initWithSize:NSSize::new(40., 40.)];
-        let Some(image) = Retained::from_raw(raw) else { return; };
+        let Some(image) = Retained::from_raw(raw) else { return false; };
         let _: () = msg_send![&*image, lockFocus];
         let color: *mut AnyObject = msg_send![class!(NSColor), colorWithCalibratedRed:0.54f64, green:0.36f64, blue:0.95f64, alpha:0.85f64];
         let _: () = msg_send![color, set];
@@ -242,19 +252,23 @@ unsafe fn draw(point: [f64; 2], opacity: f64, ripple: Option<f64>) {
         let white: *mut AnyObject = msg_send![class!(NSColor), whiteColor]; let _: () = msg_send![white, set];
         let _: () = msg_send![arrow, setLineWidth:1.0f64]; let _: () = msg_send![arrow, stroke];
         let _: () = msg_send![&*image, unlockFocus];
+        let mut shown = false;
         for panel in panels.iter() {
             let _: () = msg_send![&*panel.view, setFrameOrigin:NSPoint::new(cocoa[0] - panel.frame.origin.x - 12., cocoa[1] - panel.frame.origin.y - 28.)];
             let _: () = msg_send![&*panel.view, setImage:&*image];
             let _: () = msg_send![&*panel.window, setAlphaValue:opacity];
             // The controlled app is uncovered at this point; never activate it.
             let _: () = msg_send![&*panel.window, orderFrontRegardless];
+            let visible: bool = msg_send![&*panel.window, isVisible];
+            shown |= visible;
         }
-    });
+        shown
+    })
 }
 
 // Fade the action hint; never draw over an app the user is working in.
-fn cursor_opacity(visible: bool, target_uncovered: bool, elapsed: f64) -> f64 {
-    if !visible || !target_uncovered {
+fn cursor_opacity(visible: bool, hit_owner: Option<i32>, target_pid: i32, elapsed: f64) -> f64 {
+    if !visible || hit_owner != Some(target_pid) {
         return 0.;
     }
     ((1.8 - elapsed) / 0.4).clamp(0., 1.)
@@ -265,12 +279,13 @@ mod tests {
     use super::*;
     #[test]
     fn cursor_is_scoped_to_target_and_fades_after_action() {
-        assert_eq!(cursor_opacity(true, true, 0.), 1.);
-        assert_eq!(cursor_opacity(true, true, 1.4), 1.);
-        assert!((cursor_opacity(true, true, 1.6) - 0.5).abs() < 0.001);
-        assert_eq!(cursor_opacity(true, true, 1.8), 0.);
-        assert_eq!(cursor_opacity(true, true, f64::INFINITY), 0.);
-        assert_eq!(cursor_opacity(true, false, 0.), 0.);
-        assert_eq!(cursor_opacity(false, true, 0.), 0.);
+        assert_eq!(cursor_opacity(true, Some(42), 42, 0.), 1.);
+        assert_eq!(cursor_opacity(true, Some(42), 42, 1.4), 1.);
+        assert!((cursor_opacity(true, Some(42), 42, 1.6) - 0.5).abs() < 0.001);
+        assert_eq!(cursor_opacity(true, Some(42), 42, 1.8), 0.);
+        assert_eq!(cursor_opacity(true, Some(42), 42, f64::INFINITY), 0.);
+        assert_eq!(cursor_opacity(true, Some(7), 42, 0.), 0.);
+        assert_eq!(cursor_opacity(true, None, 42, 0.), 0.);
+        assert_eq!(cursor_opacity(false, Some(42), 42, 0.), 0.);
     }
 }

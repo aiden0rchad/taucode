@@ -536,8 +536,8 @@ late HUD update cannot show a background run.
 
 The optional virtual cursor is half-size with no label. It appears over uncovered
 parts of the controlled app, including background windows, and fades between 1.4
-and 1.8 seconds after an action. Window geometry prevents its tip from appearing
-over another app; the overlay's own windows are excluded from that check. Native
+and 1.8 seconds after an action. System-wide accessibility hit testing checks the
+app under its tip; transparent Dock/system windows do not count as occlusion. Native
 menu-item and row-selection clicks also emit the hint. Idle ticks do not redraw an
 image and poll at 10 Hz instead of 60 Hz. It remains nonactivating and ignores mouse input.
 111 targeted Rust tests, `cargo check`, and TypeScript pass. Regressions cover HUD
@@ -699,7 +699,7 @@ typing approval is requested again. Regressions verify that only the newly
 predicted text is delivered, and that a changed AX binding still stops without
 input. Partial-input and later target checks retain their fail-closed behavior.
 
-Validation: 1,877 frontend tests, 118 computer-use Rust tests, TypeScript,
+Validation: 1,877 frontend tests, 117 computer-use Rust tests, TypeScript,
 changed-file ESLint and `cargo check` passed. Logs are
 `/tmp/taucode-reliability-{frontend,rust,typecheck,check,build}.log`.
 The debug app was rebuilt, signed with the configured Apple Development identity,
@@ -723,6 +723,14 @@ used GPT 6.1 Sol (Account 2), Low, Full access. Evidence in this chat's visualiz
 directory: `taucode-completion-background-pass.png` and
 `taucode-calculator-background-48.png`.
 
-Native overlay panels are excluded from captures. Cursor geometry/fade have
-regression coverage, but appearance remains unconfirmed: the user was not watching
-the run. No claim of live cursor appearance verification is made.
+Native overlay panels are excluded from captures. The user reported no cursor in
+the live run. Native inspection found a screen-sized Dock window ahead of app
+windows; rectangle-based occlusion incorrectly treated its transparent area as
+opaque. The cursor now uses the actual accessibility hit owner, with unknown or
+other-app hits hidden. Panels ignore mouse input and are excluded from accessibility.
+Run diagnostics include `cursorHintsShown`, counted once per motion after AppKit
+reports the panel visible. Fade and hit-owner policy have regression coverage;
+the obsolete rectangle-occlusion test was removed with its implementation.
+Logs: `/tmp/taucode-cursor-hit-{rust,check,build}.log`. The corrected build passed
+strict signature verification and launched. Live cursor verification is pending
+an exposed Calculator window; the requested window arrangement is still pending.

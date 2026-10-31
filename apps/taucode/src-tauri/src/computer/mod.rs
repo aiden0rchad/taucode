@@ -314,6 +314,7 @@ impl Computer {
                     self.state.send_modify(|state| {
                         state["targetApp"] = json!({"bundleId":s.bundle,"pid":s.pid});
                         state["focusRestorations"] = json!(*s.guard.restorations.lock().unwrap());
+                        state["cursorHintsShown"] = json!(s.overlay.presented());
                     });
                 }
                 result
