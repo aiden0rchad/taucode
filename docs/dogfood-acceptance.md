@@ -927,3 +927,30 @@ Independent inspection confirmed vertical scroll position 0 and the visible
 header. Evidence: `taucode-textedit-viewport.png` in this chat's visualization
 directory. This closes the offscreen-center scrolling defect; disabled-menu
 recovery, uncertain acknowledgements and the combined workflow remain open.
+
+### Background document recovery — live findings
+
+Run `e38be47b-4dea-499d-9b5f-d03595275790` reproduced disabled Find after
+minimize/restore. Native diagnostics showed AXMain=1, AXMainWindow=36175,
+AXMinimized=0 and AXStandardWindow. The missing-main-document hypothesis is
+ruled out; its experimental mutation and menu exception have been removed.
+
+Run `ef0a2480-a98e-41f4-b955-33cadb0a9e16` exposed a separate routing defect:
+a requested left click on the document chose its advertised AXShowMenu action,
+opening a context menu. Independent accessibility inspection confirmed that
+menu; it was dismissed without editing the fixture. Left-click routing now
+considers Press/Pick only; ShowMenu remains exclusive to right clicks. An
+unsupported Press can use the existing positional fallback, while ambiguous
+mutation failures still stop without replay.
+
+Validation: 120 native Computer Use tests, cargo check, typecheck, signed build
+and strict codesign verification passed. Logs:
+`/tmp/taucode-left-click-{rust,check,types,build}.log`.
+Live run `d4080ad7-5b8b-4a12-9e86-1634295e4c26` used pixel-skylight for the
+left click and produced no context menu, independently confirmed through the
+accessibility tree. No focus restoration was recorded. The fixture remains
+byte-identical to its baseline. Find was still disabled and the run stopped
+without sending the menu command. This closes the left-click/context-menu bug;
+disabled Find recovery, uncertain acknowledgements and the combined workflow
+remain open. The main-document experiment and its temporary diagnostics are
+removed from the current build.

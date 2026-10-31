@@ -1155,7 +1155,7 @@ fn element_route<'a>(
             ..
         } if hold_keys.is_empty() => {
             let names: &[&str] = match button.as_str() {
-                "left" => &["AXPress", "AXPick", "AXShowMenu"],
+                "left" => &["AXPress", "AXPick"],
                 "right" => &["AXShowMenu"],
                 _ => &[],
             };
@@ -1601,6 +1601,29 @@ mod element_tests {
             assert_eq!(Rc::strong_count(&calls), 1);
         }
     }
+    #[test]
+    fn left_click_never_substitutes_a_context_menu() {
+        let element = FakeElement {
+            token: 37,
+            advertised: vec!["AXShowMenu".into()],
+            status: -25206,
+            calls: Rc::default(),
+        };
+        let mut reason = None;
+        // TextEdit advertises only ShowMenu for its document. Unsupported Press
+        // must fall through to positional input, never open that context menu.
+        assert!(!dispatch_element(&element, &click(), &mut reason).unwrap());
+        assert_eq!(*element.calls.borrow(), vec![(37, "AXPress".into())]);
+        let mut right = click();
+        if let Action::Click { button, .. } = &mut right {
+            *button = "right".into();
+        }
+        assert_eq!(
+            element_route(&right, &element.advertised, false, false),
+            Some("AXShowMenu")
+        );
+    }
+
     #[test]
     fn press_errors_never_replay_an_ambiguous_action() {
         for status in [-25204, -25205, -25206, -25201, -25202, -25211] {
