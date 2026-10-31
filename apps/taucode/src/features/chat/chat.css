@@ -86,3 +86,5 @@
 .chat-layout.sidebar-collapsed .chat-sidebar, .chat-layout.sidebar-collapsed .sidebar-resizer { visibility: hidden; }
 .mode-sidebar-toggle { position: absolute; top: 10px; left: 88px; z-index: var(--z-sticky); }
 @media (max-width: 600px) { .chat-layout .sidebar-resizer { display: none; } }
+.sidebar-search-empty { padding: 12px; color: var(--text-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.sidebar-search-empty p { margin: 0 0 6px; }

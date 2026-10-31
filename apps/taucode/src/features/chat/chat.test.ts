@@ -8,9 +8,16 @@ describe("chat data", () => {
   it("groups, searches and pins without mixing Trash into chats", () => {
     const chats = [entry("today", 0), entry("week", 4), entry("older", 20), entry("pinned", 50, true), entry("deleted", 0, false, 100)];
     const groups = chatGroups(chats, "", false, now);
-    expect(Object.fromEntries(Object.entries(groups).map(([key, list]) => [key, list.map(c => c.id)]))).toEqual({ Pinned: ["pinned"], Today: ["today"], "Previous 7 days": ["week"], Older: ["older"] });
+    expect(Object.fromEntries(Object.entries(groups).map(([key, list]) => [key, list.map(c => c.id)]))).toEqual({ Pinned: ["pinned"], Working: [], Today: ["today"], Yesterday: [], "Previous 7 days": ["week"], Older: ["older"] });
     expect(chatGroups(chats, "WEEK", false, now)["Previous 7 days"]).toHaveLength(1);
     expect(chatGroups(chats, "", true, now).Trash.map(c => c.id)).toEqual(["deleted"]);
+  });
+  it("finds a renamed conversation by its preview and separates working from yesterday", () => {
+    const renamed = { ...entry("Launch review", 1), preview: "Find owners in meeting notes" };
+    const working = { ...entry("Research", 20), running: true };
+    expect(chatGroups([renamed, working], "  NOTES owners ", false, now).Yesterday).toEqual([renamed]);
+    expect(chatGroups([renamed, working], "", false, now).Working).toEqual([working]);
+    expect(renamed.chat.title).toBe("Launch review");
   });
   it("inlines text safely and rejects large or binary attachments", async () => {
     const file = new File(["hello"], "notes.md", { type: "text/plain" });

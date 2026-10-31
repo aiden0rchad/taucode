@@ -108,6 +108,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
   });
 
   const web = active ? Boolean(active.chat.web) : newWeb;
+  const groups = chatGroups(chat.chats, search, trash);
   const toggleWeb = () => { if (active) { void mutate("web", active.id, { web: !web }); } else setNewWeb(!web); };
 
   return <WorkspaceShell titleActions={<span className="thread-header-model" title={formatModelRef(settings, model).title}>pi · {formatModelRef(settings, model).name}</span>} reservedShortcuts={Object.entries(settings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`chat:${chat.active ?? "new"}`} title={active ? chatTitle(active) : "New chat"} onNavigate={scope => { const id = scope.slice(5); if (id === "new") chat.setActive(null); else void chat.open(id); }} actions={active ? [{ label: "Rename", onClick: () => { setRename(active.id); setName(chatTitle(active)); } }, { label: "Copy", onClick: () => { void navigator.clipboard.writeText(chatMarkdown(chatTitle(active), chat.messages)).catch(e => chat.setError(String(e))); } }, { label: "Export", onClick: () => { void run(() => exportMarkdownFile(chatMarkdown(chatTitle(active), chat.messages), "chat.md", "Export chat")); } }, { label: "Move to Trash", onClick: () => { void mutate("trash", active.id); } }] : []} searchUrl={settings.browser?.searchUrl} onInterrupt={() => chatRequest("stop", { threadId: chat.active }).then(() => {})}><div className={`chat-layout${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
@@ -117,7 +118,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
       {!searchOpen && <NewConversationRow label="New chat" disabled={busy} shortcut={settings.newAgentShortcut} handleShortcut onSearch={() => setSearchOpen(true)} onNew={() => { chat.setActive(null); clearDraft(); setNewWeb(false); setModel(defaultModel || modelKey(settings.agentPolicy?.defaultModel) || models[0]?.key || ""); setTrash(false); if (window.innerWidth < 760) setSidebarCollapsed(true); }} />}
       {searchOpen && <label className="sidebar-search is-open"><Search aria-hidden /><input autoFocus onKeyDown={e => { if (e.key === "Escape") { setSearch(""); setSearchOpen(false); } }} ref={searchInput} type="search" aria-label="Search chats" placeholder="Search chats" value={search} onChange={e => setSearch(e.target.value)} /><IconButton type="button" className="ghost" aria-label="Close search" onClick={() => { setSearch(""); setSearchOpen(false); }}><X aria-hidden /></IconButton></label>}
       <div ref={sidebarBodyRef} onScroll={updateScrollFade} className={`chat-list sidebar-body${scrollFade.top ? " fade-top" : ""}${scrollFade.bottom ? " fade-bottom" : ""}`}>
-        {Object.entries(chatGroups(chat.chats, search, trash)).map(([group, entries]) => entries.length > 0 && <section key={group} aria-label={group}>
+        {Object.entries(groups).map(([group, entries]) => entries.length > 0 && <section key={group} aria-label={group}>
           <h2 className="sidebar-section-header"><span className="sidebar-section-title">{group}</span></h2>
           {entries.map(entry => <RowMenu key={entry.id} label={chatTitle(entry)} actions={trash ? [{ label: "Restore", disabled: busy || Date.now() / 1000 - (entry.chat.deletedAt ?? 0) > 30 * 86400, onClick: () => { void mutate("restore", entry.id); } }] : [
             { label: entry.chat.pinned ? "Unpin" : "Pin", disabled: busy, onClick: () => { void mutate("pin", entry.id, { pinned: !entry.chat.pinned }); } },
@@ -132,7 +133,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
             </button>}
           </RowMenu>)}
         </section>)}
-        {!chat.chats.length && <p className="chat-muted">Your conversations will appear here.</p>}
+        {Object.values(groups).every(entries => !entries.length) && <div className="sidebar-search-empty" role="status"><p>{search.trim() ? `No conversations match “${search.trim()}”.` : trash ? "Trash is empty." : "Your conversations will appear here."}</p>{search.trim() && <button type="button" className="ghost" onClick={() => setSearch("")}>Clear search</button>}</div>}
       </div>
       <SidebarBottomRail onOpenSettings={onOpenSettings} onOpenDebug={() => {}} showDebugButton={false}><IconButton size="lg" className="ghost sidebar-utility-button" aria-label={trash ? "Back to chats" : "Trash"} title={trash ? "Back to chats" : "Trash"} aria-pressed={trash} onClick={() => setTrash(!trash)}><Trash size={14} aria-hidden /></IconButton></SidebarBottomRail>
     </aside>

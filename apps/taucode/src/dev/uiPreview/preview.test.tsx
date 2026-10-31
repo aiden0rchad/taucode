@@ -53,7 +53,7 @@ it.each([
   ["?settings=display&theme=light", "Display"],
   ["?settings=appearance&theme=glass-dark", "Choose a palette"],
   ["?mode=chat&chat=new&composer=attachments", "brief.md"],
-  ["?mode=chat&chat=chat-streaming", "Responding…"],
+  ["?mode=chat&chat=chat-streaming", "Working"],
   ["?mode=work&task=task-running", "Prepare the launch brief"],
   ["?mode=work&task=new", "What would you like to make?"],
   ["?mode=code&thread=thread-empty", "What should we build?"],
@@ -153,7 +153,7 @@ it("keeps Work title actions and returns overflow focus on Escape at narrow widt
   expect(menu.contains(document.activeElement)).toBe(true);
   expect(screen.getByRole("button", { name: "Stop task" }).textContent).toBe("Stop");
   expect(screen.getByRole("button", { name: "Stop all tasks" }).textContent).toBe("");
-  expect(document.querySelector(".workspace-titlebar .thread-state-chip.processing")?.textContent).toBe("running");
+  expect(document.querySelector(".workspace-titlebar .thread-state-chip.work-state-running")?.textContent).toBe("Working");
   fireEvent.keyDown(menu, { key: "Escape" });
   expect(screen.queryByRole("menu", { name: "Actions for thread" })).toBeNull();
   expect(document.activeElement).toBe(trigger);

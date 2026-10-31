@@ -20,6 +20,7 @@ import {
 } from "@utils/threadItems";
 import { saveThreadActivity } from "@threads/utils/threadStorage";
 import { useThreadActions } from "./useThreadActions";
+import { previewThreadName as actualPreviewThreadName } from "@utils/threadItems.listOps";
 
 vi.mock("@services/tauri", () => ({
   startThread: vi.fn(),
@@ -61,6 +62,7 @@ describe("useThreadActions", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(previewThreadName).mockImplementation(actualPreviewThreadName);
     vi.mocked(listWorkspaces).mockResolvedValue([]);
     vi.mocked(getThreadCreatedTimestamp).mockReturnValue(0);
   });

@@ -210,3 +210,17 @@
   .dock-workspace .titlebar-title, .dock-workspace .titlebar-actions { display: none; }
   .dock-workspace .dock-toolbar { flex: 1; }
 }
+
+.panel-tab-list { position: relative; display: flex; flex: 0 0 auto; height: 28px; min-width: 36px; border-radius: 6px; color: var(--text-secondary); }
+.panel-tab-list > span { display: flex; align-items: center; gap: 3px; padding: 0 6px; font-size: 12px; }
+.panel-tab-list svg { width: 14px; height: 14px; }
+.panel-tab-list select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.panel-tab-list:hover { background: var(--surface-hover); }
+.panel-tab-list:focus-within { outline: 2px solid var(--border-accent); outline-offset: 1px; }
+.browser-tab-icon { width: 14px; height: 14px; flex: 0 0 14px; }
+.browser-tab-icon.is-error { color: var(--text-error); }
+.browser-tab-icon.is-loading { color: var(--text-accent); animation: browser-tab-spin 1s linear infinite; }
+.dock-browser-tab > [role="tab"] { display: flex; align-items: center; gap: 6px; }
+.dock-browser-tab > [role="tab"] > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes browser-tab-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .browser-tab-icon.is-loading { animation: none; } }

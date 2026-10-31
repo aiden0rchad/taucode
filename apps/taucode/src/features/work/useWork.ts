@@ -5,7 +5,7 @@ import { subscribeAppServerEvents, subscribeImportsChanged } from "@services/eve
 import { buildConversationItem, buildItemsFromThread } from "@utils/threadItems";
 
 export const workGroups = [
-  ["Running", ["starting", "running", "stopping"]], ["Needs input", ["needs-input"]], ["Queued", ["queued"]], ["Done", ["done", "failed", "stopped"]],
+  ["Needs attention", ["needs-input", "failed"]], ["Working", ["starting", "running", "stopping"]], ["Queued", ["queued"]], ["Stopped", ["stopped"]], ["Completed", ["done"]],
 ] as const;
 export const templates = [
   { title: "Organize a folder", brief: "Inspect this folder, propose an organization plan, then organize it. Ask before moving or replacing existing files.", access: "ask" },

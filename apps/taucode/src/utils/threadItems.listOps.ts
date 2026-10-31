@@ -1,5 +1,6 @@
 import type { ConversationItem } from "../types";
 import { normalizeThreadTimestamp } from "./threadItems.shared";
+import { clampThreadName } from "@threads/utils/threadNaming";
 
 function mergeUserInputQuestions(
   existing: Extract<ConversationItem, { kind: "userInput" }>["questions"],
@@ -159,11 +160,9 @@ export function getThreadCreatedTimestamp(thread: Record<string, unknown>) {
 }
 
 export function previewThreadName(text: string, fallback: string) {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return fallback;
-  }
-  return trimmed;
+  const line = text.trim().split(/\r?\n/, 1)[0].replace(/^#{1,6}\s+/, "");
+  const sentence = line.split(/(?<=[.!?])\s+(?=[A-Z])/, 1)[0].replace(/[.!?]$/, "");
+  return clampThreadName(sentence) ?? fallback;
 }
 
 function chooseRicherItem(remote: ConversationItem, local: ConversationItem) {

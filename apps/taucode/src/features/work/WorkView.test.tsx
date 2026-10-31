@@ -657,11 +657,30 @@ describe("Work mode", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: "Search tasks" }), { target: { value: "missing" } });
     for (const title of ["First", "Second", "Third", "First"]) {
       await act(async () => { fireEvent.click(callout); });
-      const row = within(space).getByRole("button", { name: title });
+      const row = within(screen.getByRole("region", { name: "Research" })).getByRole("button", { name: title });
       expect(row.getAttribute("aria-current")).toBe("page");
       expect(vi.mocked(row.scrollIntoView).mock.contexts.slice(-1)[0]).toBe(row);
     }
     expect(screen.getByRole("searchbox", { name: "Search tasks" })).toHaveProperty("value", "");
+  });
+  it("finds brief and output matches in collapsed spaces and separates attention from completion", async () => {
+    state.tasks = [
+      { ...task("Launch summary", "failed"), brief: "Review orchard notes", outputs: ["outputs/owners.csv"] },
+      task("Finished task", "done"), task("Stopped task", "stopped"),
+    ];
+    render(<WorkView settings={settings} />);
+    const space = await screen.findByRole("region", { name: "Research" });
+    expect(within(screen.getByRole("region", { name: "Research: Needs attention" })).getByRole("button", { name: "Launch summary" })).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "Research: Completed" })).queryByRole("button", { name: "Launch summary" })).toBeNull();
+    fireEvent.click(within(space).getByRole("button", { name: "Research" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search conversations" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "ORCHARD owners.csv" } });
+    expect(screen.getByRole("button", { name: "Launch summary" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Finished task" })).toBeNull();
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "nothing-matches" } });
+    expect(screen.getByText(/No tasks match/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(within(screen.getByRole("region", { name: "Research" })).getByRole("button", { name: "Research" }).getAttribute("aria-expanded")).toBe("false");
   });
   it.each([0, 1, 2])("pluralizes the read-only folder disclosure for %i folders", async count => {
     state.spaces[0].readOnlyFolders = Array.from({ length: count }, (_, i) => `/reference-${i}`);

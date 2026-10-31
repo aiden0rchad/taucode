@@ -322,3 +322,18 @@ it("migrates the selected legacy browser page independently from the first store
   expect(host.active).toBe("page-2");
   expect(readPanel("code:one").browserActive).toBe("web-2");
 });
+
+it("keeps the full browser list and new-tab action outside the scrolling tabs", async () => {
+  render(shell());
+  fireEvent.click(screen.getByRole("button", { name: "Open server" }));
+  await screen.findByRole("tab", { name: "Page 1" });
+  fireEvent.click(screen.getByRole("button", { name: "New browser tab" }));
+  await screen.findByRole("tab", { name: "Page 2" });
+  const list = screen.getByRole("combobox", { name: "All browser tabs" });
+  expect(list.closest(".dock-browser-tabs")).toBeNull();
+  expect(screen.getByRole("button", { name: "New browser tab" }).closest(".dock-browser-tabs")).toBeNull();
+  fireEvent.change(list, { target: { value: readPanel("code:one").tabs.find(tab => tab.title === "Page 1")!.id } });
+  await waitFor(() => expect(host.active).toBe("page-1"));
+  act(() => { host = { ...host, tabs: host.tabs.map(page => page.id === "page-1" ? { ...page, loading: true } : page) }; callbacks.forEach(callback => callback(host)); });
+  expect(screen.getByRole("tab", { name: "Page 1", selected: true }).getAttribute("aria-description")).toBe("Loading");
+});

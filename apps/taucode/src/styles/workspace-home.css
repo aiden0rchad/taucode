@@ -439,6 +439,10 @@
   border-color: var(--border-muted);
 }
 
+.workspace-home-instance.is-failed .workspace-home-instance-status { color: var(--text-error); }
+.workspace-home-instance.is-waiting .workspace-home-instance-status { color: var(--status-warning); }
+.workspace-home-instance.is-stopped .workspace-home-instance-status { color: var(--text-secondary); }
+
 .workspace-home-instance.is-active {
   border-color: rgba(98, 176, 255, 0.6);
   box-shadow: 0 10px 18px rgba(21, 94, 117, 0.28);

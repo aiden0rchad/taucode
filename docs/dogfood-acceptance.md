@@ -274,7 +274,58 @@ Screenshots in the task visualization folder: taucode-work-waiting.png,
 taucode-work-stopped.png, taucode-code-stopped.png, taucode-chat-stopped.png.
 
 Follow-up findings: Code's current OMP tool set did not expose an ask-user tool
-(the agent answered with a plain question); the Work tool worked. Reopening a Code
-conversation also replaced its compact fallback title with its full first prompt.
-The latter is the next conversation-cleanup fix. Conversation grouping/search,
-browser overflow/restoration and the new small-project dogfood run remain pending.
+(the agent answered with a plain question); the Work tool worked. Code conversation titles and navigation have additional coverage below. Native
+verification of the navigation batch and the new small-project dogfood run remain
+pending.
+
+
+## Conversation and browser navigation acceptance
+
+Code fallback titles use the same first-line/first-sentence shortening when a turn
+starts, when history is listed, and when the conversation reopens. Custom names
+are preserved. Work groups tasks into Needs attention, Working, Queued, Stopped
+and Completed. Search matches all entered terms across titles, briefs, output
+paths and space names; matching spaces expand temporarily and recover their saved
+collapse state when search clears. Chat separates Working and Yesterday and
+searches titles, previews, model and provider names. Both modes expose an explicit
+no-results message with Clear search.
+
+Side panels and the Code dock have an accessible native full-tab selector with
+numbered titles and URLs, including duplicate titles. It and the new-tab control
+stay outside the scrolling tab strip. Browser tabs show loading and error icons;
+accessible descriptions and the full-tab list include the status. These transient
+states are not saved in the panel layout. Loading motion respects reduced motion.
+
+Restoration retains saved URLs and titles while replacement pages are blank, opens
+only the selected page, and keeps tab order. Opening operations are serialized;
+changing selection during a restore applies the latest selection after the current
+operation finishes. A regression reproduced overlapping page creation before the
+fix and passes with serialization. Workspace history also distinguishes waiting,
+stopped and failed turns, including reviews whose terminal turn has arrived.
+
+Validation:
+- All 1,859 frontend tests passed, including restoration, rapid selection,
+  title hydration, grouping/search and terminal-state regressions.
+- TypeScript passed. Changed-file ESLint had no errors; two existing effect-cleanup
+  ref warnings remain in the panel hooks/components.
+- A final heading-specificity correction passed the 25-test UI/style suite.
+- The final debug app rebuilt, was Apple Development-signed, and passed strict
+  codesign verification (`/tmp/taucode-navigation-release-build.log`).
+- Browser-based UI preview: Work search found output filenames inside a collapsed
+  space; Clear search restored the collapse state. Status groups were visually
+  inspected at 1280 × 720 with 11px labels and corrected spacing.
+- Browser-based UI preview: Code opened nine tabs, kept the full-tab and new-tab
+  controls reachable, and selected the original page from the numbered list.
+  Chat combined provider/topic search and recovered from no results.
+
+Preview screenshots in the task visualization folder:
+`taucode-work-grouping-preview.png`, `taucode-tab-list-preview.png`, and
+`taucode-chat-grouping-preview.png`. These use fixture data, not live provider runs.
+
+Outstanding acceptance: the Mac is locked, so the current native navigation build
+has not been exercised. Verify compact/custom titles after reopening, Work/Chat
+search, native loading/error indicators and tab restoration across restart. Then
+build the small task-board project in `/Users/rolandleyco/taucode-dogfood-focus-board`
+using GPT 6.1 Sol (Account 2), Low, Full access, and inspect actual tool calls,
+approvals, previews, cancellation, follow-ups and owned-server cleanup. The folder
+is an empty Git repository; no project implementation has been generated yet.

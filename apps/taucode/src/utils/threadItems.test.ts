@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationItem } from "../types";
+import { buildThreadSummaryFromThread } from "@threads/utils/threadSummary";
+import { buildResumeHydrationPlan } from "@threads/utils/threadActionHelpers";
 import {
   buildConversationItem,
   buildConversationItemFromThreadItem,
@@ -9,10 +11,26 @@ import {
   mergeThreadItems,
   normalizeItem,
   prepareThreadItems,
+  previewThreadName,
   upsertItem,
 } from "./threadItems";
 
 describe("threadItems", () => {
+  it("keeps automatic titles consistent between listing and reopening without replacing manual names", () => {
+    const thread = { id: "test", preview: "Progress and recovery check. Keep GPT 6.1 Sol and use full access.", turns: [] };
+    const plan = (getCustomName: () => string | undefined) => buildResumeHydrationPlan({ thread, threadId: "test", workspaceId: "space", localItems: [], localStatus: undefined, localActiveTurnId: null, replaceLocal: false, getCustomName });
+    expect(plan(() => undefined).threadName).toBe("Progress and recovery check");
+    expect(buildThreadSummaryFromThread({ thread, workspaceId: "space", fallbackIndex: 0 })?.name).toBe("Progress and recovery check");
+    expect(plan(() => "My custom title").threadName).toBeNull();
+    expect(buildThreadSummaryFromThread({ thread, workspaceId: "space", fallbackIndex: 0, getCustomName: () => "My custom title" })?.name).toBe("My custom title");
+  });
+  it("makes a concise fallback from the first sentence or heading", () => {
+    expect(previewThreadName("Progress and recovery check. Keep GPT 6.1 Sol and use full access.", "New chat")).toBe("Progress and recovery check");
+    expect(previewThreadName("\n## Action dashboard\nRead the notes and create the page.", "New chat")).toBe("Action dashboard");
+    expect(previewThreadName("Fix v1.2 parsing in config.json. Then run tests.", "New chat")).toBe("Fix v1.2 parsing in config.json");
+    expect(previewThreadName("x".repeat(200), "New chat")).toHaveLength(39);
+    expect(previewThreadName(" \n ", "New chat")).toBe("New chat");
+  });
   it("restores failed turns with their original error and request, but not interrupted turns", () => {
     const thread = { turns: [
       { id: "failed-turn", status: "failed", error: { message: "429 requests are paused" }, items: [{ type: "userMessage", id: "user", content: [{ type: "text", text: "Check this" }, { type: "image", url: "data:image/png;base64,AAA" }] }] },
