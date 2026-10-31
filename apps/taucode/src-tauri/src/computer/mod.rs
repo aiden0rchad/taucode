@@ -514,6 +514,9 @@ impl runner::Environment for Live {
     fn verify_target(&self) -> Result<(), String> {
         self.session.as_ref().map_or(Ok(()), |s| s.verify_element())
     }
+    fn input_finished(&self) -> Result<(), String> {
+        self.session.as_ref().map_or(Ok(()), |s| s.check_user_typing())
+    }
     fn grounding_diagnostics(&self) -> Vec<Value> {
         self.sidecar.grounding.clone()
     }

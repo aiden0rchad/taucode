@@ -295,6 +295,7 @@ struct Fake {
     prepare_error: Option<String>,
     ax_handled: bool,
     event_errors: std::cell::RefCell<std::collections::VecDeque<Option<String>>>,
+    input_finished_error: Option<String>,
     observation_errors: std::cell::RefCell<std::collections::VecDeque<Option<String>>>,
     native_front: std::cell::Cell<i32>,
     prior_front: std::cell::Cell<Option<i32>>,
@@ -451,6 +452,9 @@ impl Environment for Fake {
     fn ground_target(&self, _: &Prediction, _: &mut Action) -> Result<(String, bool), String> {
         Ok((self.element_label.clone(), self.element_secure))
     }
+    fn input_finished(&self) -> Result<(), String> {
+        self.input_finished_error.clone().map_or(Ok(()), Err)
+    }
     fn verify_target(&self) -> Result<(), String> {
         if let Some(Some(error)) = self.observation_errors.borrow_mut().pop_front() {
             return Err(error);
@@ -576,6 +580,7 @@ fn fake(actions: Vec<Value>) -> Fake {
         prepare_error: None,
         ax_handled: false,
         event_errors: Default::default(),
+        input_finished_error: None,
         observation_errors: Default::default(),
         native_front: std::cell::Cell::new(10),
         prior_front: std::cell::Cell::new(None),
@@ -684,6 +689,22 @@ async fn user_typing_during_keyboard_delivery_stops_input_and_only_verifies() {
         if succeeds { assert_eq!(env.steps.last().unwrap()["verificationOnly"], true); }
         else { assert!(result.unwrap_err().contains("Read-only verification rejected further input")); }
     }
+}
+
+#[tokio::test]
+async fn user_typing_after_the_last_key_still_releases_input_and_only_verifies() {
+    let hotkey = json!({"kind":"hotkey","keys":["shift","a"]});
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let mut env = fake(vec![hotkey, json!({"kind":"click","x":100,"y":100,"button":"left","clicks":1,"hold_keys":[]})]);
+    env.input_finished_error = Some(format!("{}You pressed keys while taucode was typing", runner::UNCERTAIN));
+    let s = settings();
+    let result = runner::run(&mut env, &control, &s, &s.app_ids(), "Type A", Instant::now()).await;
+    assert!(result.unwrap_err().contains("Read-only verification rejected further input"));
+    // Every key was released; the planner's later click was never sent.
+    assert_eq!(*input.0.lock().unwrap(), [Event::Key(56, true), Event::Key(0, true), Event::Key(0, false), Event::Key(56, false)]);
+    assert!(env.instructions[1].starts_with("READ-ONLY VERIFICATION:"));
 }
 
 #[tokio::test]

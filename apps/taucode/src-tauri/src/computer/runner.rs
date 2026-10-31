@@ -96,6 +96,10 @@ pub trait Environment {
     fn verify_target(&self) -> Result<(), String> {
         Ok(())
     }
+    /// Checked after an action's last event, before key focus is handed back.
+    fn input_finished(&self) -> Result<(), String> {
+        Ok(())
+    }
     fn prepare(&self, _: &Action, _: &Control, _: &Context) -> Result<Preparation, String> {
         Ok(Preparation::Events)
     }
@@ -347,7 +351,9 @@ async fn execute(
         }
         Ok(())
     }
-    .await;
+    .await
+    // Last chance to notice the user typing while key focus is still redirected.
+    .and_then(|()| env.input_finished());
     control.release();
     result.map_err(|error: String| {
         if input_started.load(std::sync::atomic::Ordering::Relaxed)

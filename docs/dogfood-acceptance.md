@@ -1263,8 +1263,20 @@ load flake, `ThemeGallery`, passes in isolation), TypeScript. New regressions
 failed before their fixes (status mapping, saved-session routing, runner
 uncertain execution, stale browser toast).
 
-Not done: concurrent-typing live acceptance (needs your Calculator/TextEdit grant
-for this session, or a manual check).
+Follow-up — keyboard safety live acceptance: the remaining gap (a keystroke after
+the last checked post but before key focus is released) is closed by a final
+check inside `execute`, before `Control::release`; a hit becomes `UNCERTAIN` and
+read-only verification. Live (Calculator granted to the operator session, which
+typed 9s continuously into taucode's composer through the HID path): run
+`4c7418b9` recorded "Action not executed: You are typing, so taucode held its
+keyboard input until you pause; no input dispatched"; Calculator showed `0` and
+no 9 ever reached it. With typing stopped, run `a9d4af81` typed
+`123456789+987654321=` in one delivery and finished `done` (display
+`1,234,567,899`, because Calculator's Escape cleared only the last entry and left
+`123,456,789+`). Separate pre-existing observation: in run `4c7418b9`, the
+retried type step (no user typing) stopped part-way with "Target window no longer
+has the app's keyboard focus"; partial input remained and the run ended without
+replay.
 
 Follow-up — browser tab pile-up: when restoring a saved tab failed, native `new`
 had already broadcast its page, but the open request was dropped on the error, so
