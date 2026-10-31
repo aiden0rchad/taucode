@@ -65,6 +65,17 @@ test("OMP Full access allows scoped LSP queries while retaining native mutation 
     assert.equal(await call({ action, file: "src/lib.js", line: 1, symbol: "range" }), undefined);
   }
   assert.equal(prompts, 0);
+  for (const toolName of ["eval", "debug", "lsp"]) {
+    const input = toolName === "eval" ? { code: "console.log('approval preview')" } : { action: "request", file: "src/lib.js" };
+    const result = await handler({ toolName, toolCallId: "preview", input }, {
+      ...ctx, ui: { select: async (title: string) => {
+        const approval = JSON.parse(title.slice("taucode:approval:".length));
+        assert.equal(approval.command, `${toolName}\n${JSON.stringify(input, null, 2)}`);
+        return "Block";
+      } },
+    });
+    assert.equal(result.block, true);
+  }
   symlinkSync(root, join(cwd, "lsp-outside"));
   for (const file of ["../outside.js", "/etc/hosts", "lsp-outside/file.js", ".env", ".git/config", home, "~/file.js", "@/etc/hosts", ":/etc/hosts", "file:///etc/hosts", "src/\u00a0../file.js"]) {
     assert.equal((await call({ action: "references", file })).block, true, file);

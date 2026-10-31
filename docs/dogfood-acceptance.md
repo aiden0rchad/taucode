@@ -363,3 +363,13 @@ Loading/error polish validation: all 1,862 frontend tests (226 files), TypeScrip
 changed-file ESLint and diff whitespace checks passed. Logs:
 `/tmp/taucode-loading-error-tests.log`, `/tmp/taucode-loading-error-typecheck.log`,
 `/tmp/taucode-loading-error-lint.log`. Live build verification remains pending.
+
+The real Code run exposed an opaque OMP native `eval` approval. Native eval/debug/
+LSP approvals now include their actual JSON arguments in the command preview;
+existing approval decisions remain unchanged. The new regression failed before the
+fix; all 50 Pi extension tests pass (`/tmp/taucode-native-approval-tests.log`).
+The initial project turn was stopped at that approval, retained all six generated
+files, and continued successfully in the same conversation. Its six Node tests
+passed. Preview-service argument errors required a targeted follow-up; this is an
+agent/tool-schema usability finding. The native browser then reproduced a stale
+delete-dialog returnValue bug in the generated app and the agent fixed it.

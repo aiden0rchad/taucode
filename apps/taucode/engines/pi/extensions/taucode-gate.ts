@@ -37,7 +37,7 @@ export default function (pi: ExtensionAPI) {
         && typeof input.file === "string" && /^[\w ./-]+$/.test(input.file) && input.file.trim()
         && inside(resolve(ctx.cwd, input.file), ctx.cwd) && !protectedPath(resolve(ctx.cwd, input.file), home)) return;
       if (access.accessMode === "read-only" || process.env.TAUCODE_SUBAGENT_DEPTH || !ctx.hasUI) return { block: true, reason: "Native tool requires interactive approval" };
-      const title = "taucode:approval:" + JSON.stringify({ toolCallId: event.toolCallId, tool: event.toolName, command: event.toolName, cwd: ctx.cwd });
+      const title = "taucode:approval:" + JSON.stringify({ toolCallId: event.toolCallId, tool: event.toolName, command: `${event.toolName}\n${JSON.stringify(input, null, 2)}`, cwd: ctx.cwd });
       if (await ctx.ui.select(title, ["Allow", "Block"]) !== "Allow") return { block: true, reason: "Native tool denied" };
       return;
     }
