@@ -16,6 +16,8 @@ export type ManagedTask = {
   output: string;
   outputTruncated: boolean;
   urls: string[];
+  /** Started by the conversation's engine (OMP's own service supervisor) rather than taucode. */
+  source?: "omp";
 };
 export type ManagedServer = {
   id: string;

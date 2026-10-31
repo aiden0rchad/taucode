@@ -38,7 +38,7 @@ export function BackgroundTasks({ controller, commands = [], commandsEnabled = t
     </summary>
     <div className="managed-task-detail">
       <code className="managed-task-command">{task.command}</code>
-      <div className="managed-task-meta">{task.cwd}{task.pid ? ` · PID ${task.pid}` : ""}</div>
+      <div className="managed-task-meta">{task.source === "omp" ? "Started by the agent · " : ""}{task.cwd}{task.pid ? ` · PID ${task.pid}` : ""}</div>
       {task.status !== "running" && <div className="managed-task-actions">
         <button type="button" className="secondary" disabled={controller.busy || !canStart} onClick={() => { void controller.restart(task.id).catch(() => {}); }}><RotateCcw size={12} /> Restart</button>
       </div>}

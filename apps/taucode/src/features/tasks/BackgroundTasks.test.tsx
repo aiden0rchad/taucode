@@ -55,6 +55,13 @@ describe("managed task snapshots", () => {
 });
 
 describe("Background Tasks", () => {
+  it("labels agent-started services while keeping the shared stop and server controls", async () => {
+    const value = controller([task({ id: "omp:generation", source: "omp", label: "focus-board-preview", command: "node server.mjs", urls: ["http://127.0.0.1:4173/"] })]);
+    const open = vi.fn(); render(<BackgroundTasks controller={value} onOpenUrl={open} />);
+    expect(screen.getByText(/Started by the agent/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Stop focus-board-preview" })); expect(value.stop).toHaveBeenCalledWith("omp:generation");
+    fireEvent.click(screen.getByTitle("Open http://127.0.0.1:4173/ in Browser")); expect(open).toHaveBeenCalledWith("http://127.0.0.1:4173/");
+  });
   it("shows elapsed time/output and opens detected URLs only on explicit click", async () => {
     const value = controller([task({ outputTruncated: true })]); const open = vi.fn(); render(<BackgroundTasks controller={value} onOpenUrl={open} />);
     expect(open).not.toHaveBeenCalled(); expect(screen.getByText("0:05")).toBeTruthy();

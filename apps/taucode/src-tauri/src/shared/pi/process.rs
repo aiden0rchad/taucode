@@ -378,6 +378,11 @@ impl Process {
         );
         Ok(())
     }
+    pub async fn pid(&self) -> Option<u32> {
+        if !self.alive.load(Ordering::SeqCst) { return None; }
+        let mut child = self.child.lock().await;
+        match child.try_wait() { Ok(None) => child.id(), _ => None }
+    }
     pub async fn shutdown(&self) -> Result<(), String> {
         // Drain stdout while waiting: pi may still be finishing a write on EOF.
         self.stdin.lock().await.take();

@@ -151,6 +151,35 @@ test("gate approval marker, persistence, live changes and noninteractive childre
   delete process.env.TAUCODE_TOOL_ACCESS;
 });
 
+test("OMP service bash calls drop the materialized timeout while plain commands keep it", async (t) => {
+  const keys = ["TAUCODE_OMP", "TAUCODE_CHAT", "TAUCODE_WORK", "PI_CODING_AGENT_DIR", "TAUCODE_SESSION_KEY", "TAUCODE_SUBAGENT_DEPTH"];
+  const previous = keys.map(key => process.env[key]);
+  t.after(() => keys.forEach((key, i) => previous[i] === undefined ? delete process.env[key] : process.env[key] = previous[i]));
+  for (const key of keys) delete process.env[key];
+  process.env.TAUCODE_OMP = "1";
+  process.env.PI_CODING_AGENT_DIR = home;
+  process.env.TAUCODE_SESSION_KEY = "service";
+  writeFileSync(join(home, "taucode/threads/service.json"), JSON.stringify({ accessMode: "full-access", sessionAllow: [] }));
+  let handler: any;
+  gate({ on: (name: string, fn: any) => { if (name === "tool_call") handler = fn; } } as any);
+  const ctx = { cwd, hasUI: true, ui: { select: async () => "Block" } };
+  // Shape sent by a strict provider for the Focus Board preview, which OMP rejected.
+  const service: Record<string, unknown> = { command: "node server.mjs", timeout: 0, cwd, pty: true, async: false, name: "focus-board-preview", ready: { log: "Focus Board preview:", port: 4173, host: "127.0.0.1", timeout: 30 } };
+  assert.equal(await handler({ toolName: "bash", toolCallId: "service", input: service }, ctx), undefined);
+  assert.ok(!("timeout" in service));
+  assert.deepEqual(service.ready, { log: "Focus Board preview:", port: 4173, host: "127.0.0.1", timeout: 30 });
+  assert.match(service.command as string, /commandGuard\.ts.*node server\.mjs/);
+  for (const name of ["", "  "]) {
+    const plain: Record<string, unknown> = { command: "node --test", timeout: 30, async: false, name, ready: { log: "", port: 0, host: "", timeout: 0 } };
+    assert.equal(await handler({ toolName: "bash", toolCallId: "plain", input: plain }, ctx), undefined);
+    assert.equal(plain.timeout, 30);
+  }
+  delete process.env.TAUCODE_OMP;
+  const pi: Record<string, unknown> = { command: "node server.mjs", timeout: 10, name: "svc" };
+  await handler({ toolName: "bash", toolCallId: "pi", input: pi }, ctx);
+  assert.equal(pi.timeout, 10);
+});
+
 test("OMP virtual MCP writes use only the inner connector gate and retain denials", async (t) => {
   const keys = ["TAUCODE_OMP", "TAUCODE_CHAT", "PI_CODING_AGENT_DIR", "TAUCODE_SESSION_KEY", "TAUCODE_SUBAGENT_DEPTH", "TAUCODE_TOOL_ACCESS"];
   const previous = keys.map(key => process.env[key]);

@@ -172,6 +172,23 @@ impl std::ops::Deref for WorkspaceSession {
     }
 }
 impl WorkspaceSession {
+    pub(crate) async fn engine_services(&self, workspace: &str, thread: &str, action: &str, mut params: Value) -> Result<Option<Value>, String> {
+        if !params.is_object() { return Err("Invalid service parameters".into()); }
+        params["threadId"] = json!(thread);
+        params["action"] = json!(action);
+        let owner = self.owners.lock().await.get(thread).cloned();
+        if owner.as_deref() == Some("pi") || (owner.is_none() && self.pi.has_session(workspace, thread).await) {
+            return self.pi.request(workspace, "thread/services", params).await.map(|v| Some(v["services"].clone()));
+        }
+        let backends: Vec<_> = self.extra_pi.lock().await.iter()
+            .filter(|(id, _)| owner.as_ref().is_none_or(|owner| owner == *id)).map(|(_, backend)| backend.clone()).collect();
+        for backend in backends {
+            if owner.is_some() || backend.has_session(workspace, thread).await {
+                return backend.request(workspace, "thread/services", params).await.map(|v| Some(v["services"].clone()));
+            }
+        }
+        Ok(None)
+    }
     #[cfg(test)]
     pub fn new(
         codex: Arc<CodexEngine>,

@@ -71,6 +71,8 @@ export default function (pi: ExtensionAPI) {
       if (answer !== "Allow" || decideMcp() === "block") return { block: true, reason: "Connector call denied" };
       return;
     }
+    // Strict tool-call layers send every optional field; OMP service mode rejects any bash timeout.
+    if (process.env.TAUCODE_OMP === "1" && event.toolName === "bash" && typeof input.name === "string" && input.name.trim()) delete input.timeout;
     const call = { tool: preview ? "bash" : event.toolName, cwd: ctx.cwd, command: input.command as string, path: input.path as string };
     const child = process.env.TAUCODE_SUBAGENT_DEPTH ? { workspace: process.env.TAUCODE_WORKSPACE!, toolAccess: process.env.TAUCODE_TOOL_ACCESS ?? "read-only" } : undefined;
     const decision = decide(read(), call, home, ctx.hasUI, child);

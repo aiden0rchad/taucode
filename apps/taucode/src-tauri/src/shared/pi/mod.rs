@@ -4,6 +4,7 @@ mod process;
 mod preview;
 mod profile;
 mod recovery;
+mod services;
 mod images;
 #[cfg(test)]
 mod tests;
@@ -57,6 +58,7 @@ pub(crate) struct PiEngine {
     pub read_only_folders: Mutex<HashMap<String, Vec<String>>>,
     pub paths: Mutex<HashMap<String, String>>,
     sessions: Mutex<HashMap<String, Session>>,
+    services: services::Services,
     registry: Mutex<HashMap<String, (Vec<ProviderEntry>, AgentPolicy)>>,
     events: broadcast::Sender<Value>,
     sink: Sink,
@@ -79,6 +81,7 @@ impl Default for PiEngine {
             read_only_folders: Mutex::new(HashMap::new()),
             paths: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
+            services: services::Services::default(),
             registry: Mutex::new(HashMap::new()),
             events: broadcast::channel(1024).0,
             sink: Arc::new(|_, _| {}),
@@ -190,6 +193,9 @@ impl PiEngine {
             .ok_or("Pi runtime is not configured")?
             .join(if self.chat { "chats/sessions".into() } else { format!("{}/sessions", self.profile.id()) })
             .join(workspace))
+    }
+    pub async fn has_session(&self, workspace: &str, id: &str) -> bool {
+        self.sessions.lock().await.get(id).is_some_and(|s| s.workspace == workspace)
     }
     pub async fn owns(&self, workspace: &str, id: &str) -> bool {
         if self
@@ -637,7 +643,7 @@ impl PiEngine {
             .get(workspace)
             .cloned()
             .unwrap_or_default();
-        if let Some(data) = &self.data {
+        if let Some(data) = self.data.as_ref().filter(|_| method != "thread/services") {
             let home = data.join("pi/agent").join(workspace);
             if home.exists() {
                 config::write_policy(&home, &registry, &policy)?;
@@ -695,6 +701,17 @@ impl PiEngine {
             .get_mut(id)
             .filter(|s| s.workspace == workspace)
             .ok_or("Unknown pi thread")?;
+        if method == "thread/services" {
+            if !self.profile.omp() || self.chat || self.work { return Ok(json!({"services":[]})); }
+            let cwd = s.thread["cwd"].as_str().ok_or("Missing cwd")?.to_owned();
+            let process = s.process.clone();
+            drop(sessions);
+            let pid = match process { Some(p) => p.pid().await, None => None };
+            let runner = services::Cli { data: self.data.as_deref().ok_or("Pi runtime is not configured")?, workspace, cwd: &cwd };
+            let services = self.services.request(&runner, workspace, id, &cwd,
+                params["action"].as_str().ok_or("Missing service action")?, params["id"].as_str(), pid).await?;
+            return Ok(json!({"services":services}));
+        }
         let team_home = self.data.as_ref().ok_or("Pi runtime is not configured")?
             .join(format!("{}/agent", self.profile.id())).join(workspace);
         if method == "thread/agentPolicy" {

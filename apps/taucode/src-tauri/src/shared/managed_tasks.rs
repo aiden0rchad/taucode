@@ -1,5 +1,6 @@
 //! Commands launched by the user or an approved Work tool. Never adopts external processes.
-use std::{collections::HashMap, path::{Path, PathBuf}, process::Stdio, sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Duration};
+//! OMP services owned by this thread are listed and controlled only through OMP's broker.
+use std::{collections::{HashMap, HashSet}, path::{Path, PathBuf}, process::Stdio, sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Duration};
 use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::{io::{AsyncRead, AsyncReadExt}, process::Child, sync::{oneshot, watch, Mutex}};
@@ -8,7 +9,7 @@ use super::process_core::tokio_command;
 #[cfg(windows)]
 use super::process_core::kill_child_process_tree;
 
-const OUTPUT_LIMIT: usize = 128 * 1024;
+pub(super) const OUTPUT_LIMIT: usize = 128 * 1024;
 const TASK_LIMIT: usize = 128;
 
 #[derive(Clone, Serialize)]
@@ -47,6 +48,7 @@ struct Task {
 #[derive(Default)]
 pub(crate) struct ManagedTasks {
     tasks: Mutex<HashMap<String, Arc<Task>>>,
+    hidden_services: Mutex<HashMap<(String, String), HashSet<String>>>,
     closing: AtomicBool,
     shutdown_lock: Mutex<()>,
 }
@@ -108,8 +110,16 @@ impl ManagedTasks {
         }
         let path = workspaces.lock().await.get(&workspace_id)
             .map(|w| PathBuf::from(&w.path)).ok_or("Workspace not found")?;
+        if matches!(action.as_str(), "start" | "restart") && !app_settings.lock().await.features().terminal {
+            return Err("Enable Terminal in Settings → Features".into());
+        }
+        let session = sessions.lock().await.get(&workspace_id).cloned();
+        if matches!(action.as_str(), "stop" | "restart") && params["id"].as_str().is_some_and(|id| id.starts_with("omp:")) {
+            let services = session.ok_or("Workspace not connected")?
+                .engine_services(&workspace_id, &thread_id, &action, params).await?.ok_or("OMP service not found in this session")?;
+            return self.merge_services(&workspace_id, &thread_id, false, Ok(Some(services))).await;
+        }
         let cwd = if matches!(action.as_str(), "start" | "restart") {
-            if !app_settings.lock().await.features().terminal { return Err("Enable Terminal in Settings → Features".into()); }
             let cwd = tokio::fs::canonicalize(&path).await.map_err(|e| format!("Workspace is unavailable: {e}"))?;
             let session = sessions.lock().await.get(&workspace_id).cloned().ok_or("Workspace not connected")?;
             let response = tokio::time::timeout(Duration::from_secs(15), session.send_request_for_workspace(
@@ -118,7 +128,29 @@ impl ManagedTasks {
             let thread = response.pointer("/result/thread").or_else(|| response.get("thread")).ok_or("Session not found")?;
             validate_session(&cwd, &thread_id, thread).await?
         } else { path };
-        self.request_owned(&workspace_id, &thread_id, &cwd, &action, params, TaskRuntime::default()).await
+        self.request_owned(&workspace_id, &thread_id, &cwd, &action, params, TaskRuntime::default()).await?;
+        let services = match session {
+            Some(session) => session.engine_services(&workspace_id, &thread_id, "list", json!({})).await,
+            None => Ok(None),
+        };
+        self.merge_services(&workspace_id, &thread_id, action == "clearFinished", services).await
+    }
+
+    async fn merge_services(&self, workspace: &str, thread: &str, clear: bool, services: Result<Option<Value>, String>) -> Result<Value, String> {
+        let mut values = serde_json::to_value(self.list(workspace, thread).await).map_err(|e| e.to_string())?;
+        let mut hidden = self.hidden_services.lock().await;
+        let ids = hidden.entry((workspace.into(), thread.into())).or_default();
+        if let Ok(Some(Value::Array(services))) = services {
+            for service in services {
+                let Some(id) = service["id"].as_str().filter(|id| id.starts_with("omp:")) else { continue; };
+                if service["status"] == "running" { ids.remove(id); }
+                else if clear { ids.insert(id.into()); }
+                if !ids.contains(id) { values.as_array_mut().unwrap().push(service); }
+            }
+        }
+        values.as_array_mut().unwrap().sort_by(|a, b| b["startedAt"].as_i64().cmp(&a["startedAt"].as_i64())
+            .then_with(|| a["id"].as_str().cmp(&b["id"].as_str())));
+        Ok(values)
     }
 
     /// Caller must resolve the owned session and enforce its current access policy.
@@ -359,7 +391,7 @@ async fn read_output(task: Arc<Task>, mut stream: impl AsyncRead + Unpin) {
             url_pending.push_str(&text);
             if let Some(end) = url_pending.rfind(url_delimiter) {
                 let end = end + url_pending[end..].chars().next().unwrap().len_utf8();
-                scan_urls(&mut value, &url_pending[..end]);
+                scan_urls(&mut value.urls, &url_pending[..end]);
                 url_pending.drain(..end);
             }
             if url_pending.len() > OUTPUT_LIMIT { url_pending.clear(); }
@@ -372,7 +404,7 @@ async fn read_output(task: Arc<Task>, mut stream: impl AsyncRead + Unpin) {
         append_output(&mut value, &text);
         url_pending.push_str(&text);
     }
-    scan_urls(&mut value, &url_pending);
+    scan_urls(&mut value.urls, &url_pending);
 }
 
 fn append_output(value: &mut ManagedTask, chunk: &str) {
@@ -387,7 +419,7 @@ fn append_output(value: &mut ManagedTask, chunk: &str) {
 
 fn url_delimiter(c: char) -> bool { c.is_whitespace() || matches!(c, '"' | '\'' | '<' | '>') }
 
-fn scan_urls(value: &mut ManagedTask, text: &str) {
+pub(super) fn scan_urls(urls: &mut Vec<String>, text: &str) {
     let plain = strip_ansi(text);
     for word in plain.split(url_delimiter) {
         let word = word.trim_start_matches('(').trim_end_matches([',', ';', ')', '.']);
@@ -402,11 +434,11 @@ fn scan_urls(value: &mut ManagedTask, text: &str) {
         if host == "0.0.0.0" { let _ = url.set_host(Some("localhost")); }
         else if host == "::" { let _ = url.set_host(Some("[::1]")); }
         let url = url.to_string();
-        if !value.urls.contains(&url) && value.urls.len() < 16 { value.urls.push(url); }
+        if !urls.contains(&url) && urls.len() < 16 { urls.push(url); }
     }
 }
 
-fn strip_ansi(value: &str) -> String {
+pub(super) fn strip_ansi(value: &str) -> String {
     let mut chars = value.chars();
     let mut result = String::new();
     while let Some(c) = chars.next() {
@@ -443,6 +475,57 @@ mod tests {
             }
         }).await.expect("task should exit")
     }
+
+    #[test]
+    #[cfg(unix)]
+    fn engine_errors_preserve_local_listing_and_omp_stop_routes_away_from_local_tasks() { runtime().block_on(async {
+        use crate::backend::app_server::protocol_tests::make_session;
+        let path = directory();
+        let manager = ManagedTasks::new();
+        manager.start("workspace", "thread", &path, "printf local".into(), "Local".into()).await.unwrap();
+        let local = finished(&manager, "thread").await;
+        let session = make_session();
+        session.owners.lock().await.insert("thread".into(), "pi".into());
+        let sessions = Mutex::new(HashMap::from([("workspace".into(), session.clone())]));
+        let workspaces = workspace(&path);
+        let settings = Mutex::new(AppSettings::default());
+        assert!(session.engine_services("workspace", "thread", "list", json!({})).await.is_err());
+        let list = manager.request(&settings, &workspaces, &sessions, "workspace".into(), "thread".into(), "list".into(), json!({})).await.unwrap();
+        assert_eq!(list[0]["id"], local.id);
+        assert_eq!(list.as_array().unwrap().len(), 1);
+        let error = manager.request(&settings, &workspaces, &sessions, "workspace".into(), "thread".into(), "stop".into(), json!({"id":"omp:service"})).await.unwrap_err();
+        assert_eq!(error, "Unknown pi thread"); // From the engine, never the local task lookup.
+        assert_eq!(manager.list("workspace", "thread").await[0].id, local.id);
+        settings.lock().await.features.terminal = false;
+        let error = manager.request(&settings, &workspaces, &sessions, "workspace".into(), "thread".into(), "restart".into(), json!({"id":"omp:service"})).await.unwrap_err();
+        assert!(error.contains("Enable Terminal"));
+        session.shutdown().await;
+        std::fs::remove_dir_all(path).unwrap();
+    }); }
+
+    #[test]
+    fn cleared_services_are_scoped_and_running_services_stay_visible() { runtime().block_on(async {
+        let manager = ManagedTasks::new();
+        let services = json!([
+            {"id":"omp:done", "status":"completed", "startedAt":1},
+            {"id":"omp:running", "status":"running", "startedAt":2},
+            {"id":"omp:failed", "status":"failed", "startedAt":1},
+            {"id":"omp:stopped", "status":"stopped", "startedAt":1}
+        ]);
+        let list = manager.merge_services("workspace", "thread", false, Ok(Some(services.clone()))).await.unwrap();
+        assert_eq!(list.as_array().unwrap().iter().map(|t| t["id"].as_str().unwrap()).collect::<Vec<_>>(), vec!["omp:running", "omp:done", "omp:failed", "omp:stopped"]);
+        for clear in [true, false] {
+            let list = manager.merge_services("workspace", "thread", clear, Ok(Some(services.clone()))).await.unwrap();
+            assert_eq!(list, json!([services[1]]));
+        }
+        for (workspace, thread) in [("other", "thread"), ("workspace", "other")] {
+            assert_eq!(manager.merge_services(workspace, thread, false, Ok(Some(services.clone()))).await.unwrap().as_array().unwrap().len(), 4);
+        }
+        let restarted = json!([{"id":"omp:done", "status":"running", "startedAt":3}]);
+        assert_eq!(manager.merge_services("workspace", "thread", false, Ok(Some(restarted.clone()))).await.unwrap(), restarted);
+        let exited = json!([services[0]]);
+        assert_eq!(manager.merge_services("workspace", "thread", false, Ok(Some(exited.clone()))).await.unwrap(), exited);
+    }); }
 
     #[test]
     #[cfg(unix)]
@@ -509,9 +592,9 @@ mod tests {
         assert!(task.output_truncated);
         append_output(&mut task, "\n\u{1b}[32mhttp://local");
         append_output(&mut task, "host:5173/\u{1b}[0m\nhttp://0.0.0.0:8000/ http://[::1]:8080/ https://docs.example.com http://user:secret@localhost:99/ javascript:alert(1)");
-        scan_urls(&mut task, "\u{1b}[32mhttp://localhost:5173/\u{1b}[0m http://0.0.0.0:8000/ http://[::1]:8080/ https://docs.example.com http://user:secret@localhost:99/ javascript:alert(1)");
+        scan_urls(&mut task.urls, "\u{1b}[32mhttp://localhost:5173/\u{1b}[0m http://0.0.0.0:8000/ http://[::1]:8080/ https://docs.example.com http://user:secret@localhost:99/ javascript:alert(1)");
         assert_eq!(task.urls, ["http://localhost:5173/", "http://localhost:8000/", "http://[::1]:8080/"]);
-        scan_urls(&mut task, "Serving HTTP on 127.0.0.1 port 52822 (http://127.0.0.1:52822/) ... (https://docs.example.com) (http://user:secret@localhost:99/)");
+        scan_urls(&mut task.urls, "Serving HTTP on 127.0.0.1 port 52822 (http://127.0.0.1:52822/) ... (https://docs.example.com) (http://user:secret@localhost:99/)");
         assert_eq!(task.urls.last().unwrap(), "http://127.0.0.1:52822/");
         assert_eq!(task.urls.len(), 4);
         assert!(validate_command(" ").is_err());
