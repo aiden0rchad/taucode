@@ -419,3 +419,14 @@ Retry correction validation: all 1,862 frontend tests, TypeScript and changed-fi
 ESLint pass (`/tmp/taucode-retry-final-*.log`). Blank-tab creation retries retain
 normal reload behavior. Quitting taucode also stopped its nonpersistent OMP preview
 service (PIDs 78005/78010 gone), confirming app-exit ownership cleanup.
+
+Final native acceptance passed on the corrected signed build
+(`/tmp/taucode-retry-build.log`): with the preview initially stopped, the restored
+page showed a connection error. After the agent restarted its owned service,
+clicking Retry loaded Focus Board immediately, restored its title, removed the
+error/loading guidance, and retained Ship the browser polish in Done. Final
+screenshot: `taucode-focus-board-final.png`. The preview is left running at
+127.0.0.1:4173 under OMP ownership (service PID reported 85126) for inspection.
+All four planned areas have implementation and acceptance evidence above. The
+next separate improvement is OMP service visibility/schema ergonomics; no merge
+or push has been performed for this batch.
