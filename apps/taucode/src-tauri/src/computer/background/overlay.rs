@@ -18,6 +18,10 @@ use std::{
 pub const SHARING_TYPE: u64 = 0;
 pub const NONACTIVATING_PANEL: u64 = panels::NONACTIVATING;
 pub const IGNORE_MOUSE: bool = true;
+const HINT_SECONDS: f64 = 3.;
+const CLICK_SECONDS: f64 = 0.75;
+const CANVAS: f64 = 64.;
+const TIP: [f64; 2] = [20., 44.];
 struct Motion {
     from: [f64; 2],
     to: [f64; 2],
@@ -81,7 +85,7 @@ impl Overlay {
                         .lock()
                         .unwrap()
                         .as_ref()
-                        .is_some_and(|m| m.began.elapsed().as_secs_f64() < 1.8);
+                        .is_some_and(|m| m.began.elapsed().as_secs_f64() < HINT_SECONDS);
                     let active = active.clone();
                     let motion = motion.clone();
                     let visible = visible.clone();
@@ -92,7 +96,7 @@ impl Overlay {
                         let elapsed = motion.as_ref().map(|m| m.began.elapsed().as_secs_f64()).unwrap_or(f64::INFINITY);
                         let point = motion.as_ref().map(|m| glide(m.from, m.to, elapsed / 0.16));
                         // Hit testing sees through transparent Dock/system windows.
-                        let owner = point.filter(|_| elapsed < 1.8).and_then(super::ax_actions::visible_owner);
+                        let owner = point.filter(|_| elapsed < HINT_SECONDS).and_then(super::ax_actions::visible_owner);
                         let opacity = cursor_opacity(visible.load(Ordering::SeqCst), owner, pid, elapsed);
                         if opacity == 0. {
                             PANELS.with(|panels| {
@@ -111,8 +115,8 @@ impl Overlay {
                                 let shown = draw(
                                     point,
                                     opacity,
-                                    if m.click && elapsed < 0.5 {
-                                        Some(elapsed / 0.5)
+                                    if m.click && elapsed < CLICK_SECONDS {
+                                        Some(elapsed / CLICK_SECONDS)
                                     } else {
                                         None
                                     },
@@ -223,7 +227,7 @@ unsafe fn draw(point: [f64; 2], opacity: f64, ripple: Option<f64>) -> bool {
                 let _: () = msg_send![&*window, setSharingType:SHARING_TYPE];
                 panels::configure(&window);
                 let allocated: *mut AnyObject = msg_send![class!(NSImageView), alloc];
-                let raw: *mut AnyObject = msg_send![allocated, initWithFrame:NSRect::new(NSPoint::new(0., 0.), NSSize::new(40., 40.))];
+                let raw: *mut AnyObject = msg_send![allocated, initWithFrame:NSRect::new(NSPoint::new(0., 0.), NSSize::new(CANVAS, CANVAS))];
                 let Some(view) = Retained::from_raw(raw) else { continue; };
                 let _: () = msg_send![&*view, setAccessibilityElement:false];
                 let content: *mut AnyObject = msg_send![&*window, contentView];
@@ -232,29 +236,38 @@ unsafe fn draw(point: [f64; 2], opacity: f64, ripple: Option<f64>) -> bool {
             }
         }
         let allocated: *mut AnyObject = msg_send![class!(NSImage), alloc];
-        let raw: *mut AnyObject = msg_send![allocated, initWithSize:NSSize::new(40., 40.)];
+        let raw: *mut AnyObject = msg_send![allocated, initWithSize:NSSize::new(CANVAS, CANVAS)];
         let Some(image) = Retained::from_raw(raw) else { return false; };
         let _: () = msg_send![&*image, lockFocus];
-        let color: *mut AnyObject = msg_send![class!(NSColor), colorWithCalibratedRed:0.54f64, green:0.36f64, blue:0.95f64, alpha:0.85f64];
-        let _: () = msg_send![color, set];
         if let Some(t) = ripple {
-            let radius = 4. + 8. * t;
-            let ring: *mut AnyObject = msg_send![class!(NSBezierPath), bezierPathWithOvalInRect:NSRect::new(NSPoint::new(12. - radius, 28. - radius), NSSize::new(radius * 2., radius * 2.))];
-            let _: () = msg_send![ring, setLineWidth:1.0f64];
+            let radius = 7. + 11. * (1. - (1. - t).powi(3));
+            let ring: *mut AnyObject = msg_send![class!(NSBezierPath), bezierPathWithOvalInRect:NSRect::new(NSPoint::new(TIP[0] - radius, TIP[1] - radius), NSSize::new(radius * 2., radius * 2.))];
+            let tint: *mut AnyObject = msg_send![class!(NSColor), colorWithCalibratedRed:0.66f64, green:0.57f64, blue:1.0f64, alpha:0.12 * (1. - t)];
+            let _: () = msg_send![tint, set];
+            let _: () = msg_send![ring, fill];
+            let rim: *mut AnyObject = msg_send![class!(NSColor), colorWithCalibratedRed:0.78f64, green:0.72f64, blue:1.0f64, alpha:0.8 * (1. - t)];
+            let _: () = msg_send![rim, set];
+            let _: () = msg_send![ring, setLineWidth:2.0f64];
             let _: () = msg_send![ring, stroke];
         }
         let arrow: *mut AnyObject = msg_send![class!(NSBezierPath), bezierPath];
-        for (i, (x, y)) in [(12.,28.),(12.5,16.5),(15.5,19.5),(18.5,13.5),(21.,15.),(18.,21.),(22.5,21.)].iter().enumerate() {
+        for (i, (x, y)) in [(20.,44.),(20.8,25.6),(25.6,30.4),(30.4,20.8),(34.4,23.2),(29.6,32.8),(36.8,32.8)].iter().enumerate() {
             if i == 0 { let _: () = msg_send![arrow, moveToPoint:NSPoint::new(*x,*y)]; }
             else { let _: () = msg_send![arrow, lineToPoint:NSPoint::new(*x,*y)]; }
         }
-        let _: () = msg_send![arrow, closePath]; let _: () = msg_send![arrow, fill];
-        let white: *mut AnyObject = msg_send![class!(NSColor), whiteColor]; let _: () = msg_send![white, set];
-        let _: () = msg_send![arrow, setLineWidth:1.0f64]; let _: () = msg_send![arrow, stroke];
+        let _: () = msg_send![arrow, closePath];
+        let _: () = msg_send![arrow, setLineJoinStyle:1u64];
+        let shadow: *mut AnyObject = msg_send![class!(NSColor), colorWithCalibratedRed:0.12f64, green:0.09f64, blue:0.22f64, alpha:0.65f64];
+        let _: () = msg_send![shadow, set];
+        let _: () = msg_send![arrow, setLineWidth:4.0f64]; let _: () = msg_send![arrow, stroke];
+        let fill: *mut AnyObject = msg_send![class!(NSColor), colorWithCalibratedRed:0.62f64, green:0.52f64, blue:1.0f64, alpha:1.0f64];
+        let _: () = msg_send![fill, set]; let _: () = msg_send![arrow, fill];
+        let white: *mut AnyObject = msg_send![class!(NSColor), colorWithCalibratedWhite:1.0f64, alpha:0.95f64]; let _: () = msg_send![white, set];
+        let _: () = msg_send![arrow, setLineWidth:1.5f64]; let _: () = msg_send![arrow, stroke];
         let _: () = msg_send![&*image, unlockFocus];
         let mut shown = false;
         for panel in panels.iter() {
-            let _: () = msg_send![&*panel.view, setFrameOrigin:NSPoint::new(cocoa[0] - panel.frame.origin.x - 12., cocoa[1] - panel.frame.origin.y - 28.)];
+            let _: () = msg_send![&*panel.view, setFrameOrigin:NSPoint::new(cocoa[0] - panel.frame.origin.x - TIP[0], cocoa[1] - panel.frame.origin.y - TIP[1])];
             let _: () = msg_send![&*panel.view, setImage:&*image];
             let _: () = msg_send![&*panel.window, setAlphaValue:opacity];
             // The controlled app is uncovered at this point; never activate it.
@@ -271,7 +284,7 @@ fn cursor_opacity(visible: bool, hit_owner: Option<i32>, target_pid: i32, elapse
     if !visible || hit_owner != Some(target_pid) {
         return 0.;
     }
-    ((1.8 - elapsed) / 0.4).clamp(0., 1.)
+    ((HINT_SECONDS - elapsed) / 0.5).clamp(0., 1.)
 }
 
 #[cfg(test)]
@@ -280,9 +293,9 @@ mod tests {
     #[test]
     fn cursor_is_scoped_to_target_and_fades_after_action() {
         assert_eq!(cursor_opacity(true, Some(42), 42, 0.), 1.);
-        assert_eq!(cursor_opacity(true, Some(42), 42, 1.4), 1.);
-        assert!((cursor_opacity(true, Some(42), 42, 1.6) - 0.5).abs() < 0.001);
-        assert_eq!(cursor_opacity(true, Some(42), 42, 1.8), 0.);
+        assert_eq!(cursor_opacity(true, Some(42), 42, 2.5), 1.);
+        assert_eq!(cursor_opacity(true, Some(42), 42, 2.75), 0.5);
+        assert_eq!(cursor_opacity(true, Some(42), 42, 3.), 0.);
         assert_eq!(cursor_opacity(true, Some(42), 42, f64::INFINITY), 0.);
         assert_eq!(cursor_opacity(true, Some(7), 42, 0.), 0.);
         assert_eq!(cursor_opacity(true, None, 42, 0.), 0.);
