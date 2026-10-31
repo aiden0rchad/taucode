@@ -137,7 +137,7 @@ pub async fn ipc(data: &Path, p: Value) -> Result<Value, String> {
 }
 fn tools() -> Value {
     json!([
-        {"name":"computer_run_task","description":"Operate allowed native macOS apps. Requires Computer Use settings, permissions, and per-action approvals. Return includes a persisted run and final screenshot.","inputSchema":{"type":"object","properties":{"instruction":{"type":"string"},"apps":{"type":"array","items":{"type":"string"}},"max_steps":{"type":"integer","minimum":1}},"required":["instruction"],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":true}},
+        {"name":"computer_run_task","description":"Operate allowed native macOS apps. Requires Computer Use settings, permissions, and per-action approvals. Return includes a persisted run and final screenshot.","inputSchema":{"type":"object","properties":{"instruction":{"type":"string"},"apps":{"type":"array","description":"Allowed app bundle IDs, such as com.apple.calculator. An allowed app's name also works.","items":{"type":"string"}},"max_steps":{"type":"integer","minimum":1}},"required":["instruction"],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":true}},
         {"name":"computer_screenshot","description":"Capture the main display excluding taucode windows.","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"annotations":{"readOnlyHint":true}}
     ])
 }

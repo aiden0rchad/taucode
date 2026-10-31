@@ -666,6 +666,27 @@ async fn uncertain_ax_completion_observes_once_without_replaying_input() {
 }
 
 #[tokio::test]
+async fn user_typing_during_keyboard_delivery_stops_input_and_only_verifies() {
+    let hotkey = json!({"kind":"hotkey","keys":["shift","a"]});
+    for next in [json!({"kind":"done","summary":"Text visibly entered"}), json!({"kind":"click","x":100,"y":100,"button":"left","clicks":1,"hold_keys":[]})] {
+        let succeeds = next["kind"] == "done";
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let mut env = fake(vec![hotkey.clone(), next]);
+        *env.event_errors.borrow_mut() = vec![None, Some(format!("{}You pressed keys while taucode was typing", runner::UNCERTAIN))].into();
+        let s = settings();
+        let result = runner::run(&mut env, &control, &s, &s.app_ids(), "Type A", Instant::now()).await;
+        assert_eq!(result.is_ok(), succeeds, "{result:?}");
+        // The held modifier is released; the interrupted key and the planner's later click are never sent.
+        assert_eq!(*input.0.lock().unwrap(), [Event::Key(56, true), Event::Key(56, false)]);
+        assert!(env.instructions[1].starts_with("READ-ONLY VERIFICATION:"));
+        if succeeds { assert_eq!(env.steps.last().unwrap()["verificationOnly"], true); }
+        else { assert!(result.unwrap_err().contains("Read-only verification rejected further input")); }
+    }
+}
+
+#[tokio::test]
 async fn recoverable_errors_have_caps_feedback_and_no_input() {
     let denied = json!({"kind":"switch_app","app":"com.apple.Terminal"});
     let done = json!({"kind":"done","summary":"done"});

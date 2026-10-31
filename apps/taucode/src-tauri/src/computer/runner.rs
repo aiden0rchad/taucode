@@ -761,6 +761,17 @@ pub async fn run(
             env.progress(entry)?;
             step += 1;
             stale_retries = 0;
+            if let Some(error) = outcome.as_ref().err().filter(|e| e.starts_with(UNCERTAIN)) {
+                control.release();
+                recovery.previous = Some(format!(
+                    "READ-ONLY VERIFICATION: {error} The previous action may have partly executed. Inspect this fresh observation. Return done ONLY if the entire requested task is visibly complete; otherwise return fail explaining what remains or is uncertain. No click, edit, hotkey, retry, or other input is allowed.\n\n"
+                ));
+                verify_only = Some(error.clone());
+                control.checkpoint().await?;
+                env.phase(Phase::Settling);
+                control.until(env.settle()).await?;
+                continue;
+            }
             if outcome
                 .as_ref()
                 .err()

@@ -620,6 +620,11 @@ impl Session {
             } else {
                 window.id
             };
+        // Key focus theft would route the user's own keystrokes to the target; wait for a pause instead.
+        if keyboard && focus_guard::keyboard_age() < USER_TYPING_IDLE {
+            *self.fallback_reason.lock().unwrap() = Some("background_keyboard_user_typing".into());
+            return false;
+        }
         self.guard.delivering.store(true, Ordering::SeqCst);
         *self.delivery.lock().unwrap() = Some(delivery::Scope::enter(self, self.pid, id, keyboard));
         if self.events_available(action) {
@@ -643,6 +648,13 @@ impl Session {
             scope.finish(&*session, !cancelled);
             session.guard.delivering.store(false, Ordering::SeqCst);
         }))
+    }
+    /// Stops further key input once the user has typed during this keyboard delivery; nothing is replayed.
+    pub fn check_user_typing(&self) -> Result<(), String> {
+        if self.delivery.lock().unwrap().as_ref().is_some_and(|scope| scope.user_typed(focus_guard::keyboard_age())) {
+            return Err(format!("{}You pressed keys while taucode was typing into {}. macOS may have delivered some of your keystrokes there, so taucode stopped sending input and did not replay anything.", super::runner::UNCERTAIN, self.bundle));
+        }
+        Ok(())
     }
     fn keyboard_target_matches(&self) -> bool {
         self.keyboard_target.lock().unwrap().as_ref()
@@ -702,6 +714,8 @@ impl Drop for Session {
         self.stop();
     }
 }
+
+const USER_TYPING_IDLE: f64 = 0.5;
 
 fn ax_path(selected: bool) -> &'static str {
     if selected {

@@ -569,6 +569,10 @@ extern "C" {
 fn user_switched_recently() -> bool {
     user_event_age() < 1.0
 }
+/// Seconds since the user last pressed a physical key (synthetic posts do not reset it).
+pub(super) fn keyboard_age() -> f64 {
+    unsafe { CGEventSourceSecondsSinceLastEventType(1, 10) }
+}
 fn user_event_age() -> f64 {
     // Hardware-only state, as in upstream key_focus_guard: synthetic events do not reset this clock.
     unsafe {

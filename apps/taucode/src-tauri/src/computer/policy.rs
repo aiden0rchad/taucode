@@ -358,6 +358,16 @@ pub enum Decision {
     Confirm(&'static str),
     Deny(String),
 }
+/// Maps a requested app onto exactly one allowed bundle ID. Models often send the app's name
+/// ("Calculator") instead of its bundle ID, so a name matching the ID's last component is accepted.
+pub fn resolve_app(requested: &str, s: &Settings) -> Option<String> {
+    let requested = requested.trim();
+    if let Some(app) = s.allowed_apps.iter().find(|a| a.bundle_id == requested) { return Some(app.bundle_id.clone()); }
+    let name = requested.replace(' ', "");
+    let matches: Vec<_> = s.allowed_apps.iter().filter(|a| a.bundle_id.eq_ignore_ascii_case(requested)
+        || (!name.is_empty() && a.bundle_id.rsplit('.').next().is_some_and(|last| last.eq_ignore_ascii_case(&name)))).collect();
+    (matches.len() == 1).then(|| matches[0].bundle_id.clone())
+}
 pub fn app_allowed(app: &str, s: &Settings, apps: &[String]) -> bool {
     !app.is_empty()
         && app != "dev.taucode.desktop"
@@ -648,6 +658,18 @@ mod refinements {
             allowed_apps: vec!["com.apple.TextEdit".into(), SYSTEM_SETTINGS.into()],
             ..Default::default()
         }
+    }
+    #[test]
+    fn requested_app_names_resolve_to_one_allowed_bundle_id() {
+        let mut s = settings();
+        s.allowed_apps.push("com.apple.calculator".into());
+        for (requested, expected) in [("com.apple.calculator", Some("com.apple.calculator")), ("Calculator", Some("com.apple.calculator")),
+            (" textedit ", Some("com.apple.TextEdit")), ("COM.APPLE.TEXTEDIT", Some("com.apple.TextEdit")), ("Notes", None), ("", None), ("apple", None)] {
+            assert_eq!(resolve_app(requested, &s).as_deref(), expected, "{requested}");
+        }
+        s.allowed_apps.push("org.example.calculator".into());
+        assert_eq!(resolve_app("Calculator", &s), None, "ambiguous names are refused");
+        assert_eq!(resolve_app("org.example.calculator", &s).as_deref(), Some("org.example.calculator"));
     }
     fn field(role: &str, label: &str) -> Target {
         Target {

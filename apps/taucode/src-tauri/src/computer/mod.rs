@@ -255,7 +255,12 @@ impl Computer {
             let apps: Vec<String> = match p.get("apps") {
                 None => limits.app_ids(),
                 Some(v) => {
-                    serde_json::from_value(v.clone()).map_err(|_| "Expected app bundle IDs")?
+                    let requested: Vec<String> = serde_json::from_value(v.clone()).map_err(|_| "Expected app bundle IDs")?;
+                    requested.iter().map(|app| resolve_app(app, &limits).ok_or_else(|| if limits.allowed_apps.is_empty() {
+                        "Select allowed apps in Computer Use settings".to_string()
+                    } else {
+                        format!("{app} is not an allowed Computer Use app. Allowed bundle IDs: {}.", limits.app_ids().join(", "))
+                    })).collect::<Result<_, _>>()?
                 }
             };
             if apps.is_empty() || apps.iter().any(|a| !app_allowed(a, &limits, &apps)) {
@@ -607,6 +612,9 @@ impl runner::Environment for Live {
                         }
                         _ if s.fallback_reason.lock().unwrap().as_deref().is_some_and(|r| r.contains("failed(-25204)")) => {
                             return Err("AX action completion unknown after timeout; background fallback unavailable".into());
+                        }
+                        _ if s.fallback_reason.lock().unwrap().as_deref() == Some("background_keyboard_user_typing") => {
+                            return Err(format!("{}You are typing, so taucode held its keyboard input until you pause; no input dispatched", runner::RECOVERABLE));
                         }
                         _ if s.fallback_reason.lock().unwrap().as_deref().is_some_and(|r| r.starts_with("background_keyboard_")) => {
                             return Err(format!("{}Background keyboard target is not focused or its focus could not be confirmed; no input dispatched", runner::RECOVERABLE));

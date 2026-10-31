@@ -298,6 +298,9 @@ impl Input for NativeInput {
             session.check()?;
         }
         if let Some(session) = background {
+            if matches!(event, Event::Key(_, true) | Event::Text(_)) {
+                session.check_user_typing()?;
+            }
             session.guard.arm();
             match event {
                 Event::Mouse { point, .. } | Event::Move(point, _) => {

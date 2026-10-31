@@ -23,6 +23,8 @@ pub struct Scope {
     prior_key: Option<u32>,
     baseline_key_pid: Option<i32>,
     theft: Option<i32>,
+    keyboard: bool,
+    entered: Instant,
 }
 impl Scope {
     pub fn enter(f: &impl Focus, pid: i32, window: u32, keyboard: bool) -> Self {
@@ -39,7 +41,13 @@ impl Scope {
             prior_key,
             baseline_key_pid,
             theft,
+            keyboard,
+            entered: Instant::now(),
         }
+    }
+    /// While key focus is redirected, physical keystrokes can reach the target instead of the user's app.
+    pub fn user_typed(&self, key_age: f64) -> bool {
+        self.keyboard && key_age < self.entered.elapsed().as_secs_f64()
     }
 
     pub fn release_key(&mut self, f: &impl Focus) {
@@ -186,6 +194,16 @@ mod tests {
             }
             assert_eq!(*f.log.lock().unwrap(), expected);
         }
+    }
+    #[test]
+    fn only_key_presses_after_a_keyboard_scope_begins_count_as_user_typing() {
+        let f = Fake::new();
+        let keyboard = Scope::enter(&*f, 20, 200, true);
+        let pixel = Scope::enter(&*f, 20, 200, false);
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(keyboard.user_typed(0.0));
+        assert!(!keyboard.user_typed(5.0));
+        assert!(!pixel.user_typed(0.0));
     }
     #[test]
     fn restores_key_focus_without_reactivating_an_unchanged_front_app() {
