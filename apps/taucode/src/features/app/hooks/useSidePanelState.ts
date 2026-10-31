@@ -89,6 +89,8 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const opening = useRef(false);
+  // A failed page open is shown until that browser recovers (for example through the page's Retry).
+  const pageOpenFailed = useRef(false);
   const requestedSelection = useRef<string | undefined>(undefined);
   const [recent, setRecent] = useState<{ url: string; title: string; favicon?: string }[]>(() => {
     try { const items = JSON.parse(localStorage.getItem("taucode.browser.recent") ?? "[]"); return Array.isArray(items) ? items.filter(t => t && typeof t.url === "string" && /^https?:/.test(t.url) && typeof t.title === "string").slice(0, 4) : []; } catch { return []; }
@@ -146,6 +148,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
       });
       if (created) pending.current = null;
       const page = value.tabs.find(t => t.id === value.active);
+      if (pageOpenFailed.current && page && !page.loading && !page.error && !value.error) { pageOpenFailed.current = false; setError(""); }
       if (page && /^https?:/.test(page.url)) setRecent(previous => {
         if (previous[0]?.url === page.url && previous[0]?.title === page.title && previous[0]?.favicon === (page.favicon?.startsWith("data:image/") ? page.favicon : undefined)) return previous;
         const next = [{ url: page.url, title: page.title || page.url, favicon: page.favicon?.startsWith("data:image/") ? page.favicon : undefined }, ...previous.filter(t => t.url !== page.url)].slice(0, 4);
@@ -171,6 +174,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     if (!features.browser) return;
     if (opening.current || pending.current) return;
     opening.current = true;
+    pageOpenFailed.current = false;
     setBusy(true); setError("");
     try {
       const url = normalizeBrowserUrl(input, searchUrl);
@@ -184,7 +188,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
       await browserRequest({ action: "new" });
       if (url !== "about:blank") await browserRequest({ action: "navigate", url });
       setAddress("");
-    } catch (e) { pending.current = null; setError(String(e)); }
+    } catch (e) { pending.current = null; pageOpenFailed.current = true; setError(String(e)); }
     finally { opening.current = false; setBusy(false); }
   }, [scope, searchUrl, update, features.browser]);
   const pageRef = useRef(openPage); pageRef.current = openPage;

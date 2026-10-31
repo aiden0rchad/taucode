@@ -44,6 +44,10 @@ Supported macOS paths use accessibility elements where possible, with policy che
 
 Some menus, hosted views, secure fields, or transient controls may not support the same interaction path. Missing targets and stale observations should produce a fresh observation or a failure, rather than being treated as evidence that input landed correctly.
 
+Background typing and shortcuts briefly route the Mac's keyboard focus to the target window. While you are typing, taucode holds its keyboard input until you pause, so your keystrokes are not sent to the target app. If you press a key during taucode's own keyboard input, it stops sending input, does not replay anything, and only inspects the app to report what is visibly complete.
+
+An agent can name allowed apps by bundle ID (`com.apple.calculator`) or by name (`Calculator`). A name that matches more than one allowed app is refused.
+
 Keep sensitive apps and documents out of the allowed scope. App restrictions reduce the target set; they do not make an inaccurate model accurate.
 
 ## Approval and takeover

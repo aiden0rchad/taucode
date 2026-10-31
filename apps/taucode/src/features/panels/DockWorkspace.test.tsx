@@ -243,6 +243,34 @@ it("hides native content under a reopened narrow sidebar and through a pointer r
   expect(vi.mocked(browserNativeBounds).mock.calls[vi.mocked(browserNativeBounds).mock.calls.length - 1]?.[2]).toBe(true);
   expect(screen.getByLabelText("Native browser page")).toBe(slot);
 });
+it("clears a failed page-open error once that page recovers through Retry", async () => {
+  const request = vi.mocked(browserRequest).getMockImplementation()!;
+  vi.mocked(browserRequest).mockImplementation(async r => {
+    if (r.action !== "new" || host.tabs.length) return request(r);
+    host = { ...host, active: "page-1", tabs: [{ id: "page-1", title: "New tab", url: "about:blank", ready: false, loading: false, error: "Could not open this tab: injected test fault at layout. Choose Retry to try again." }] };
+    callbacks.forEach(callback => callback(host));
+    throw new Error("injected test fault at layout");
+  });
+  render(shell());
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Open server" })); });
+  await waitFor(() => expect(document.querySelector(".dock-error")?.textContent).toContain("injected test fault"));
+  // A loading retry is not yet a recovery.
+  act(() => { host = { ...host, tabs: [{ ...host.tabs[0], error: undefined, loading: true }] }; callbacks.forEach(callback => callback(host)); });
+  expect(document.querySelector(".dock-error")).toBeTruthy();
+  act(() => { host = { ...host, tabs: [{ ...host.tabs[0], loading: false, ready: true }] }; callbacks.forEach(callback => callback(host)); });
+  expect(document.querySelector(".dock-error")).toBeNull();
+});
+it("reveals a hidden Browser when the rail opens a server", async () => {
+  render(shell());
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Open server" })); });
+  await waitFor(() => expect(host.tabs[0]?.url).toBe("http://localhost:47400/"));
+  fireEvent.click(screen.getByRole("button", { name: "Toggle Browser" }));
+  expect(dockPanes(layout().tree)).not.toContain("browser");
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Open server" })); });
+  await waitFor(() => expect(dockPanes(layout().tree)).toContain("browser"));
+  expect(pane("browser").hidden).toBe(false);
+  expect(screen.getByRole("button", { name: "Toggle Browser" }).getAttribute("aria-pressed")).toBe("true");
+});
 it("opens rail and secondary view actions and respects live feature gates", async () => {
   const view = render(shell()); fireEvent.click(screen.getByRole("button", { name: "Inspect changes" }));
   expect(pane("git").hidden).toBe(false);

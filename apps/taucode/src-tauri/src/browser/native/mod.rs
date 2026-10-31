@@ -144,6 +144,7 @@ impl NativeBackend {
         result
     }
     async fn create_view(&self, id: &str, views: &mut Views, stage: &mut &'static str, valid: Arc<AtomicBool>) -> Result<Webview, String> {
+        injected_fault(stage)?;
         let name = label(id)?;
         let tab = self.tab(id).ok_or("Unknown browser tab")?;
         let url = tab["url"].as_str().unwrap_or("about:blank");
@@ -228,12 +229,14 @@ impl NativeBackend {
             );
         }
         *stage = "window";
+        injected_fault(stage)?;
         let window = self
             .app
             .get_window("main")
             .ok_or("Main window unavailable")?;
         // Create offscreen: no white flash before first load or before hide is processed.
         *stage = "webview";
+        injected_fault(stage)?;
         let view = window
             .add_child(
                 builder,
@@ -244,9 +247,11 @@ impl NativeBackend {
         #[cfg(target_os = "macos")]
         {
             *stage = "accessibility";
+            injected_fault(stage)?;
             macos::install_accessibility(&view).await?;
         }
         *stage = "layout";
+        injected_fault(stage)?;
         if let Some(main) = self.app.get_webview("main") {
             // add_child changes the original webview's sizing semantics. Keep the
             // UI full-window; browser bounds remain controlled by place().
@@ -257,6 +262,7 @@ impl NativeBackend {
         #[cfg(target_os = "macos")]
         {
             *stage = "navigation";
+            injected_fault(stage)?;
             navigation_events::install(&view, id.to_string(), self.state.clone())?;
         }
         views.hook_keys.insert(id.into(), hook_key);
@@ -678,6 +684,28 @@ impl BrowserBackend for NativeBackend {
         Box::pin(self.command(p))
     }
 }
+/// Debug builds only: `TAUCODE_BROWSER_FAULT=<stage>[:count]` fails tab creation at that stage so Retry and
+/// partial-view cleanup can be exercised against real WebKit views. Release builds never read it.
+fn injected_fault(stage: &str) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    {
+        use std::sync::{atomic::AtomicU32, OnceLock};
+        static FAULT: OnceLock<Option<(String, AtomicU32)>> = OnceLock::new();
+        let fault = FAULT.get_or_init(|| parse_fault(&std::env::var("TAUCODE_BROWSER_FAULT").ok()?).map(|(stage, count)| (stage, AtomicU32::new(count))));
+        if let Some((target, remaining)) = fault {
+            if target == stage && remaining.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok() {
+                return Err(format!("injected test fault at {stage}"));
+            }
+        }
+    }
+    let _ = stage;
+    Ok(())
+}
+#[cfg(debug_assertions)]
+fn parse_fault(spec: &str) -> Option<(String, u32)> {
+    let (stage, count) = spec.split_once(':').map_or(Some((spec, 1)), |(stage, count)| count.parse().ok().map(|count| (stage, count)))?;
+    (!stage.is_empty() && count > 0).then(|| (stage.to_owned(), count))
+}
 fn update(state: &watch::Sender<Value>, id: &str, values: Value) {
     update_if(state, id, values, || true);
 }
@@ -705,6 +733,13 @@ fn update_if(state: &watch::Sender<Value>, id: &str, values: Value, valid: impl 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fault_injection_spec_names_a_stage_and_positive_count() {
+        assert_eq!(parse_fault("layout"), Some(("layout".into(), 1)));
+        assert_eq!(parse_fault("navigation:2"), Some(("navigation".into(), 2)));
+        for invalid in ["", ":1", "layout:0", "layout:x"] { assert_eq!(parse_fault(invalid), None, "{invalid}"); }
+        assert!(injected_fault("not-a-stage").is_ok());
+    }
     #[test]
     fn failed_creation_settles_the_tab_and_discards_only_its_partial_state() {
         let original = json!({"id":"other","ready":true,"loading":false,"title":"Keep this page","url":"https://example.test/"});

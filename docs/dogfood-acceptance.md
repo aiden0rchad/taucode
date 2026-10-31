@@ -1210,3 +1210,59 @@ Limits: after an app relaunch the service history appears a few seconds after th
 conversation loads (first polls precede thread resume). Opening a server from the
 rail navigates the Browser panel but does not reveal a hidden panel. Only
 OMP 18.12.6 on this Mac was exercised; Pi and Codex have no equivalent services.
+
+### Service rail polish, keyboard safety, and browser fault injection — October 31
+
+Signed debug build, Sol Account 2 / Low / Full access, Focus Board fixture.
+
+- **Rail Open with a hidden Browser.** Not a defect: live, Open on a server URL
+  with the Browser pane hidden revealed it at once. The earlier symptom was a
+  capture taken before the first native `attach` returned. A DockWorkspace
+  regression test now locks the reveal.
+- **App-quit label.** OMP records a service ended by the commandGuard on app quit
+  as `failed` with exit 143. Signal exits 129/130/143 now show as `stopped`;
+  137 (possible OOM kill) and other codes stay `failed`. Live: `stopped`.
+- **History after relaunch.** The first poll could not route to the OMP backend
+  until `thread/read` recorded the owner. `has_session` now also accepts a saved
+  `<sessions>/<workspace>/<uuid>.jsonl` (no scan, no spawn), and the hook polls
+  every 500 ms three times after a session opens. Live cold relaunch: history
+  visible about 1 s after opening (one cold `omp ps` ≈ 0.6 s), previously 2–5 s.
+- **Keyboard delivery while the user types.** Review finding: background keyboard
+  delivery holds `SLPSStealKeyFocusReturningID`, so physical keystrokes during
+  that lease reach the target app, and `user_event_age` ignored key-down events.
+  Now: no key-focus theft if a hardware key was pressed in the last 0.5 s
+  (recoverable, no input dispatched); during a lease, a hardware key press stops
+  further key-down/text posts with an `UNCERTAIN` error, held keys are released,
+  and the runner switches to read-only verification (no replay, no further input).
+  Held-key releases are never blocked. Residual window: a keystroke after the
+  last checked post and before release is not detected.
+  Live limit: a faithful concurrent-typing test was not possible from this
+  session. Full-screen control hides apps the session may not touch, and
+  Calculator/TextEdit access was declined, so taucode correctly refused the
+  hidden Calculator window ("window was off-screen; no keyboard input"). Covered
+  by unit/runner tests; a manual check is still recommended.
+- **Computer Use app names.** Agents passed `apps: ["Calculator"]` and got the
+  misleading "Select allowed apps" error. Requested apps now resolve to exactly
+  one allowed bundle ID (exact, case-insensitive, or name = last bundle
+  component; ambiguous names refused), and unknown apps get an error listing the
+  allowed IDs. Live: the retried task passed app selection.
+- **Native browser fault injection.** Debug builds honor
+  `TAUCODE_BROWSER_FAULT=<stage>[:count]` (configuration, window, webview,
+  accessibility, layout, navigation); release builds compile it out. Live with
+  `layout:1` (after the child webview exists): the tab showed "Could not open this
+  tab… Choose Retry", Retry recovered it, no crash. Found and fixed: the dock's
+  duplicate error toast stayed after a successful Retry; it now clears when that
+  page recovers.
+- **Uncertain actions.** Unchanged policy: uncertain outcomes verify read-only and
+  never replay. Mid-action `UNCERTAIN` errors now use the same path.
+- **Handoff preview test.** `managed_preview_bridge_serves_restarts_and_stops_without_user_dialogs` passes.
+
+Tests: 453 `shared::` Rust tests (0 failed, 1 pre-existing ignored live test),
+127 computer tests, 7 service-bridge tests, frontend 1,893 tests (one known
+load flake, `ThemeGallery`, passes in isolation), TypeScript. New regressions
+failed before their fixes (status mapping, saved-session routing, runner
+uncertain execution, stale browser toast).
+
+Not done: concurrent-typing live acceptance (needs your Calculator/TextEdit grant
+for this session, or a manual check); each relaunch restored one more browser tab
+(observed 2 → 3), not investigated.
