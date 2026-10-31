@@ -877,7 +877,7 @@ export const ToolRow = memo(function ToolRow({
           />
         )}
         {showCommandOutput && <CommandOutput output={summary.output ?? ""} />}
-        {item.toolType === "mcpToolCall" && item.title === "Tool: taucode-computer / computer_run_task" && tone === "processing" && <ComputerApprovalStatus detail={item.detail ?? ""} />}
+        {item.toolType === "mcpToolCall" && ["Tool: taucode-computer / computer_run_task", "Tool: Computer Use / computer_run_task"].includes(item.title) && tone === "processing" && <ComputerApprovalStatus detail={item.detail ?? ""} />}
         {isExpanded && computerRun && <ComputerRunItem run={computerRun} />}
         {showToolOutput && summary.output && !isCommand && !computerRun && (
           <Markdown

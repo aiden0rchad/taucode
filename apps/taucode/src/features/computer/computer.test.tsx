@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ComputerApprovals } from "./ComputerApprovals";
-import { ComputerRunItem } from "./ComputerRunItem";
+import { ComputerApprovalStatus, ComputerRunItem } from "./ComputerRunItem";
 import { defaultComputerSettings, parseComputerRun } from "./computer";
 import { SettingsComputerSection } from "@settings/components/sections/SettingsComputerSection";
 import { computerRequest, computerRequestPermissions } from "@services/tauri";
@@ -11,6 +11,44 @@ vi.mock("@services/tauri", () => ({ engineRuntime: async () => [{ engine: "compu
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const step = { step: 1, thumbnail: "aGVsbG8=", action: { kind: "click" }, reflection: "Found button" };
 describe("computer use", () => {
+  it("shows live progress and controls pause, resume and stop", async () => {
+    let run = { id: "run", instruction: "Calculate", running: true, paused: false, steps: [{ ...step, target: "Clear" }] };
+    vi.mocked(computerRequest).mockImplementation(async p => {
+      if (p.action === "pause") run = { ...run, paused: p.paused === true };
+      if (p.action === "stop") run = { ...run, running: false };
+      return run as never;
+    });
+    render(<ComputerApprovalStatus detail='{"instruction":"Calculate"}' />);
+    expect(await screen.findByText("Last action · Step 1: Clear")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Pause computer use" }));
+    expect(await screen.findByText("Computer Use paused")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Resume computer use" }));
+    expect(await screen.findByText("Computer Use running")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Stop computer use" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Computer Use controls" })).toBeNull());
+    expect(computerRequest).toHaveBeenCalledWith({ action: "pause", paused: true });
+    expect(computerRequest).toHaveBeenCalledWith({ action: "pause", paused: false });
+    expect(computerRequest).toHaveBeenCalledWith({ action: "stop" });
+  });
+  it("does not control a replacement run from stale displayed controls", async () => {
+    vi.mocked(computerRequest).mockResolvedValue({ id: "old", instruction: "Calculate", running: true, steps: [] });
+    render(<ComputerApprovalStatus detail='{"instruction":"Calculate"}' />);
+    await screen.findByRole("button", { name: "Pause computer use" });
+    vi.mocked(computerRequest).mockResolvedValue({ id: "new", instruction: "Different task", running: true, steps: [] });
+    fireEvent.click(screen.getByRole("button", { name: "Stop computer use" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Computer Use controls" })).toBeNull());
+    expect(computerRequest).not.toHaveBeenCalledWith({ action: "stop" });
+  });
+  it("shows control failures and keeps the controls available for retry", async () => {
+    vi.mocked(computerRequest).mockImplementation(async p => {
+      if (p.action === "pause") throw new Error("Host unavailable");
+      return { id: "run", instruction: "Calculate", running: true, steps: [] } as never;
+    });
+    render(<ComputerApprovalStatus detail='{"instruction":"Calculate"}' />);
+    fireEvent.click(await screen.findByRole("button", { name: "Pause computer use" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Error: Host unavailable");
+    expect((screen.getByRole("button", { name: "Pause computer use" }) as HTMLButtonElement).disabled).toBe(false);
+  });
   it("persists risky-only typing with a Return warning", async () => {
     vi.mocked(computerRequest).mockResolvedValue({ steps: [] });
     const save = vi.fn().mockResolvedValue(undefined);

@@ -77,7 +77,9 @@ pub fn select(content: &SCShareableContent, pid: i32) -> Result<SCWindow, String
             .unwrap_or(usize::MAX)
     });
     let visible: Vec<_> = windows.iter().map(SCWindow::is_on_screen).collect();
-    let index = select_index(&visible, |i| {
+    let focused = super::ax_actions::focused_window(pid);
+    let preferred = windows.iter().position(|w| Some(w.window_id()) == focused);
+    let index = select_index(&visible, preferred, |i| {
         super::ax_actions::minimized(pid, windows[i].window_id())
     })
     .map_err(|e| format!("Window selection: pid={pid}, {e}"))?;
@@ -110,12 +112,18 @@ pub fn retry_windowless<T>(
         wait(std::time::Duration::from_millis(200).min(deadline.saturating_duration_since(now())));
     }
 }
-// Input is front to back. On-screen windows cannot be minimized; query AX only
-// for the fallback candidates, failing closed if their state cannot be read.
+// Prefer the app's own focused window: layer-zero tooltips can precede it in CG order.
+// On-screen windows cannot be minimized; unreadable off-screen state fails closed.
 fn select_index(
     on_screen: &[bool],
+    preferred: Option<usize>,
     mut minimized: impl FnMut(usize) -> Result<bool, String>,
 ) -> Result<usize, String> {
+    if let Some(index) = preferred {
+        if on_screen[index] || minimized(index) == Ok(false) {
+            return Ok(index);
+        }
+    }
     if let Some(index) = on_screen.iter().position(|visible| *visible) {
         return Ok(index);
     }
@@ -344,22 +352,45 @@ mod tests {
     }
 
     #[test]
+    fn selection_keeps_app_focused_window_ahead_of_transient_overlays() {
+        // A layer-zero 66x20 Calculator overlay preceded its real app window.
+        assert_eq!(
+            select_index(&[true, true], Some(1), |_| panic!("visible")),
+            Ok(1)
+        );
+        // The app's window can be on another Space while a transient is on-screen.
+        assert_eq!(select_index(&[true, false], Some(1), |_| Ok(false)), Ok(1));
+        // A minimized preferred window must not hide another usable window.
+        assert_eq!(select_index(&[true, false], Some(1), |_| Ok(true)), Ok(0));
+        // Unknown minimized state is not permission to capture that window.
+        assert_eq!(
+            select_index(&[true, false], Some(1), |_| Err("unavailable".into())),
+            Ok(0)
+        );
+    }
+
+    #[test]
     fn selection_prefers_visible_then_non_minimized_in_front_to_back_order() {
         assert_eq!(
-            select_index(&[false, true, true], |_| panic!(
+            select_index(&[false, true, true], None, |_| panic!(
                 "visible needs no AX query"
             )),
             Ok(1)
         );
-        assert_eq!(select_index(&[false, false, false], |i| Ok(i == 0)), Ok(1));
-        assert!(select_index(&[false, false], |_| Ok(true))
+        assert_eq!(
+            select_index(&[false, false, false], None, |i| Ok(i == 0)),
+            Ok(1)
+        );
+        assert!(select_index(&[false, false], None, |_| Ok(true))
             .unwrap_err()
             .contains("Target window is minimized; listed=2"));
-        assert!(select_index(&[], |_| unreachable!())
+        assert!(select_index(&[], None, |_| unreachable!())
             .unwrap_err()
             .contains("Target has no window; listed=0"));
-        let error =
-            select_index(&[false], |_| Err("AXMinimized: ax_error(-25204)".into())).unwrap_err();
+        let error = select_index(&[false], None, |_| {
+            Err("AXMinimized: ax_error(-25204)".into())
+        })
+        .unwrap_err();
         assert!(error.contains("unknown=1"));
         assert!(error.contains("ax_error(-25204)"));
     }

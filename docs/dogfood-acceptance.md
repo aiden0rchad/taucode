@@ -469,5 +469,59 @@ tests, TypeScript and `cargo check` pass. The signed debug rebuild and strict
 signature verification passed (`/tmp/taucode-computer-timeout-build.log`). A
 mock Unix-socket host verified the real MCP executable disconnects on numeric
 and string request cancellation, and on client EOF; no native input was involved.
-The corrected build's live Calculator/Resume acceptance is still pending because
-computer use reports the Mac locked at relaunch. Do not count this as a live pass.
+The corrected build passed live Calculator acceptance: run
+`092ae7c9-4984-4ca7-aa22-265726a571d0` completed 12 times 7 in eight steps,
+and independent Calculator accessibility inspection confirmed 84. It ran for
+about 87 seconds without an MCP timeout. Native input used accessibility elements
+without foreground takeover or input errors. Model prediction consumed 72,058 ms
+versus 2,641 ms executing input; prediction latency is the next performance target.
+The main agent used GPT 6.1 Sol (Account 2), Low, Full access. Computer Use's two
+models also used that account/model; they have separate reasoning configuration.
+
+Normal chat Stop cancelled run `68e8e463-2c91-45ba-83f2-9b9146ad474d` after
+one action: native status became stopped with error `Stopped`, and the UI said
+nothing restarts automatically. Both native macOS permissions remained granted
+across changed signed builds. No new authorization prompt was observed.
+
+The active Computer Use tool now includes inline progress, Pause/Resume and Stop,
+so control does not depend on the separate native HUD. Controls bind to the
+matching run and recheck its ID before acting; failures remain visible and retryable.
+Live OMP testing exposed a connector-name mismatch: OMP sends `Computer Use`,
+while Codex uses `taucode-computer`. Both names now render the controls and pending
+approval, including when the tool details are collapsed. The OMP regression failed
+before the alias fix.
+
+Live inline Pause/Resume passed in run `166b2e2f-fd87-4ef8-a9a9-cf4c4e5eb6e5`:
+the card showed paused, Resume re-planned the pending Equals action (`staleRetries=1`),
+and independent Calculator accessibility inspection confirmed 42. No input errors
+or focus restorations were recorded. An earlier test stopped because its instruction
+said not to retry; it is not counted as a successful resume test.
+
+The user's report of failure while using another app was reproduced in run
+`bd67ea9f-29a5-4375-b651-97fcac7f52b0`. Typing in taucode's composer remained
+intact, but native window selection chose Calculator window 32806, a 66x20 layer-zero
+transient titled `Window`, instead of Calculator's actual window. The run used pixel
+fallback against that tiny capture and then failed when the transient disappeared.
+Window selection now prefers the target app's own focused window (without activation)
+before front-to-back fallback. Minimized or unreadable off-screen preferred windows
+remain excluded; another usable window can still be selected.
+
+The selection regression failed before the fix. All 109 targeted Rust tests,
+`cargo check`, TypeScript and strict signed-bundle verification passed. Frontend
+validation: 1,866 tests across 226 files and changed-file ESLint passed.
+Logs: `/tmp/taucode-window-selection-{tests,check,typecheck,build}.log` and
+`/tmp/taucode-controls-alias-suite.log`.
+
+Live concurrent-use acceptance passed on the corrected signed build in run
+`d448c0ca-e906-42de-9299-b9800d34de2e`: while typing four sentences and moving
+the caret in taucode's composer, Calculator completed 123 times 45 = 5,535.
+Independent Calculator accessibility inspection confirmed the expression and
+result. The draft stayed intact. All nine steps used main window 32194 (230x408),
+with no errors or focus restorations. Proof: `taucode-background-typing.png` and
+`taucode-calculator-isolation-result.png` in the task's visualization directory.
+This validates Calculator concurrency; broader app and keyboard-delivery coverage
+still needs separate live tests.
+
+Inline Stop also passed: run `b401ea21-0253-417e-8719-452b3f332d93` stopped
+after two Calculator actions; native status returned `running=false`, `paused=false`,
+`error=Stopped`. The third prediction was cancelled before input.

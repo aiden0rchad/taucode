@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { computerRequest } from "@services/tauri";
 import type { ComputerRun } from "./computer";
+import "./computer.css";
 
 export function ComputerApprovalStatus({ detail }: { detail: string }) {
-  const [approval, setApproval] = useState<ComputerRun["approval"]>(null);
+  const [run, setRun] = useState<ComputerRun | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   useEffect(() => {
     let instruction: unknown;
     try { instruction = JSON.parse(detail).instruction; } catch { return; }
@@ -16,14 +19,36 @@ export function ComputerApprovalStatus({ detail }: { detail: string }) {
         const run = await computerRequest<ComputerRun>({ action: "status" });
         const matches = run.running && run.instruction === instruction && (!runId || run.id === runId);
         if (matches) runId = run.id;
-        if (active) setApproval(matches ? run.approval : null);
-      } catch { if (active) setApproval(null); }
+        if (active) setRun(matches ? run : null);
+      } catch { if (active) setRun(null); }
       if (active) timer = setTimeout(() => void poll(), 500);
     };
     void poll();
     return () => { active = false; clearTimeout(timer); };
   }, [detail]);
-  return approval ? <p role="status">Waiting for approval: {approval.reason} ({approval.target}). Review in the Computer Use HUD.</p> : null;
+  if (!run) return null;
+  const control = async (action: "pause" | "stop") => {
+    setBusy(true); setError("");
+    try {
+      const current = await computerRequest<ComputerRun>({ action: "status" });
+      if (!current.running || current.id !== run.id) { setRun(null); return; }
+      await computerRequest(action === "pause" ? { action, paused: !current.paused } : { action });
+      const next = await computerRequest<ComputerRun>({ action: "status" });
+      setRun(next.running && next.id === run.id ? next : null);
+    } catch (e) { setError(String(e)); } finally { setBusy(false); }
+  };
+  const lastStep = run.steps[run.steps.length - 1];
+  return <section className="computer-live" aria-label="Computer Use controls" onKeyDown={event => event.stopPropagation()}>
+    <div className="computer-live-summary" role="status">
+      <strong>{run.paused ? "Computer Use paused" : "Computer Use running"}</strong>
+      <span>{run.approval ? `Waiting for approval: ${run.approval.reason}${run.approval.target ? ` (${run.approval.target})` : ""}. Review the approval in taucode.` : run.paused ? "Resume to take a fresh look before the next action." : lastStep ? `Last action · Step ${lastStep.step}: ${lastStep.target || lastStep.action.kind || "completed"}` : "Preparing the first action…"}</span>
+    </div>
+    <div className="computer-live-actions">
+      <button type="button" className="secondary" disabled={busy} onClick={() => void control("pause")}>{run.paused ? "Resume" : "Pause"} computer use</button>
+      <button type="button" className="secondary" disabled={busy} onClick={() => void control("stop")}>Stop computer use</button>
+    </div>
+    {error && <p role="alert">{error}</p>}
+  </section>;
 }
 
 export function ComputerRunItem({ run: reference }: { run: ComputerRun }) {

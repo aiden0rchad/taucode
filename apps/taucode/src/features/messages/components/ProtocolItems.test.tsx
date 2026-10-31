@@ -27,10 +27,12 @@ function show(item: Record<string, unknown>) {
 }
 
 describe("0.164 item renderers", () => {
-  it("shows pending computer approval on the collapsed running tool", async () => {
+  it.each(["taucode-computer", "Computer Use"])("shows computer controls and approval for %s on the collapsed running tool", async (server) => {
     vi.mocked(computerRequest).mockResolvedValue({ id: "run", running: true, instruction: "test", steps: [], approval: { reason: "Destructive click", target: "Delete account" } });
-    show({ type: "mcpToolCall", id: "computer", server: "taucode-computer", tool: "computer_run_task", status: "inProgress", arguments: { instruction: "test" } });
-    expect(await screen.findByText("Waiting for approval: Destructive click (Delete account). Review in the Computer Use HUD.")).toBeTruthy();
+    show({ type: "mcpToolCall", id: "computer", server, tool: "computer_run_task", status: "inProgress", arguments: { instruction: "test" } });
+    expect(await screen.findByText("Waiting for approval: Destructive click (Delete account). Review the approval in taucode.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Pause computer use" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Stop computer use" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Toggle tool details" }).getAttribute("aria-expanded")).toBe("false");
   });
   it("renders browser MCP screenshots with the existing image lightbox", () => {
