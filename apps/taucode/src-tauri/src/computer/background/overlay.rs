@@ -77,7 +77,7 @@ impl Overlay {
                         .lock()
                         .unwrap()
                         .as_ref()
-                        .is_some_and(|m| m.began.elapsed().as_secs_f64() < 0.7);
+                        .is_some_and(|m| m.began.elapsed().as_secs_f64() < 1.8);
                     let active = active.clone();
                     let motion = motion.clone();
                     let visible = visible.clone();
@@ -85,7 +85,15 @@ impl Overlay {
                         if !active.load(Ordering::SeqCst) { return; }
                         let motion = motion.lock().unwrap();
                         let elapsed = motion.as_ref().map(|m| m.began.elapsed().as_secs_f64()).unwrap_or(f64::INFINITY);
-                        let opacity = cursor_opacity(visible.load(Ordering::SeqCst), super::focus_guard::front_pid() == Some(pid), elapsed);
+                        let point = motion.as_ref().map(|m| glide(m.from, m.to, elapsed / 0.16));
+                        let uncovered = elapsed < 1.8 && point.is_some_and(|point| {
+                            let ignored = PANELS.with(|panels| panels.borrow().iter().map(|panel| unsafe {
+                                let number: isize = msg_send![&*panel.window, windowNumber];
+                                number as u32
+                            }).collect::<Vec<u32>>());
+                            super::windows::point_visible(pid, point, &ignored)
+                        });
+                        let opacity = cursor_opacity(visible.load(Ordering::SeqCst), uncovered, elapsed);
                         if opacity == 0. {
                             PANELS.with(|panels| {
                                 for panel in panels.borrow().iter() {
@@ -238,18 +246,18 @@ unsafe fn draw(point: [f64; 2], opacity: f64, ripple: Option<f64>) {
             let _: () = msg_send![&*panel.view, setFrameOrigin:NSPoint::new(cocoa[0] - panel.frame.origin.x - 12., cocoa[1] - panel.frame.origin.y - 28.)];
             let _: () = msg_send![&*panel.view, setImage:&*image];
             let _: () = msg_send![&*panel.window, setAlphaValue:opacity];
-            // Only the controlled app is frontmost, and only during a short action hint.
+            // The controlled app is uncovered at this point; never activate it.
             let _: () = msg_send![&*panel.window, orderFrontRegardless];
         }
     });
 }
 
 // Fade the action hint; never draw over an app the user is working in.
-fn cursor_opacity(visible: bool, target_frontmost: bool, elapsed: f64) -> f64 {
-    if !visible || !target_frontmost {
+fn cursor_opacity(visible: bool, target_uncovered: bool, elapsed: f64) -> f64 {
+    if !visible || !target_uncovered {
         return 0.;
     }
-    ((0.7 - elapsed) / 0.2).clamp(0., 1.)
+    ((1.8 - elapsed) / 0.4).clamp(0., 1.)
 }
 
 #[cfg(test)]
@@ -258,8 +266,9 @@ mod tests {
     #[test]
     fn cursor_is_scoped_to_target_and_fades_after_action() {
         assert_eq!(cursor_opacity(true, true, 0.), 1.);
-        assert!((cursor_opacity(true, true, 0.6) - 0.5).abs() < 0.001);
-        assert_eq!(cursor_opacity(true, true, 0.7), 0.);
+        assert_eq!(cursor_opacity(true, true, 1.4), 1.);
+        assert!((cursor_opacity(true, true, 1.6) - 0.5).abs() < 0.001);
+        assert_eq!(cursor_opacity(true, true, 1.8), 0.);
         assert_eq!(cursor_opacity(true, true, f64::INFINITY), 0.);
         assert_eq!(cursor_opacity(true, false, 0.), 0.);
         assert_eq!(cursor_opacity(false, true, 0.), 0.);

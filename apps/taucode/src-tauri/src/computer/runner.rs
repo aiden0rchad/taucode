@@ -580,11 +580,14 @@ pub async fn run(
                 observation!(verify_observation());
                 let after = env.context()?;
                 verify_app("Target binding changed after approval", &current, &after)?;
-                verify_policy_target(
+                if let Err(reason) = verify_policy_target(
                     "AX policy target changed after approval",
                     &policy_target,
                     &observation!(env.policy_target(&action)),
-                )?;
+                ) {
+                    // Nothing has been sent. Discard this approval and plan again.
+                    recover!(reason);
+                }
                 // A new fail-closed sample adds a confirmation, never a focus cancellation.
                 if after.secure && !policy_context.secure && matches!(action, Action::Type { .. }) {
                     policy_context.secure = true;

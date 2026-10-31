@@ -534,10 +534,12 @@ not create a floating HUD. Foreground runs retain their native controls; the glo
 Stop shortcut remains armed in both modes. Run state includes its input mode so a
 late HUD update cannot show a background run.
 
-The optional virtual cursor is half-size with no label. It appears only when the
-controlled app is frontmost, fades between 0.5 and 0.7 seconds after an action,
-and hides when another app becomes frontmost. Idle ticks no longer redraw an image
-and poll at 10 Hz instead of 60 Hz. It remains nonactivating and ignores mouse input.
+The optional virtual cursor is half-size with no label. It appears over uncovered
+parts of the controlled app, including background windows, and fades between 1.4
+and 1.8 seconds after an action. Window geometry prevents its tip from appearing
+over another app; the overlay's own windows are excluded from that check. Native
+menu-item and row-selection clicks also emit the hint. Idle ticks do not redraw an
+image and poll at 10 Hz instead of 60 Hz. It remains nonactivating and ignores mouse input.
 111 targeted Rust tests, `cargo check`, and TypeScript pass. Regressions cover HUD
 mode/running/paused combinations and cursor focus/visibility/fade behavior.
 Logs: `/tmp/taucode-overlay-{tests-final,check,typecheck,build}.log`.
@@ -684,3 +686,24 @@ passed. Native checks remain the 115-test pass and `cargo check` for the exact n
 source bundled here. This is scoped acceptance, not a claim of general desktop-app
 parity: disabled background menus and transient policy-target changes can still stop
 individual routes safely, as the failed live runs document.
+
+## Current reliability verification
+
+Late `ensureThread` events preserve an explicit empty selection as well as a
+selected conversation. A regression reproduced the empty-composer selection being
+replaced by a background load; initial, uninitialized selection still works.
+
+A policy-target change immediately after approval discards the unexecuted action
+and uses bounded recovery with a fresh observation and prediction. Any required
+typing approval is requested again. Regressions verify that only the newly
+predicted text is delivered, and that a changed AX binding still stops without
+input. Partial-input and later target checks retain their fail-closed behavior.
+
+Validation: 1,877 frontend tests, 117 computer-use Rust tests, TypeScript,
+changed-file ESLint and `cargo check` passed. Logs are
+`/tmp/taucode-reliability-{frontend,rust,typecheck,check,build}.log`.
+The debug app was rebuilt, signed with the configured Apple Development identity,
+and passed strict signature verification. Live verification of this batch is
+pending an unlocked Mac. Native overlay panels
+are excluded from captures, so automated screenshots cannot establish the cursor's
+appearance; geometry and fade behavior have regression coverage.

@@ -422,6 +422,9 @@ impl Session {
                 *self.path.lock().unwrap() = Some("ax-menu");
                 *self.menu_title.lock().unwrap() = Some(node.label.clone());
                 element.press()?;
+                if let Some(point) = action_point(action) {
+                    self.overlay.move_to(point, true);
+                }
                 return Ok(true);
             }
             let selected_row = ax_actions::select_row(element, action).map_err(|error| {
@@ -430,6 +433,9 @@ impl Session {
             })?;
             if selected_row {
                 *self.path.lock().unwrap() = Some("ax-select");
+                if let Some(point) = action_point(action) {
+                    self.overlay.move_to(point, true);
+                }
                 return Ok(true);
             }
             if let Action::Scroll {

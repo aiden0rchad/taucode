@@ -48,6 +48,17 @@ describe("threadReducer", () => {
     expect(next.threadStatusById["thread-1"]?.isProcessing).toBe(false);
   });
 
+  it.each([null, "selected-thread"])("preserves deliberate selection %s when a thread loads late", (selected) => {
+    const state = threadReducer(initialState, {
+      type: "setActiveThreadId", workspaceId: "ws-1", threadId: selected,
+    });
+    const next = threadReducer(state, {
+      type: "ensureThread", workspaceId: "ws-1", threadId: "late-thread",
+    });
+    expect(next.activeThreadIdByWorkspace["ws-1"]).toBe(selected);
+    expect(next.threadsByWorkspace["ws-1"].map((thread) => thread.id)).toContain("late-thread");
+  });
+
   it("renames auto-generated thread on first user message", () => {
     const threads: ThreadSummary[] = [
       { id: "thread-1", name: "New Agent", updatedAt: 1 },

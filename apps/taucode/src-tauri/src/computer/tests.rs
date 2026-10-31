@@ -1598,9 +1598,10 @@ async fn typing_policy_runs_before_events_and_rechecks_the_focused_field() {
     }
 }
 #[tokio::test]
-async fn changed_sensitive_metadata_after_approval_cancels_before_input() {
+async fn changed_sensitive_metadata_after_approval_discards_old_input() {
     let mut env = fake(vec![
         json!({"kind":"type","text":"hello","overwrite":false,"enter":false}),
+        json!({"kind":"done","summary":"Target changed; no typing"}),
     ]);
     env.policy_evidence = Target {
         role: "AXTextArea".into(),
@@ -1616,9 +1617,55 @@ async fn changed_sensitive_metadata_after_approval_cancels_before_input() {
     let error = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
         .await
         .unwrap_err();
-    assert!(error.contains("AX policy target changed"));
+    assert!(error.contains("AX target changed"));
+    assert!(env.instructions[1].contains("AX policy target changed"));
+    assert!(env.instructions[1].contains("NOT executed"));
     assert_eq!(env.approved, 1);
     assert!(input.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn changed_target_requires_fresh_prediction_and_typing_approval() {
+    let mut env = fake(vec![
+        json!({"kind":"type","text":"old","overwrite":false,"enter":false}),
+        json!({"kind":"type","text":"new","overwrite":false,"enter":false}),
+        json!({"kind":"done","summary":"done"}),
+    ]);
+    env.policy_evidence = Target {
+        role: "AXTextArea".into(),
+        label: "Original".into(),
+        ..Default::default()
+    };
+    env.policy_change = Some((
+        1,
+        Target {
+            role: "AXTextArea".into(),
+            label: "Changed".into(),
+            ..Default::default()
+        },
+    ));
+    let mut s = settings();
+    s.confirm_typing = ConfirmTyping::Always;
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+        .await
+        .unwrap();
+    assert_eq!(env.approved, 2);
+    assert!(env.instructions[1].contains("NOT executed"));
+    assert!(env.captures >= 2);
+    let text: String = input
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|event| match event {
+            Event::Text(text) => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(text, "new");
 }
 
 #[tokio::test]

@@ -25,6 +25,61 @@ extern "C" {
 pub fn order(pid: i32) -> Vec<u32> {
     ordered(pid, 1 | 16)
 }
+
+// Check only window geometry, never capture another app's contents.
+pub fn point_visible(pid: i32, point: [f64; 2], ignored: &[u32]) -> bool {
+    unsafe {
+        let Some(list) =
+            Retained::<NSArray<AnyObject>>::from_raw(CGWindowListCopyWindowInfo(1 | 16, 0).cast())
+        else {
+            return false;
+        };
+        let windows = list.iter().filter_map(|dict| {
+            let get = |object: *const AnyObject, key: &str| -> *mut AnyObject {
+                msg_send![object, objectForKey: &*NSString::from_str(key)]
+            };
+            let id = get(&*dict, "kCGWindowNumber");
+            let owner = get(&*dict, "kCGWindowOwnerPID");
+            let bounds = get(&*dict, "kCGWindowBounds");
+            if id.is_null() || owner.is_null() || bounds.is_null() {
+                return None;
+            }
+            let id: u32 = msg_send![id, unsignedIntValue];
+            if ignored.contains(&id) {
+                return None;
+            }
+            let mut rect = [0.; 4];
+            for (i, key) in ["X", "Y", "Width", "Height"].iter().enumerate() {
+                let value = get(bounds, key);
+                if value.is_null() {
+                    return None;
+                }
+                rect[i] = msg_send![value, doubleValue];
+            }
+            Some((msg_send![owner, intValue], rect))
+        });
+        point_owner(point, windows) == Some(pid)
+    }
+}
+
+fn point_owner(point: [f64; 2], windows: impl IntoIterator<Item = (i32, [f64; 4])>) -> Option<i32> {
+    windows
+        .into_iter()
+        .find_map(|(pid, [x, y, width, height])| {
+            (point[0] >= x && point[0] < x + width && point[1] >= y && point[1] < y + height)
+                .then_some(pid)
+        })
+}
+
+#[test]
+fn cursor_only_appears_on_uncovered_target_geometry() {
+    let windows = [(2, [50., 0., 100., 100.]), (1, [0., 0., 100., 100.])];
+    assert_eq!(point_owner([20., 20.], windows), Some(1));
+    assert_eq!(point_owner([70., 20.], windows), Some(2));
+    assert_eq!(point_owner([150., 20.], windows), None);
+    assert_eq!(point_owner([-1., 20.], windows), None);
+}
+
 fn ordered(pid: i32, options: u32) -> Vec<u32> {
     unsafe {
         let Some(list) =
