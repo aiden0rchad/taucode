@@ -36,7 +36,8 @@ export function useManagedTasks(workspaceId: string | null, threadId: string | n
   const sequence = useRef(0);
   const mutating = useRef(new Set<string>());
   const mounted = useRef(true);
-  const [state, setState] = useState({ key, tasks: [] as ManagedTask[], error: "", busy: false });
+  // A failed action keeps its explanation until the next action; a later successful poll clears only poll errors.
+  const [state, setState] = useState({ key, tasks: [] as ManagedTask[], error: "", actionError: false, busy: false });
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const request = useCallback(async (action: string, params: Record<string, unknown> = {}) => {
     if (!workspaceId || !threadId) throw new Error("Select a workspace session to run a task");
@@ -47,15 +48,18 @@ export function useManagedTasks(workspaceId: string | null, threadId: string | n
     }
     if (mutation) mutating.current.add(key);
     const version = ++sequence.current;
-    if (mutation) setState(previous => ({ key, tasks: previous.key === key ? previous.tasks : [], error: "", busy: true }));
+    if (mutation) setState(previous => ({ key, tasks: previous.key === key ? previous.tasks : [], error: "", actionError: false, busy: true }));
     try {
       const tasks = await transport(workspaceId, threadId, action, params);
       if (mounted.current && scope.current === key && sequence.current === version) {
-        setState(previous => ({ key, tasks, error: "", busy: mutation ? false : previous.key === key && previous.busy }));
+        setState(previous => {
+          const kept = !mutation && previous.key === key && previous.actionError;
+          return { key, tasks, error: kept ? previous.error : "", actionError: kept, busy: mutation ? false : previous.key === key && previous.busy };
+        });
       }
     } catch (error) {
       if (mounted.current && scope.current === key && sequence.current === version) {
-        setState(previous => ({ key, tasks: previous.key === key ? previous.tasks : [], error: String(error), busy: false }));
+        setState(previous => ({ key, tasks: previous.key === key ? previous.tasks : [], error: String(error), actionError: mutation, busy: false }));
       }
       throw error;
     } finally {
@@ -65,7 +69,7 @@ export function useManagedTasks(workspaceId: string | null, threadId: string | n
   }, [key, workspaceId, threadId, transport]);
   const refresh = useCallback(() => request("list"), [request]);
   useEffect(() => {
-    setState({ key, tasks: [], error: "", busy: false });
+    setState({ key, tasks: [], error: "", actionError: false, busy: false });
     if (!workspaceId || !threadId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;

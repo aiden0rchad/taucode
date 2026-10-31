@@ -52,6 +52,17 @@ describe("managed task snapshots", () => {
     await act(async () => { await expect(result.current.stop("dev")).rejects.toThrow("Stop failed"); });
     expect(result.current.tasks).toEqual([running]); expect(result.current.error).toContain("Stop failed"); expect(result.current.busy).toBe(false);
   });
+  it("keeps a failed action's explanation across later polls but clears recovered poll errors", async () => {
+    vi.mocked(managedTasksRequest).mockResolvedValue([task({ status: "failed" })]);
+    const { result } = renderHook(() => useManagedTasks("workspace", "thread")); await act(async () => {});
+    vi.mocked(managedTasksRequest).mockRejectedValueOnce(new Error("Ask the agent to start it again."));
+    await act(async () => { await expect(result.current.restart("dev")).rejects.toThrow(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(result.current.error).toContain("Ask the agent to start it again.");
+    vi.mocked(managedTasksRequest).mockRejectedValueOnce(new Error("Backend unavailable"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); }); expect(result.current.error).toContain("Backend unavailable");
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); }); expect(result.current.error).toBe("");
+  });
 });
 
 describe("Background Tasks", () => {

@@ -1166,3 +1166,47 @@ This is evidence for Calculator and the disposable TextEdit fixture on this Mac,
 not a claim of arbitrary-app compatibility or universal concurrent-keyboard safety.
 An uncertain intermediate mutation still stops for review if the entire task
 cannot be confirmed complete from the read-only verification observation.
+
+### OMP-owned service visibility and schema — October 31
+
+The Focus Board gap is fixed in `8469f7e` plus the follow-up action-error fix.
+OMP supervises `bash` services in its own per-project daemon broker, so taucode's
+managed tasks never saw them. `ManagedTasks` now merges the services owned by the
+current conversation (broker `owner` equals the thread id), listed through OMP's
+own `ps --json` CLI with the engine's environment. Stop/Restart go through
+`ps stop|restart` after a fresh ownership check; nothing kills PIDs or port owners
+directly, and `spec.json` (service environment) is never read. Listing never
+spawns an engine and is cached on broker `meta.json` changes with a 15 s ceiling.
+Restart is allowed only while the engine process that started the service (the
+commandGuard owner PID) is alive; otherwise the UI says to ask the agent again.
+
+Schema: strict tool-call layers materialize every optional `bash` field
+(`timeout: 0`, `async: false`, empty `ready`). OMP normalizes blanks but rejects
+any `timeout` in service mode, which caused the three historical direct-call
+failures. The gate now drops `timeout` for named services only.
+
+Action errors (for example the Restart refusal) previously vanished on the next
+2 s poll; they now persist until the next action, while recovered poll errors clear.
+
+Tests: 7 service-bridge and 11 managed-task Rust tests, 449 `shared::` Rust tests
+(0 failed), 51 Pi extension tests, 1,890 frontend tests / 226 files, TypeScript,
+`cargo check --all-targets --features custom-protocol`. New regressions failed
+before their fixes (gate timeout, persistent action error).
+
+Live acceptance on the signed build, Sol Account 2 / Low / Full access, new OMP
+conversation in `/Users/rolandleyco/taucode-dogfood-focus-board`:
+the agent's first direct `bash` call with `timeout: 0` started
+`focus-board-preview` in 7 s (previously rejected). Session rail showed Servers (1)
+`http://127.0.0.1:4173/` and Background tasks (1) running; another conversation
+in the same project showed none. The native browser loaded Focus Board from the
+URL. Rail Stop ended the listener, guard and broker record (`exited` 143, shown
+stopped). Restart from Background tasks brought a new guard/listener up on
+127.0.0.1:4173 only. Quitting taucode removed the engine, guard, node and listener.
+After relaunch the history showed `failed · 143`; Restart was refused with the
+earlier-session message, which stayed visible, and spawned nothing. Project
+files kept their October 30 modification times.
+
+Limits: after an app relaunch the service history appears a few seconds after the
+conversation loads (first polls precede thread resume). Opening a server from the
+rail navigates the Browser panel but does not reveal a hidden panel. Only
+OMP 18.12.6 on this Mac was exercised; Pi and Codex have no equivalent services.

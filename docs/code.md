@@ -79,7 +79,7 @@ Use the arrow keys and Enter/Tab to choose, or Escape to dismiss. `/plan` and `/
 
 | Panel or control | What to check |
 | --- | --- |
-| Session rail | Folder, branch, local/remote environment, context, connectors, and reported outputs. |
+| Session rail | Folder, branch, local/remote environment, context, connectors, reported outputs, servers, and background tasks. On oh-my-pi, services the agent starts with its own `bash` service mode appear there too, marked "Started by the agent". Stop works while they run; Restart works only while the same agent session is still running, otherwise ask the agent to start the service again. |
 | Files | Project structure and relevant file contents. |
 | Git/diff | Actual changes, staging state, branches, and commit context. |
 | Terminal | Commands and long-running development processes. Multiple terminal tabs are available. |
