@@ -525,3 +525,28 @@ still needs separate live tests.
 Inline Stop also passed: run `b401ea21-0253-417e-8719-452b3f332d93` stopped
 after two Calculator actions; native status returned `running=false`, `paused=false`,
 `error=Stopped`. The third prediction was cancelled before input.
+
+## Computer-use overlay polish — October 30
+
+The user reported the large native HUD and labeled virtual cursor covering another
+app. Background runs now keep their controls in taucode's inline tool card and do
+not create a floating HUD. Foreground runs retain their native controls; the global
+Stop shortcut remains armed in both modes. Run state includes its input mode so a
+late HUD update cannot show a background run.
+
+The optional virtual cursor is half-size with no label. It appears only when the
+controlled app is frontmost, fades between 0.5 and 0.7 seconds after an action,
+and hides when another app becomes frontmost. Idle ticks no longer redraw an image
+and poll at 10 Hz instead of 60 Hz. It remains nonactivating and ignores mouse input.
+111 targeted Rust tests, `cargo check`, and TypeScript pass. Regressions cover HUD
+mode/running/paused combinations and cursor focus/visibility/fade behavior.
+Logs: `/tmp/taucode-overlay-{tests-final,check,typecheck,build}.log`.
+
+The rebuilt signed bundle passed strict signature verification. Live run
+`b6c63e60-8d8c-4f8a-807e-9a97d1572d86` reported `mode=background`; inline
+Pause/Resume worked and the run completed 6 times 7 in six steps without errors.
+Independent Calculator inspection confirmed 42. Screenshot
+`taucode-inline-controls-overlay-polish.png` verifies the inline paused controls.
+Native overlay panels are excluded from automated captures, so the cursor's final
+appearance and absence over unrelated apps are not claimed as screenshot evidence;
+their visibility policy is covered by the regression tests above.

@@ -92,6 +92,10 @@ struct Hud {
 }
 thread_local! { static HUD: RefCell<Option<Hud>> = const { RefCell::new(None) }; }
 
+fn hud_visible(state: &Value) -> bool {
+    state["running"] == true && state["mode"] == "foreground"
+}
+
 fn step_text(state: &Value) -> String {
     if state["running"] != true {
         return "Computer Use — Stopped".into();
@@ -175,7 +179,7 @@ impl Hud {
             "Pause"
         };
         let _: () = msg_send![&*self.pause, setTitle:&*NSString::from_str(title)];
-        if state["running"] == true {
+        if hud_visible(state) {
             let _: () = msg_send![&*self.panel, orderFrontRegardless];
         } else {
             let _: () = msg_send![&*self.panel, orderOut:std::ptr::null::<AnyObject>()];
@@ -184,6 +188,10 @@ impl Hud {
 }
 
 pub async fn show_hud(app: tauri::AppHandle, computer: &Arc<Computer>) -> Result<(), String> {
+    // Background runs have inline controls and the registered global stop shortcut.
+    if !hud_visible(&computer.state.borrow()) {
+        return Ok(());
+    }
     let mut state = computer.state.subscribe();
     let run_id = state.borrow()["id"].clone();
     let weak = Arc::downgrade(computer);
@@ -242,6 +250,21 @@ pub async fn show_hud(app: tauri::AppHandle, computer: &Arc<Computer>) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_active_foreground_runs_show_a_floating_hud() {
+        for paused in [false, true] {
+            for mode in ["background", "foreground", ""] {
+                for running in [false, true] {
+                    assert_eq!(
+                        hud_visible(
+                            &serde_json::json!({"mode":mode,"running":running,"paused":paused})
+                        ),
+                        running && mode == "foreground"
+                    );
+                }
+            }
+        }
+    }
     #[test]
     fn hud_and_cursor_configuration_cannot_activate_or_hide_on_app_switch() {
         assert!(!FOCUSABLE);

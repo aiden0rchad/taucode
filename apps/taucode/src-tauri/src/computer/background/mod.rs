@@ -150,7 +150,7 @@ impl Session {
             dragging: AtomicBool::new(false),
             active: AtomicBool::new(true),
             guard: focus_guard::Guard::new(pid, previous),
-            overlay: overlay::Overlay::new(app, cursor),
+            overlay: overlay::Overlay::new(app, cursor, pid),
             path: Mutex::new(None),
             fallback_reason: Mutex::new(None),
             menu_title: Mutex::new(None),

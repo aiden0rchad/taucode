@@ -249,7 +249,7 @@ impl Computer {
             self.control.start();
             let _stop = StopOnDrop(self.clone());
             let id = uuid::Uuid::new_v4().to_string();
-            self.state.send_replace(json!({"id":id,"running":true,"paused":false,"steps":[],"instruction":instruction,"shortcut":limits.shortcut}));
+            self.state.send_replace(json!({"id":id,"running":true,"paused":false,"mode":limits.mode,"steps":[],"instruction":instruction,"shortcut":limits.shortcut}));
             let resource = app.path().resource_dir().ok();
             let start = std::time::Instant::now();
             let result = async {
