@@ -534,7 +534,7 @@ not create a floating HUD. Foreground runs retain their native controls; the glo
 Stop shortcut remains armed in both modes. Run state includes its input mode so a
 late HUD update cannot show a background run.
 
-The optional virtual cursor is a compact lavender pointer with no label. It appears over uncovered
+The optional virtual cursor is a compact translucent blue pointer with a lavender glow and no label. It appears over uncovered
 parts of the controlled app, including background windows, and fades between 2.5
 and 3 seconds after an action. System-wide accessibility hit testing checks the
 app under its tip; transparent Dock/system windows do not count as occlusion. Native
@@ -738,15 +738,22 @@ verified 72, and recorded two displayed cursor hints. At the user's request,
 run `c75bb5d1-92ba-4048-9862-b6a9f416fb69` repeated Clear → 4 → 5 → 6, verified 456,
 and recorded four displayed hints. Both runs completed without errors; independent
 AX reads confirmed both results. The user confirmed seeing the cursor, but found
-it too small and faint. Its arrow is now 23.2 points tall (previously 14.5), with an
-opaque lavender fill, crisp light outline and dark contrast edge. The click ripple
+it too small and faint. The current pointer follows the user's rounded, notched
+reference shape, approximately 25 points tall, with a 42%-opacity neon-blue fill,
+an icy-blue edge and a soft four-point lavender glow. The click ripple
 expands with cubic easing and fades over 0.75 seconds; the pointer holds for 2.5
 seconds before a 0.5-second fade. Native rendering was previewed on light and dark
-backgrounds in `taucode-cursor-design.png` in this chat's visualization directory.
+backgrounds in `taucode-cursor-glass-design.png` in this chat's visualization directory.
 117 computer-use Rust tests and `cargo check` passed. Logs:
 `/tmp/taucode-cursor-polish-{rust,check,build}.log`. The signed build passed strict
 verification. Live run `04b8dc1e-8633-49e7-b4f1-3e52f2d54ed6` completed Clear → 8 → 2
 → 1 in background mode with no errors and four displayed cursor hints. The run
 and independent Calculator AX inspection both verified 821. Taucode returned idle
 with an empty composer. The new shape was inspected in the native rendering preview;
-the user's assessment of the updated appearance is not assumed.
+the user's assessment of the updated appearance is not assumed. The reference-shape
+update passed the same 117 native tests and `cargo check`; its logs are
+`/tmp/taucode-cursor-glass-{rust,check,build}.log`. The signed build passed strict
+signature verification. Live run `1e58965e-22ed-44b6-bc20-5a31d56c43ed` completed
+Clear → 9 in background mode with no errors and two displayed cursor hints.
+An independent Calculator AX read confirmed 9. The renderer preview verifies
+the new shape, transparency and glow; automated app captures exclude the overlay.

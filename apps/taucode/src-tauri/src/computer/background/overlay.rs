@@ -251,19 +251,29 @@ unsafe fn draw(point: [f64; 2], opacity: f64, ripple: Option<f64>) -> bool {
             let _: () = msg_send![ring, stroke];
         }
         let arrow: *mut AnyObject = msg_send![class!(NSBezierPath), bezierPath];
-        for (i, (x, y)) in [(20.,44.),(20.8,25.6),(25.6,30.4),(30.4,20.8),(34.4,23.2),(29.6,32.8),(36.8,32.8)].iter().enumerate() {
-            if i == 0 { let _: () = msg_send![arrow, moveToPoint:NSPoint::new(*x,*y)]; }
-            else { let _: () = msg_send![arrow, lineToPoint:NSPoint::new(*x,*y)]; }
-        }
+        let _: () = msg_send![arrow, moveToPoint:NSPoint::new(22.8,43.)];
+        let _: () = msg_send![arrow, curveToPoint:NSPoint::new(20.,39.6), controlPoint1:NSPoint::new(20.2,44.), controlPoint2:NSPoint::new(19.1,42.3)];
+        let _: () = msg_send![arrow, lineToPoint:NSPoint::new(26.2,20.1)];
+        let _: () = msg_send![arrow, curveToPoint:NSPoint::new(30.6,19.8), controlPoint1:NSPoint::new(27.,17.4), controlPoint2:NSPoint::new(29.5,17.2)];
+        let _: () = msg_send![arrow, lineToPoint:NSPoint::new(34.5,29.4)];
+        let _: () = msg_send![arrow, lineToPoint:NSPoint::new(43.5,33.6)];
+        let _: () = msg_send![arrow, curveToPoint:NSPoint::new(43.2,38.3), controlPoint1:NSPoint::new(46.,34.7), controlPoint2:NSPoint::new(45.7,37.4)];
         let _: () = msg_send![arrow, closePath];
         let _: () = msg_send![arrow, setLineJoinStyle:1u64];
-        let shadow: *mut AnyObject = msg_send![class!(NSColor), colorWithCalibratedRed:0.12f64, green:0.09f64, blue:0.22f64, alpha:0.65f64];
-        let _: () = msg_send![shadow, set];
-        let _: () = msg_send![arrow, setLineWidth:4.0f64]; let _: () = msg_send![arrow, stroke];
-        let fill: *mut AnyObject = msg_send![class!(NSColor), colorWithCalibratedRed:0.62f64, green:0.52f64, blue:1.0f64, alpha:1.0f64];
+        let _: () = msg_send![class!(NSGraphicsContext), saveGraphicsState];
+        let glow: Retained<AnyObject> = msg_send![class!(NSShadow), new];
+        let lavender: *mut AnyObject = msg_send![class!(NSColor), colorWithCalibratedRed:0.70f64, green:0.52f64, blue:1.0f64, alpha:0.85f64];
+        let _: () = msg_send![&*glow, setShadowColor:lavender];
+        let _: () = msg_send![&*glow, setShadowOffset:NSSize::new(0.,0.)];
+        let _: () = msg_send![&*glow, setShadowBlurRadius:4.0f64];
+        let _: () = msg_send![&*glow, set];
+        let _: () = msg_send![lavender, set];
+        let _: () = msg_send![arrow, setLineWidth:1.8f64]; let _: () = msg_send![arrow, stroke];
+        let _: () = msg_send![class!(NSGraphicsContext), restoreGraphicsState];
+        let fill: *mut AnyObject = msg_send![class!(NSColor), colorWithCalibratedRed:0.12f64, green:0.68f64, blue:1.0f64, alpha:0.42f64];
         let _: () = msg_send![fill, set]; let _: () = msg_send![arrow, fill];
-        let white: *mut AnyObject = msg_send![class!(NSColor), colorWithCalibratedWhite:1.0f64, alpha:0.95f64]; let _: () = msg_send![white, set];
-        let _: () = msg_send![arrow, setLineWidth:1.5f64]; let _: () = msg_send![arrow, stroke];
+        let edge: *mut AnyObject = msg_send![class!(NSColor), colorWithCalibratedRed:0.82f64, green:0.93f64, blue:1.0f64, alpha:0.9f64]; let _: () = msg_send![edge, set];
+        let _: () = msg_send![arrow, setLineWidth:1.0f64]; let _: () = msg_send![arrow, stroke];
         let _: () = msg_send![&*image, unlockFocus];
         let mut shown = false;
         for panel in panels.iter() {
