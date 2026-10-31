@@ -1047,3 +1047,42 @@ menu recovery.
 
 121 native Computer Use tests, typecheck, cargo check, signed rebuild and strict
 signature verification passed. Logs: `/tmp/taucode-field-focus-{tests,types,check,build}.log`.
+
+### Document-window recovery investigation
+
+Minimize through TextEdit's Window menu and restore with AXRaise reproduced the
+disabled Find/Undo/Select All state. Baseline run
+`48269c11-88b9-4c34-9268-314b2fbb9f11` confirmed Find disabled with TextEdit
+not frontmost and AXFocusedUIElement still the document in window 36175.
+
+An experimental AXFocused=true refresh followed by a routed document click did
+not recover Find (`fa918be8-1749-4c5b-99d6-256a143e96c4`). Both foreground
+readings were pid 18785 and no focus restorations occurred. That ineffective
+source change was removed.
+
+The next candidate refreshes TextEdit's AppKit document-window state using only
+the target focus record from Cua's `activate_without_raise_with(..., false)`.
+It does not defocus the user's app or call SetFrontProcess. It is restricted to
+plain left clicks on a TextEdit AXTextArea when the captured Find command is
+disabled; other apps (including Notes), modified clicks and hotkeys are excluded.
+Foreground/key-focus readings must be available and unchanged before proceeding
+with the click.
+
+Live recovery passed twice on the signed build:
+- `e96f4341-4561-4dcc-b3fa-09196fe098ce`: document click refreshed window state;
+  Command-F opened Find. Done closed it but returned AX timeout -25204, so the
+  run correctly stopped on uncertainty. Independent AX inspection confirmed closed.
+- `0b0bb1b9-b04f-4a06-bfa9-ef333969c3b2`: repeated Window > Minimize / AXRaise,
+  independently confirmed disabled Find/Undo/Select All, then document click and
+  Command-F recovered Find again. Left Find open; independent AX and screenshot
+  confirmed the search field, navigation buttons and Done.
+
+Both refreshes kept WindowServer foreground and keyboard-focus pid 2726 unchanged;
+all steps recorded zero focus restorations. The complete in-memory document
+matched the baseline after each run. GPT 6.1 Sol (Account 2), Low; Full access;
+foreground fallback off. This covers TextEdit's reproduced stale document-window
+state, not arbitrary apps or every source of disabled menu commands.
+
+122 native Computer Use tests, cargo check, typecheck, signed rebuild and strict
+signature verification passed. Logs: `/tmp/taucode-window-primer-{tests,check,types,build}.log`.
+The ambiguous AX-completion issue remains separate.

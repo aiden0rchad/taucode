@@ -66,6 +66,11 @@ pub fn prepare_action(
     Ok(choose_path(action, handled, !handled && events(), fallback))
 }
 
+fn refresh_textedit_document(bundle: &str, role: &str, action: &Action, find_disabled: bool) -> bool {
+    bundle == "com.apple.TextEdit" && role == "AXTextArea" && find_disabled
+        && matches!(action, Action::Click { button, clicks: 1, hold_keys, .. } if button == "left" && hold_keys.is_empty())
+}
+
 pub fn screenshot(bundle: &str) -> Result<super::native::Frame, String> {
     let pid =
         NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str(bundle))
@@ -499,7 +504,23 @@ impl Session {
                         false
                     }
                 } else {
-                    ax_actions::element_action(element, action, &mut reason)?
+                    let handled = ax_actions::element_action(element, action, &mut reason)?;
+                    let disabled = self.menus.lock().unwrap().resolve(&["command".into(), "f".into()])
+                        .is_err_and(|diagnostic| diagnostic.reason == "disabled");
+                    if !handled && refresh_textedit_document(&self.bundle, &node.role, action, disabled) {
+                        let before = (skylight::front_process_pid(), skylight::key_focus_pid());
+                        if before.0.is_some() && before.1.is_some()
+                            && skylight::refresh_document_window(self.pid, window.id)
+                        {
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                            let after = (skylight::front_process_pid(), skylight::key_focus_pid());
+                            *reason = Some(format!("textedit_document_window_refreshed; front_key_before={before:?}; front_key_after={after:?}"));
+                            if before != after {
+                                return Err("Document-window refresh changed user focus; click cancelled".into());
+                            }
+                        }
+                    }
+                    handled
                 }
             }
         } else {

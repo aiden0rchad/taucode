@@ -8,6 +8,20 @@ use std::{
 };
 
 #[test]
+fn document_refresh_is_limited_to_disabled_find_and_plain_textedit_clicks() {
+    let mut click = Action::Click { x: 1., y: 2., button: "left".into(), clicks: 1, hold_keys: vec![] };
+    assert!(refresh_textedit_document("com.apple.TextEdit", "AXTextArea", &click, true));
+    for (bundle, role, disabled) in [("com.apple.Notes", "AXTextArea", true), ("com.apple.TextEdit", "AXButton", true), ("com.apple.TextEdit", "AXTextArea", false)] {
+        assert!(!refresh_textedit_document(bundle, role, &click, disabled));
+    }
+    if let Action::Click { hold_keys, .. } = &mut click { hold_keys.push("command".into()); }
+    assert!(!refresh_textedit_document("com.apple.TextEdit", "AXTextArea", &click, true));
+    for action in [Action::Click { x: 1., y: 2., button: "right".into(), clicks: 1, hold_keys: vec![] }, Action::Hotkey { keys: vec!["command".into(), "f".into()] }] {
+        assert!(!refresh_textedit_document("com.apple.TextEdit", "AXTextArea", &action, true));
+    }
+}
+
+#[test]
 fn ax_hit_test_is_not_reported_as_element_grounding() {
     assert_eq!(ax_path(true), "ax-element");
     assert_eq!(ax_path(false), "ax-hit-test");
