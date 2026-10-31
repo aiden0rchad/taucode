@@ -732,5 +732,10 @@ Run diagnostics include `cursorHintsShown`, counted once per motion after AppKit
 reports the panel visible. Fade and hit-owner policy have regression coverage;
 the obsolete rectangle-occlusion test was removed with its implementation.
 Logs: `/tmp/taucode-cursor-hit-{rust,check,build}.log`. The corrected build passed
-strict signature verification and launched. Live cursor verification is pending
-an exposed Calculator window; the requested window arrangement is still pending.
+strict signature verification and launched. With Calculator exposed on the user's
+other display, run `1cde3258-8689-4eff-9673-76ce4a1873ce` completed Clear → 7 → 2,
+verified 72, and recorded two displayed cursor hints. At the user's request,
+run `c75bb5d1-92ba-4048-9862-b6a9f416fb69` repeated Clear → 4 → 5 → 6, verified 456,
+and recorded four displayed hints. Both runs completed without errors; independent
+AX reads confirmed both results. Native panel visibility is verified; user
+confirmation of the cursor's appearance is still pending.
