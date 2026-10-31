@@ -194,8 +194,10 @@ impl PiEngine {
             .join(if self.chat { "chats/sessions".into() } else { format!("{}/sessions", self.profile.id()) })
             .join(workspace))
     }
+    /// In memory, or a saved session file for this ID; never scans or spawns.
     pub async fn has_session(&self, workspace: &str, id: &str) -> bool {
-        self.sessions.lock().await.get(id).is_some_and(|s| s.workspace == workspace)
+        if self.sessions.lock().await.get(id).is_some_and(|s| s.workspace == workspace) { return true; }
+        uuid::Uuid::parse_str(id).is_ok() && self.directory(workspace).is_ok_and(|dir| dir.join(format!("{id}.jsonl")).is_file())
     }
     pub async fn owns(&self, workspace: &str, id: &str) -> bool {
         if self

@@ -73,9 +73,11 @@ export function useManagedTasks(workspaceId: string | null, threadId: string | n
     if (!workspaceId || !threadId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    // Engine-owned services become routable once the session connects, usually just after opening it.
+    let quick = 3;
     const poll = async () => {
       try { await refresh(); } catch { /* Error is shown; the next poll can recover. */ }
-      if (!cancelled) timer = setTimeout(() => { void poll(); }, document.hidden ? 10000 : 2000);
+      if (!cancelled) timer = setTimeout(() => { void poll(); }, quick-- > 0 ? 500 : document.hidden ? 10000 : 2000);
     };
     void poll();
     return () => { cancelled = true; clearTimeout(timer); };

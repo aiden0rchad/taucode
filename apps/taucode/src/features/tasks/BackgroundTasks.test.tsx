@@ -28,6 +28,17 @@ describe("managed task snapshots", () => {
     rerender({ workspace: "workspace", thread: null });
     expect(result.current.canStart).toBe(false); expect(result.current.tasks).toEqual([]);
   });
+  it("re-polls quickly right after a session opens, then every two seconds", async () => {
+    vi.mocked(managedTasksRequest).mockResolvedValue([]);
+    renderHook(() => useManagedTasks("workspace", "thread")); await act(async () => {});
+    expect(managedTasksRequest).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(managedTasksRequest).toHaveBeenCalledTimes(4);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1900); });
+    expect(managedTasksRequest).toHaveBeenCalledTimes(4);
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(managedTasksRequest).toHaveBeenCalledTimes(5);
+  });
   it("rejects late snapshots from another scope and stops polling when unmounted", async () => {
     const old = deferred<ManagedTask[]>(); const next = task({ id: "next", threadId: "next-thread" });
     vi.mocked(managedTasksRequest).mockImplementation((_, thread) => (thread === "thread" ? old.promise : Promise.resolve([next])) as never);

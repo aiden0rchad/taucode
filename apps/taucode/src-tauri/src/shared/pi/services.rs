@@ -48,6 +48,8 @@ fn map(report: &Value, thread: &str, workspace: &str) -> Vec<Value> {
         .filter(|d| d["id"].as_str().is_some_and(|id| !id.is_empty() && seen.insert(id)))
         .map(|d| {
             let status = match d["state"].as_str() {
+                // A hangup/interrupt/terminate signal is a deliberate stop (e.g. the guard ending it on app quit), not a crash.
+                Some("failed") if d["exitCode"].as_i64().is_some_and(|code| matches!(code, 129 | 130 | 143)) => "stopped",
                 Some("failed") => "failed",
                 Some("exited") if d["exitCode"] == 0 => "completed",
                 Some("exited") => "stopped",
@@ -201,7 +203,7 @@ mod tests {
     fn daemon(state: &str) -> Value {
         json!({"name":"preview", "id":"service", "owner":"thread", "state":state, "pid":69586,
             "createdAt":1793407978300i64, "startedAt":1793407978300i64, "exitedAt":1793408601983i64,
-            "exitCode":143, "supervised":true, "cwd":"/project",
+            "exitCode":1, "supervised":true, "cwd":"/project",
             "command":"/bin/bash -l -c '/x/bun/bin/bun.exe' '/x/agent/ws/extensions/lib/commandGuard.ts' '85089' '/bin/bash' 'node server.mjs'"})
     }
     fn runtime() -> tokio::runtime::Runtime { tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap() }
@@ -224,6 +226,10 @@ mod tests {
             assert_eq!(task["startedAt"], 1793407978300i64);
             assert_eq!(task["pid"].is_null(), terminal(&owned));
             assert_eq!(task["endedAt"].is_null(), !terminal(&owned));
+        }
+        for (code, status) in [(json!(143), "stopped"), (json!(130), "stopped"), (json!(129), "stopped"), (json!(137), "failed"), (json!(1), "failed"), (Value::Null, "failed")] {
+            let mut failed = daemon("failed"); failed["exitCode"] = code;
+            assert_eq!(map(&json!([{"kind":"project","daemons":[failed]}]), "thread", "workspace")[0]["status"], status);
         }
         let mut completed = daemon("exited"); completed["exitCode"] = json!(0);
         assert_eq!(map(&json!([{"kind":"project","daemons":[completed]}]), "thread", "workspace")[0]["status"], "completed");
@@ -358,5 +364,14 @@ mod tests {
         assert!(engine.sessions.lock().await["thread"].process.is_none());
         assert_eq!(std::fs::read_dir(fixture.path.join("pi/agent/workspace")).unwrap().count(), 0);
         assert!(!fixture.path.join("omp/agent").exists());
+        // After relaunch nothing is in memory yet; a saved session still routes the first listing.
+        let saved = "05815c65-334c-4f6a-b300-fde97c50f12b";
+        assert_eq!(session.engine_services("workspace", saved, "list", json!({})).await.unwrap(), None);
+        std::fs::create_dir_all(fixture.path.join("omp/sessions/workspace")).unwrap();
+        std::fs::write(fixture.path.join(format!("omp/sessions/workspace/{saved}.jsonl")),
+            format!("{}\n", json!({"type":"session","version":3,"engine":"omp","id":saved,"timestamp":"2026-10-31T00:00:00Z","cwd":"/project"}))).unwrap();
+        assert_eq!(session.engine_services("workspace", saved, "list", json!({})).await.unwrap(), Some(json!([])));
+        assert!(engine.sessions.lock().await[saved].process.is_none());
+        assert!(!engine.has_session("workspace", "../workspace/thread").await);
     }); }
 }
