@@ -195,10 +195,16 @@ it("replaces native loading guidance with a retryable navigation error", async (
   expect(screen.getByRole("alert").textContent).toContain("Could not connect to the server.");
   expect(screen.queryByText("Loading page…")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  expect(browserRequest).toHaveBeenCalledWith({ action: "reload" });
+  expect(browserRequest).toHaveBeenCalledWith({ action: "navigate", url: pending.tabs[0].url });
+  vi.mocked(browserRequest).mockClear();
+  fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+  expect(browserRequest).toHaveBeenCalledWith({ action: "navigate", url: pending.tabs[0].url });
   act(() => receive(pending));
   expect(screen.getByText("Loading page…")).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
+  act(() => receive({ ...pending, tabs: [{ ...pending.tabs[0], loading: false, ready: true }] }));
+  fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+  expect(browserRequest).toHaveBeenCalledWith({ action: "reload" });
 });
 
 it.each(["Escape", "Close"])("returns annotation focus to its trigger after explicit %s", async dismiss => {

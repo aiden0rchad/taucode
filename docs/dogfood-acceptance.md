@@ -373,3 +373,49 @@ files, and continued successfully in the same conversation. Its six Node tests
 passed. Preview-service argument errors required a targeted follow-up; this is an
 agent/tool-schema usability finding. The native browser then reproduced a stale
 delete-dialog returnValue bug in the generated app and the agent fixed it.
+
+Focus Board completed inside taucode with Sol Account 2 / Low / Full access. The
+agent reported six passing Node tests and native browser checks for create/edit/
+move/filter/persistence, delete-confirm-then-Escape, keyboard shortcuts and 390px
+layout. Independent native clicks added Ship the browser polish, moved it to Done,
+filtered by its notes, and verified it survived reload. Screenshot:
+`taucode-focus-board-live.png`. The output is seven uncommitted files in the
+isolated project, including restart instructions in README.md.
+
+Follow-up priority: OMP's bash service (`focus-board-preview`, initially PID 69586)
+was ready and serving 127.0.0.1:4173, while taucode's Session rail reported Servers
+(0) and Background tasks (0). Bridge OMP-owned service lifecycle and URLs into the
+shared task UI. Native tools' eval approval remains intentional, but its preview
+now includes arguments rather than an opaque tool name. Routine file/shell/browser
+operations otherwise ran under Full access. No Keychain prompt was observed in
+this native pass.
+
+Cleanup follow-up completed: the agent stopped its `focus-board-preview` service,
+reported exit 143, and independent `ps`/`lsof` checks confirmed PID 69586 and the
+4173 listener were gone. Successful service startup used a write to `xd://bash`
+with command `node server.mjs`, the project cwd, pty=true,
+name=`focus-board-preview`, ready={log:"Focus Board preview:",port:4173,
+host:"127.0.0.1",timeout:30}; top-level async/timeout were omitted. Compare OMP's
+model-facing schema/null defaults with service validation in the next integration
+pass, because repeated direct bash calls failed despite the follow-up guidance.
+
+Final build: `/tmp/taucode-final-polish-build.log` completed successfully, including
+Apple Development signing and strict codesign verification. TypeScript passed
+again after the native approval change. The rebuilt native page showed the
+connection error and Retry without stale Loading page guidance. The live eval
+approval displayed language, exact console.log code, title, timeout and reset
+arguments before approval. Evidence: `taucode-error-recovery-live.png` and
+`taucode-native-approval-preview-live.png`.
+
+The final recovery check caught a second issue: Retry cleared an initial connection
+failure but WKWebView.reload() had no committed page to reload, leaving readiness
+false indefinitely. Explicit navigation to the same URL immediately recovered.
+BrowserPane now navigates to the stored URL when Retry or toolbar Reload targets a
+failed/unready native page; healthy pages retain normal reload behavior. The
+regression failed before this change and covers Retry, toolbar Reload and successful
+recovery. The eval check returned APPROVAL_PREVIEW_OK after approval.
+
+Retry correction validation: all 1,862 frontend tests, TypeScript and changed-file
+ESLint pass (`/tmp/taucode-retry-final-*.log`). Blank-tab creation retries retain
+normal reload behavior. Quitting taucode also stopped its nonpersistent OMP preview
+service (PIDs 78005/78010 gone), confirming app-exit ownership cleanup.
