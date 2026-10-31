@@ -604,6 +604,31 @@ fn fake(actions: Vec<Value>) -> Fake {
 }
 
 #[tokio::test]
+async fn rejected_sidecar_arguments_replan_with_feedback_and_bounded_attempts() {
+    let invalid = json!({"kind":"fail","reason":"Action not executed: Scroll clicks must be an integer from -100 to 100; use smaller steps"});
+    for corrects in [true, false] {
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let mut env = fake(if corrects {
+            vec![invalid.clone(), json!({"kind":"scroll","x":100,"y":100,"clicks":100,"shift":false}), json!({"kind":"done","summary":"top visible"})]
+        } else { vec![invalid.clone(); 4] });
+        let s = settings();
+        let result = runner::run(&mut env, &control, &s, &s.app_ids(), "Scroll to top", Instant::now()).await;
+        assert_eq!(result.is_ok(), corrects, "{result:?}");
+        assert_eq!(env.steps[0]["recovered"], true);
+        assert!(env.instructions[1].contains("integer from -100 to 100"));
+        assert_eq!(env.instructions.len(), 3);
+        let events = input.0.lock().unwrap();
+        assert_eq!(events.len(), if corrects { 2 } else { 0 });
+        if corrects {
+            assert!(matches!(events[0], Event::Move(_, false)));
+            assert_eq!(events[1], Event::Scroll(100, false));
+        }
+    }
+}
+
+#[tokio::test]
 async fn uncertain_ax_completion_observes_once_without_replaying_input() {
     let click = json!({"kind":"click","x":100,"y":100,"button":"left","clicks":1,"hold_keys":[]});
     for next in [

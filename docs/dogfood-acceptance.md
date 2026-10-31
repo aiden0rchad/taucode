@@ -1118,3 +1118,51 @@ verification confirmed Find closed. The planner now explicitly acknowledged the
 host timeout. Independent AX inspection confirmed closed Find and unchanged full
 document; every step recorded zero focus restorations. No repeated input.
 Build/signature log: `/tmp/taucode-ax-verification-final-build.log`.
+
+### Longer background workflow acceptance
+
+Typing/Undo `9be34d8e-3486-40f8-90f6-5556c4851ab3` passed: document click,
+explicit AXTextArea insertion of `BG_RELIABILITY_1031` (overwrite/enter false),
+then one Command-Z. Marker appearance/removal were observed by the planner;
+independent full-document AX comparison after Undo matched baseline. Delivery
+paths were pixel-skylight, ax-element, ax-menu; no errors or focus restorations.
+
+Scrolling `6e77b20f-c934-45e4-813d-b5f134e4c925` reached the end via a -12
+AX scroll. Independent screenshot confirmed Line 120 and BACKGROUND_QA_OK.
+The planner then proposed +160, exceeding the allowed +/-100 range; validation
+correctly sent no input but incorrectly terminated the run as a task failure.
+The action schema now exposes that bound; local argument-validation failures are
+explicitly “Action not executed” and use the existing bounded replan path.
+Ambiguous native actions and provider failures retain their distinct handling.
+133 Python tests passed; see final native and live results below.
+
+Native dialog run `16ce1da3-2457-44b8-a000-fb77d014319e` passed: native Edit >
+Find > Select Line navigation, inspection without typing, then one close-control
+click dismissed the line-number window. No errors or focus restorations.
+Independent AX inspection confirmed only the main fixture window and unchanged
+complete document text. 124 native Computer Use tests and 133 Python tests now
+pass for the rejected-input correction. Signed rebuild and strict signature verification passed.
+Logs: `/tmp/taucode-rejected-input-{tests,python-tests,build}.log`.
+
+
+Final scroll regression `b99e7e0f-f533-4785-bd59-15a59a411c55` passed on the
+signed build. The intentionally proposed +160 was rejected before grounding or
+native input (`recovered:true`, path absent). The same run continued with valid
++100 and +30 ax-element scrolls and verified the header and Line 001. Independent
+screenshot confirmed the top viewport; complete in-memory AX text and the disk
+file both matched the baseline (SHA256
+`4cb1afec0fbdd78dcfe1fef13baa0883da9508e1eca000e754bdb884b3f2be50`).
+No focus restorations, edits or saves occurred.
+
+### Current background-reliability acceptance — October 31
+
+The scoped three-part plan is complete: reproduced TextEdit minimize/restore
+Find recovery passed twice; Calculator arithmetic and TextEdit typing/Undo,
+scrolling, native menu/dialog/window transitions passed; target/capture status
+and Pause/Stop were verified in the earlier control acceptance. All live planner
+checks used GPT 6.1 Sol (Account 2), Low, Full access, with foreground fallback off.
+The foreground/key-focus process stayed Safari across both recovery primers.
+This is evidence for Calculator and the disposable TextEdit fixture on this Mac,
+not a claim of arbitrary-app compatibility or universal concurrent-keyboard safety.
+An uncertain intermediate mutation still stops for review if the entire task
+cannot be confirmed complete from the read-only verification observation.

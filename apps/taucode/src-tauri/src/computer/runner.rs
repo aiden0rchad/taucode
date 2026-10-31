@@ -542,7 +542,7 @@ pub async fn run(
                 }
             }
             if let Action::Fail { reason } = &action {
-                if prediction
+                if reason.starts_with(RECOVERABLE) || prediction
                     .grounding
                     .iter()
                     .any(|d| d["pixel_result"] == "unparseable")
