@@ -89,6 +89,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const opening = useRef(false);
+  const requestedSelection = useRef<string | undefined>(undefined);
   const [recent, setRecent] = useState<{ url: string; title: string; favicon?: string }[]>(() => {
     try { const items = JSON.parse(localStorage.getItem("taucode.browser.recent") ?? "[]"); return Array.isArray(items) ? items.filter(t => t && typeof t.url === "string" && /^https?:/.test(t.url) && typeof t.title === "string").slice(0, 4) : []; } catch { return []; }
   });
@@ -139,7 +140,8 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
         if (!request && hadSnapshot) {
           for (const page of newPages) if (!tabs.some(tab => tab.target === page.id)) tabs.push({ id: page.id, kind: "browser", title: page.title || "New page", url: page.url, target: page.id });
         }
-        const browserActive = dock && (created || hadSnapshot && previousActive !== value.active) && tabs.some(tab => tab.kind === "browser" && tab.target === value.active) ? tabs.find(tab => tab.kind === "browser" && tab.target === value.active)?.id : previous.state.browserActive;
+        const followActive = created ? previous.state.browserActive === request?.id : !request && hadSnapshot && previousActive !== value.active;
+        const browserActive = dock && followActive && tabs.some(tab => tab.kind === "browser" && tab.target === value.active) ? tabs.find(tab => tab.kind === "browser" && tab.target === value.active)?.id : previous.state.browserActive;
         return JSON.stringify(tabs) === JSON.stringify(previous.state.tabs) && browserActive === previous.state.browserActive ? previous : { ...previous, state: { ...previous.state, tabs, ...(browserActive ? { browserActive } : {}) } };
       });
       if (created) pending.current = null;
@@ -167,7 +169,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
   useEffect(() => { if (state.open && activeToolVisible && activeKind && activeKind !== "browser") toolRef.current.find(t => t.id === activeKind)?.onOpen?.({ id: activeId!, kind: activeKind, title: "", target: activeTarget }); }, [scope, state.open, activeToolVisible, activeId, activeKind, activeTarget]);
   const openPage = useCallback(async (input = "about:blank", existing?: PanelTab) => {
     if (!features.browser) return;
-    if (opening.current) return;
+    if (opening.current || pending.current) return;
     opening.current = true;
     setBusy(true); setError("");
     try {
@@ -176,6 +178,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
       if (currentScope.current !== scope) return;
       if (existing?.target && latest.current.tabs.some(t => t.id === existing.target)) { await browserRequest({ action: "activate", id: existing.target }); return; }
       const tab = existing ?? { id: crypto.randomUUID(), kind: "browser", title: "New page", url };
+      requestedSelection.current = JSON.stringify([scope, tab.id]);
       pending.current = { id: tab.id, scope, previous: new Set(latest.current.tabs.map(t => t.id)), tab };
       update(s => panelReducer(s, { type: "open", tab }));
       await browserRequest({ action: "new" });
@@ -189,15 +192,15 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
   const browserVisible = dock ? state.open && Boolean(state.dock && dockPanes(state.dock.tree).includes("browser")) : state.open && activeKind === "browser";
   const browserSelection = dock ? selectedBrowser : active;
   const activeRef = useRef(browserSelection); activeRef.current = browserSelection;
-  const requestedSelection = useRef<string | undefined>(undefined);
+  const openingPage = busy || Boolean(pending.current);
   useEffect(() => {
     if (!browserVisible) { requestedSelection.current = undefined; return; }
     const key = JSON.stringify([scope, browserSelection?.id]);
-    if (busy || requestedSelection.current === key) return;
+    if (openingPage || requestedSelection.current === key) return;
     requestedSelection.current = key;
     const tab = activeRef.current;
     if (tab?.kind === "browser") void pageRef.current(tab.url, tab);
-  }, [scope, browserVisible, browserSelection?.id, busy]);
+  }, [scope, browserVisible, browserSelection?.id, openingPage]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.defaultPrevented || reservedShortcuts.some(shortcut => matchesShortcut(e, shortcut))) return;
@@ -228,5 +231,5 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
       update(s => panelReducer(s, { type: "select", id: state.tabs[next].id }));
     }
   });
-  return { state, update, browser, pageStatuses, resize, layout, overlay, panelRef, mainRef, expanded, setExpanded, address, setAddress, error, busy, recent, pending, history, historyIndex, openTool, closeTool, active, openPage, close, navigate };
+  return { state, update, browser, pageStatuses, resize, layout, overlay, panelRef, mainRef, expanded, setExpanded, address, setAddress, error, busy: openingPage, recent, pending, history, historyIndex, openTool, closeTool, active, openPage, close, navigate };
 }

@@ -337,3 +337,35 @@ it("keeps the full browser list and new-tab action outside the scrolling tabs", 
   act(() => { host = { ...host, tabs: host.tabs.map(page => page.id === "page-1" ? { ...page, loading: true } : page) }; callbacks.forEach(callback => callback(host)); });
   expect(screen.getByRole("tab", { name: "Page 1", selected: true }).getAttribute("aria-description")).toBe("Loading");
 });
+it("does not create a second page while native tab notifications lag behind the new-page response", async () => {
+  vi.mocked(browserRequest).mockImplementation(async request => {
+    if (request.action === "new") {
+      const id = `page-${host.tabs.length + 1}`;
+      host = { ...host, active: id, tabs: [...host.tabs, { id, title: "New tab", url: "about:blank", loading: true }] };
+      return { id };
+    }
+    if (request.action === "navigate") host = { ...host, tabs: host.tabs.map(page => page.id === host.active ? { ...page, url: String(request.url), title: "Local preview", loading: false, ready: true } : page) };
+    // Native subscriptions are asynchronous; command completion is not a state event.
+  });
+  render(shell());
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Open server" })); });
+  expect(vi.mocked(browserRequest).mock.calls.filter(([request]) => request.action === "new")).toHaveLength(1);
+  act(() => { callbacks.forEach(callback => callback(host)); });
+  expect(screen.getByRole("tab", { name: "Local preview", selected: true })).toBeTruthy();
+  expect(readPanel("code:one").tabs.filter(tab => tab.kind === "browser")).toHaveLength(1);
+});
+it("keeps a newer user selection when delayed creation notifications arrive", async () => {
+  render(shell());
+  fireEvent.click(screen.getByRole("button", { name: "Open server" }));
+  await screen.findByRole("tab", { name: "Page 1" });
+  const first = readPanel("code:one").browserActive!;
+  vi.mocked(browserRequest).mockImplementation(async request => {
+    if (request.action === "new") host = { ...host, active: "page-2", tabs: [...host.tabs, { id: "page-2", title: "Page 2", url: "about:blank", loading: false, ready: true }] };
+    if (request.action === "activate") { host = { ...host, active: String(request.id) }; callbacks.forEach(callback => callback(host)); }
+  });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "New browser tab" })); });
+  fireEvent.change(screen.getByRole("combobox", { name: "All browser tabs" }), { target: { value: first } });
+  await act(async () => { callbacks.forEach(callback => callback(host)); });
+  expect(readPanel("code:one").browserActive).toBe(first);
+  expect(host.active).toBe("page-1");
+});

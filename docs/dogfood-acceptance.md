@@ -322,9 +322,30 @@ Preview screenshots in the task visualization folder:
 `taucode-work-grouping-preview.png`, `taucode-tab-list-preview.png`, and
 `taucode-chat-grouping-preview.png`. These use fixture data, not live provider runs.
 
-Outstanding acceptance: the Mac is locked, so the current native navigation build
-has not been exercised. Verify compact/custom titles after reopening, Work/Chat
-search, native loading/error indicators and tab restoration across restart. Then
+Native navigation checks: Chat combined Account 2 and cancellation search terms,
+showed a useful no-results state, and cleared it. Work found
+`action-dashboard.html`, including the renamed Validate action dashboard task,
+inside a collapsed space and restored that collapse state when search closed.
+Code displayed and retained “Code progress check” when reopening its long prompt.
+Screenshot: `taucode-work-output-search-live.png`.
+
+The native multi-tab check exposed delayed subscription delivery: after `new`
+returned, the selection effect ran before the tab received its backend target and
+created a second native page. The panel then bound to a blank page while the visible
+page navigated, leaving stale titles/loading indicators. Commands now retain their
+requested selection and keep opening controls busy until the pending target is
+bound. A delayed creation notification also respects a newer user selection.
+Both regressions failed before the fix; all 1,861 frontend tests, TypeScript and
+changed-file lint (one existing cleanup-ref warning) now pass. The debug app
+rebuilt, was signed with Apple Development, and passed strict codesign verification
+(`/tmp/taucode-native-handoff-build.log`). The temporary fixture server is stopped.
+
+Outstanding acceptance: the Mac locked again during native testing. Verify the
+native duplicate-tab fix, loading/error indicators, custom names and tab restoration
+across restart. The Code progress check conversation retains this pass's temporary
+tab-test entries (Preview, Tab 5 and New tab); close those owned test entries before
+starting a clean multi-tab run. Native host tabs ended when the idle app was stopped
+for rebuilding. Then
 build the small task-board project in `/Users/rolandleyco/taucode-dogfood-focus-board`
 using GPT 6.1 Sol (Account 2), Low, Full access, and inspect actual tool calls,
 approvals, previews, cancellation, follow-ups and owned-server cleanup. The folder
