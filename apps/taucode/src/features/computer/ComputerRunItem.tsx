@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { computerRequest } from "@services/tauri";
 import type { ComputerRun } from "./computer";
 import "./computer.css";
 
 export function ComputerApprovalStatus({ detail }: { detail: string }) {
   const [run, setRun] = useState<ComputerRun | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"pause" | "stop" | null>(null);
+  const controlRevision = useRef(0);
   const [error, setError] = useState("");
   useEffect(() => {
     let instruction: unknown;
@@ -26,21 +27,24 @@ export function ComputerApprovalStatus({ detail }: { detail: string }) {
     void poll();
     return () => { active = false; clearTimeout(timer); };
   }, [detail]);
-  if (!run) return null;
+  if (!run?.id) return null;
   const control = async (action: "pause" | "stop") => {
-    setBusy(true); setError("");
+    const revision = ++controlRevision.current;
+    setBusy(action); setError("");
     try {
       const current = await computerRequest<ComputerRun>({ action: "status" });
+      if (revision !== controlRevision.current) return;
       if (!current.running || current.id !== run.id) { setRun(null); return; }
-      await computerRequest(action === "pause" ? { action, paused: !current.paused } : { action });
+      await computerRequest(action === "pause" ? { action, runId: run.id, paused: !current.paused } : { action, runId: run.id });
       const next = await computerRequest<ComputerRun>({ action: "status" });
-      setRun(next.running && next.id === run.id ? next : null);
-    } catch (e) { setError(String(e)); } finally { setBusy(false); }
+      if (revision === controlRevision.current) setRun(next.running && next.id === run.id ? next : null);
+    } catch (e) { if (revision === controlRevision.current) setError(String(e)); }
+    finally { if (revision === controlRevision.current) setBusy(null); }
   };
   const lastStep = run.steps[run.steps.length - 1];
   const phase = run.approval ? "Waiting for approval" : run.phase && {
     starting: "Starting",
-    observing: "Observing",
+    observing: "Capturing window",
     planning: "Planning",
     acting: "Acting",
     waitingForApproval: "Waiting for approval",
@@ -49,11 +53,13 @@ export function ComputerApprovalStatus({ detail }: { detail: string }) {
   return <section className="computer-live" aria-label="Computer Use controls" onKeyDown={event => event.stopPropagation()}>
     <div className="computer-live-summary" role="status">
       <strong>{run.paused ? "Computer Use paused" : phase ? `Computer Use · ${phase}` : "Computer Use running"}</strong>
+      <span className="computer-live-target">{run.mode === "background" ? "Background control" : run.mode === "foreground" ? "Foreground control" : "Target app"} · {run.targetApp?.name || run.targetApp?.bundleId || (run.mode === "foreground" ? "Active app" : "Selecting an app…")}</span>
+      {run.targetApp?.window?.title && run.targetApp.window.title !== run.targetApp.name && <span>{run.targetApp.window.title}</span>}
       <span>{run.approval ? `Waiting for approval: ${run.approval.reason}${run.approval.target ? ` (${run.approval.target})` : ""}. Review the approval in taucode.` : run.paused ? "Resume to take a fresh look before the next action." : lastStep ? `Last action · Step ${lastStep.step}: ${lastStep.target || lastStep.action.kind || "completed"}` : "Preparing the first action…"}</span>
     </div>
     <div className="computer-live-actions">
-      <button type="button" className="secondary" disabled={busy} onClick={() => void control("pause")}>{run.paused ? "Resume" : "Pause"} computer use</button>
-      <button type="button" className="secondary" disabled={busy} onClick={() => void control("stop")}>Stop computer use</button>
+      <button type="button" className="secondary" disabled={busy !== null} onClick={() => void control("pause")}>{run.paused ? "Resume" : "Pause"} computer use</button>
+      <button type="button" className="secondary" disabled={busy === "stop"} onClick={() => void control("stop")}>Stop computer use</button>
     </div>
     {error && <p role="alert">{error}</p>}
   </section>;

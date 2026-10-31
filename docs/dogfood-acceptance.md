@@ -832,3 +832,52 @@ remained absent after relaunch; the archived JSONL is available for restoration.
 Screenshots: `taucode-reliability-completed.png` and
 `taucode-reliability-blocked.png` in this chat’s visualization directory.
 Logs: `/tmp/taucode-reliability-{rust,check,final-suite,final-build}.log`.
+
+### Background recovery investigation and live controls
+
+The live card now receives the background app and window title during capture,
+instead of only after completion. Stop remains available while Pause is pending.
+Controls carry a run ID; stale controls cannot affect a replacement run, and a
+delayed resume cannot revive a stopped run. Native and UI regression tests cover
+these races. Live run `68066fdd-711b-4021-ba5e-149a5278d6a8` showed TextEdit and
+Background QA.txt, paused, then resumed with a fresh capture. Calculator remained
+usable independently (7 + 8 = 15). Screenshot: `taucode-background-paused.png`.
+Pause → Stop passed live on Calculator in run
+`6be60911-8434-4bed-8b9d-3492c2e44a8d`: running=false, paused=false,
+error=Stopped, only wait/predict actions, no recorded focus restorations.
+
+Find passed after a fresh TextEdit launch and after an About-dialog open/close
+cycle. Run `8b76b812-6a5e-4006-a0d5-8305d7b21e78` used `ax-menu` for Find and
+`pixel-skylight` for Escape, with no recorded focus restorations. The disabled
+state was reproduced after minimizing/restoring the document. Two experimental
+keyboard routes failed to open Find: authenticated events in
+`79cb956e-801d-4775-abc8-4f9bba1bb48b` and AppKit menu events in
+`cf9af070-d222-49db-ac7b-4c4a128aed55`. Both stopped without replay or edits.
+Those unsuccessful routing changes were removed; disabled menu commands remain
+blocked before input. Independent computer use also could not open Find in that
+state. Reopening the same file through the native background open action did not
+establish recovery; the planner stopped without attempting the subsequent shortcut.
+
+Recovery and the longer editing/scrolling/dialog workflow remain unfinished.
+Computer use timed out twice while opening the fixture after a TextEdit restart;
+the Open action's final state has not yet been verified. No foreground fallback
+or new app permissions were enabled.
+
+The longer Calculator workflow passed in run
+`906ec986-321a-4352-97e1-fe2f7f7299d6`: 12 × 34 produced 408, then adding 92
+produced 500. All 12 actions completed through background control, with no
+recorded focus restorations. Independent accessibility inspection confirmed
+the final expression `408 + 92` and display `500`.
+
+Final focused checks: 37 Computer Use frontend tests, 118 native Computer Use
+tests, typecheck, targeted ESLint and cargo check passed. The broader frontend
+run had 21 failures under load; all failed cases passed in isolated reruns,
+with two Theme Gallery tests requiring a longer timeout. The native suite had
+one cancellation timing failure (575 passed, two ignored); that case passed
+in isolation. These are rerun results, not clean full-suite passes.
+
+The final controls-only build was rebuilt, Apple Development signed and passed
+strict signature verification (`/tmp/taucode-controls-build.log`). Live relaunch
+restored the completed Calculator conversation and retained GPT 6.1 Sol
+(Account 2), Low. The paused-card screenshot and Pause/Stop checks above cover
+the shipped controls; the unsuccessful menu experiments are absent from this build.

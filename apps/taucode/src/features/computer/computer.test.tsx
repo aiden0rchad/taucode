@@ -28,17 +28,44 @@ describe("computer use", () => {
     expect(await screen.findByText("Computer Use running")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Stop computer use" }));
     await waitFor(() => expect(screen.queryByRole("region", { name: "Computer Use controls" })).toBeNull());
-    expect(computerRequest).toHaveBeenCalledWith({ action: "pause", paused: true });
-    expect(computerRequest).toHaveBeenCalledWith({ action: "pause", paused: false });
-    expect(computerRequest).toHaveBeenCalledWith({ action: "stop" });
+    expect(computerRequest).toHaveBeenCalledWith({ action: "pause", runId: "run", paused: true });
+    expect(computerRequest).toHaveBeenCalledWith({ action: "pause", runId: "run", paused: false });
+    expect(computerRequest).toHaveBeenCalledWith({ action: "stop", runId: "run" });
   });
   it.each([
-    ["observing", "Observing"], ["planning", "Planning"], ["acting", "Acting"],
+    ["observing", "Capturing window"], ["planning", "Planning"], ["acting", "Acting"],
     ["waitingForApproval", "Waiting for approval"], ["settling", "Waiting for the app"],
   ])("shows the live %s phase", async (phase, label) => {
     vi.mocked(computerRequest).mockResolvedValue({ id: "run", instruction: "Calculate", running: true, phase, steps: [] });
     render(<ComputerApprovalStatus detail='{"instruction":"Calculate"}' />);
     expect(await screen.findByText(`Computer Use · ${label}`)).toBeTruthy();
+  });
+  it("shows the bound app and window while capturing", async () => {
+    vi.mocked(computerRequest).mockResolvedValue({ id: "run", instruction: "Find", running: true, phase: "observing", mode: "background", targetApp: { bundleId: "com.apple.TextEdit", name: "TextEdit", window: { id: 7, title: "Background QA.txt" } }, steps: [] });
+    render(<ComputerApprovalStatus detail='{"instruction":"Find"}' />);
+    expect(await screen.findByText("Background control · TextEdit")).toBeTruthy();
+    expect(screen.getByText("Background QA.txt")).toBeTruthy();
+    expect(screen.getByText("Computer Use · Capturing window")).toBeTruthy();
+  });
+  it("keeps Stop available while Pause is pending and ignores its late response", async () => {
+    let releasePause!: () => void;
+    const pending = new Promise<void>(resolve => { releasePause = resolve; });
+    let running = true;
+    vi.mocked(computerRequest).mockImplementation(async p => {
+      if (p.action === "pause") await pending;
+      if (p.action === "stop") running = false;
+      return { id: "run", instruction: "Calculate", running, steps: [] } as never;
+    });
+    render(<ComputerApprovalStatus detail='{"instruction":"Calculate"}' />);
+    fireEvent.click(await screen.findByRole("button", { name: "Pause computer use" }));
+    await waitFor(() => expect(computerRequest).toHaveBeenCalledWith({ action: "pause", runId: "run", paused: true }));
+    const stop = screen.getByRole("button", { name: "Stop computer use" }) as HTMLButtonElement;
+    expect(stop.disabled).toBe(false);
+    fireEvent.click(stop);
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Computer Use controls" })).toBeNull());
+    await act(async () => { releasePause(); await pending; });
+    expect(screen.queryByRole("region", { name: "Computer Use controls" })).toBeNull();
+    expect(computerRequest).toHaveBeenCalledWith({ action: "stop", runId: "run" });
   });
   it("gives pause and approval precedence over the underlying phase", async () => {
     vi.mocked(computerRequest).mockResolvedValue({ id: "run", instruction: "Calculate", running: true, paused: true, phase: "planning", steps: [] });
@@ -95,7 +122,7 @@ describe("computer use", () => {
     vi.mocked(computerRequest).mockResolvedValue({ id: "new", instruction: "Different task", running: true, steps: [] });
     fireEvent.click(screen.getByRole("button", { name: "Stop computer use" }));
     await waitFor(() => expect(screen.queryByRole("region", { name: "Computer Use controls" })).toBeNull());
-    expect(computerRequest).not.toHaveBeenCalledWith({ action: "stop" });
+    expect(vi.mocked(computerRequest).mock.calls.some(([p]) => p.action === "stop")).toBe(false);
   });
   it("shows control failures and keeps the controls available for retry", async () => {
     vi.mocked(computerRequest).mockImplementation(async p => {

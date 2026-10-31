@@ -260,6 +260,13 @@ impl Session {
         };
         serde_json::json!({"snapshot_id":snapshot.id,"elements":snapshot.elements,"size":size,"status":status,"partial":snapshot.partial,"walk_attempts":snapshot.attempts,"window_lookup":snapshot.lookup,"menus":self.menus.lock().unwrap().observation()})
     }
+    pub fn target_info(&self) -> serde_json::Value {
+        let name = NSRunningApplication::runningApplicationWithProcessIdentifier(self.pid)
+            .and_then(|app| app.localizedName())
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| self.bundle.clone());
+        serde_json::json!({"bundleId":self.bundle,"pid":self.pid,"name":name,"window":*self.window.lock().unwrap()})
+    }
     pub fn select_element(
         &self,
         target: Option<(u64, usize)>,

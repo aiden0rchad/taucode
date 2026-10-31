@@ -10,6 +10,26 @@ use std::{
     time::{Duration, Instant},
 };
 #[test]
+fn run_controls_reject_replacements_and_late_resume_after_stop() {
+    let computer = super::Computer::new(std::env::temp_dir());
+    computer.control.start();
+    computer.state.send_replace(json!({"id":"new","running":true,"paused":false,"steps":[]}));
+    for action in ["pause", "stop"] {
+        assert!(computer.control_run(&json!({"action":action,"runId":"old","paused":true})).is_err());
+        assert!(!computer.control.stopped());
+        assert_eq!(computer.state.borrow()["paused"], false);
+    }
+    assert!(computer.control_run(&json!({"action":"stop","runId":7})).is_err());
+    computer.control_run(&json!({"action":"pause","runId":"new","paused":true})).unwrap();
+    assert_eq!(computer.state.borrow()["paused"], true);
+    computer.control_run(&json!({"action":"stop","runId":"new"})).unwrap();
+    assert!(computer.control.stopped());
+    assert_eq!(computer.state.borrow()["paused"], false);
+    assert!(computer.control_run(&json!({"action":"pause","runId":"new","paused":false})).is_err());
+    assert!(computer.control.stopped());
+}
+
+#[test]
 fn mcp_steps_keep_planner_actions_and_diagnostics_without_images_or_ax_values() {
     let steps = json!([{"step":1,"action":{"kind":"type","text":"planner text"},"thumbnail":"image","planText":"界".repeat(1500),"path":"ax-menu","menuTitle":"File > New","grounding":[{"value":"private AX text"}],"executeMs":13,"focusRestorations":[{"pid":7}],"error":null}, {"step":2,"action":{"kind":"fail"},"error":"failed"}]);
     let compact = super::compact_steps(&steps);
