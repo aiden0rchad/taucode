@@ -974,3 +974,36 @@ The image restoration regression, typecheck, cargo check, signed build and stric
 signature verification passed. The broader Pi suite had 59 passes, one ignored
 and one preview-server startup timeout; that timeout also occurred on an isolated
 rerun and remains unresolved. Logs: `/tmp/taucode-image-{tests,pi-tests,preview-retest,types,check,build}.log`.
+
+### Disabled document-menu diagnostics
+
+Disabled shortcut diagnostics now include the bound window, whether its app is
+frontmost, and the roles/window IDs/focus flags returned by AXMainWindow,
+AXFocusedWindow and AXFocusedUIElement. They exclude field contents and do not
+mutate focus. This runs only when a shortcut is disabled.
+
+Run `c4468827-f36d-4172-977a-07ba2e9dd79e` reproduced disabled Find after
+minimize/restore. All three AX references pointed to fixture window 36175; the
+text area reported focused=1, both window references focused=0, and TextEdit was
+not frontmost. The main document and focused control are not missing. Changing
+the insertion point and opening/closing the enabled Select Line dialog through
+computer use did not re-enable Find or Select All.
+
+Run `56262e8f-e2e6-47aa-9854-6fd727db5dac` inserted the temporary marker once via
+ax-hit-test. Its next attempt to click a menu was refused because the AX target
+left the captured window. Independent inspection confirmed Undo and Find were
+both disabled. The marker was removed through the fixture's editable AX value
+only after confirming it was the sole difference from the baseline; a fresh AX
+read confirmed the original contents. The file on disk was not saved or changed.
+A normal user-click baseline comparison is pending.
+
+120 native Computer Use tests, typecheck, cargo check and strict signature
+verification passed for this diagnostic build. Logs:
+`/tmp/taucode-focus-diagnostic-{tests,types,check,build}.log`.
+
+The longer Calculator run `f9a58252-7e33-4e8f-aa74-9f0eb5d90da5` completed
+14 native button actions and a final verification: 125 × 8 = 1,000, ÷ 4 = 250,
+then + 75 = 325. Independent AX observations confirmed all three checkpoints
+(the intermediate results while the following operator was being entered) and
+final 325. No action errors or focus restorations were recorded. TextEdit's
+combined workflow and disabled-command recovery remain incomplete.

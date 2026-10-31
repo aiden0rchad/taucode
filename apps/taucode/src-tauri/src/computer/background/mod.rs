@@ -330,7 +330,11 @@ impl Session {
             let result = inventory.resolve(keys);
             let item = result.as_ref().ok().copied();
             if !keys.is_empty() {
-                *self.menu_resolution.lock().unwrap() = result.err();
+                let diagnostic = result.err().map(|mut d| {
+                    if d.reason == "disabled" { d.window_focus = Some(ax_actions::window_focus(self.pid, window.id)); }
+                    d
+                });
+                *self.menu_resolution.lock().unwrap() = diagnostic;
                 if let Some(error) = self
                     .menu_resolution
                     .lock()

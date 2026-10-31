@@ -840,6 +840,17 @@ pub(super) fn window_count(pid: i32) -> Result<usize, String> {
 pub fn focused_window(pid: i32) -> Option<u32> {
     Element::app(pid)?.attr("AXFocusedWindow")?.window_id()
 }
+pub(super) fn window_focus(pid: i32, window: u32) -> serde_json::Value {
+    let Some(app) = Element::app(pid) else { return serde_json::Value::Null; };
+    let mut state = serde_json::json!({"targetWindow":window,"targetFrontmost":super::focus_guard::front_pid() == Some(pid)});
+    // IDs and roles only: never capture field contents in failure diagnostics.
+    for attribute in ["AXMainWindow", "AXFocusedWindow", "AXFocusedUIElement"] {
+        state[attribute] = serde_json::json!(app.attr_result(attribute).map(|element| {
+            serde_json::json!({"window":element.window_id().or_else(|| element.attr("AXWindow").and_then(|w| w.window_id())),"role":element.text("AXRole"),"focused":element.text("AXFocused")})
+        }));
+    }
+    state
+}
 pub(super) fn minimized(pid: i32, id: u32) -> Result<bool, String> {
     let (window, lookup) = window_element(pid, id);
     let window = window.ok_or_else(|| format!("Window minimized check: {lookup}"))?;

@@ -11,6 +11,8 @@ pub const MAX_MENU_ELEMENTS: usize = 60;
 pub struct Diagnostic {
     pub reason: &'static str,
     pub candidates: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_focus: Option<serde_json::Value>,
 }
 impl Diagnostic {
     pub fn background_error(&self, events_available: bool) -> Option<String> {
@@ -179,7 +181,7 @@ impl<H> Default for Inventory<H> {
 }
 impl<H> Inventory<H> {
     pub fn resolve(&self, keys: &[String]) -> Result<&Item<H>, Diagnostic> {
-        let fail = |reason, candidates| Diagnostic { reason, candidates };
+        let fail = |reason, candidates| Diagnostic { reason, candidates, window_focus: None };
         if !self.complete {
             return Err(fail(
                 if self.available {
@@ -613,6 +615,7 @@ mod tests {
         let unresolved = Diagnostic {
             reason: "no_match",
             candidates: vec![],
+            window_focus: None,
         };
         assert!(unresolved.background_error(false).is_some());
         assert!(unresolved.background_error(true).is_none());
