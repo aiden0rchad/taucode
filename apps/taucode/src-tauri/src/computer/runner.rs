@@ -393,6 +393,9 @@ pub async fn run(
                         {
                             stale_retries += 1;
                             run_stale_retries += 1;
+                            recovery.previous = Some(format!(
+                                "Previous action was NOT executed: {error}. Re-plan from the fresh observation.\n\n"
+                            ));
                             if let Some(entry) = pending.as_mut() {
                                 entry["staleRetries"] = json!(stale_retries);
                             }
@@ -411,6 +414,16 @@ pub async fn run(
                 };
             }
             control.checkpoint().await?;
+            let observation_epoch = control.epoch();
+            let verify_observation = || {
+                if control.epoch() == observation_epoch {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "{STALE_OBSERVATION}Pause invalidated the planned action"
+                    ))
+                }
+            };
             let context = env
                 .context()
                 .map_err(|e| format!("Pre-flight context: {e}"))?;
@@ -423,6 +436,8 @@ pub async fn run(
                 .until(env.capture())
                 .await
                 .map_err(|e| format!("Pre-flight capture: app={}, {e}", context.app))?;
+            control.checkpoint().await?;
+            observation!(verify_observation());
             let scoped = format!("{instruction}\n\nHost policy: allowed application bundle IDs: {}. {}: {}. {} Never interact with taucode itself.", apps.join(", "), env.capture_description(), context.app, if settings.mode == "background" { "This run is bound to this app. Coordinates refer only to its captured window. Do not switch to another app." } else { "If taucode is frontmost, first use switch_applications with an allowed bundle ID." });
             let scoped = format!("{}{scoped}", recovery.previous.as_deref().unwrap_or(""));
             phase = "predictMs";
@@ -450,6 +465,10 @@ pub async fn run(
                     return Err(error);
                 }
             };
+            // The user can change the UI while paused, even if the same app and
+            // accessibility target remain valid. Never resume a pre-pause plan.
+            control.checkpoint().await?;
+            observation!(verify_observation());
             pending.as_mut().unwrap()["grounding"] = json!(prediction.grounding);
             let predict_ms = phase_start.elapsed().as_millis() as u64;
             let mut action = prediction
@@ -536,6 +555,7 @@ pub async fn run(
                     Decision::Allow => (),
                 }
                 control.checkpoint().await?;
+                observation!(verify_observation());
                 let after = env.context()?;
                 verify_app("Target binding changed after approval", &current, &after)?;
                 verify_policy_target(
@@ -569,6 +589,7 @@ pub async fn run(
                 "executeMs"
             };
             phase_start = Instant::now();
+            observation!(verify_observation());
             observation!(env.verify_target());
             env.begin_action();
             let preparation = observation!(env.prepare(&action, control, &after));
@@ -588,6 +609,7 @@ pub async fn run(
                 env.progress(entry.clone())?;
                 control.until(env.approve(reason, &action, &after)).await?;
                 control.checkpoint().await?;
+                observation!(verify_observation());
                 verify_app(
                     "Target changed after fallback approval",
                     &after,
@@ -629,6 +651,8 @@ pub async fn run(
                     .await?;
             }
             if preparation != Preparation::Handled {
+                control.checkpoint().await?;
+                observation!(verify_observation());
                 verify_policy_target(
                     "AX policy target changed before input",
                     &policy_target,

@@ -430,3 +430,28 @@ screenshot: `taucode-focus-board-final.png`. The preview is left running at
 All four planned areas have implementation and acceptance evidence above. The
 next separate improvement is OMP service visibility/schema ergonomics; no merge
 or push has been performed for this batch.
+
+## Computer-use resume reliability — October 30
+
+Pause during capture, planning or approval could leave a pre-pause action queued.
+A regression reproduced an obsolete click being delivered after Resume. The
+runner now checks the observation's pause epoch after waits and before input,
+captures again and re-plans within the existing stale-retry limits. It tells the
+planner that the discarded action was not executed. Invalidated captures do not
+consume a provider request; partial input is not replayed automatically.
+
+Validation: 108 Rust computer-use tests and 131 Python sidecar tests passed;
+TypeScript and `cargo check` passed. The regression covers capture, planning,
+ordinary approval and foreground-fallback approval with no stale input or
+foreground takeover. Signed debug bundle rebuilt and verified with strict
+codesign validation (`/tmp/taucode-computer-build.log`).
+
+The live settings inspection found internal Computer Use disabled and unconfigured.
+With explicit user approval, it is now configured for Calculator only, background
+mode, accessibility-element grounding, and GPT 6.1 Sol (Account 2) for both models.
+Foreground fallback remains off. These choices and runtime readiness survived a
+restart. Both macOS permission lists show an enabled taucode entry, but this build
+still reports Screen Recording and Accessibility not granted. Permission refresh
+is pending user action; a live agent calculation and Pause/Stop acceptance have
+not yet passed. This is distinct from the external computer-use tool used for
+earlier app dogfooding.

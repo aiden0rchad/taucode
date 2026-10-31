@@ -267,6 +267,9 @@ fn stop_releases_keys_buttons_and_prevents_late_input() {
         .is_err());
 }
 struct Fake {
+    pause_during_capture: Option<Arc<Control>>,
+    pause_during_predict: Option<Arc<Control>>,
+    pause_during_approval: Option<Arc<Control>>,
     instructions: Vec<String>,
     prepare_error: Option<String>,
     ax_handled: bool,
@@ -469,6 +472,10 @@ impl Environment for Fake {
     }
     fn capture(&mut self) -> BoxFuture<'_, Result<Frame, String>> {
         self.captures += 1;
+        if let Some(control) = self.pause_during_capture.take() {
+            control.pause(true);
+            control.pause(false);
+        }
         Box::pin(async {
             Ok(Frame {
                 png: "fake-png".into(),
@@ -483,6 +490,10 @@ impl Environment for Fake {
         _: &'a Frame,
     ) -> BoxFuture<'a, Result<Prediction, String>> {
         self.instructions.push(instruction.into());
+        if let Some(control) = self.pause_during_predict.take() {
+            control.pause(true);
+            control.pause(false);
+        }
         Box::pin(async { self.predictions.pop_front().ok_or("No fake action".into()) })
     }
     fn context(&self) -> Result<Context, String> {
@@ -499,6 +510,10 @@ impl Environment for Fake {
         _: &'a Context,
     ) -> BoxFuture<'a, Result<(), String>> {
         self.approved += 1;
+        if let Some(control) = self.pause_during_approval.take() {
+            control.pause(true);
+            control.pause(false);
+        }
         if self.change_after_approval {
             self.focus.app = "com.apple.Terminal".into();
         }
@@ -529,6 +544,9 @@ impl Environment for Fake {
 }
 fn fake(actions: Vec<Value>) -> Fake {
     Fake {
+        pause_during_capture: None,
+        pause_during_predict: None,
+        pause_during_approval: None,
         instructions: vec![],
         prepare_error: None,
         ax_handled: false,
@@ -1096,6 +1114,53 @@ async fn pause_releases_input_and_resume_waits_without_executing() {
     control.pause(false);
     control.checkpoint().await.unwrap();
     control.stop();
+}
+
+#[tokio::test]
+async fn resume_discards_predictions_from_before_pause_without_sending_input() {
+    for phase in ["capture", "planning", "approval", "fallback"] {
+        let input = FakeInput::default();
+        let control = Arc::new(Control::new(input.clone()));
+        control.start();
+        let mut env = fake(vec![
+            json!({"kind":"click","target":if phase == "approval" {"Delete item"} else {"Document"},"x":10,"y":10,"button":"left","clicks":1,"hold_keys":[]}),
+            json!({"kind":"done","summary":"Fresh observation"}),
+        ]);
+        if phase == "capture" {
+            env.pause_during_capture = Some(control.clone());
+            env.predictions.pop_front(); // Only the fresh frame may reach the planner.
+        } else if phase == "planning" {
+            env.pause_during_predict = Some(control.clone());
+        } else {
+            env.pause_during_approval = Some(control.clone());
+        }
+        env.needs_foreground = phase == "fallback";
+        let s = Settings {
+            max_steps: 1,
+            allow_foreground_fallback: true,
+            ..settings()
+        };
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
+        assert!(
+            input.0.lock().unwrap().is_empty(),
+            "{phase}: stale input was delivered"
+        );
+        assert_eq!(result.unwrap()["summary"], "Fresh observation", "{phase}");
+        assert_eq!(env.captures, 3, "{phase}: capture again before replanning");
+        assert_eq!(
+            env.instructions.len(),
+            if phase == "capture" { 1 } else { 2 }
+        );
+        assert_eq!(
+            env.takeovers.get(),
+            0,
+            "{phase}: no stale foreground takeover"
+        );
+        assert_eq!(env.steps.last().unwrap()["staleRetries"], 1);
+        assert!(env.instructions.last().unwrap().contains("NOT executed"));
+        assert!(env.instructions.last().unwrap().contains("Pause"));
+    }
 }
 
 #[tokio::test]
