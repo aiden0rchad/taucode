@@ -153,7 +153,7 @@ fn recoverable_ax_errors_and_lookup_failure_fall_through_once() {
         clicks: 1,
         hold_keys: vec![],
     };
-    for status in [-25204, -25205, -25206] {
+    for status in [-25205, -25206] {
         for events_available in [false, true] {
             let calls = Cell::new(0);
             let result = prepare_action(
@@ -200,6 +200,13 @@ fn recoverable_ax_errors_and_lookup_failure_fall_through_once() {
     )
     .is_err());
     assert_eq!(event_path(true, "skylight"), "pixel-skylight");
+    assert!(prepare_action(
+        &action,
+        || ax_actions::action_status(-25204),
+        || panic!("CannotComplete must not send a second input"),
+        false
+    )
+    .is_err());
     assert_eq!(event_path(true, "postToPid"), "pixel-skylight");
     assert_eq!(event_path(false, "skylight"), "pixel-skylight");
 }

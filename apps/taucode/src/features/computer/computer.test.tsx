@@ -8,6 +8,7 @@ import { SettingsComputerSection } from "@settings/components/sections/SettingsC
 import { computerRequest, computerRequestPermissions } from "@services/tauri";
 import type { AppSettings } from "@/types";
 import { buildConversationItem } from "@/utils/threadItems.conversion";
+import { prepareThreadItems } from "@/utils/threadItems.explore";
 vi.mock("@services/tauri", () => ({ engineRuntime: async () => [{ engine: "computer", state: "ready", message: "Ready" }], computerRequest: vi.fn(), computerRequestPermissions: vi.fn() }));
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const step = { step: 1, thumbnail: "aGVsbG8=", action: { kind: "click" }, reflection: "Found button" };
@@ -53,7 +54,7 @@ describe("computer use", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     render(<ComputerRunItem run={{ id: "failed", instruction: "Append once", error: "Input interrupted\nSidecar stderr (last 20 lines):\nraw diagnostic", summary: "Input interrupted", steps: [{ ...step, action: { kind: "type", text: "partial" }, error: "Paused" }] }} />);
-    expect(screen.getByText("Computer Use stopped")).toBeTruthy();
+    expect(screen.getByText("Computer Use interrupted")).toBeTruthy();
     expect(screen.getByText("Error details").closest("details")?.open).toBe(false);
     expect(screen.getByText("Input interrupted", { selector: 'p[role="alert"]' })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Copy continuation request" }));
@@ -62,6 +63,30 @@ describe("computer use", () => {
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining("interrupted or failed; effects uncertain"));
     expect(writeText).not.toHaveBeenCalledWith(expect.stringContaining("raw diagnostic"));
     expect(computerRequest).not.toHaveBeenCalled();
+  });
+  it("distinguishes rejected actions from uncertain effects in recovery", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<ComputerRunItem run={{ instruction: "Find a line", error: "Action not executed: Background hotkey menu disabled: Edit > Find > Find…", steps: [{ ...step, recovered: true, error: "Disabled", action: { kind: "hotkey", keys: ["command", "f"] } }] }} />);
+    expect(screen.getByText("Computer Use blocked")).toBeTruthy();
+    expect(screen.getByText(/This command is disabled in the app’s background window/)).toBeTruthy();
+    expect(screen.getByText(/Not executed/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Copy continuation request" }));
+    await screen.findByText(/Copied. Paste/);
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("not executed; rejected before input"));
+    expect(computerRequest).not.toHaveBeenCalled();
+  });
+  it("explains an unconfirmed native action without claiming it was rejected", () => {
+    render(<ComputerRunItem run={{ error: "ax_press_failed(-25204): macOS could not confirm the action", steps: [{ ...step, error: "CannotComplete" }] }} />);
+    expect(screen.getByText("Computer Use interrupted")).toBeTruthy();
+    expect(screen.getByText(/Taucode stopped without sending a second click or edit/)).toBeTruthy();
+    expect(screen.getByText(/Check result/)).toBeTruthy();
+    expect(screen.queryByText(/Not executed/)).toBeNull();
+  });
+  it("shows completed work even when the final persisted phase was acting", () => {
+    render(<ComputerRunItem run={{ running: false, phase: "acting", summary: "Verified 48", steps: [{ ...step, action: { kind: "done" } }] }} />);
+    expect(screen.getByRole("status").textContent).toContain("Computer Use completed");
+    expect(screen.queryByLabelText("Computer Use recovery")).toBeNull();
   });
   it("does not control a replacement run from stale displayed controls", async () => {
     vi.mocked(computerRequest).mockResolvedValue({ id: "old", instruction: "Calculate", running: true, steps: [] });
@@ -199,7 +224,7 @@ describe("computer use", () => {
     render(<ComputerRunItem run={run!} />);
     await waitFor(() => expect(computerRequest).toHaveBeenCalledWith({ action: "runLog", id: "stored-run" }));
     expect(await screen.findByAltText("Screen before step 1")).toBeTruthy();
-    expect(screen.getByText("Computer Use stopped")).toBeTruthy();
+    expect(screen.getByText("Computer Use interrupted")).toBeTruthy();
     for (const invalid of [{ ...compact, stored: false }, { ...compact, id: "" }, { ...compact, steps: [null] }]) {
       expect(parseComputerRun(JSON.stringify({ computerRun: invalid }))).toBeNull();
     }
@@ -215,6 +240,21 @@ describe("computer use", () => {
     render(<ComputerRunItem run={parsed!} />);
     expect(await screen.findByRole("button", { name: "Copy continuation request" })).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toBe("Focus changed");
+  });
+  it("keeps large failed run references valid through transcript truncation", async () => {
+    const run = { id: "long-failure", stored: true, instruction: "Find a line", error: "Disabled\nSidecar stderr: " + "diagnostic ".repeat(4000), steps: [{ ...step, recovered: true, error: "Disabled" }] };
+    const item = buildConversationItem({ id: "call", type: "mcpToolCall", server: "Computer Use", tool: "computer_run_task", status: "failed", result: null, error: { message: `Error: ${JSON.stringify({ computerRun: run })}` } });
+    if (!item) throw new Error("Expected tool item");
+    const prepared = prepareThreadItems([item, ...Array.from({ length: 45 }, (_, i) => ({ id: `message-${i}`, kind: "message" as const, role: "user" as const, text: "Follow-up" }))]);
+    const tool = prepared[0];
+    if (tool.kind !== "tool") throw new Error("Expected tool item");
+    expect(tool.output!.length).toBeLessThan(200);
+    const parsed = parseComputerRun(tool.output);
+    expect(parsed).toEqual({ id: run.id, stored: true, steps: [] });
+    vi.mocked(computerRequest).mockResolvedValue(run);
+    render(<ComputerRunItem run={parsed!} />);
+    expect(await screen.findByText("Computer Use blocked")).toBeTruthy();
+    expect(screen.getByText(/Not executed/)).toBeTruthy();
   });
   it("shows provider failures from a stored run in the thread item", async () => {
     const error = "Provider error: Model unavailable";

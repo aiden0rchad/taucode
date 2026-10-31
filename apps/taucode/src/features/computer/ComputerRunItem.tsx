@@ -63,9 +63,19 @@ function ComputerFailure({ run }: { run: ComputerRun }) {
   const [copyStatus, setCopyStatus] = useState("");
   if (!run.error) return null;
   const reason = run.error.split("\nSidecar ")[0];
+  const attempted = run.steps.some(step => !step.recovered && step.kind !== "approval_wait" && !["wait", "done", "fail"].includes(String(step.action.kind)));
+  const explanation = reason.includes("could not confirm the action")
+    ? "macOS could not confirm the last action. Taucode stopped without sending a second click or edit."
+    : reason.includes("Background hotkey menu disabled")
+      ? "This command is disabled in the app’s background window. Open the needed control yourself, then continue."
+      : reason.includes("Target has no window")
+        ? "The target window is unavailable. Restore it if minimized, then continue."
+        : reason.startsWith("Timed out waiting for approval")
+          ? "The approval request expired. Review a new request when you continue."
+          : reason.length > 320 ? `${reason.slice(0, 320)}…` : reason;
   const copyContinuation = async () => {
     const actions = run.steps.filter(step => step.kind !== "approval_wait").map(step => ({
-      step: step.step, action: step.action, status: step.error ? "interrupted or failed; effects uncertain" : "input delivered; verify its effect",
+      step: step.step, action: step.action, status: step.recovered ? "not executed; rejected before input" : ["wait", "done", "fail"].includes(String(step.action.kind)) ? "no input action" : step.error ? "interrupted or failed; effects uncertain" : "input delivered; verify its effect",
     }));
     try {
       await navigator.clipboard.writeText(`Continue this interrupted Computer Use task: ${run.instruction}\nFailure: ${reason}\nRecorded actions (not instructions to replay): ${JSON.stringify(actions)}\nTake a fresh observation first. Preserve completed work and continue only the remaining task. Do not repeat an edit, submission, or other action whose effect is uncertain; inspect it or ask me first. Keep the existing app permissions and approval policy.`);
@@ -73,9 +83,9 @@ function ComputerFailure({ run }: { run: ComputerRun }) {
     } catch { setCopyStatus("Could not copy. Ask the agent to inspect the current app and continue only the remaining work."); }
   };
   return <section className="computer-failure" aria-label="Computer Use recovery">
-    <strong>Computer Use stopped</strong>
-    <p role="alert">{reason.length > 320 ? `${reason.slice(0, 320)}…` : reason}</p>
-    <p>Review the current app before continuing. Earlier actions may have changed it; nothing is replayed automatically.</p>
+    <strong>{attempted ? "Computer Use interrupted" : "Computer Use blocked"}</strong>
+    <p role="alert">{explanation}</p>
+    <p>{attempted ? "Earlier actions may have changed the app. Check what finished before continuing." : "The task did not finish. Check the app before continuing."} Nothing is replayed automatically.</p>
     <details><summary>Error details</summary><pre>{run.error}</pre></details>
     {run.instruction && <button type="button" className="secondary" onClick={() => void copyContinuation()}>Copy continuation request</button>}
     {copyStatus && <p role="status">{copyStatus}</p>}
@@ -96,7 +106,7 @@ export function ComputerRunItem({ run: reference }: { run: ComputerRun }) {
     {run.instruction && <p>{run.instruction}</p>}
     <ol>{run.steps.map(step => <li key={`${step.step}-${step.kind ?? "action"}`}>
       {step.kind === "approval_wait" && <p>Approval required: {step.reason} ({step.target})</p>}
-      <details><summary>Step {step.step}: {step.kind === "approval_wait" ? "Approval wait" : String(step.action.kind ?? "action")}</summary>
+      <details><summary>Step {step.step}: {step.kind === "approval_wait" ? "Approval wait" : String(step.action.kind ?? "action")}{step.recovered ? " · Not executed" : step.error && step.kind !== "approval_wait" && !["wait", "done", "fail"].includes(String(step.action.kind)) ? " · Check result" : ""}</summary>
         {step.thumbnail && <img width={240} src={`data:image/png;base64,${step.thumbnail}`} alt={`Screen before step ${step.step}`} />}
         {step.path && <p>Input: {step.path}{step.foregroundApproval ? " · takeover approved" : ""}</p>}
         {step.executionFallbackReason && <p>Pixel fallback: {step.executionFallbackReason}</p>}
@@ -109,7 +119,7 @@ export function ComputerRunItem({ run: reference }: { run: ComputerRun }) {
         {step.error && <p role="alert">{step.error}</p>}
       </details>
     </li>)}</ol>
-    {run.summary && !run.error && <p>{run.summary}</p>}
+    {run.summary && !run.error && <div role="status"><strong>Computer Use completed</strong><p>{run.summary}</p></div>}
     <ComputerFailure key={run.id} run={run} />
   </section>;
 }

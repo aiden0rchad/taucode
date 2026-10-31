@@ -621,9 +621,15 @@ Logs: `/tmp/taucode-recovery-suite.log`, `/tmp/taucode-release-rust.log`,
 The final build's live append and recovery-card verification is pending a Mac unlock;
 do not treat the earlier Find success as proof of append or the key-release fix.
 
-Separate follow-ups observed, not diagnosed in this batch: startup briefly restored
-the wrong thread after creating a task; an internal metadata-generation prompt
-appeared as a sidebar conversation. These need focused reproduction before changes.
+Startup selection was repaired in the follow-up below. Internal metadata requests
+now explicitly use ephemeral Codex threads, matching their response collector,
+instead of creating persistent Pi/OMP threads through the default-engine router.
+The selected model is retained for the turn; ephemeral start events are hidden
+before sidebar insertion. The verified leaked helper session
+`85879f85-00ff-4b04-9bbe-008e634d9d7b` was moved, with the app closed, from
+`omp/sessions/47a7f4e9-f915-4b6d-87b9-b0656fe66da8/` into the matching directory
+under `omp/archived_internal/` in app data. Its complete JSONL is preserved; no
+user conversation was removed.
 
 ### Follow-up verification after unlock
 
@@ -757,3 +763,46 @@ signature verification. Live run `1e58965e-22ed-44b6-bc20-5a31d56c43ed` complete
 Clear → 9 in background mode with no errors and two displayed cursor hints.
 An independent Calculator AX read confirmed 9. The renderer preview verifies
 the new shape, transparency and glow; automated app captures exclude the overlay.
+
+
+### Background actions and recovery clarity
+
+TextEdit Find run `f11f1661-7e53-4d05-b669-f44fd322f6d3` confirmed that
+Edit → Find was disabled in the background. A later AXPress returned
+CannotComplete (`-25204`); its pixel fallback hit window chrome and left the
+document minimized. The disposable document retained its original contents.
+
+CannotComplete now stops without another input: macOS has not established that
+the first action did nothing. Only unsupported operations (`-25205`, `-25206`)
+retain the event fallback. Regression coverage verifies that ambiguous native
+actions never enter the event path. Background Find remains limited by TextEdit’s
+disabled menu; taucode does not force the disabled command or take foreground
+control without approval.
+
+Recovery cards distinguish blocked tasks, interrupted input, and completion.
+Rejected steps say “Not executed”; uncertain input says “Check result”. The
+continuation request carries those distinctions and requires fresh inspection,
+with no automatic replay. Persisted run results are reduced to valid JSON references
+before transcript text limits apply; a long native error previously truncated the
+JSON and silently removed the recovery card. Details load from the saved run.
+
+The first signed build passed strict signature verification. Background Calculator
+run `415bd4dd-c399-40e2-9681-6988444422e1` completed Clear → 4 → 8 without errors;
+independent AX inspection confirmed 48 and the native transcript displayed
+“Computer Use completed”. TextEdit run `96d44bd0-9936-4b46-a125-6157f7c4a526`
+rejected Command-F before input and stopped without retries or alternate controls.
+The fixture remains byte-for-byte equal to the saved baseline. Automatic titles
+were briefly enabled for this test, then returned to their original off setting.
+No new metadata conversation appeared; a generated title was not observed, so
+live title generation itself is not claimed as verified. The engine routing,
+model retention, and success/error cleanup have native regression coverage.
+
+573 native tests passed (two ignored); typecheck, targeted ESLint and cargo check
+passed. The final frontend suite passed 1,882 tests. Both signed builds passed
+strict codesign verification. The final build reopened the real persisted Find
+failure and displayed “Computer Use blocked”, “Step 1: hotkey · Not executed”,
+collapsed error details and Copy continuation request. The internal metadata chat
+remained absent after relaunch; the archived JSONL is available for restoration.
+Screenshots: `taucode-reliability-completed.png` and
+`taucode-reliability-blocked.png` in this chat’s visualization directory.
+Logs: `/tmp/taucode-reliability-{rust,check,final-suite,final-build}.log`.

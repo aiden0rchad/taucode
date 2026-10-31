@@ -950,14 +950,15 @@ pub fn try_action(
 pub fn action_status(status: i32) -> Result<bool, String> {
     match status {
         0 => Ok(true),
-        // CannotComplete, AttributeUnsupported, ActionUnsupported: one event fallback.
-        -25204 | -25205 | -25206 => Ok(false),
+        // Only unsupported operations are known not to have executed. CannotComplete
+        // may follow a delivered action; a pixel retry could repeat it or hit new UI.
+        -25205 | -25206 => Ok(false),
         _ => Err(format!("AX action failed ({status})")),
     }
 }
 
 // Keep exact errors for both the durable step log and sidecar.log. Preserve the
-// M3b fallback allowlist; invalid handles/API-disabled remain terminal errors.
+// Unsupported operations may fall back; ambiguous failures must stop.
 fn action_result(name: &str, status: i32, reason: &mut Option<String>) -> Result<bool, String> {
     if status == 0 {
         return Ok(true);
@@ -972,6 +973,9 @@ fn action_result(name: &str, status: i32, reason: &mut Option<String>) -> Result
     };
     let error = format!("{operation}_failed({status})");
     *reason = Some(error.clone());
+    if status == -25204 {
+        return Err(format!("{error}: macOS could not confirm the action. Its effect is uncertain; inspect the app before continuing. No pixel retry was sent."));
+    }
     action_status(status).map_err(|_| error)
 }
 
@@ -1598,7 +1602,7 @@ mod element_tests {
         }
     }
     #[test]
-    fn press_errors_keep_exact_code_and_existing_fallback_policy() {
+    fn press_errors_never_replay_an_ambiguous_action() {
         for status in [-25204, -25205, -25206, -25201, -25202, -25211] {
             let element = FakeElement {
                 token: 37,
@@ -1610,8 +1614,12 @@ mod element_tests {
             let result = dispatch_element(&element, &click(), &mut reason);
             let expected = format!("ax_press_failed({status})");
             assert_eq!(reason, Some(expected.clone()));
-            if [-25204, -25205, -25206].contains(&status) {
+            if [-25205, -25206].contains(&status) {
                 assert_eq!(result, Ok(false));
+            } else if status == -25204 {
+                let error = result.unwrap_err();
+                assert!(error.starts_with(&expected));
+                assert!(error.contains("No pixel retry was sent"));
             } else {
                 assert_eq!(result, Err(expected));
             }
