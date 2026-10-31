@@ -881,3 +881,49 @@ strict signature verification (`/tmp/taucode-controls-build.log`). Live relaunch
 restored the completed Calculator conversation and retained GPT 6.1 Sol
 (Account 2), Low. The paused-card screenshot and Pause/Stop checks above cover
 the shipped controls; the unsuccessful menu experiments are absent from this build.
+
+### TextEdit viewport and recovery acceptance
+
+The document becomes accessible after the earlier inspection timeouts. Live
+run `eeb92ad4-603c-4c5f-99f6-69f0fbaee13d` opened Find and searched for
+`Line 100`; independent screenshot inspection confirmed one highlighted match.
+Find Next returned AX error -25204. In
+`c53c1146-a773-43f8-b547-2ab6d340872f`, Done also returned -25204, but independent
+inspection confirmed Find closed. The 50 ms mutation acknowledgement deadline
+can report failure after an effective action; this remains unresolved, and
+uncertain mutations are not automatically replayed.
+
+Run `6e38efd8-e076-4b4c-9a16-10056a992632` opened About TextEdit, verified
+version 1.20 (415), closed only About, and returned to Background QA.txt. Its
+scroll grounding chose document element 2 but discarded it with “Element center
+outside screenshot”, then cancelled the pixel fallback after a target mismatch.
+Grounding now clips frames to the window and enclosing scroll-area viewports,
+while retaining original geometry for preflight validation. Fully clipped
+elements remain unavailable; menu anchors retain their existing handling.
+
+Run `259d2a52-1f64-4989-b989-3e99c86244d0` inserted RELIABILITY_QA_TEMP exactly
+once at a separately verified document-end caret, verified it, invoked Undo
+once, and verified the original BACKGROUND_QA_OK ending. Independent inspection
+confirmed the temporary marker is gone and the disk fixture matches its baseline.
+Command-Up delivered by taucode did not move the view; independent Command-Down
+did. Keyboard routing still needs investigation. No focus restorations were
+recorded in these runs.
+
+The disabled-menu case is reproducible by minimizing/restoring Background QA.txt:
+Find, Paste and Select All become disabled. Reopening the same file with the
+background native open implementation did not recover it in
+`ca7dbb0e-0f93-4a3a-a5d9-2b02f9b772ee`. Cancelling a lingering Edit menu and
+raising the document through independent computer use also did not restore Find.
+Recovery remains open; these experiments are not a successful recovery claim.
+
+Viewport regression checks: 119 native Computer Use tests, cargo check and
+typecheck passed (`/tmp/taucode-viewport-{rust,check,types}.log`).
+
+The viewport build passed Apple Development signing and strict verification
+(`/tmp/taucode-viewport-build.log`). Live run
+`8e5c8823-eabc-4954-b161-5073b3d2ed63` scrolled up twice using fresh text-area
+element 2 via `ax-element`, with no pixel fallback, and verified the exact header.
+Independent inspection confirmed vertical scroll position 0 and the visible
+header. Evidence: `taucode-textedit-viewport.png` in this chat's visualization
+directory. This closes the offscreen-center scrolling defect; disabled-menu
+recovery, uncertain acknowledgements and the combined workflow remain open.

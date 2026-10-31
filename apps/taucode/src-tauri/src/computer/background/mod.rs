@@ -258,7 +258,14 @@ impl Session {
         } else {
             snapshot.status.into()
         };
-        serde_json::json!({"snapshot_id":snapshot.id,"elements":snapshot.elements,"size":size,"status":status,"partial":snapshot.partial,"walk_attempts":snapshot.attempts,"window_lookup":snapshot.lookup,"menus":self.menus.lock().unwrap().observation()})
+        // Keep the original geometry for preflight validation; only grounding
+        // uses the visible viewport of long, scrolled document elements.
+        let elements: Vec<_> = snapshot.elements.iter().map(|node| {
+            let mut node = node.clone();
+            node.frame = size.and_then(|size| snapshot.visible_frame(node.index, size));
+            node
+        }).collect();
+        serde_json::json!({"snapshot_id":snapshot.id,"elements":elements,"size":size,"status":status,"partial":snapshot.partial,"walk_attempts":snapshot.attempts,"window_lookup":snapshot.lookup,"menus":self.menus.lock().unwrap().observation()})
     }
     pub fn target_info(&self) -> serde_json::Value {
         let name = NSRunningApplication::runningApplicationWithProcessIdentifier(self.pid)
@@ -285,7 +292,8 @@ impl Session {
         {
             return Err("Menu elements support only a single AXPress click".into());
         }
-        let [x, y, w, h] = node.frame.ok_or("AX element has no frame")?;
+        let [x, y, w, h] = snapshot.visible_frame(index, window.size)
+            .ok_or("AX element is outside the visible viewport")?;
         let point = super::policy::map_point(
             [x + w / 2., y + h / 2.],
             window.size,
