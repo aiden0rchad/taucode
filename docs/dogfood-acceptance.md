@@ -954,3 +954,23 @@ without sending the menu command. This closes the left-click/context-menu bug;
 disabled Find recovery, uncertain acknowledgements and the combined workflow
 remain open. The main-document experiment and its temporary diagnostics are
 removed from the current build.
+
+### Saved image previews
+
+OMP persists screenshots as `blob:sha256:<hash>` references. The history adapter
+previously forwarded these references as base64, producing broken thumbnails and
+lightboxes after reload. The shared Pi/OMP adapter now restores image bytes from
+the workspace's isolated agent blob store for saved messages and live results.
+It validates the hash, MIME type, file size and containment; missing or corrupt
+images become an explicit unavailable message. Inline images and saved session
+files are unchanged.
+
+The saved screenshot for run `1803147c-ea31-4297-9227-dd53f389bbf2` was reproduced
+broken before rebuilding, then verified live as a decoded thumbnail and full-size
+lightbox after a fresh launch. Evidence: `taucode-restored-image-preview.png` in
+this chat's visualization directory.
+
+The image restoration regression, typecheck, cargo check, signed build and strict
+signature verification passed. The broader Pi suite had 59 passes, one ignored
+and one preview-server startup timeout; that timeout also occurred on an isolated
+rerun and remains unresolved. Logs: `/tmp/taucode-image-{tests,pi-tests,preview-retest,types,check,build}.log`.

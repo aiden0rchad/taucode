@@ -4,6 +4,7 @@ mod process;
 mod preview;
 mod profile;
 mod recovery;
+mod images;
 #[cfg(test)]
 mod tests;
 mod translate;
@@ -1362,6 +1363,12 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
             let superseded = branch[index + 1..].iter().take_while(|next| next["message"]["role"] != "user")
                 .any(|next| next["message"]["role"] == "assistant" || next["customType"] == "taucode-rewind");
             if !superseded { messages.push(saved); }
+        }
+    }
+    if let Some(workspace) = file.parent() {
+        if let (Some(root), Some(name)) = (workspace.parent().and_then(Path::parent), workspace.file_name()) {
+            let blobs = root.join("agent").join(name).join("blobs");
+            for message in &mut messages { images::restore(message, &blobs); }
         }
     }
     let mut translator = Translator::history(id, cwd, &messages);

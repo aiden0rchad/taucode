@@ -2364,3 +2364,58 @@ async fn managed_preview_bridge_serves_restarts_and_stops_without_user_dialogs()
     manager.shutdown().await.unwrap();
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn saved_blob_images_restore_without_rewriting_history() {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use sha2::{Digest, Sha256};
+    let dir = temp();
+    let sessions = dir.join("omp/sessions/workspace");
+    let blobs = dir.join("omp/agent/workspace/blobs");
+    std::fs::create_dir_all(&sessions).unwrap();
+    std::fs::create_dir_all(&blobs).unwrap();
+    let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0uoAAAAASUVORK5CYII=";
+    let bytes = STANDARD.decode(png).unwrap();
+    let hash = format!("{:x}", Sha256::digest(&bytes));
+    std::fs::write(blobs.join(&hash), &bytes).unwrap();
+    let image = json!({"type":"image","mimeType":"image/png","data":format!("blob:sha256:{hash}")});
+    let rows = [
+        json!({"type":"session","id":"thread","cwd":"/tmp","timestamp":"2026-10-31T00:00:00Z"}),
+        json!({"type":"message","id":"u","parentId":null,"message":{"role":"user","timestamp":1,"content":[image.clone()]}}),
+        json!({"type":"message","id":"a","parentId":"u","message":{"role":"assistant","timestamp":2,"content":[{"type":"toolCall","id":"call","name":"mcp_taucode_computer_computer_run_task","arguments":{}}]}}),
+        json!({"type":"message","id":"t","parentId":"a","message":{"role":"toolResult","timestamp":3,"toolCallId":"call","toolName":"mcp_taucode_computer_computer_run_task","content":[image.clone()],"isError":false}}),
+    ];
+    let file = sessions.join("thread.jsonl");
+    let saved = rows.iter().map(|v| format!("{v}\n")).collect::<String>();
+    std::fs::write(&file, &saved).unwrap();
+    let (_, restored) = read_session(&file, &[]).unwrap();
+    let rendered = serde_json::to_string(&restored.turns).unwrap();
+    assert!(rendered.contains(png));
+    assert!(!rendered.contains("blob:sha256:"));
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), saved);
+    // Live tool results use the same resolver; inline images are unchanged.
+    let mut result = json!({"content":[image.clone(),{"type":"image","mimeType":"image/png","data":png}]});
+    images::restore(&mut result, &blobs);
+    assert_eq!(result["content"][0]["data"], png);
+    assert_eq!(result["content"][1]["data"], png);
+    for reference in ["blob:sha256:../../private".to_string(), format!("blob:sha256:{}", "0".repeat(64)), format!("blob:sha256:{hash}")] {
+        std::fs::write(blobs.join(&hash), b"corrupt").unwrap();
+        let mut missing = json!({"content":[{"type":"image","mimeType":"image/png","data":reference}]});
+        images::restore(&mut missing, &blobs);
+        assert_eq!(missing["content"][0]["type"], "text");
+        assert!(missing["content"][0]["text"].as_str().unwrap().contains("unavailable"));
+    }
+    #[cfg(unix)] {
+        let outside = dir.join("outside");
+        std::fs::write(&outside, bytes).unwrap();
+        std::fs::remove_file(blobs.join(&hash)).unwrap();
+        std::os::unix::fs::symlink(&outside, blobs.join(&hash)).unwrap();
+        let mut escaped = json!({"content":[image]});
+        images::restore(&mut escaped, &blobs);
+        assert_eq!(escaped["content"][0]["type"], "text");
+    }
+    let mut scalar = json!("unchanged");
+    images::restore(&mut scalar, &blobs);
+    assert_eq!(scalar, "unchanged");
+    std::fs::remove_dir_all(dir).unwrap();
+}
