@@ -362,6 +362,18 @@ impl Element {
                 .or_else(|| self.attr("AXWindow").and_then(|w| w.window_id()))
                 == Some(window)
     }
+    pub(super) fn has_keyboard_focus(&self, pid: i32) -> bool {
+        let Some(app) = Self::app(pid) else { return false; };
+        let mut focused = std::ptr::null();
+        // One bounded read under the input lock; never retry or change focus.
+        let status = unsafe {
+            AXUIElementCopyAttributeValue(
+                app.0, string(&NSString::from_str("AXFocusedUIElement")), &mut focused,
+            )
+        };
+        let focused = Self::owned_value(focused);
+        status == 0 && focused.as_ref().is_some_and(|e| unsafe { CFEqual(self.0, e.0) })
+    }
     fn owner(&self) -> Option<i32> {
         let mut pid = 0;
         (unsafe { AXUIElementGetPid(self.0, &mut pid) } == 0).then_some(pid)

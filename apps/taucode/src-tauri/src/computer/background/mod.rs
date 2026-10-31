@@ -99,6 +99,7 @@ pub struct Session {
     snapshot: Mutex<ax_tree::Snapshot<ax_actions::Element>>,
     selected: Mutex<Option<(u64, usize)>>,
     pressed: Mutex<Option<ax_actions::Element>>,
+    keyboard_target: Mutex<Option<ax_actions::Element>>,
     delivery: Mutex<Option<delivery::Scope>>,
     observed: Mutex<Option<[u8; 32]>>,
     attempted: Mutex<Option<(Action, [u8; 32])>>,
@@ -161,6 +162,7 @@ impl Session {
             snapshot: Mutex::new(ax_tree::Snapshot::default()),
             selected: Mutex::new(None),
             pressed: Mutex::new(None),
+            keyboard_target: Mutex::new(None),
             delivery: Mutex::new(None),
             observed: Mutex::new(None),
             attempted: Mutex::new(None),
@@ -527,6 +529,9 @@ impl Session {
         Ok(handled)
     }
     pub fn events_available(&self, action: &Action) -> bool {
+        if !self.keyboard_target_matches() {
+            return false;
+        }
         if ax_actions::elementless_keyboard(action, self.selected.lock().unwrap().is_some()) {
             return ax_actions::focused_policy_window(self.pid).is_some();
         }
@@ -541,6 +546,23 @@ impl Session {
             .is_some_and(|w| ax_actions::focused_window(self.pid) == Some(w.id))
     }
     pub fn prepare_events(&self, action: &Action) -> bool {
+        *self.keyboard_target.lock().unwrap() = None;
+        if matches!(action, Action::Type { .. }) {
+            let selected = *self.selected.lock().unwrap();
+            let target = if let Some((id, index)) = selected {
+                let Some(window) = self.window.lock().unwrap().clone() else { return false; };
+                self.snapshot.lock().unwrap()
+                    .resolve_bound(id, index, self.pid, window.id, ax_actions::Element::alive)
+                    .ok().map(|(_, element)| element.clone())
+            } else {
+                ax_actions::target(self.pid, action_point(action))
+            };
+            if target.as_ref().is_none_or(|e| !e.has_keyboard_focus(self.pid)) {
+                *self.fallback_reason.lock().unwrap() = Some("background_keyboard_target_not_focused".into());
+                return false;
+            }
+            *self.keyboard_target.lock().unwrap() = target;
+        }
         self.fallback_reason
             .lock()
             .unwrap()
@@ -601,6 +623,10 @@ impl Session {
             session.guard.delivering.store(false, Ordering::SeqCst);
         }))
     }
+    fn keyboard_target_matches(&self) -> bool {
+        self.keyboard_target.lock().unwrap().as_ref()
+            .is_none_or(|element| element.has_keyboard_focus(self.pid))
+    }
     fn end_delivery(&self, settle: bool) {
         let scope = self.delivery.lock().unwrap().take();
         if let Some(scope) = scope {
@@ -636,6 +662,7 @@ impl Session {
         Ok(())
     }
     pub fn end_foreground(&self) {
+        *self.keyboard_target.lock().unwrap() = None;
         if self.foreground.swap(false, Ordering::SeqCst) {
             self.guard.restore();
         }

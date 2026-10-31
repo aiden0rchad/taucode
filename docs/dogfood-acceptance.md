@@ -995,7 +995,8 @@ left the captured window. Independent inspection confirmed Undo and Find were
 both disabled. The marker was removed through the fixture's editable AX value
 only after confirming it was the sole difference from the baseline; a fresh AX
 read confirmed the original contents. The file on disk was not saved or changed.
-A normal user-click baseline comparison is pending.
+A normal user click subsequently re-enabled Find, Undo and Select All. Native
+diagnostics then reported TextEdit frontmost, so this is not a background pass.
 
 120 native Computer Use tests, typecheck, cargo check and strict signature
 verification passed for this diagnostic build. Logs:
@@ -1007,3 +1008,42 @@ then + 75 = 325. Independent AX observations confirmed all three checkpoints
 (the intermediate results while the following operator was being entered) and
 final 325. No action errors or focus restorations were recorded. TextEdit's
 combined workflow and disabled-command recovery remain incomplete.
+
+### Exact-field keyboard delivery
+
+Run `b632ba5c-c9cd-48f3-b3c8-1f86c71cd329` inserted a disposable marker,
+successfully undid it and opened Find. Its targeted Find-field type action
+(`overwrite:true, enter:true`) then replaced the document body through
+`pixel-skylight`. AX focus still pointed at the document, not the selected Find
+field. The agent stopped without saving. Independent AX inspection confirmed
+the wrong-field mutation; the fixture was restored from the baseline and a fresh
+full-text read verified the restoration. No disk save was performed.
+
+Keyboard fallback now binds the exact selected/hit-tested field and compares it
+with AXFocusedUIElement before delivery and before each key/text event. Missing,
+unreadable or mismatched focus refuses preflight before clicking, selecting all,
+typing or pressing Enter. Later focus changes stop delivery without claiming
+that earlier input was never sent. Direct AX field writes remain available.
+
+Signed-build run `85e7aed9-9611-421f-9571-4816ca4b77b3` repeated the targeted
+Find overwrite+Enter action while AX focus remained on the document. Preflight
+refused it with `background_keyboard_target_not_focused`, without dispatch.
+Independent full-text AX comparison confirmed the document matched its baseline;
+Find retained `Line 100` rather than the attempted `Line 099`. No retry occurred.
+
+Positive run `0992816a-4a64-42bd-82d7-f2390a181f79` used the same selected
+Find field with `enter:false`. Direct `ax-element` delivery changed Find to
+`Line 099`; independent full-document AX comparison still matched the baseline.
+Both checks used GPT 6.1 Sol (Account 2), Low, with Full access and foreground
+fallback off.
+
+Follow-up `29e6fa62-c9a2-4ed3-b4f2-e65e02718d17` invoked Find Next once via
+the bound AX button. macOS returned `ax_press_failed(-25204)` and the run stopped
+without retry. Independent inspection showed `Line 099` selected and the viewport
+moved to lines 086 onward; the action did take effect. Full document text still
+matched baseline. Done/top/bottom checks were not executed. Reconciling uncertain
+AX action completion without replay remains open alongside minimize/restore
+menu recovery.
+
+121 native Computer Use tests, typecheck, cargo check, signed rebuild and strict
+signature verification passed. Logs: `/tmp/taucode-field-focus-{tests,types,check,build}.log`.

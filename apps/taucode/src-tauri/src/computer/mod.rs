@@ -609,7 +609,7 @@ impl runner::Environment for Live {
                             return Err("AX action completion unknown after timeout; background fallback unavailable".into());
                         }
                         _ if s.fallback_reason.lock().unwrap().as_deref().is_some_and(|r| r.starts_with("background_keyboard_")) => {
-                            return Err(format!("{}Background keyboard delivery requires activation or lost its target focus; no input dispatched", runner::RECOVERABLE));
+                            return Err(format!("{}Background keyboard target is not focused or its focus could not be confirmed; no input dispatched", runner::RECOVERABLE));
                         }
                         _ => runner::Preparation::NeedsForeground,
                     },

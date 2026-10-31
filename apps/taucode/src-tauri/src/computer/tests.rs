@@ -1811,6 +1811,29 @@ async fn grounded_typing_rechecks_selected_metadata_instead_of_focus() {
 }
 
 #[tokio::test]
+async fn unfocused_grounded_overwrite_and_enter_dispatches_no_input() {
+    let mut env = fake(vec![
+        json!({"kind":"type","text":"Line 100","overwrite":true,"enter":true,"snapshot_id":1,"element_index":0}),
+    ]);
+    env.policy_evidence.role = "AXTextField".into();
+    env.policy_evidence.label = "Find".into();
+    env.typing_focus_changes = true;
+    env.prepare_error = Some(format!(
+        "{}Background keyboard target is not focused; no input dispatched",
+        runner::RECOVERABLE
+    ));
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let s = settings();
+    let result = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
+    assert_eq!(result.unwrap_err(), "No fake action");
+    assert!(input.0.lock().unwrap().is_empty(), "No click, select-all, text, or Enter may escape preflight");
+    assert!(env.steps.iter().any(|step| step["recovered"] == true && step["error"].as_str().is_some_and(|e| e.contains("keyboard target is not focused"))), "{:?}", env.steps);
+    assert_eq!(env.instructions.len(), 2, "Do not replay the rejected typing action");
+}
+
+#[tokio::test]
 async fn grounded_secure_and_sensitive_fields_still_require_confirmation() {
     for secure in [false, true] {
         let mut env = fake(vec![
