@@ -135,12 +135,13 @@ def test_each_step_verifies_previous_action_without_a_second_reflection_request(
     server.dispatch('configure', {'planner': config, 'grounding': config, 'platform': 'darwin'})
     buf = io.BytesIO(); Image.new('RGB', (4, 4)).save(buf, format='PNG')
     obs = {'screenshot': buf.getvalue()}
-    for instruction in ('test', 'Previous action was NOT executed: target moved.\n\ntest', 'Previous action was interrupted after input started: preserve partial text.\n\ntest'):
+    for instruction in ('test', 'Previous action was NOT executed: target moved.\n\ntest', 'Previous action was interrupted after input started: preserve partial text.\n\ntest', 'READ-ONLY VERIFICATION: AX timeout; inspect without replay.\n\ntest'):
         _, actions = server.agent.predict(instruction, obs)
         assert actions[0]['kind'] == 'wait'
-    assert len(calls) == 3
+    assert len(calls) == 4
     assert 'Check the fresh screenshot against the previous action' in calls[1]
     assert 'Detect repeated actions without progress' in calls[1]
     assert 'Previous action was NOT executed: target moved.' in calls[1]
     assert 'agent.wait(0.1)' in calls[1]
     assert 'Previous action was interrupted after input started: preserve partial text.' in calls[2]
+    assert 'READ-ONLY VERIFICATION: AX timeout; inspect without replay.' in calls[3]

@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 pub const STALE_OBSERVATION: &str = "Stale observation: ";
 pub const RECOVERABLE: &str = "Action not executed: ";
+pub const UNCERTAIN: &str = "Action outcome uncertain: ";
 
 #[derive(Default)]
 struct Recovery {
@@ -374,6 +375,7 @@ pub async fn run(
         let mut stale_retries = 0;
         let mut run_stale_retries = 0;
         let mut recovery = Recovery::default();
+        let mut verify_only: Option<String> = None;
         'steps: while step < settings.max_steps {
             macro_rules! recover {
                 ($reason:expr) => {{
@@ -421,6 +423,24 @@ pub async fn run(
                                 || error.starts_with(RECOVERABLE) =>
                         {
                             recover!(error)
+                        }
+                        Err(error) if error.starts_with(UNCERTAIN) => {
+                            control.release();
+                            env.end_action();
+                            control.checkpoint().await?;
+                            if let Some(mut entry) = pending.take() {
+                                entry[phase] = json!(phase_start.elapsed().as_millis() as u64);
+                                entry["error"] = json!(error);
+                                env.progress(entry)?;
+                            }
+                            recovery.previous = Some(format!(
+                                "READ-ONLY VERIFICATION: {error} The previous action may have executed. Inspect this fresh observation. Return done ONLY if the entire requested task is visibly complete; otherwise return fail explaining what remains or is uncertain. No click, edit, hotkey, retry, or other input is allowed.\n\n"
+                            ));
+                            verify_only = Some(error);
+                            step += 1;
+                            env.phase(Phase::Settling);
+                            control.until(env.settle()).await?;
+                            continue 'steps;
                         }
                         Err(error) => return Err(error),
                     }
@@ -507,6 +527,20 @@ pub async fn run(
             pending = Some(
                 json!({"step":step+1,"staleRetries":stale_retries,"thumbnail":frame.thumbnail,"action":action,"target":description,"reflection":prediction.reflection,"planText":prediction.plan_text,"grounding":prediction.grounding,"predictMs":predict_ms,"executeMs":0,"waitMs":0}),
             );
+            if let Some(reason) = &verify_only {
+                match &action {
+                    Action::Done { summary } => {
+                        pending.as_mut().unwrap()["verificationOnly"] = json!(true);
+                        env.progress(pending.take().unwrap())?;
+                        return Ok(json!({"summary":summary,"screenshot":frame.png}));
+                    }
+                    Action::Fail { reason: remaining } => return Err(format!("{reason}\nVerification: {remaining}")),
+                    _ => {
+                        pending.as_mut().unwrap()["recovered"] = json!(true);
+                        return Err(format!("{reason}\nRead-only verification rejected further input; no second action was sent."));
+                    }
+                }
+            }
             if let Action::Fail { reason } = &action {
                 if prediction
                     .grounding

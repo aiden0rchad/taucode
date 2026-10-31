@@ -604,6 +604,43 @@ fn fake(actions: Vec<Value>) -> Fake {
 }
 
 #[tokio::test]
+async fn uncertain_ax_completion_observes_once_without_replaying_input() {
+    let click = json!({"kind":"click","x":100,"y":100,"button":"left","clicks":1,"hold_keys":[]});
+    for next in [
+        json!({"kind":"done","summary":"Find visibly closed"}),
+        json!({"kind":"fail","reason":"Find is still visible"}),
+        click.clone(),
+        json!({"kind":"type","text":"must not send","overwrite":true,"enter":true}),
+    ] {
+        let succeeds = next["kind"] == "done";
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let mut env = fake(vec![click.clone(), next]);
+        env.prepare_error = Some(format!("{}ax_press_failed(-25204)", runner::UNCERTAIN));
+        // Simulate a dispatched AX mutation; end_action must restore focus before observation.
+        env.activate_during_action = true;
+        let s = settings();
+        let result = runner::run(&mut env, &control, &s, &s.app_ids(), "Close Find", Instant::now()).await;
+        assert_eq!(result.is_ok(), succeeds, "{result:?}");
+        assert_eq!(env.captures, 2);
+        assert_eq!(env.restorations.get(), 1); // No second prepare/AX call, even for Done.
+        assert_eq!(env.native_front.get(), 10);
+        assert_eq!(env.approved, 0);
+        assert!(input.0.lock().unwrap().is_empty());
+        assert_ne!(env.steps[0]["recovered"], true);
+        assert!(env.instructions[1].starts_with("READ-ONLY VERIFICATION:"));
+        assert!(!env.instructions[1].contains("NOT executed"));
+        if succeeds {
+            assert_eq!(env.steps[1]["verificationOnly"], true);
+            assert_eq!(result.unwrap()["screenshot"], "fake-png");
+        } else {
+            assert!(result.unwrap_err().starts_with(runner::UNCERTAIN));
+        }
+    }
+}
+
+#[tokio::test]
 async fn recoverable_errors_have_caps_feedback_and_no_input() {
     let denied = json!({"kind":"switch_app","app":"com.apple.Terminal"});
     let done = json!({"kind":"done","summary":"done"});

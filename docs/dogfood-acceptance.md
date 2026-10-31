@@ -1086,3 +1086,35 @@ state, not arbitrary apps or every source of disabled menu commands.
 122 native Computer Use tests, cargo check, typecheck, signed rebuild and strict
 signature verification passed. Logs: `/tmp/taucode-window-primer-{tests,check,types,build}.log`.
 The ambiguous AX-completion issue remains separate.
+
+### Read-only verification after ambiguous AX completion
+
+The recovered document exposed a separate false failure: AXPress on Find's Done
+button closed Find but returned -25204. A new timeout path releases input and
+restores action state, then captures fresh evidence within the existing run/time
+limits. The planner can report the entire task complete or explain what remains;
+the host rejects every input action during this verification. The original step
+retains its uncertainty error and is never labelled “not executed.” No automatic
+retry or pixel fallback is introduced. Intermediate incomplete tasks still stop
+for review rather than blindly continuing after an ambiguous mutation.
+
+123 native Computer Use tests passed, including completion, failure, rejected
+second clicks and overwriting typing; one AX attempt, two captures, no replay,
+focus cleanup before verification. Signed build and strict verification passed.
+Logs: `/tmp/taucode-ax-verification-{tests,build}.log`.
+
+Initial live timeout verification `6bb75ec2-20df-4305-94ab-e5b2613235e6`
+recorded one Done click with -25204, followed by `verificationOnly:true` and a
+fresh screenshot confirming Find closed. Independent AX confirmed closed Find
+and unchanged complete document. Zero focus restorations and no repeated input.
+The planner incorrectly claimed no timeout was supplied: its per-step message
+forwarded the two older recovery prefixes but omitted READ-ONLY VERIFICATION.
+Added that prefix to the existing forwarding path and extended the real planner
+message regression; all 132 Python tests passed.
+
+Final signed-build retest `be0c3f29-87eb-4977-906f-2c2a9e16541f` passed:
+Command-F opened Find, one Done AXPress returned -25204, and a fresh read-only
+verification confirmed Find closed. The planner now explicitly acknowledged the
+host timeout. Independent AX inspection confirmed closed Find and unchanged full
+document; every step recorded zero focus restorations. No repeated input.
+Build/signature log: `/tmp/taucode-ax-verification-final-build.log`.

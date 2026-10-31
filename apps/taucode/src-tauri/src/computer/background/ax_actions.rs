@@ -160,6 +160,8 @@ impl Element {
         let status = self.apply("AXPress", None);
         if status == 0 {
             Ok(())
+        } else if status == -25204 {
+            action_result("AXPress", status, &mut None).map(|_| ())
         } else if matches!(status, -25205 | -25206) {
             Err(format!(
                 "{}AXPress menu unsupported ({status}); no pixel fallback",
@@ -997,7 +999,7 @@ fn action_result(name: &str, status: i32, reason: &mut Option<String>) -> Result
     let error = format!("{operation}_failed({status})");
     *reason = Some(error.clone());
     if status == -25204 {
-        return Err(format!("{error}: macOS could not confirm the action. Its effect is uncertain; inspect the app before continuing. No pixel retry was sent."));
+        return Err(format!("{}{error}: macOS could not confirm the action. Its effect is uncertain; inspect the app before continuing. No pixel retry was sent.", super::super::runner::UNCERTAIN));
     }
     action_status(status).map_err(|_| error)
 }
@@ -1664,7 +1666,8 @@ mod element_tests {
                 assert_eq!(result, Ok(false));
             } else if status == -25204 {
                 let error = result.unwrap_err();
-                assert!(error.starts_with(&expected));
+                assert!(error.starts_with(super::super::super::runner::UNCERTAIN));
+                assert!(error.contains(&expected));
                 assert!(error.contains("No pixel retry was sent"));
             } else {
                 assert_eq!(result, Err(expected));
