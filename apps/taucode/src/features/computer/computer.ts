@@ -6,7 +6,9 @@ export type ComputerRun = { id?: string; stored?: boolean; running?: boolean; pa
 export function parseComputerRun(output?: string): ComputerRun | null {
   if (!output?.includes('computerRun')) return null;
   try {
-    const value = JSON.parse(output);
+    const value = JSON.parse(output.trim().replace(/^Error:\s*/, ""));
+    // Failed OMP MCP calls preserve the tool's JSON inside error.message.
+    if (typeof value?.message === "string") return parseComputerRun(value.message);
     const run = value.computerRun;
     const stored = run?.stored === true && typeof run.id === "string" && run.id.length > 0;
     if (run && Array.isArray(run.steps) && run.steps.every((s: ComputerStep) => s && typeof s.step === "number" && (typeof s.thumbnail === "string" || (stored && s.thumbnail === undefined)) && s.action && typeof s.action === "object" && !Array.isArray(s.action) && typeof s.reflection === "string")) return run;

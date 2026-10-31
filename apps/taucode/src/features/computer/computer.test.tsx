@@ -7,6 +7,7 @@ import { defaultComputerSettings, parseComputerRun } from "./computer";
 import { SettingsComputerSection } from "@settings/components/sections/SettingsComputerSection";
 import { computerRequest, computerRequestPermissions } from "@services/tauri";
 import type { AppSettings } from "@/types";
+import { buildConversationItem } from "@/utils/threadItems.conversion";
 vi.mock("@services/tauri", () => ({ engineRuntime: async () => [{ engine: "computer", state: "ready", message: "Ready" }], computerRequest: vi.fn(), computerRequestPermissions: vi.fn() }));
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const step = { step: 1, thumbnail: "aGVsbG8=", action: { kind: "click" }, reflection: "Found button" };
@@ -202,6 +203,18 @@ describe("computer use", () => {
     for (const invalid of [{ ...compact, stored: false }, { ...compact, id: "" }, { ...compact, steps: [null] }]) {
       expect(parseComputerRun(JSON.stringify({ computerRun: invalid }))).toBeNull();
     }
+  });
+  it("recovers structured output from a failed OMP MCP call", async () => {
+    const run = { id: "failed-omp", stored: true, steps: [], instruction: "Append once", error: "Focus changed" };
+    const item = buildConversationItem({ id: "call", type: "mcpToolCall", server: "Computer Use", tool: "computer_run_task", status: "failed", result: null, error: { message: `Error: ${JSON.stringify({ computerRun: run })}` } });
+    expect(item?.kind).toBe("tool");
+    if (item?.kind !== "tool") throw new Error("Expected tool item");
+    const parsed = parseComputerRun(item.output);
+    expect(parsed).toEqual(run);
+    vi.mocked(computerRequest).mockResolvedValue(run);
+    render(<ComputerRunItem run={parsed!} />);
+    expect(await screen.findByRole("button", { name: "Copy continuation request" })).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe("Focus changed");
   });
   it("shows provider failures from a stored run in the thread item", async () => {
     const error = "Provider error: Model unavailable";

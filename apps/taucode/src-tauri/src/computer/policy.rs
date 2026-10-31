@@ -195,11 +195,15 @@ impl Prediction {
             Action::HoldAndPress { hold, press } => vec![hold, press],
             _ => vec![],
         };
-        if key_lists
+        if key_lists.iter().any(|list| list.len() > 16) {
+            return Err("Excessive key count: use at most 16 keys".into());
+        }
+        if let Some(key) = key_lists
             .iter()
-            .any(|list| list.len() > 16 || list.iter().any(|k| keycode(k).is_none()))
+            .flat_map(|list| list.iter())
+            .find(|k| keycode(k).is_none())
         {
-            return Err("Unknown key or excessive key count".into());
+            return Err(format!("Unknown key {:?}. Use named keys such as command, shift, control, option, up, down, left, right, enter, escape, home, end, pageup, or pagedown", key.chars().take(64).collect::<String>()));
         }
         match &action {
             Action::Click { button, clicks, .. }

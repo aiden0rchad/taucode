@@ -622,3 +622,65 @@ do not treat the earlier Find success as proof of append or the key-release fix.
 Separate follow-ups observed, not diagnosed in this batch: startup briefly restored
 the wrong thread after creating a task; an internal metadata-generation prompt
 appeared as a sidebar conversation. These need focused reproduction before changes.
+
+### Follow-up verification after unlock
+
+The final build executed Escape without the prior key-release error in
+`26dc9341-d132-49e1-ba5f-ed90f7b326e4`, but that run did not open Find (its native
+menu item was disabled), so it does not independently prove dismissal of Find.
+The same run exposed an unsupported planner key name. Structural action validation
+now feeds an explicit rejection back to the planner before input, using the existing
+three-consecutive/six-total recovery caps. Unknown-key errors name the bounded key
+and suggest supported names. A regression proves correction to `down` sends only
+that valid keystroke, while repeated invalid proposals stop without any input.
+
+A subsequent run `efc0caf8-5a59-4dd3-ab90-15e7b1d013cf` moved to the document end,
+then cancelled a scroll because its AX policy target changed before input. This
+fail-closed check remains intact; the remaining task was continued from a fresh
+observation rather than replayed.
+
+Background append passed in `7385679d-7169-4fe1-b8e6-f9f0f27d92c3`: clicked the
+empty line after Line 120, navigated to the end, and inserted `BACKGROUND_QA_OK`
+with `overwrite=false`, `enter=false` through `ax-hit-test`. Independent TextEdit
+AX inspection found exactly 120 sample lines and exactly one marker at document end.
+The complete preceding text matched the fixture on disk (including the initial I).
+No Save command was sent; TextEdit can autosave independently. Concurrent draft
+`Concurrent append isolation 9638 remains in taucode.` stayed in taucode and was
+absent from TextEdit. Screenshot: `taucode-textedit-background-append.png` in this
+thread's visualization directory.
+
+Live history exposed a second result-format mismatch: failed OMP MCP calls store
+structured JSON prefixed with `Error:` inside `error.message`. The computer-result
+parser now unwraps both layers, with a regression starting at actual
+`buildConversationItem` conversion. The exact-prefix regression failed before the
+fix; the corrected parser also accepted all ten real saved run results from this
+session.
+Validation after these follow-ups: 1,875 frontend tests / 226 files, 115 targeted
+Rust tests, TypeScript, changed-file ESLint, and `cargo check` passed. Python remains
+unchanged since its 132-test pass. Build log: `/tmp/taucode-recovery-final-build.log`.
+The follow-up build's recovery-card verification is recorded below.
+
+
+### Final live recovery verification
+
+The signed build from `/tmp/taucode-recovery-prefix-build.log` passed strict
+signature verification and displayed the actual failed run
+`14202901-7772-4e11-b123-d4ac8f402c1d` as a structured card. Its concise error was
+visible, Error details was collapsed, and Copy continuation request reported success.
+Pasting into the empty test composer confirmed fresh-observation instructions,
+preservation of completed work, explicit uncertain-action status, and unchanged app
+permissions/approval policy. It did not auto-send; the test draft was cleared and
+Send returned to disabled. No action was replayed. Screenshot:
+`taucode-computer-recovery-verified.png` in this thread's visualization directory.
+
+Final acceptance for this batch: background Calculator arithmetic, TextEdit typing,
+scrolling, menu navigation, About dialog, and document-window switching have live
+evidence above. Progress phases were observed live; lower prediction latency is
+supported by the single matched Calculator comparison. Recovery UI is now verified
+against real persisted failures, with bounded non-executed-action recovery and
+partial-input safeguards covered by regressions. Full frontend rerun: 1,875 tests
+passed (`/tmp/taucode-error-prefix-suite.log`); TypeScript and changed-file ESLint
+passed. Native checks remain the 115-test pass and `cargo check` for the exact native
+source bundled here. This is scoped acceptance, not a claim of general desktop-app
+parity: disabled background menus and transient policy-target changes can still stop
+individual routes safely, as the failed live runs document.

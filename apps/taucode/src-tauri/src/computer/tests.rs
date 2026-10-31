@@ -664,6 +664,47 @@ async fn recoverable_vs_fatal_preparation_errors() {
 }
 
 #[tokio::test]
+async fn invalid_keys_replan_with_feedback_without_input_and_stop_at_the_retry_cap() {
+    let invalid = json!({"kind":"hotkey","keys":["arrow_down"]});
+    for corrects in [true, false] {
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let mut env = fake(if corrects {
+            vec![
+                invalid.clone(),
+                json!({"kind":"hotkey","keys":["down"]}),
+                json!({"kind":"done","summary":"Corrected"}),
+            ]
+        } else {
+            vec![invalid.clone(); 4]
+        });
+        let s = settings();
+        let result =
+            runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
+        assert_eq!(result.is_ok(), corrects);
+        assert!(env.instructions[1].starts_with("Previous action was NOT executed:"));
+        assert!(env.instructions[1].contains(r#"Unknown key "arrow_down""#));
+        assert!(env.instructions[1].contains("down"));
+        assert_eq!(
+            env.steps.iter().filter(|s| s["recovered"] == true).count(),
+            if corrects { 1 } else { 3 }
+        );
+        assert_eq!(
+            *input.0.lock().unwrap(),
+            if corrects {
+                vec![Event::Key(125, true), Event::Key(125, false)]
+            } else {
+                vec![]
+            }
+        );
+        if !corrects {
+            assert_eq!(env.predictions.len(), 1);
+        }
+    }
+}
+
+#[tokio::test]
 async fn unparseable_grounding_recovers_but_provider_errors_are_fatal() {
     for (result, recovers) in [("unparseable", true), ("provider_error", false)] {
         let mut env = fake(vec![

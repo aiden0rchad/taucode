@@ -486,9 +486,15 @@ pub async fn run(
             observation!(verify_observation());
             pending.as_mut().unwrap()["grounding"] = json!(prediction.grounding);
             let predict_ms = phase_start.elapsed().as_millis() as u64;
-            let mut action = prediction
-                .validated(frame.display)
-                .map_err(|e| env.planner_error(e))?;
+            let mut action = match prediction.validated(frame.display) {
+                Ok(action) => action,
+                Err(error) => {
+                    // Invalid proposals have not reached input or approval.
+                    // Replan with explicit feedback under the existing retry caps.
+                    pending.as_mut().unwrap()["planText"] = json!(prediction.plan_text);
+                    recover!(format!("Invalid proposed action: {error}"));
+                }
+            };
             observation!(env.verify_target());
             let (element_label, secure) = observation!(env.ground_target(&prediction, &mut action));
             let description = format!(
