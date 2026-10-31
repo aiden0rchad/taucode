@@ -775,9 +775,14 @@ document minimized. The disposable document retained its original contents.
 CannotComplete now stops without another input: macOS has not established that
 the first action did nothing. Only unsupported operations (`-25205`, `-25206`)
 retain the event fallback. Regression coverage verifies that ambiguous native
-actions never enter the event path. Background Find remains limited by TextEdit’s
-disabled menu; taucode does not force the disabled command or take foreground
-control without approval.
+actions never enter the event path. Background Find is state-dependent: taucode
+does not force a disabled command or take foreground control without approval.
+After an independent Find/close check refreshed TextEdit's state, native run
+`7e8fda82-2e62-406a-9c5e-76b4d85b34b1` opened Find once through `ax-menu`, closed
+it with Escape through `pixel-skylight`, and finished without errors or recorded
+focus restorations. The fixture matched the saved baseline byte-for-byte. This
+proves the ready-state path; recovery from an initially disabled menu remains
+unverified.
 
 Recovery cards distinguish blocked tasks, interrupted input, and completion.
 Rejected steps say “Not executed”; uncertain input says “Check result”. The
@@ -792,10 +797,31 @@ independent AX inspection confirmed 48 and the native transcript displayed
 “Computer Use completed”. TextEdit run `96d44bd0-9936-4b46-a125-6157f7c4a526`
 rejected Command-F before input and stopped without retries or alternate controls.
 The fixture remains byte-for-byte equal to the saved baseline. Automatic titles
-were briefly enabled for this test, then returned to their original off setting.
-No new metadata conversation appeared; a generated title was not observed, so
-live title generation itself is not claimed as verified. The engine routing,
-model retention, and success/error cleanup have native regression coverage.
+now recognize the first optimistic user message and its prompt-derived fallback
+name. Older messages, nonmatching pending messages, existing custom titles, and
+replayed confirmations do not trigger another generation. Manual renames made
+while generation is in flight still win.
+
+Signed-build verification with GPT 6.1 Sol (Account 2), Low and Full access
+generated “Explain Autumn Leaf Color Changes” from a first-message question
+about autumn leaves. The metadata request completed in 4,008 ms; the workspace
+gained only the requested conversation, with no internal helper in the sidebar.
+Automatic titles were restored to their original off setting. The engine routing,
+model retention, and success/error cleanup also have native regression coverage.
+Screenshot: `taucode-automatic-title.png` in this chat's visualization directory.
+The restart check exposed OMP's leading title-slot record: the old reader expected
+the session header on line one and silently omitted renamed conversations from
+history. Reading and forking now normalize that metadata in memory, preserve the
+session ID and message tree, and restore the saved title without rewriting the
+source. Regression coverage includes listing, reading, forking, rewind/undo, and
+malformed prefixes. The frontend title fix passed 1,886 tests, typecheck and
+targeted ESLint. Logs: `/tmp/taucode-title-{suite,typecheck,lint,build,rust,check}.log`.
+The final signed build restored the existing conversation and original answer
+without rewriting its transcript (SHA256 unchanged before resuming). A follow-up
+on GPT 6.1 Sol (Account 2), Low returned `TITLE_RESUME_OK`, retaining the title.
+574 native tests passed (two ignored), along with cargo check and strict signature
+verification. Screenshot: `taucode-title-restored.png`; final build log:
+`/tmp/taucode-title-final-build.log`.
 
 573 native tests passed (two ignored); typecheck, targeted ESLint and cargo check
 passed. The final frontend suite passed 1,882 tests. Both signed builds passed

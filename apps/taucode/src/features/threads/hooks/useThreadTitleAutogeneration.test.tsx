@@ -56,6 +56,7 @@ describe("useThreadTitleAutogeneration", () => {
       result,
       getCustomName,
       renameThread,
+      itemsByThreadRef,
       setCustomName: (value: string) => {
         customName = value;
       },
@@ -84,6 +85,52 @@ describe("useThreadTitleAutogeneration", () => {
       await result.current.onUserMessageCreated("ws-1", "thread-1", "Hello there");
     });
 
+    expect(generateRunMetadata).not.toHaveBeenCalled();
+  });
+
+  it("replaces the first optimistic prompt title once the server confirms it", async () => {
+    const prompt = "[image] $review Explain how a rainbow forms after the rain";
+    const optimistic: ConversationItem = {
+      id: "optimistic-user-1", kind: "message", role: "user", text: prompt,
+    };
+    vi.mocked(generateRunMetadata).mockResolvedValue({
+      title: "How rainbows form", worktreeName: "rainbows",
+    });
+    const { result, renameThread, itemsByThreadRef, setCustomName } = setup({
+      existingItems: [optimistic],
+      threadName: "Explain how a rainbow forms after the …",
+    });
+
+    await act(async () => {
+      await result.current.onUserMessageCreated("ws-1", "thread-1", prompt);
+    });
+
+    expect(generateRunMetadata).toHaveBeenCalledWith(
+      "ws-1", "Explain how a rainbow forms after the rain",
+    );
+    expect(renameThread).toHaveBeenCalledWith("ws-1", "thread-1", "How rainbows form");
+    // Replayed confirmations must also be skipped without a saved custom name.
+    setCustomName("");
+    itemsByThreadRef.current["thread-1"] = [{ ...optimistic, id: "confirmed-1" }];
+    await act(async () => {
+      await result.current.onUserMessageCreated("ws-1", "thread-1", prompt);
+    });
+    expect(generateRunMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { name: "different pending message", text: "Another prompt", threadName: "New Agent", older: false },
+    { name: "existing title", text: "Hello there", threadName: "Saved title", older: false },
+    { name: "follow-up message", text: "Hello there", threadName: "New Agent", older: true },
+  ])("does not generate for $name", async ({ text, threadName, older }) => {
+    const existingItems: ConversationItem[] = [
+      { id: "optimistic-user-1", kind: "message", role: "user", text },
+    ];
+    if (older) existingItems.unshift({ id: "user-1", kind: "message", role: "user", text });
+    const { result } = setup({ existingItems, threadName });
+    await act(async () => {
+      await result.current.onUserMessageCreated("ws-1", "thread-1", "Hello there");
+    });
     expect(generateRunMetadata).not.toHaveBeenCalled();
   });
 

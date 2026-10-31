@@ -314,6 +314,55 @@ fn recorded_history_equals_live_items_and_turns() {
     normalize(&mut history.turns);
     assert_eq!(history.turns, turns);
 }
+
+#[tokio::test]
+async fn omp_title_slot_survives_listing_read_fork_and_rewind() {
+    let dir = temp();
+    let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_, _| {}));
+    engine.profile.definition = crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), "omp").unwrap().0;
+    let sessions = engine.directory("workspace").unwrap();
+    std::fs::create_dir_all(&sessions).unwrap();
+    let file = sessions.join("parent.jsonl");
+    let rows = [
+        json!({"type":"title","v":1,"title":"Current title","source":"user","updatedAt":"2026-10-30T00:00:00Z","pad":" "}),
+        json!({"type":"session","version":3,"id":"parent","engine":"omp","cwd":dir,"title":"Older title"}),
+        json!({"type":"message","id":"u1","parentId":null,"message":{"role":"user","timestamp":1,"content":"first"}}),
+        json!({"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","timestamp":2,"content":[{"type":"text","text":"answer"}],"stopReason":"stop"}}),
+        json!({"type":"title_change","id":"t1","parentId":"a1","title":"Older title","source":"user"}),
+    ];
+    let source = rows.iter().map(|v| format!("{v}\n")).collect::<String>();
+    std::fs::write(&file, &source).unwrap();
+    let listed = engine.scan("workspace").await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["id"], "parent");
+    assert_eq!(listed[0]["name"], "Current title");
+    let (thread, history) = read_session(&file, &[]).unwrap();
+    assert_eq!(thread["preview"], "first");
+    assert_eq!(history.turns.len(), 1);
+    assert_eq!(history.turns[0]["items"][1]["text"], "answer");
+    let child = sessions.join("child.jsonl");
+    fork_session(&file, &child, "child", &json!({"threadId":"parent"}), Some("parent:message:2")).unwrap();
+    let (forked, copied) = read_session(&child, &[]).unwrap();
+    assert_eq!(forked["id"], "child");
+    assert_eq!(forked["name"], "Current title");
+    assert_eq!(forked["forkedFromId"], "parent");
+    assert_eq!(copied.turns.len(), 1);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), source);
+    let leaf = rewind_session(&child, "child", Some("child:user:1"), None).unwrap();
+    assert!(read_session(&child, &[]).unwrap().1.turns.is_empty());
+    rewind_session(&child, "child", None, Some(leaf)).unwrap();
+    assert_eq!(read_session(&child, &[]).unwrap().1.turns.len(), 1);
+    assert!(engine.sessions.lock().await.values().all(|s| s.process.is_none()));
+
+    for invalid in [json!({"type":"title","v":2}), json!({"type":"message","id":"wrong"})] {
+        std::fs::write(&child, format!("{invalid}\n{}\n", rows[1])).unwrap();
+        assert!(read_session(&child, &[]).is_err());
+    }
+    std::fs::write(&child, format!("{}\n", rows[0])).unwrap();
+    assert!(read_session(&child, &[]).is_err(), "a title slot cannot replace the session header");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[test]
 fn extension_ui_round_trip_and_login_rejection() {
     let request = fixture("rpc_session.jsonl")

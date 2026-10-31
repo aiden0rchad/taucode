@@ -1178,15 +1178,7 @@ fn thread_response(thread: Value, resume: bool, mode: &str) -> Value {
     response
 }
 fn fork_session(source: &Path, target: &Path, id: &str, side_of: &Value, at_item: Option<&str>) -> Result<(), String> {
-    let bytes = std::fs::read_to_string(source).map_err(|e|e.to_string())?;
-    let mut entries = Vec::<Value>::new();
-    for line in bytes.split_inclusive('\n').filter(|l| !l.trim().is_empty()) {
-        match serde_json::from_str(line) {
-            Ok(entry) => entries.push(entry),
-            Err(_) if !line.ends_with('\n') => break,
-            Err(e) => return Err(e.to_string()),
-        }
-    }
+    let mut entries = read_session_entries(source)?;
     let parent = entries.first().and_then(|e|e["id"].as_str()).ok_or("Missing session header")?.to_owned();
     if let Some(item) = at_item {
         let mut count = 0;
@@ -1212,7 +1204,7 @@ fn fork_session(source: &Path, target: &Path, id: &str, side_of: &Value, at_item
     Ok(())
 }
 
-fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Translator), String> {
+fn read_session_entries(file: &Path) -> Result<Vec<Value>, String> {
     let bytes = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
     let mut entries = vec![];
     for line in bytes.split_inclusive('\n').filter(|s| !s.trim().is_empty()) {
@@ -1222,13 +1214,37 @@ fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Trans
             Err(e) => return Err(format!("Invalid pi session: {e}")),
         }
     }
+    // OMP prepends a fixed-width title slot when it rewrites a session. It is
+    // metadata, not the session header or a node in the conversation tree.
+    let title = if entries.first().is_some_and(|v| v["type"] == "title") {
+        let slot = entries.remove(0);
+        if slot["v"] != 1 || !slot["title"].is_string()
+            || !slot["updatedAt"].is_string() || !slot["pad"].is_string()
+            || slot.get("source").is_some_and(|source| !matches!(source.as_str(), Some("auto" | "user"))) {
+            return Err("Invalid OMP title slot".into());
+        }
+        Some(slot)
+    } else { None };
     let header = entries
-        .first()
+        .first_mut()
         .filter(|v| v["type"] == "session")
         .ok_or("Missing pi session header")?;
+    if let Some(slot) = title {
+        header["title"] = slot["title"].clone();
+        header["titleSource"] = slot["source"].clone();
+    }
+    Ok(entries)
+}
+
+fn read_session(file: &Path, registry: &[ProviderEntry]) -> Result<(Value, Translator), String> {
+    let entries = read_session_entries(file)?;
+    let header = &entries[0];
     let id = header["id"].as_str().ok_or("Missing pi session ID")?;
     let cwd = header["cwd"].as_str().ok_or("Missing pi cwd")?;
     let mut thread = thread_value(id, cwd, file);
+    if let Some(title) = header["title"].as_str().filter(|title| !title.is_empty()) {
+        thread["name"] = json!(title);
+    }
     for key in ["engine", "modelProvider", "model", "forkedFromId"] {
         if !header[key].is_null() { thread[key] = header[key].clone(); }
     }
