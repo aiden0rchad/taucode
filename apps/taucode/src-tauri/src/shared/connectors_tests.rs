@@ -145,6 +145,19 @@ fn browser_delivery_and_per_tool_approval_for_both_engines() {
     }
 }
 #[test]
+fn computer_deadline_outlasts_the_native_run_without_changing_other_servers() {
+    let mut app = AppSettings::default();
+    app.computer.enabled = true;
+    let mut entries = effective(&app, &WorkspaceSettings::default(), None).unwrap();
+    configure_browser(&mut entries, Path::new("/app/data")).unwrap();
+    let out = delivery(&entries, &Keys::default()).unwrap();
+    assert_eq!(out.pi["mcpServers"]["taucode-computer"]["timeout"], 3660);
+    assert!(out.pi["mcpServers"]["taucode-browser"].get("timeout").is_none());
+    let config = out.codex.iter().find(|s| s.starts_with("mcp_servers.taucode-computer=")).unwrap();
+    assert!(config.contains("tool_timeout_sec = 3660"));
+}
+
+#[test]
 fn credential_validation_and_names_do_not_alias() {
     assert_ne!(env_name("a-b", "X-Key"), env_name("a_b", "X_Key"));
     assert_ne!(env_name("a", "Key"), env_name("a", "KEY"));

@@ -12,6 +12,17 @@ impl EngineProfile {
     pub fn id(&self) -> &str { &self.definition.id }
     pub fn omp(&self) -> bool { self.id() == "omp" }
     pub fn custom(&self) -> bool { !self.definition.built_in }
+    pub fn mcp_config(&self, mut config: Value) -> Value {
+        // Pi's MCP timeout is seconds; OMP's identically named field is milliseconds.
+        if self.omp() {
+            for server in config["mcpServers"].as_object_mut().into_iter().flat_map(|s| s.values_mut()) {
+                if let Some(seconds) = server["timeout"].as_u64() {
+                    server["timeout"] = json!(seconds.saturating_mul(1000));
+                }
+            }
+        }
+        config
+    }
     pub fn prepare(&self, home: &Path, registry: &[ProviderEntry], features: &Features, env: &mut HashMap<String,String>) -> Result<(), String> {
         if let Some(key) = &self.definition.config_dir_env { env.insert(key.clone(), home.to_string_lossy().into()); }
         env.extend(self.definition.env.clone());

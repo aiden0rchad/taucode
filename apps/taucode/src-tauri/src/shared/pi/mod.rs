@@ -393,7 +393,7 @@ impl PiEngine {
                 }
             }
         }
-        config::write_json(&home.join("mcp.json"), &delivery.pi)?;
+        config::write_json(&home.join("mcp.json"), &self.profile.mcp_config(delivery.pi.clone()))?;
         if self.profile.omp() {
             let network = home.join("taucode/network.json");
             let mut origins: Vec<String> = serde_json::from_slice(&std::fs::read(&network).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;

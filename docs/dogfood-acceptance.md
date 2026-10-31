@@ -450,8 +450,24 @@ The live settings inspection found internal Computer Use disabled and unconfigur
 With explicit user approval, it is now configured for Calculator only, background
 mode, accessibility-element grounding, and GPT 6.1 Sol (Account 2) for both models.
 Foreground fallback remains off. These choices and runtime readiness survived a
-restart. Both macOS permission lists show an enabled taucode entry, but this build
-still reports Screen Recording and Accessibility not granted. Permission refresh
-is pending user action; a live agent calculation and Pause/Stop acceptance have
-not yet passed. This is distinct from the external computer-use tool used for
-earlier app dogfooding.
+restart. Both macOS permission lists initially showed an enabled taucode entry,
+but the current signed build's native checks returned false. Toggling the entries
+and adding the exact path without removing the old entries did not fix it.
+After user authentication, removing each stale taucode entry and adding the exact
+`taucode-m1w/.../bundle/macos/taucode.app`, followed by Quit & Reopen, made both
+native permission checks return true. Other app permissions were preserved.
+
+The first internal agent test exposed a separate OMP integration failure:
+`computer_run_task` timed out after 30000ms while the native run was executing
+Calculator steps. The run was stopped before retrying. Connector delivery now
+allows 3660 seconds (the maximum native wall limit plus result overhead), while
+the native runner retains the user's shorter wall/step limits. Pi and Codex use
+seconds; OMP's identically named timeout field uses milliseconds, so its profile
+converts the generated configuration. Other connectors retain their defaults.
+The deadline regression failed before the fix. All 110 computer-related Rust
+tests, TypeScript and `cargo check` pass. The signed debug rebuild and strict
+signature verification passed (`/tmp/taucode-computer-timeout-build.log`). A
+mock Unix-socket host verified the real MCP executable disconnects on numeric
+and string request cancellation, and on client EOF; no native input was involved.
+The corrected build's live Calculator/Resume acceptance is still pending because
+computer use reports the Mac locked at relaunch. Do not count this as a live pass.

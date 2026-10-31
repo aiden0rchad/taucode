@@ -1966,6 +1966,19 @@ async fn live_omp_streams_from_registry_stub() {
 }
 
 #[test]
+fn computer_mcp_deadline_uses_each_engines_units() {
+    let config = json!({"mcpServers":{"taucode-computer":{"timeout":3660},"taucode-browser":{"command":"host"}}});
+    for (engine, timeout) in [("pi", 3660), ("omp", 3_660_000)] {
+        let profile = profile::EngineProfile {
+            definition: crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), engine).unwrap().0,
+        };
+        let result = profile.mcp_config(config.clone());
+        assert_eq!(result["mcpServers"]["taucode-computer"]["timeout"], timeout);
+        assert_eq!(result["mcpServers"]["taucode-browser"], config["mcpServers"]["taucode-browser"]);
+    }
+}
+
+#[test]
 fn omp_models_are_yaml_compatible_and_do_not_contain_credentials() {
     let providers: Vec<ProviderEntry> = serde_json::from_value(json!([{"id":"test","name":"Test","kind":"openai-compatible","baseUrl":"http://localhost:9000/v1","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"stub","enabled":true}]}])).unwrap();
     let models = profile::omp_models(&providers);
