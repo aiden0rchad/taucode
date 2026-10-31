@@ -38,6 +38,6 @@ export function NativeSlot({ tabId, snapshot, ready, blocked, onError }: { tabId
   }, [tabId, ready, blocked, onError]);
   return <div ref={slot} className="browser-native-slot" data-native-hidden={hidden} aria-label="Native browser page">
     {snapshot && <img className="browser-native-snapshot" src={snapshot.startsWith("data:") ? snapshot : `data:image/png;base64,${snapshot}`} alt="Last page snapshot" />}
-    {!ready && <div className="browser-empty">Loading page…</div>}
+    {!ready && !blocked && <div className="browser-empty">Loading page…</div>}
   </div>;
 }

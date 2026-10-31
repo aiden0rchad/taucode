@@ -340,13 +340,26 @@ changed-file lint (one existing cleanup-ref warning) now pass. The debug app
 rebuilt, was signed with Apple Development, and passed strict codesign verification
 (`/tmp/taucode-native-handoff-build.log`). The temporary fixture server is stopped.
 
-Outstanding acceptance: the Mac locked again during native testing. Verify the
-native duplicate-tab fix, loading/error indicators, custom names and tab restoration
-across restart. The Code progress check conversation retains this pass's temporary
-tab-test entries (Preview, Tab 5 and New tab); close those owned test entries before
-starting a clean multi-tab run. Native host tabs ended when the idle app was stopped
-for rebuilding. Then
-build the small task-board project in `/Users/rolandleyco/taucode-dogfood-focus-board`
-using GPT 6.1 Sol (Account 2), Low, Full access, and inspect actual tool calls,
-approvals, previews, cancellation, follow-ups and owned-server cleanup. The folder
-is an empty Git repository; no project implementation has been generated yet.
+Native verification after rebuilding passed: nine new pages retained their correct
+URLs and titles without extra blank tabs. The numbered overflow menu selected the
+second of two pages named Preview. A delayed page showed Loading and Stop loading,
+then cleared both; an unavailable localhost port showed the connection error and
+Retry. Renaming the conversation to Code navigation verification and restarting
+preserved its custom name, all nine saved tabs in order, and the selected /two page.
+Evidence: `taucode-native-tabs-restored.png`. All owned fixture tabs were then
+closed, and the temporary server stopped.
+
+The failure check exposed contradictory Loading page text behind the error panel.
+NativeSlot now suppresses loading guidance while blocked by an error or overlay.
+A regression covers loading → failure → retry → loading; it failed before the fix.
+
+The isolated Focus Board build is now running inside taucode with GPT 6.1 Sol
+(Account 2), Low, Full access, in `/Users/rolandleyco/taucode-dogfood-focus-board`.
+The agent has begun creating files through real tools. Remaining acceptance:
+inspect the completed project, preview interactions, cancellation/follow-up and
+owned-server cleanup; rebuild/sign and verify the loading-error polish live.
+
+Loading/error polish validation: all 1,862 frontend tests (226 files), TypeScript,
+changed-file ESLint and diff whitespace checks passed. Logs:
+`/tmp/taucode-loading-error-tests.log`, `/tmp/taucode-loading-error-typecheck.log`,
+`/tmp/taucode-loading-error-lint.log`. Live build verification remains pending.
