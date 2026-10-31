@@ -254,11 +254,27 @@ it("clears a failed page-open error once that page recovers through Retry", asyn
   render(shell());
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Open server" })); });
   await waitFor(() => expect(document.querySelector(".dock-error")?.textContent).toContain("injected test fault"));
-  // A loading retry is not yet a recovery.
-  act(() => { host = { ...host, tabs: [{ ...host.tabs[0], error: undefined, loading: true }] }; callbacks.forEach(callback => callback(host)); });
+  // The tab keeps its own error and Retry; the toast goes once that error clears (a failed retry sets it again).
+  act(() => { host = { ...host, tabs: [{ ...host.tabs[0], error: "Still failing" }] }; callbacks.forEach(callback => callback(host)); });
   expect(document.querySelector(".dock-error")).toBeTruthy();
-  act(() => { host = { ...host, tabs: [{ ...host.tabs[0], loading: false, ready: true }] }; callbacks.forEach(callback => callback(host)); });
+  act(() => { host = { ...host, tabs: [{ ...host.tabs[0], error: undefined, loading: true }] }; callbacks.forEach(callback => callback(host)); });
   expect(document.querySelector(".dock-error")).toBeNull();
+});
+it("keeps one panel tab when a failed page's state arrives after the open request fails", async () => {
+  const request = vi.mocked(browserRequest).getMockImplementation()!;
+  let late: (() => void) | undefined;
+  vi.mocked(browserRequest).mockImplementation(async r => {
+    if (r.action !== "new" || host.tabs.length) return request(r);
+    host = { ...host, active: "page-1", tabs: [{ id: "page-1", title: "New tab", url: "about:blank", ready: false, loading: false, error: "Could not open this tab: injected. Choose Retry to try again." }] };
+    late = () => callbacks.forEach(callback => callback(host));
+    throw new Error("injected");
+  });
+  render(shell());
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Open server" })); });
+  await act(async () => { late!(); });
+  const browserTabs = () => readPanel("code:one").tabs.filter(tab => tab.kind === "browser");
+  expect(browserTabs()).toHaveLength(1);
+  expect(browserTabs()[0].target).toBe("page-1");
 });
 it("reveals a hidden Browser when the rail opens a server", async () => {
   render(shell());

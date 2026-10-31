@@ -100,6 +100,8 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
   const restoring = useRef(new Set<string>());
   const receivedBrowserState = useRef(false);
   const pending = useRef<{ id: string; scope: string; previous: Set<string>; tab: PanelTab } | null>(null);
+  // A failed open may still have created a native page whose state arrives later; bind it, never append it.
+  const orphan = useRef<typeof pending.current>(null);
   const toolRef = useRef(tools); toolRef.current = tools;
   const history = useRef([scope]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -123,7 +125,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
       latest.current = value;
       const statuses = Object.fromEntries(value.tabs.map(page => [page.id, { loading: page.loading, ...(page.error ? { error: page.error } : {}) }]));
       setPageStatuses(previous => JSON.stringify(previous) === JSON.stringify(statuses) ? previous : statuses);
-      const request = pending.current;
+      const request = pending.current ?? orphan.current;
       const created = request && value.tabs.find(t => t.id === value.active && !request.previous.has(t.id));
       if (created && request.tab.url && request.tab.url !== "about:blank") restoring.current.add(created.id);
       for (const page of value.tabs) if (page.url !== "about:blank") restoring.current.delete(page.id);
@@ -146,9 +148,9 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
         const browserActive = dock && followActive && tabs.some(tab => tab.kind === "browser" && tab.target === value.active) ? tabs.find(tab => tab.kind === "browser" && tab.target === value.active)?.id : previous.state.browserActive;
         return JSON.stringify(tabs) === JSON.stringify(previous.state.tabs) && browserActive === previous.state.browserActive ? previous : { ...previous, state: { ...previous.state, tabs, ...(browserActive ? { browserActive } : {}) } };
       });
-      if (created) pending.current = null;
+      if (created) { pending.current = null; orphan.current = null; }
       const page = value.tabs.find(t => t.id === value.active);
-      if (pageOpenFailed.current && page && !page.loading && !page.error && !value.error) { pageOpenFailed.current = false; setError(""); }
+      if (pageOpenFailed.current && page && !page.error && !value.error) { pageOpenFailed.current = false; setError(""); }
       if (page && /^https?:/.test(page.url)) setRecent(previous => {
         if (previous[0]?.url === page.url && previous[0]?.title === page.title && previous[0]?.favicon === (page.favicon?.startsWith("data:image/") ? page.favicon : undefined)) return previous;
         const next = [{ url: page.url, title: page.title || page.url, favicon: page.favicon?.startsWith("data:image/") ? page.favicon : undefined }, ...previous.filter(t => t.url !== page.url)].slice(0, 4);
@@ -175,6 +177,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
     if (opening.current || pending.current) return;
     opening.current = true;
     pageOpenFailed.current = false;
+    orphan.current = null;
     setBusy(true); setError("");
     try {
       const url = normalizeBrowserUrl(input, searchUrl);
@@ -188,7 +191,7 @@ export function useSidePanelState({ scope, tools = [], searchUrl = defaultBrowse
       await browserRequest({ action: "new" });
       if (url !== "about:blank") await browserRequest({ action: "navigate", url });
       setAddress("");
-    } catch (e) { pending.current = null; pageOpenFailed.current = true; setError(String(e)); }
+    } catch (e) { orphan.current = pending.current; pending.current = null; pageOpenFailed.current = true; setError(String(e)); }
     finally { opening.current = false; setBusy(false); }
   }, [scope, searchUrl, update, features.browser]);
   const pageRef = useRef(openPage); pageRef.current = openPage;

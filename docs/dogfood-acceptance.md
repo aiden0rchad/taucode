@@ -1264,5 +1264,14 @@ failed before their fixes (status mapping, saved-session routing, runner
 uncertain execution, stale browser toast).
 
 Not done: concurrent-typing live acceptance (needs your Calculator/TextEdit grant
-for this session, or a manual check); each relaunch restored one more browser tab
-(observed 2 → 3), not investigated.
+for this session, or a manual check).
+
+Follow-up — browser tab pile-up: when restoring a saved tab failed, native `new`
+had already broadcast its page, but the open request was dropped on the error, so
+the late page was appended as an extra panel tab and the saved tab kept a stale
+target (observed 2 → 3 across relaunches). A failed request is now kept as an
+orphan that the late page binds to; the next open clears it. The dock's duplicate
+error toast clears once that tab's own error clears. Live: two relaunches with
+`TAUCODE_BROWSER_FAULT=layout:1` and one without kept the count at 3, and Retry
+recovered the tab with no lingering toast. Tabs already duplicated before the fix
+stay until closed.
