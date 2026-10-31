@@ -8,6 +8,20 @@ use std::{
 };
 
 #[test]
+fn document_refresh_is_limited_to_disabled_find_and_plain_textedit_clicks() {
+    let mut click = Action::Click { x: 1., y: 2., button: "left".into(), clicks: 1, hold_keys: vec![] };
+    assert!(refresh_textedit_document("com.apple.TextEdit", "AXTextArea", &click, true));
+    for (bundle, role, disabled) in [("com.apple.Notes", "AXTextArea", true), ("com.apple.TextEdit", "AXButton", true), ("com.apple.TextEdit", "AXTextArea", false)] {
+        assert!(!refresh_textedit_document(bundle, role, &click, disabled));
+    }
+    if let Action::Click { hold_keys, .. } = &mut click { hold_keys.push("command".into()); }
+    assert!(!refresh_textedit_document("com.apple.TextEdit", "AXTextArea", &click, true));
+    for action in [Action::Click { x: 1., y: 2., button: "right".into(), clicks: 1, hold_keys: vec![] }, Action::Hotkey { keys: vec!["command".into(), "f".into()] }] {
+        assert!(!refresh_textedit_document("com.apple.TextEdit", "AXTextArea", &action, true));
+    }
+}
+
+#[test]
 fn ax_hit_test_is_not_reported_as_element_grounding() {
     assert_eq!(ax_path(true), "ax-element");
     assert_eq!(ax_path(false), "ax-hit-test");
@@ -153,7 +167,7 @@ fn recoverable_ax_errors_and_lookup_failure_fall_through_once() {
         clicks: 1,
         hold_keys: vec![],
     };
-    for status in [-25204, -25205, -25206] {
+    for status in [-25205, -25206] {
         for events_available in [false, true] {
             let calls = Cell::new(0);
             let result = prepare_action(
@@ -200,6 +214,13 @@ fn recoverable_ax_errors_and_lookup_failure_fall_through_once() {
     )
     .is_err());
     assert_eq!(event_path(true, "skylight"), "pixel-skylight");
+    assert!(prepare_action(
+        &action,
+        || ax_actions::action_status(-25204),
+        || panic!("CannotComplete must not send a second input"),
+        false
+    )
+    .is_err());
     assert_eq!(event_path(true, "postToPid"), "pixel-skylight");
     assert_eq!(event_path(false, "skylight"), "pixel-skylight");
 }

@@ -418,10 +418,18 @@ where
             .clone()
     };
 
-    let thread_params = json!({
+    // This collector listens to Codex callbacks. Never create a persistent Pi/OMP
+    // thread through the user's default engine and then wait on another backend.
+    let backend = session.codex_backend().await?;
+    let mut thread_params = json!({
+        "engine": "codex",
+        "ephemeral": true,
         "cwd": workspace_path.clone(),
         "approvalPolicy": "never"
     });
+    if let Some(model_id) = model {
+        thread_params["model"] = json!(model_id);
+    }
     let thread_result = session
         .send_request_for_workspace(&workspace_id, "thread/start", thread_params)
         .await?;
@@ -456,7 +464,6 @@ where
 
     on_hide_thread(&workspace_id, &thread_id);
 
-    let backend = session.codex_backend().await?;
     let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
     {
         let mut callbacks = backend.background_thread_callbacks.lock().await;
@@ -470,7 +477,15 @@ where
         "approvalPolicy": "never",
         "sandboxPolicy": { "type": "readOnly" },
     });
-    if let Some(model_id) = model {
+    let thread = &thread_result["result"]["thread"];
+    let selected_model = model.map(str::to_owned).or_else(|| {
+        Some(format!(
+            "{}/{}",
+            thread["modelProvider"].as_str()?,
+            thread["model"].as_str()?
+        ))
+    });
+    if let Some(model_id) = selected_model {
         turn_params["model"] = json!(model_id);
     }
     let turn_result = session
@@ -653,10 +668,119 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use super::{
         build_commit_message_prompt_for_diff, parse_agent_description_value,
         parse_run_metadata_value,
     };
+
+    #[tokio::test]
+    async fn background_prompt_uses_ephemeral_codex_and_preserves_the_selected_model() {
+        use crate::backend::app_server::protocol_tests::make_session;
+        use crate::types::AgentPolicy;
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
+        for fail_turn in [false, true] {
+            let backend = make_session().codex_backend().await.unwrap();
+            let provider = serde_json::from_value(json!({"id":"test","name":"Test","kind":"openai","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"first","enabled":true},{"id":"selected","enabled":true}]})).unwrap();
+            let policy = AgentPolicy {
+                default_engine: "omp".into(),
+                default_model: Some(crate::types::ModelRef {
+                    provider_id: "test".into(),
+                    model_id: "selected".into(),
+                }),
+                ..Default::default()
+            };
+            let session = Arc::new(WorkspaceSession::new(
+                backend.clone(),
+                vec![provider],
+                policy,
+            ));
+            let stdout = backend.child.lock().await.stdout.take().unwrap();
+            let responder = backend.clone();
+            let server = tokio::spawn(async move {
+                let mut lines = BufReader::new(stdout).lines();
+                for method in ["thread/start", "turn/start", "thread/archive"] {
+                    let request: Value =
+                        serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+                    assert_eq!(request["method"], method);
+                    let response = match method {
+                        "thread/start" => {
+                            assert_eq!(request["params"]["ephemeral"], true);
+                            assert_eq!(request["params"]["model"], "selected");
+                            assert_eq!(request["params"]["modelProvider"], "test");
+                            json!({"result":{"thread":{"id":"internal","model":"selected","modelProvider":"test"}}})
+                        }
+                        "turn/start" => {
+                            assert_eq!(request["params"]["model"], "selected");
+                            assert_eq!(request["params"]["sandboxPolicy"]["type"], "readOnly");
+                            assert_eq!(request["params"]["approvalPolicy"], "never");
+                            if fail_turn {
+                                json!({"error":{"message":"Unavailable"}})
+                            } else {
+                                let callbacks = responder.background_thread_callbacks.lock().await;
+                                let tx = callbacks.get("internal").unwrap();
+                                tx.send(json!({"method":"item/agentMessage/delta","params":{"delta":"Metadata result"}})).unwrap();
+                                tx.send(json!({"method":"turn/completed"})).unwrap();
+                                json!({"result":{}})
+                            }
+                        }
+                        _ => json!({"result":{}}),
+                    };
+                    responder
+                        .pending
+                        .lock()
+                        .await
+                        .remove(&request["id"].as_u64().unwrap())
+                        .unwrap()
+                        .send(response)
+                        .unwrap();
+                }
+            });
+            let sessions = Mutex::new(HashMap::from([("fixture".into(), session.clone())]));
+            let workspace =
+                serde_json::from_value(json!({"id":"fixture","name":"Fixture","path":"/tmp"}))
+                    .unwrap();
+            let workspaces = Mutex::new(HashMap::from([("fixture".into(), workspace)]));
+            let hidden = std::sync::Mutex::new(Vec::new());
+            let result = timeout(
+                Duration::from_secs(5),
+                run_background_prompt_core(
+                    &sessions,
+                    &workspaces,
+                    "fixture".into(),
+                    "Title only".into(),
+                    None,
+                    |_, id| hidden.lock().unwrap().push(id.to_owned()),
+                    "Timed out",
+                    "Failed",
+                ),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                result,
+                if fail_turn {
+                    Err("Unavailable".into())
+                } else {
+                    Ok("Metadata result".into())
+                }
+            );
+            assert_eq!(*hidden.lock().unwrap(), vec!["internal"]);
+            assert!(backend.background_thread_callbacks.lock().await.is_empty());
+            assert_eq!(
+                session
+                    .owners
+                    .lock()
+                    .await
+                    .get("internal")
+                    .map(String::as_str),
+                Some("codex")
+            );
+            server.await.unwrap();
+            session.shutdown().await;
+        }
+    }
 
     #[test]
     fn build_commit_message_prompt_for_diff_requires_changes() {

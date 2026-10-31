@@ -49,7 +49,14 @@ def test_every_action_is_json_and_uses_grounding_space(aci, code, kind):
 
 @pytest.mark.parametrize('code', ['agent.wait(-1)', 'agent.wait(11)', 'agent.click("x", True)', 'agent.type(text=3)', 'agent.type(enter=1)', 'agent.scroll("x", 101)', 'agent.hotkey("command")'])
 def test_invalid_action_arguments(aci,code):
-    assert parse_action(aci,code)['kind']=='fail'
+    result = parse_action(aci, code)
+    assert result['kind'] == 'fail'
+    assert result['reason'].startswith('Action not executed: ')
+
+def test_invalid_scroll_is_rejected_before_grounding_with_correctable_limits(aci):
+    aci.ground = lambda *args: pytest.fail('Invalid scroll reached grounding')
+    result = parse_action(aci, 'agent.scroll("Document", 160)')
+    assert result == {'kind': 'fail', 'reason': 'Action not executed: Scroll clicks must be an integer from -100 to 100; use smaller steps'}
 
 def test_out_of_bounds_grounding(aci):
     aci.generate_coords=lambda *a: [1920, 1]
@@ -120,3 +127,28 @@ def test_rejected_plan_is_returned_as_fail_and_fed_back(monkeypatch):
     assert actions[0]['kind']=='fail'
     messages=server.agent.executor.generator_agent.messages
     assert 'Action rejected:' in json.dumps(messages[-1])
+
+
+def test_each_step_verifies_previous_action_without_a_second_reflection_request(monkeypatch):
+    from taucode_cua.vendor.agent_s3.agents import worker
+    calls = []
+    def plan(agent, *args, **kwargs):
+        calls.append(json.dumps(agent.messages))
+        return '```python\nagent.wait(0.1)\n```'
+    monkeypatch.setattr(worker, 'call_llm_formatted', plan)
+    monkeypatch.setattr(worker, 'call_llm_safe', lambda *a, **k: pytest.fail('Redundant reflection request'))
+    server = Server()
+    config = {'kind': 'openai', 'model': 'test'}
+    server.dispatch('configure', {'planner': config, 'grounding': config, 'platform': 'darwin'})
+    buf = io.BytesIO(); Image.new('RGB', (4, 4)).save(buf, format='PNG')
+    obs = {'screenshot': buf.getvalue()}
+    for instruction in ('test', 'Previous action was NOT executed: target moved.\n\ntest', 'Previous action was interrupted after input started: preserve partial text.\n\ntest', 'READ-ONLY VERIFICATION: AX timeout; inspect without replay.\n\ntest'):
+        _, actions = server.agent.predict(instruction, obs)
+        assert actions[0]['kind'] == 'wait'
+    assert len(calls) == 4
+    assert 'Check the fresh screenshot against the previous action' in calls[1]
+    assert 'Detect repeated actions without progress' in calls[1]
+    assert 'Previous action was NOT executed: target moved.' in calls[1]
+    assert 'agent.wait(0.1)' in calls[1]
+    assert 'Previous action was interrupted after input started: preserve partial text.' in calls[2]
+    assert 'READ-ONLY VERIFICATION: AX timeout; inspect without replay.' in calls[3]

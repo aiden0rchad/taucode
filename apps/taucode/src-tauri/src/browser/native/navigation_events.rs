@@ -36,6 +36,7 @@ define_class!(
         }
         #[unsafe(method(webViewWebContentProcessDidTerminate:))]
         fn terminated(&self, _view: &WKWebView) {
+            taucode_diag_mcp::writer::record(|| taucode_diag_mcp::core::event("error", "browser", "browser.native.process_terminated", "Native page process stopped"));
             self.failed("The page process stopped. Reload to recover.".into());
         }
         #[unsafe(method(webView:didFailProvisionalNavigation:withError:))]

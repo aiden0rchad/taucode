@@ -172,7 +172,7 @@ impl NativeBackend {
         let hook_key = uuid::Uuid::new_v4().to_string();
         let mut builder = WebviewBuilder::new(&name, WebviewUrl::External(url.parse().map_err(|_|"Invalid URL")?))
             .user_agent(UA).devtools(cfg!(debug_assertions)).focused(false)
-            .background_color(tauri::window::Color(255,255,255,255))
+            // Keep WebKit's page background: Wry's color override disables it on macOS.
             .incognito(settings.private_browsing)
             .initialization_script(format!("({})({});", include_str!("page_hooks.js"), json!(hook_key)))
             .on_navigation(move |url| {

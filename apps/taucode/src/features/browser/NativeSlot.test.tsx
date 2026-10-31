@@ -48,13 +48,31 @@ it.each(["modal", "popover"])("hides behind an intersecting %s with a snapshot, 
   view.rerender(slot); await frame();
   expect(browserNativeBounds).toHaveBeenLastCalledWith("one", expect.anything(), true);
 });
-it("keeps the first load hidden and detaches the previous active tab", async () => {
-  const view = render(<NativeSlot tabId="one" ready={false} blocked={false} onError={error} />); await frame();
-  expect(browserNativeBounds).toHaveBeenLastCalledWith("one", expect.anything(), false);
+it("requests placement for an evicted tab before it is ready, retaining its loading snapshot", async () => {
+  const view = render(<NativeSlot tabId="one" ready={false} blocked={false} snapshot="AAAA" onError={error} />); await frame();
+  expect(browserNativeBounds).toHaveBeenLastCalledWith("one", expect.anything(), true);
+  expect(screen.getByLabelText("Native browser page").getAttribute("data-native-hidden")).toBe("true");
+  expect(screen.getByText("Loading page…")).toBeTruthy();
+  expect(screen.getByAltText("Last page snapshot").getAttribute("src")).toBe("data:image/png;base64,AAAA");
+  view.rerender(<NativeSlot tabId="one" ready blocked={false} snapshot="AAAA" onError={error} />); await frame();
+  expect(screen.getByLabelText("Native browser page").getAttribute("data-native-hidden")).toBe("false");
+  expect(screen.queryByText("Loading page…")).toBeNull();
+});
+it("detaches the previous active tab and respects blocked placement", async () => {
+  const view = render(<NativeSlot tabId="one" ready blocked={false} onError={error} />); await frame();
+  vi.mocked(browserNativeBounds).mockClear();
   view.rerender(<NativeSlot tabId="two" ready blocked={false} onError={error} />); await frame();
+  expect(browserNativeBounds).toHaveBeenNthCalledWith(1, "one", expect.anything(), false);
   expect(browserNativeBounds).toHaveBeenLastCalledWith("two", expect.anything(), true);
   view.rerender(<NativeSlot tabId="two" ready blocked onError={error} />); await frame();
   expect(browserNativeBounds).toHaveBeenLastCalledWith("two", expect.anything(), false);
+});
+it.each(["blocked", "document hidden", "overlay"])("does not request loading-tab placement when %s", async reason => {
+  if (reason === "document hidden") vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+  render(<><NativeSlot tabId="one" ready={false} blocked={reason === "blocked"} onError={error} />{reason === "overlay" && <ModalShell>Modal</ModalShell>}</>);
+  await frame();
+  expect(browserNativeBounds).toHaveBeenLastCalledWith("one", expect.anything(), false);
+  expect(screen.getByLabelText("Native browser page").getAttribute("data-native-hidden")).toBe("true");
 });
 it("does not hide for nonintersecting overlays or touching edges", async () => {
   expect(intersects(rect, { x: rect.x + rect.width, y: rect.y, width: 30, height: 20 })).toBe(false);

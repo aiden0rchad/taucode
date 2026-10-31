@@ -1,4 +1,5 @@
 import type { ConversationItem } from "../types";
+import { parseComputerRun } from "../features/computer/computer";
 import {
   DEFAULT_MAX_ITEMS_PER_THREAD,
   type ExploreEntry,
@@ -63,11 +64,16 @@ export function normalizeItem(item: ConversationItem): ConversationItem {
   }
   if (item.kind === "tool") {
     const tool = normalizeVirtualFileChange(item);
+    const run = parseComputerRun(tool.output);
     return {
       ...tool,
       title: truncateText(tool.title, 200),
       detail: truncateText(tool.detail, 2000),
-      output: tool.output
+      // Keep persisted runs addressable: truncating their JSON can remove the
+      // recovery card entirely when a native error contains lengthy diagnostics.
+      output: run?.stored && run.id
+        ? JSON.stringify({ computerRun: { id: run.id, stored: true, steps: [] } })
+        : tool.output
         ? truncateToolText(tool.toolType, tool.output)
         : tool.output,
       changes: tool.changes

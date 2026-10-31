@@ -1509,3 +1509,5 @@
   color: var(--message-link-color);
   font-size: max(11px, 0.97em);
 }
+.thread-recovery-state { margin: 12px 0; padding: 12px 16px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-card-muted); color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.thread-recovery-state.is-failed strong { color: var(--status-error); }

@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 pub const STALE_OBSERVATION: &str = "Stale observation: ";
 pub const RECOVERABLE: &str = "Action not executed: ";
+pub const UNCERTAIN: &str = "Action outcome uncertain: ";
 
 #[derive(Default)]
 struct Recovery {
@@ -58,7 +59,17 @@ pub enum Preparation {
     Handled,
     NeedsForeground,
 }
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Phase {
+    Observing,
+    Planning,
+    Acting,
+    WaitingForApproval,
+    Settling,
+}
 pub trait Environment {
+    fn phase(&mut self, _: Phase) {}
     fn capture(&mut self) -> BoxFuture<'_, Result<Frame, String>>;
     fn predict<'a>(
         &'a mut self,
@@ -165,10 +176,13 @@ async fn execute(
         Ok(())
     };
     let key = |name: &str, down| {
+        let code = keycode(name).ok_or("Unknown key")?;
         if down {
             verify_typing()?;
+            post(Event::Key(code, true))
+        } else {
+            control.release_key(code)
         }
-        post(Event::Key(keycode(name).ok_or("Unknown key")?, down))
     };
     let click = |point, button, clicks| -> Result<(), String> {
         post(Event::Mouse {
@@ -361,6 +375,7 @@ pub async fn run(
         let mut stale_retries = 0;
         let mut run_stale_retries = 0;
         let mut recovery = Recovery::default();
+        let mut verify_only: Option<String> = None;
         'steps: while step < settings.max_steps {
             macro_rules! recover {
                 ($reason:expr) => {{
@@ -393,6 +408,9 @@ pub async fn run(
                         {
                             stale_retries += 1;
                             run_stale_retries += 1;
+                            recovery.previous = Some(format!(
+                                "Previous action was NOT executed: {error}. Re-plan from the fresh observation.\n\n"
+                            ));
                             if let Some(entry) = pending.as_mut() {
                                 entry["staleRetries"] = json!(stale_retries);
                             }
@@ -406,11 +424,39 @@ pub async fn run(
                         {
                             recover!(error)
                         }
+                        Err(error) if error.starts_with(UNCERTAIN) => {
+                            control.release();
+                            env.end_action();
+                            control.checkpoint().await?;
+                            if let Some(mut entry) = pending.take() {
+                                entry[phase] = json!(phase_start.elapsed().as_millis() as u64);
+                                entry["error"] = json!(error);
+                                env.progress(entry)?;
+                            }
+                            recovery.previous = Some(format!(
+                                "READ-ONLY VERIFICATION: {error} The previous action may have executed. Inspect this fresh observation. Return done ONLY if the entire requested task is visibly complete; otherwise return fail explaining what remains or is uncertain. No click, edit, hotkey, retry, or other input is allowed.\n\n"
+                            ));
+                            verify_only = Some(error);
+                            step += 1;
+                            env.phase(Phase::Settling);
+                            control.until(env.settle()).await?;
+                            continue 'steps;
+                        }
                         Err(error) => return Err(error),
                     }
                 };
             }
             control.checkpoint().await?;
+            let observation_epoch = control.epoch();
+            let verify_observation = || {
+                if control.epoch() == observation_epoch {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "{STALE_OBSERVATION}Pause invalidated the planned action"
+                    ))
+                }
+            };
             let context = env
                 .context()
                 .map_err(|e| format!("Pre-flight context: {e}"))?;
@@ -419,10 +465,13 @@ pub async fn run(
             {
                 return Err(format!("App blocked: {}", context.app));
             }
+            env.phase(Phase::Observing);
             let frame = control
                 .until(env.capture())
                 .await
                 .map_err(|e| format!("Pre-flight capture: app={}, {e}", context.app))?;
+            control.checkpoint().await?;
+            observation!(verify_observation());
             let scoped = format!("{instruction}\n\nHost policy: allowed application bundle IDs: {}. {}: {}. {} Never interact with taucode itself.", apps.join(", "), env.capture_description(), context.app, if settings.mode == "background" { "This run is bound to this app. Coordinates refer only to its captured window. Do not switch to another app." } else { "If taucode is frontmost, first use switch_applications with an allowed bundle ID." });
             let scoped = format!("{}{scoped}", recovery.previous.as_deref().unwrap_or(""));
             phase = "predictMs";
@@ -430,6 +479,7 @@ pub async fn run(
             pending = Some(
                 json!({"step":step+1,"staleRetries":stale_retries,"thumbnail":frame.thumbnail,"action":{"kind":"predict"},"reflection":"","predictMs":0,"executeMs":0,"waitMs":0}),
             );
+            env.phase(Phase::Planning);
             let prediction = match control.until(env.predict(&scoped, &frame)).await {
                 Ok(prediction) => prediction,
                 Err(error) => {
@@ -450,11 +500,21 @@ pub async fn run(
                     return Err(error);
                 }
             };
+            // The user can change the UI while paused, even if the same app and
+            // accessibility target remain valid. Never resume a pre-pause plan.
+            control.checkpoint().await?;
+            observation!(verify_observation());
             pending.as_mut().unwrap()["grounding"] = json!(prediction.grounding);
             let predict_ms = phase_start.elapsed().as_millis() as u64;
-            let mut action = prediction
-                .validated(frame.display)
-                .map_err(|e| env.planner_error(e))?;
+            let mut action = match prediction.validated(frame.display) {
+                Ok(action) => action,
+                Err(error) => {
+                    // Invalid proposals have not reached input or approval.
+                    // Replan with explicit feedback under the existing retry caps.
+                    pending.as_mut().unwrap()["planText"] = json!(prediction.plan_text);
+                    recover!(format!("Invalid proposed action: {error}"));
+                }
+            };
             observation!(env.verify_target());
             let (element_label, secure) = observation!(env.ground_target(&prediction, &mut action));
             let description = format!(
@@ -467,8 +527,22 @@ pub async fn run(
             pending = Some(
                 json!({"step":step+1,"staleRetries":stale_retries,"thumbnail":frame.thumbnail,"action":action,"target":description,"reflection":prediction.reflection,"planText":prediction.plan_text,"grounding":prediction.grounding,"predictMs":predict_ms,"executeMs":0,"waitMs":0}),
             );
+            if let Some(reason) = &verify_only {
+                match &action {
+                    Action::Done { summary } => {
+                        pending.as_mut().unwrap()["verificationOnly"] = json!(true);
+                        env.progress(pending.take().unwrap())?;
+                        return Ok(json!({"summary":summary,"screenshot":frame.png}));
+                    }
+                    Action::Fail { reason: remaining } => return Err(format!("{reason}\nVerification: {remaining}")),
+                    _ => {
+                        pending.as_mut().unwrap()["recovered"] = json!(true);
+                        return Err(format!("{reason}\nRead-only verification rejected further input; no second action was sent."));
+                    }
+                }
+            }
             if let Action::Fail { reason } = &action {
-                if prediction
+                if reason.starts_with(RECOVERABLE) || prediction
                     .grounding
                     .iter()
                     .any(|d| d["pixel_result"] == "unparseable")
@@ -524,6 +598,7 @@ pub async fn run(
                         entry["kind"] = json!("approval_wait");
                         entry["reason"] = json!(reason);
                         env.progress(entry.clone())?;
+                        env.phase(Phase::WaitingForApproval);
                         let approved = control.until(env.approve(reason, &action, &current)).await;
                         let entry = pending.as_mut().unwrap();
                         entry["waitMs"] = json!(phase_start.elapsed().as_millis() as u64);
@@ -536,13 +611,17 @@ pub async fn run(
                     Decision::Allow => (),
                 }
                 control.checkpoint().await?;
+                observation!(verify_observation());
                 let after = env.context()?;
                 verify_app("Target binding changed after approval", &current, &after)?;
-                verify_policy_target(
+                if let Err(reason) = verify_policy_target(
                     "AX policy target changed after approval",
                     &policy_target,
                     &observation!(env.policy_target(&action)),
-                )?;
+                ) {
+                    // Nothing has been sent. Discard this approval and plan again.
+                    recover!(reason);
+                }
                 // A new fail-closed sample adds a confirmation, never a focus cancellation.
                 if after.secure && !policy_context.secure && matches!(action, Action::Type { .. }) {
                     policy_context.secure = true;
@@ -569,7 +648,9 @@ pub async fn run(
                 "executeMs"
             };
             phase_start = Instant::now();
+            observation!(verify_observation());
             observation!(env.verify_target());
+            env.phase(Phase::Acting);
             env.begin_action();
             let preparation = observation!(env.prepare(&action, control, &after));
             if preparation == Preparation::NeedsForeground {
@@ -586,8 +667,10 @@ pub async fn run(
                 entry["kind"] = json!("approval_wait");
                 entry["reason"] = json!(reason);
                 env.progress(entry.clone())?;
+                env.phase(Phase::WaitingForApproval);
                 control.until(env.approve(reason, &action, &after)).await?;
                 control.checkpoint().await?;
+                observation!(verify_observation());
                 verify_app(
                     "Target changed after fallback approval",
                     &after,
@@ -611,6 +694,7 @@ pub async fn run(
                     &policy_target,
                     &observation!(env.policy_target(&action)),
                 )?;
+                env.phase(Phase::Acting);
                 observation!(env.begin_foreground(control, &after));
                 entry["waitMs"] = json!(
                     entry["waitMs"].as_u64().unwrap_or(0)
@@ -629,6 +713,8 @@ pub async fn run(
                     .await?;
             }
             if preparation != Preparation::Handled {
+                control.checkpoint().await?;
+                observation!(verify_observation());
                 verify_policy_target(
                     "AX policy target changed before input",
                     &policy_target,
@@ -680,21 +766,23 @@ pub async fn run(
                 .err()
                 .is_some_and(|e| e == "Action interrupted by Pause")
             {
+                recovery.previous = Some("Previous action was interrupted after input started: Pause may have left partial changes. Inspect the fresh observation, preserve completed work, and continue only the remaining action. Do not replay the original action.\n\n".into());
                 control.checkpoint().await?;
                 continue;
             }
             outcome?;
             recovery.consecutive = 0;
             recovery.previous = None;
-            control.until(env.settle()).await?;
             match action {
                 Action::Done { summary } => {
-                    let last = control.until(env.capture()).await?;
-                    return Ok(json!({"summary":summary,"screenshot":last.png}));
+                    // Done sends no input: return the observation the planner verified.
+                    return Ok(json!({"summary":summary,"screenshot":frame.png}));
                 }
                 Action::Fail { reason } => return Err(reason),
                 _ => (),
             }
+            env.phase(Phase::Settling);
+            control.until(env.settle()).await?;
         }
         Err("Maximum steps reached".into())
     };

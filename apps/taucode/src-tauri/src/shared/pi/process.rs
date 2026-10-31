@@ -37,6 +37,7 @@ pub(super) struct Process {
     emit: Emit,
     graph: Option<CodegraphSetup>,
     omp: bool,
+    blobs: Option<std::path::PathBuf>,
 }
 impl Process {
     pub async fn spawn(
@@ -48,6 +49,7 @@ impl Process {
         secrets: Vec<String>,
     ) -> Result<Arc<Self>, String> {
         let omp = command.as_std().get_envs().any(|(k,v)| k == "TAUCODE_OMP" && v.is_some());
+        let blobs = command.as_std().get_envs().find_map(|(k, v)| (k == "PI_CODING_AGENT_DIR").then_some(v).flatten()).map(|home| std::path::PathBuf::from(home).join("blobs"));
         if omp {translator.diagnostic_engine="omp".into();}
         command
             .stdin(std::process::Stdio::piped())
@@ -64,6 +66,7 @@ impl Process {
         let stderr = child.stderr.take().ok_or("Pi stderr unavailable")?;
         let stdin = child.stdin.take();
         let p = Arc::new(Self {
+            blobs,
             translator: Mutex::new(translator),
             operation: Mutex::new(()),
             alive: AtomicBool::new(true),
@@ -164,6 +167,11 @@ impl Process {
         Ok(p)
     }
     pub(super) async fn receive(self: &Arc<Self>, mut m: Value) {
+        if let Some(directory) = &self.blobs {
+            for key in ["message", "result"] {
+                if let Some(message) = m.get_mut(key) { super::images::restore(message, directory); }
+            }
+        }
         // OMP can publish agent_end before asynchronous extension hooks finish.
         // Wait for its settlement frame so QA and usage records arrive first.
         if self.omp && (m["type"] == "session_settled" || (m["type"] == "prompt_result" && m["sessionSettled"] == true)) {

@@ -314,6 +314,55 @@ fn recorded_history_equals_live_items_and_turns() {
     normalize(&mut history.turns);
     assert_eq!(history.turns, turns);
 }
+
+#[tokio::test]
+async fn omp_title_slot_survives_listing_read_fork_and_rewind() {
+    let dir = temp();
+    let mut engine = PiEngine::new(dir.clone(), "workspace".into(), dir.to_string_lossy().into(), None, Arc::new(|_, _| {}));
+    engine.profile.definition = crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), "omp").unwrap().0;
+    let sessions = engine.directory("workspace").unwrap();
+    std::fs::create_dir_all(&sessions).unwrap();
+    let file = sessions.join("parent.jsonl");
+    let rows = [
+        json!({"type":"title","v":1,"title":"Current title","source":"user","updatedAt":"2026-10-30T00:00:00Z","pad":" "}),
+        json!({"type":"session","version":3,"id":"parent","engine":"omp","cwd":dir,"title":"Older title"}),
+        json!({"type":"message","id":"u1","parentId":null,"message":{"role":"user","timestamp":1,"content":"first"}}),
+        json!({"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","timestamp":2,"content":[{"type":"text","text":"answer"}],"stopReason":"stop"}}),
+        json!({"type":"title_change","id":"t1","parentId":"a1","title":"Older title","source":"user"}),
+    ];
+    let source = rows.iter().map(|v| format!("{v}\n")).collect::<String>();
+    std::fs::write(&file, &source).unwrap();
+    let listed = engine.scan("workspace").await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["id"], "parent");
+    assert_eq!(listed[0]["name"], "Current title");
+    let (thread, history) = read_session(&file, &[]).unwrap();
+    assert_eq!(thread["preview"], "first");
+    assert_eq!(history.turns.len(), 1);
+    assert_eq!(history.turns[0]["items"][1]["text"], "answer");
+    let child = sessions.join("child.jsonl");
+    fork_session(&file, &child, "child", &json!({"threadId":"parent"}), Some("parent:message:2")).unwrap();
+    let (forked, copied) = read_session(&child, &[]).unwrap();
+    assert_eq!(forked["id"], "child");
+    assert_eq!(forked["name"], "Current title");
+    assert_eq!(forked["forkedFromId"], "parent");
+    assert_eq!(copied.turns.len(), 1);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), source);
+    let leaf = rewind_session(&child, "child", Some("child:user:1"), None).unwrap();
+    assert!(read_session(&child, &[]).unwrap().1.turns.is_empty());
+    rewind_session(&child, "child", None, Some(leaf)).unwrap();
+    assert_eq!(read_session(&child, &[]).unwrap().1.turns.len(), 1);
+    assert!(engine.sessions.lock().await.values().all(|s| s.process.is_none()));
+
+    for invalid in [json!({"type":"title","v":2}), json!({"type":"message","id":"wrong"})] {
+        std::fs::write(&child, format!("{invalid}\n{}\n", rows[1])).unwrap();
+        assert!(read_session(&child, &[]).is_err());
+    }
+    std::fs::write(&child, format!("{}\n", rows[0])).unwrap();
+    assert!(read_session(&child, &[]).is_err(), "a title slot cannot replace the session header");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[test]
 fn extension_ui_round_trip_and_login_rejection() {
     let request = fixture("rpc_session.jsonl")
@@ -1966,6 +2015,19 @@ async fn live_omp_streams_from_registry_stub() {
 }
 
 #[test]
+fn computer_mcp_deadline_uses_each_engines_units() {
+    let config = json!({"mcpServers":{"taucode-computer":{"timeout":3660},"taucode-browser":{"command":"host"}}});
+    for (engine, timeout) in [("pi", 3660), ("omp", 3_660_000)] {
+        let profile = profile::EngineProfile {
+            definition: crate::shared::engine_registry::resolve(&crate::types::AppSettings::default(), engine).unwrap().0,
+        };
+        let result = profile.mcp_config(config.clone());
+        assert_eq!(result["mcpServers"]["taucode-computer"]["timeout"], timeout);
+        assert_eq!(result["mcpServers"]["taucode-browser"], config["mcpServers"]["taucode-browser"]);
+    }
+}
+
+#[test]
 fn omp_models_are_yaml_compatible_and_do_not_contain_credentials() {
     let providers: Vec<ProviderEntry> = serde_json::from_value(json!([{"id":"test","name":"Test","kind":"openai-compatible","baseUrl":"http://localhost:9000/v1","enabled":true,"auth":{"type":"apiKey"},"models":[{"id":"stub","enabled":true}]}])).unwrap();
     let models = profile::omp_models(&providers);
@@ -2301,4 +2363,59 @@ async fn managed_preview_bridge_serves_restarts_and_stops_without_user_dialogs()
     preview.stop().await.unwrap();
     manager.shutdown().await.unwrap();
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn saved_blob_images_restore_without_rewriting_history() {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use sha2::{Digest, Sha256};
+    let dir = temp();
+    let sessions = dir.join("omp/sessions/workspace");
+    let blobs = dir.join("omp/agent/workspace/blobs");
+    std::fs::create_dir_all(&sessions).unwrap();
+    std::fs::create_dir_all(&blobs).unwrap();
+    let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0uoAAAAASUVORK5CYII=";
+    let bytes = STANDARD.decode(png).unwrap();
+    let hash = format!("{:x}", Sha256::digest(&bytes));
+    std::fs::write(blobs.join(&hash), &bytes).unwrap();
+    let image = json!({"type":"image","mimeType":"image/png","data":format!("blob:sha256:{hash}")});
+    let rows = [
+        json!({"type":"session","id":"thread","cwd":"/tmp","timestamp":"2026-10-31T00:00:00Z"}),
+        json!({"type":"message","id":"u","parentId":null,"message":{"role":"user","timestamp":1,"content":[image.clone()]}}),
+        json!({"type":"message","id":"a","parentId":"u","message":{"role":"assistant","timestamp":2,"content":[{"type":"toolCall","id":"call","name":"mcp_taucode_computer_computer_run_task","arguments":{}}]}}),
+        json!({"type":"message","id":"t","parentId":"a","message":{"role":"toolResult","timestamp":3,"toolCallId":"call","toolName":"mcp_taucode_computer_computer_run_task","content":[image.clone()],"isError":false}}),
+    ];
+    let file = sessions.join("thread.jsonl");
+    let saved = rows.iter().map(|v| format!("{v}\n")).collect::<String>();
+    std::fs::write(&file, &saved).unwrap();
+    let (_, restored) = read_session(&file, &[]).unwrap();
+    let rendered = serde_json::to_string(&restored.turns).unwrap();
+    assert!(rendered.contains(png));
+    assert!(!rendered.contains("blob:sha256:"));
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), saved);
+    // Live tool results use the same resolver; inline images are unchanged.
+    let mut result = json!({"content":[image.clone(),{"type":"image","mimeType":"image/png","data":png}]});
+    images::restore(&mut result, &blobs);
+    assert_eq!(result["content"][0]["data"], png);
+    assert_eq!(result["content"][1]["data"], png);
+    for reference in ["blob:sha256:../../private".to_string(), format!("blob:sha256:{}", "0".repeat(64)), format!("blob:sha256:{hash}")] {
+        std::fs::write(blobs.join(&hash), b"corrupt").unwrap();
+        let mut missing = json!({"content":[{"type":"image","mimeType":"image/png","data":reference}]});
+        images::restore(&mut missing, &blobs);
+        assert_eq!(missing["content"][0]["type"], "text");
+        assert!(missing["content"][0]["text"].as_str().unwrap().contains("unavailable"));
+    }
+    #[cfg(unix)] {
+        let outside = dir.join("outside");
+        std::fs::write(&outside, bytes).unwrap();
+        std::fs::remove_file(blobs.join(&hash)).unwrap();
+        std::os::unix::fs::symlink(&outside, blobs.join(&hash)).unwrap();
+        let mut escaped = json!({"content":[image]});
+        images::restore(&mut escaped, &blobs);
+        assert_eq!(escaped["content"][0]["type"], "text");
+    }
+    let mut scalar = json!("unchanged");
+    images::restore(&mut scalar, &blobs);
+    assert_eq!(scalar, "unchanged");
+    std::fs::remove_dir_all(dir).unwrap();
 }

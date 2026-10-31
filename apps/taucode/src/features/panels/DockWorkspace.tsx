@@ -13,13 +13,15 @@ import type { useSidePanelState } from "@app/hooks/useSidePanelState";
 import type { WorkspaceShellProps } from "./SidePanel";
 import { dockGeometry, dockPanes, hideDockPane, initialDock, moveDockPane, panelReducer, removeDockPane, resizeDockSplit, showDockPane, type DockBox, type DockLayout, type DockSide } from "./panelState";
 
+import { BrowserTabIcon, PanelTabList, pageStatusText } from "./PanelTabList";
+
 const quickTools = [{ id: "terminal", label: "Terminal", icon: Terminal }, { id: "git", label: "Changes", icon: GitBranch }, { id: "browser", label: "Browser", icon: Globe }, { id: "files", label: "Files", icon: Folder }];
 const full: DockBox = { x: 0, y: 0, w: 100, h: 100 };
 const position = (box: DockBox): CSSProperties => ({ "--dock-box-x": box.x / 100, "--dock-box-width": box.w / 100, top: `${box.y}%`, height: `${box.h}%` } as CSSProperties);
 
 type Controller = ReturnType<typeof useSidePanelState>;
 export function DockWorkspace({ children, scope, title, tools = [], searchUrl, onInterrupt, titleActions, actions = [], onNavigate, sessionRail, onBrowserContext, controller }: WorkspaceShellProps & { controller: Controller }) {
-  const { state, update, resize, layout, mainRef, openTool, openPage, close, browser, busy, error, history, historyIndex, navigate } = controller;
+  const { state, update, resize, layout, mainRef, openTool, openPage, close, browser, pageStatuses, busy, error, history, historyIndex, navigate } = controller;
   const features = useFeatures();
   const saved = state.dock ?? initialDock(state, Boolean(sessionRail));
   const setDock = (fn: (layout: DockLayout) => DockLayout) => update(state => ({ ...state, open: true, dock: fn(state.dock ?? initialDock(state, Boolean(sessionRail))) }));
@@ -146,12 +148,12 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
           const box = compact || expanded === pane.id ? full : geometry.panes[pane.id] ?? full;
           return <section className={`dock-pane${expanded === pane.id ? " is-expanded" : ""}${pane.id === "session" ? " dock-session-rail" : ""}`} key={pane.id} data-dock-pane={pane.id} aria-label={pane.label} hidden={!shown} tabIndex={-1} ref={element => { if (element) panes.current.set(pane.id, element); else panes.current.delete(pane.id); }} style={position(box)}>
             <header className="dock-pane-header" draggable onDragStart={event => {
-              if ((event.target as HTMLElement).closest("button, input")) { event.preventDefault(); return; }
+              if ((event.target as HTMLElement).closest("button, input, select")) { event.preventDefault(); return; }
               event.dataTransfer.setData("application/x-taucode-pane", pane.id);
             }} onDragOver={event => event.preventDefault()} onDrop={event => {
               event.preventDefault(); const source = event.dataTransfer.getData("application/x-taucode-pane");
               if (visible.has(source) && source !== "conversation") setDock(layout => moveDockPane(layout, source, "bottom", pane.id));
-            }}>{pane.id === "browser" ? <div className="dock-browser-tabs" ref={browserTabsRef} role="tablist" aria-label="Browser pages">{browserTabs.map(tab => <div className="dock-browser-tab" key={tab.id}><button id={`${browserContentId}-${tab.id}`} role="tab" data-browser-tab={tab.id} aria-controls={browserContentId} aria-selected={selectedBrowser?.id === tab.id} tabIndex={browserTabStop === tab.id ? 0 : -1} onFocus={() => setBrowserTabFocus({ id: tab.id, selection: selectedBrowser?.id })} onClick={event => { event.currentTarget.focus(); update(state => panelReducer(state, { type: "select", id: tab.id })); }} onKeyDown={event => {
+            }}>{pane.id === "browser" ? <><div className="dock-browser-tabs" ref={browserTabsRef} role="tablist" aria-label="Browser pages">{browserTabs.map(tab => <div className="dock-browser-tab" key={tab.id}><button id={`${browserContentId}-${tab.id}`} role="tab" aria-description={pageStatusText(pageStatuses[tab.target ?? ""]) || undefined} title={tab.url} data-browser-tab={tab.id} aria-controls={browserContentId} aria-selected={selectedBrowser?.id === tab.id} tabIndex={browserTabStop === tab.id ? 0 : -1} onFocus={() => setBrowserTabFocus({ id: tab.id, selection: selectedBrowser?.id })} onClick={event => { event.currentTarget.focus(); update(state => panelReducer(state, { type: "select", id: tab.id })); }} onKeyDown={event => {
               if (event.altKey || event.ctrlKey || event.metaKey) return;
               if (["Delete", "Backspace"].includes(event.key)) { event.preventDefault(); closeBrowserTab(tab); return; }
               if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -159,7 +161,7 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
               const index = browserTabs.findIndex(page => page.id === tab.id);
               const next = event.key === "Home" ? 0 : event.key === "End" ? browserTabs.length - 1 : (index + (event.key === "ArrowLeft" ? -1 : 1) + browserTabs.length) % browserTabs.length;
               browserTabsRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
-            }}>{tab.title}</button><IconButton aria-label={`Close ${tab.title}`} onClick={() => closeBrowserTab(tab)}><X aria-hidden /></IconButton></div>)}<IconButton aria-label="New browser tab" disabled={busy} onClick={() => { void openPage(); }}><Plus aria-hidden /></IconButton></div> : <strong>{pane.label}</strong>}
+            }}><BrowserTabIcon status={pageStatuses[tab.target ?? ""]} /><span>{tab.title}</span></button><IconButton aria-label={`Close ${tab.title}`} onClick={() => closeBrowserTab(tab)}><X aria-hidden /></IconButton></div>)}</div><PanelTabList tabs={browserTabs} active={selectedBrowser?.id} statuses={pageStatuses} label="All browser tabs" onSelect={id => update(s => panelReducer(s, { type: "select", id }))} /><IconButton aria-label="New browser tab" disabled={busy} onClick={() => { void openPage(); }}><Plus aria-hidden /></IconButton></> : <strong>{pane.label}</strong>}
               <RowMenu label={`${pane.label} pane`} portal actions={menu(pane.id)}><IconButton className="ghost" aria-label={`${expanded === pane.id ? "Restore" : "Expand"} ${pane.label}`} onClick={() => setDock(layout => ({ ...layout, expanded: layout.expanded === pane.id ? null : pane.id }))}>{expanded === pane.id ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}</IconButton></RowMenu>
               <IconButton className="ghost" aria-label={`Close ${pane.label} pane`} onClick={() => hidePane(pane.id)}><X aria-hidden /></IconButton>
             </header>

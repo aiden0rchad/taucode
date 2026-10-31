@@ -66,6 +66,11 @@ pub fn prepare_action(
     Ok(choose_path(action, handled, !handled && events(), fallback))
 }
 
+fn refresh_textedit_document(bundle: &str, role: &str, action: &Action, find_disabled: bool) -> bool {
+    bundle == "com.apple.TextEdit" && role == "AXTextArea" && find_disabled
+        && matches!(action, Action::Click { button, clicks: 1, hold_keys, .. } if button == "left" && hold_keys.is_empty())
+}
+
 pub fn screenshot(bundle: &str) -> Result<super::native::Frame, String> {
     let pid =
         NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str(bundle))
@@ -99,6 +104,7 @@ pub struct Session {
     snapshot: Mutex<ax_tree::Snapshot<ax_actions::Element>>,
     selected: Mutex<Option<(u64, usize)>>,
     pressed: Mutex<Option<ax_actions::Element>>,
+    keyboard_target: Mutex<Option<ax_actions::Element>>,
     delivery: Mutex<Option<delivery::Scope>>,
     observed: Mutex<Option<[u8; 32]>>,
     attempted: Mutex<Option<(Action, [u8; 32])>>,
@@ -150,7 +156,7 @@ impl Session {
             dragging: AtomicBool::new(false),
             active: AtomicBool::new(true),
             guard: focus_guard::Guard::new(pid, previous),
-            overlay: overlay::Overlay::new(app, cursor),
+            overlay: overlay::Overlay::new(app, cursor, pid),
             path: Mutex::new(None),
             fallback_reason: Mutex::new(None),
             menu_title: Mutex::new(None),
@@ -161,6 +167,7 @@ impl Session {
             snapshot: Mutex::new(ax_tree::Snapshot::default()),
             selected: Mutex::new(None),
             pressed: Mutex::new(None),
+            keyboard_target: Mutex::new(None),
             delivery: Mutex::new(None),
             observed: Mutex::new(None),
             attempted: Mutex::new(None),
@@ -258,7 +265,21 @@ impl Session {
         } else {
             snapshot.status.into()
         };
-        serde_json::json!({"snapshot_id":snapshot.id,"elements":snapshot.elements,"size":size,"status":status,"partial":snapshot.partial,"walk_attempts":snapshot.attempts,"window_lookup":snapshot.lookup,"menus":self.menus.lock().unwrap().observation()})
+        // Keep the original geometry for preflight validation; only grounding
+        // uses the visible viewport of long, scrolled document elements.
+        let elements: Vec<_> = snapshot.elements.iter().map(|node| {
+            let mut node = node.clone();
+            node.frame = size.and_then(|size| snapshot.visible_frame(node.index, size));
+            node
+        }).collect();
+        serde_json::json!({"snapshot_id":snapshot.id,"elements":elements,"size":size,"status":status,"partial":snapshot.partial,"walk_attempts":snapshot.attempts,"window_lookup":snapshot.lookup,"menus":self.menus.lock().unwrap().observation()})
+    }
+    pub fn target_info(&self) -> serde_json::Value {
+        let name = NSRunningApplication::runningApplicationWithProcessIdentifier(self.pid)
+            .and_then(|app| app.localizedName())
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| self.bundle.clone());
+        serde_json::json!({"bundleId":self.bundle,"pid":self.pid,"name":name,"window":*self.window.lock().unwrap()})
     }
     pub fn select_element(
         &self,
@@ -278,7 +299,8 @@ impl Session {
         {
             return Err("Menu elements support only a single AXPress click".into());
         }
-        let [x, y, w, h] = node.frame.ok_or("AX element has no frame")?;
+        let [x, y, w, h] = snapshot.visible_frame(index, window.size)
+            .ok_or("AX element is outside the visible viewport")?;
         let point = super::policy::map_point(
             [x + w / 2., y + h / 2.],
             window.size,
@@ -315,7 +337,11 @@ impl Session {
             let result = inventory.resolve(keys);
             let item = result.as_ref().ok().copied();
             if !keys.is_empty() {
-                *self.menu_resolution.lock().unwrap() = result.err();
+                let diagnostic = result.err().map(|mut d| {
+                    if d.reason == "disabled" { d.window_focus = Some(ax_actions::window_focus(self.pid, window.id)); }
+                    d
+                });
+                *self.menu_resolution.lock().unwrap() = diagnostic;
                 if let Some(error) = self
                     .menu_resolution
                     .lock()
@@ -372,8 +398,12 @@ impl Session {
             snapshot.resolve_bound(id, index, self.pid, window.id, ax_actions::Element::alive)?;
         let mut current = ax_tree::Native(&window).read(element);
         if prior.role == "AXMenuItem" {
-            current.label =
-                menus::path(element).ok_or("AX menu path unavailable; capture again")?;
+            current.label = menus::path(element).ok_or_else(|| {
+                format!(
+                    "{}AX menu path unavailable; capture again",
+                    super::runner::STALE_OBSERVATION
+                )
+            })?;
         }
         if prior.role != current.role
             || prior.label != current.label
@@ -381,8 +411,8 @@ impl Session {
             || (prior.role != "AXMenuItem" && prior.frame != current.frame)
             || !current.enabled
         {
-            return Err(format!("AX target changed after planning: snapshot={id}, index={index}, role before={} after={}, label_changed={}, secure before={} after={}, frame before={:?} after={:?}, enabled={}; capture again",
-                prior.role, current.role, prior.label != current.label, prior.secure, current.secure,
+            return Err(format!("{}AX target changed after planning: snapshot={id}, index={index}, role before={} after={}, label_changed={}, secure before={} after={}, frame before={:?} after={:?}, enabled={}; capture again",
+                super::runner::STALE_OBSERVATION, prior.role, current.role, prior.label != current.label, prior.secure, current.secure,
                 prior.frame, current.frame, current.enabled));
         }
         Ok(())
@@ -418,6 +448,9 @@ impl Session {
                 *self.path.lock().unwrap() = Some("ax-menu");
                 *self.menu_title.lock().unwrap() = Some(node.label.clone());
                 element.press()?;
+                if let Some(point) = action_point(action) {
+                    self.overlay.move_to(point, true);
+                }
                 return Ok(true);
             }
             let selected_row = ax_actions::select_row(element, action).map_err(|error| {
@@ -426,6 +459,9 @@ impl Session {
             })?;
             if selected_row {
                 *self.path.lock().unwrap() = Some("ax-select");
+                if let Some(point) = action_point(action) {
+                    self.overlay.move_to(point, true);
+                }
                 return Ok(true);
             }
             if let Action::Scroll {
@@ -468,7 +504,23 @@ impl Session {
                         false
                     }
                 } else {
-                    ax_actions::element_action(element, action, &mut reason)?
+                    let handled = ax_actions::element_action(element, action, &mut reason)?;
+                    let disabled = self.menus.lock().unwrap().resolve(&["command".into(), "f".into()])
+                        .is_err_and(|diagnostic| diagnostic.reason == "disabled");
+                    if !handled && refresh_textedit_document(&self.bundle, &node.role, action, disabled) {
+                        let before = (skylight::front_process_pid(), skylight::key_focus_pid());
+                        if before.0.is_some() && before.1.is_some()
+                            && skylight::refresh_document_window(self.pid, window.id)
+                        {
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                            let after = (skylight::front_process_pid(), skylight::key_focus_pid());
+                            *reason = Some(format!("textedit_document_window_refreshed; front_key_before={before:?}; front_key_after={after:?}"));
+                            if before != after {
+                                return Err("Document-window refresh changed user focus; click cancelled".into());
+                            }
+                        }
+                    }
+                    handled
                 }
             }
         } else {
@@ -498,6 +550,9 @@ impl Session {
         Ok(handled)
     }
     pub fn events_available(&self, action: &Action) -> bool {
+        if !self.keyboard_target_matches() {
+            return false;
+        }
         if ax_actions::elementless_keyboard(action, self.selected.lock().unwrap().is_some()) {
             return ax_actions::focused_policy_window(self.pid).is_some();
         }
@@ -512,6 +567,23 @@ impl Session {
             .is_some_and(|w| ax_actions::focused_window(self.pid) == Some(w.id))
     }
     pub fn prepare_events(&self, action: &Action) -> bool {
+        *self.keyboard_target.lock().unwrap() = None;
+        if matches!(action, Action::Type { .. }) {
+            let selected = *self.selected.lock().unwrap();
+            let target = if let Some((id, index)) = selected {
+                let Some(window) = self.window.lock().unwrap().clone() else { return false; };
+                self.snapshot.lock().unwrap()
+                    .resolve_bound(id, index, self.pid, window.id, ax_actions::Element::alive)
+                    .ok().map(|(_, element)| element.clone())
+            } else {
+                ax_actions::target(self.pid, action_point(action))
+            };
+            if target.as_ref().is_none_or(|e| !e.has_keyboard_focus(self.pid)) {
+                *self.fallback_reason.lock().unwrap() = Some("background_keyboard_target_not_focused".into());
+                return false;
+            }
+            *self.keyboard_target.lock().unwrap() = target;
+        }
         self.fallback_reason
             .lock()
             .unwrap()
@@ -572,6 +644,10 @@ impl Session {
             session.guard.delivering.store(false, Ordering::SeqCst);
         }))
     }
+    fn keyboard_target_matches(&self) -> bool {
+        self.keyboard_target.lock().unwrap().as_ref()
+            .is_none_or(|element| element.has_keyboard_focus(self.pid))
+    }
     fn end_delivery(&self, settle: bool) {
         let scope = self.delivery.lock().unwrap().take();
         if let Some(scope) = scope {
@@ -607,6 +683,7 @@ impl Session {
         Ok(())
     }
     pub fn end_foreground(&self) {
+        *self.keyboard_target.lock().unwrap() = None;
         if self.foreground.swap(false, Ordering::SeqCst) {
             self.guard.restore();
         }

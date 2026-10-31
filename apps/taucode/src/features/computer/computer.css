@@ -4,3 +4,16 @@
 .computer-run pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .computer-settings label { display: grid; gap: 6px; margin: 12px 0; }
 .computer-settings textarea { min-height: 72px; }
+.computer-live { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 14px; margin: 8px 0; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-card-strong); }
+.computer-live-summary { display: grid; flex: 1 1 240px; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.computer-live-summary span { font-size: 12px; color: var(--text-secondary); }
+.computer-live-summary .computer-live-target { color: var(--text-primary); font-weight: 500; }
+.computer-live-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.computer-live-actions button { min-height: 36px; }
+.computer-live-actions button:focus-visible { outline: 2px solid var(--border-accent); outline-offset: 3px; }
+.computer-live > [role="alert"] { flex-basis: 100%; margin: 0; }
+
+.computer-failure { padding: 12px 14px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-card-strong); overflow-wrap: anywhere; }
+.computer-failure p { margin: 8px 0; }
+.computer-failure details { margin: 12px 0; }
+.computer-failure button { min-height: 36px; }

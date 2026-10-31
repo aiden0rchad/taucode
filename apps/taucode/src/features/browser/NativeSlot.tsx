@@ -20,8 +20,10 @@ export function NativeSlot({ tabId, snapshot, ready, blocked, onError }: { tabId
       if (disposed) return;
       const bounds = element.getBoundingClientRect();
       rect = roundedRect(bounds);
-      const visible = ready && !blocked && !document.hidden && bounds.width > 0 && bounds.height > 0 && bounds.x >= 0 && bounds.y >= 0 && !nativeOverlayIntersects(bounds);
-      setHidden(old => old === !visible ? old : !visible);
+      // Placement lets the backend recreate evicted tabs; it gates showing on ready.
+      const visible = !blocked && !document.hidden && bounds.width > 0 && bounds.height > 0 && bounds.x >= 0 && bounds.y >= 0 && !nativeOverlayIntersects(bounds);
+      const hidden = !ready || !visible;
+      setHidden(old => old === hidden ? old : hidden);
       const key = JSON.stringify([rect, visible, window.innerWidth, window.innerHeight]);
       if (!pending && key !== last) {
         pending = true; last = key;
@@ -36,6 +38,6 @@ export function NativeSlot({ tabId, snapshot, ready, blocked, onError }: { tabId
   }, [tabId, ready, blocked, onError]);
   return <div ref={slot} className="browser-native-slot" data-native-hidden={hidden} aria-label="Native browser page">
     {snapshot && <img className="browser-native-snapshot" src={snapshot.startsWith("data:") ? snapshot : `data:image/png;base64,${snapshot}`} alt="Last page snapshot" />}
-    {!ready && <div className="browser-empty">Loading page…</div>}
+    {!ready && !blocked && <div className="browser-empty">Loading page…</div>}
   </div>;
 }

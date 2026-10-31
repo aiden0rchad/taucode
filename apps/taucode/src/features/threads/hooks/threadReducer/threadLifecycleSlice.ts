@@ -93,7 +93,9 @@ export function reduceThreadLifecycle(
         activeThreadIdByWorkspace: {
           ...state.activeThreadIdByWorkspace,
           [action.workspaceId]:
-            state.activeThreadIdByWorkspace[action.workspaceId] ?? action.threadId,
+            state.activeThreadIdByWorkspace[action.workspaceId] === undefined
+              ? action.threadId
+              : state.activeThreadIdByWorkspace[action.workspaceId],
         },
       };
     }

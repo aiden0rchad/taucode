@@ -68,6 +68,32 @@ impl<H> Default for Snapshot<H> {
     }
 }
 impl<H> Snapshot<H> {
+    pub fn visible_frame(&self, index: usize, size: [f64; 2]) -> Option<[f64; 4]> {
+        let node = self.elements.get(index)?;
+        let mut frame = node.frame?;
+        let intersect = |frame: [f64; 4], clip: [f64; 4]| {
+            if frame.iter().chain(clip.iter()).any(|n| !n.is_finite())
+                || frame[2] <= 0. || frame[3] <= 0. || clip[2] <= 0. || clip[3] <= 0.
+            { return None; }
+            let x = frame[0].max(clip[0]);
+            let y = frame[1].max(clip[1]);
+            let right = (frame[0] + frame[2]).min(clip[0] + clip[2]);
+            let bottom = (frame[1] + frame[3]).min(clip[1] + clip[3]);
+            (right > x && bottom > y).then_some([x, y, right - x, bottom - y])
+        };
+        frame = intersect(frame, [0., 0., size[0], size[1]])?;
+        let mut parent = node.parent_index;
+        while let Some(index) = parent {
+            let ancestor = self.elements.get(index)?;
+            if ancestor.index >= node.index { return None; }
+            if ancestor.role == "AXScrollArea" {
+                frame = intersect(frame, ancestor.frame?)?;
+            }
+            if ancestor.parent_index.is_some_and(|next| next >= index) { return None; }
+            parent = ancestor.parent_index;
+        }
+        Some(frame)
+    }
     pub fn resolve_bound(
         &self,
         id: u64,
@@ -291,6 +317,26 @@ impl Provider for Native<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn grounding_clips_scrolled_content_without_changing_validation_bounds() {
+        let mut s: Snapshot<usize> = Snapshot::default();
+        s.elements = vec![
+            Node { index: 0, role: "AXScrollArea".into(), frame: Some([0., 30., 673., 409.]), ..Node::default() },
+            Node { index: 1, role: "AXTextArea".into(), parent_index: Some(0), frame: Some([0., -1000., 650., 2000.]), ..Node::default() },
+            Node { index: 2, role: "AXButton".into(), parent_index: Some(0), frame: Some([10., 0., 20., 20.]), ..Node::default() },
+            Node { index: 3, role: "AXMenuItem".into(), frame: Some([0., 0., 1., 1.]), ..Node::default() },
+            Node { index: 4, role: "AXScrollArea".into(), parent_index: Some(0), frame: Some([20., 80., 300., 200.]), ..Node::default() },
+            Node { index: 5, role: "AXTextArea".into(), parent_index: Some(4), frame: Some([0., -500., 650., 2000.]), ..Node::default() },
+        ];
+        assert_eq!(s.visible_frame(1, [673., 439.]), Some([0., 30., 650., 409.]));
+        assert_eq!(s.elements[1].frame, Some([0., -1000., 650., 2000.]));
+        assert_eq!(s.visible_frame(2, [673., 439.]), None);
+        assert_eq!(s.visible_frame(3, [673., 439.]), Some([0., 0., 1., 1.]));
+        assert_eq!(s.visible_frame(5, [673., 439.]), Some([20., 80., 300., 200.]));
+        assert_eq!(s.visible_frame(1, [f64::NAN, 439.]), None);
+        s.elements[0].frame = None;
+        assert_eq!(s.visible_frame(1, [673., 439.]), None);
+    }
     #[test]
     fn calculator_reads_survive_latency_and_refresh_after_every_action() {
         struct Calculator {

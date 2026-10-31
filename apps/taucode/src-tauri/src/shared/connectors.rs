@@ -301,6 +301,12 @@ pub(crate) fn delivery(
         };
         let mut pi = json!({"exposure": if s.tool_allowlist.is_some() { "hidden" } else { "direct" }, "toolExposure":{}, "description":s.name});
         let mut codex = toml_edit::InlineTable::new();
+        if s.id == "taucode-computer" {
+            // Native runs allow up to 3600s. Leave room for the final capture/result;
+            // the host still enforces the user's shorter wall limit and cancellation.
+            pi["timeout"] = json!(3660);
+            codex.insert("tool_timeout_sec", 3660.into());
+        }
         codex.insert(
             "default_tools_approval_mode",
             (if s.approval == Approval::Ask {

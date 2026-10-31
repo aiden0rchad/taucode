@@ -29,6 +29,10 @@
 .chat-message > button { font-size: 11px; margin-top: 10px; }
 .chat-composer { width: calc(100% - 56px); margin-bottom: 24px; padding: 14px; border: 1px solid var(--border-subtle); border-radius: 14px; background: var(--surface-card-muted); }
 .chat-composer textarea { width: 100%; resize: vertical; min-height: 80px; max-height: 240px; border: 0; outline: none; background: transparent; padding: 14px 0; line-height: 1.6; }
+.chat-turn-state { margin: 0 0 10px; padding: 0 4px; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.chat-turn-state strong { color: var(--text-accent); }
+.chat-turn-state.is-interrupted strong { color: var(--text-muted); }
+.chat-turn-state.is-failed strong { color: var(--status-error); }
 .chat-model-controls, .chat-composer-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 11px; }
 .chat-model-controls label { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
 .chat-model-controls select { max-width: 100%; }
@@ -82,3 +86,5 @@
 .chat-layout.sidebar-collapsed .chat-sidebar, .chat-layout.sidebar-collapsed .sidebar-resizer { visibility: hidden; }
 .mode-sidebar-toggle { position: absolute; top: 10px; left: 88px; z-index: var(--z-sticky); }
 @media (max-width: 600px) { .chat-layout .sidebar-resizer { display: none; } }
+.sidebar-search-empty { padding: 12px; color: var(--text-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.sidebar-search-empty p { margin: 0 0 6px; }

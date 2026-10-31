@@ -38,6 +38,21 @@ vi.mock("@services/tauri", async () => {
 });
 
 describe("Messages", () => {
+  it.each(["failed", "interrupted"])("explains recovery after a %s turn without restarting it", lastTurnStatus => {
+    const retry = vi.fn();
+    const props = { items: [], threadId: "thread", openTargets: [], selectedOpenAppId: "", lastTurnStatus, onRetryMessage: retry };
+    const { rerender } = render(<Messages {...props} isThinking={false} />);
+    expect(screen.getByRole("status").textContent).toContain("Nothing restarts automatically");
+    expect(retry).not.toHaveBeenCalled();
+    rerender(<Messages {...props} isThinking />);
+    expect(screen.queryByText(/Nothing restarts automatically/)).toBeNull();
+    expect(screen.getByText("Working…")).toBeTruthy();
+  });
+  it("shows waiting for approval instead of a working spinner", () => {
+    render(<Messages items={[]} threadId="thread" isThinking waitingForApproval openTargets={[]} selectedOpenAppId="" />);
+    expect(screen.getByRole("status").textContent).toContain("Waiting for you");
+    expect(screen.queryByText("Working…")).toBeNull();
+  });
   const failedUser: ConversationItem = { id: "failed-user", kind: "message", role: "user", text: "Check this image", images: ["data:image/png;base64,AAA"] };
   const quotaError: ConversationItem = { id: "123-assistant", kind: "message", role: "assistant", text: "Turn failed: Provider requested 1800000ms wait. Original error: 429 ChatGPT Account 1 requests are paused to preserve the final 10% of weekly allowance. This prompt was not processed." };
 

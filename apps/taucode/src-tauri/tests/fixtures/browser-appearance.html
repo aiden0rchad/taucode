@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browser appearance check</title>
+<script>
+  const params = new URLSearchParams(location.search);
+  const theme = params.get("theme");
+  if (params.has("case")) document.title += ` ${params.get("case")}`;
+  if (theme === "dark") {
+    document.documentElement.style.cssText = "color-scheme:dark;background:#13241c;color:#e5f4eb";
+  } else if (theme === "adaptive") {
+    document.documentElement.style.colorScheme = "light dark";
+  }
+</script>
+<body>
+  <h1>Browser appearance check</h1>
+  <nav aria-label="Page theme">
+    <a href="?theme=plain">Plain page</a> ·
+    <a href="?theme=dark">Site dark theme</a> ·
+    <a href="?theme=adaptive">System theme</a>
+  </nav>
+  <p>The plain page must have black text on a white background, even in a glass or dark app theme.</p>
+  <p>The site dark theme must retain its green background and pale text. The system theme must keep readable matching text and background colors.</p>
+  <p><label>Retained text <input placeholder="Type, open Settings, then return"></label></p>
+  <p><button type="button" onclick="this.textContent = `Clicked ${++this.dataset.count}`" data-count="0">Click to test page interaction</button></p>
+  <p>Also check Back/Forward, Reload, app zoom, and returning after at least eight other tabs have opened.</p>
+</body>
+</html>

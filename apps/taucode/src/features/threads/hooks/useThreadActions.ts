@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import type { Turn } from "@protocol/v2/Turn";
 import type { Dispatch, MutableRefObject } from "react";
 import type {
   DebugEntry,
@@ -331,6 +332,9 @@ export function useThreadActions({
             threadId,
             isReviewing: hydrationPlan.reviewing,
           });
+          if (!hydrationPlan.keepLocalProcessing && Array.isArray(thread.turns)) {
+            dispatch({ type: "setThreadProtocolState", threadId, patch: { lastTurn: thread.turns[thread.turns.length - 1] as Turn | undefined } });
+          }
           if (!isPaginated && hydrationPlan.mergedItems.length > 0) {
             dispatch({
               type: "setThreadItems",

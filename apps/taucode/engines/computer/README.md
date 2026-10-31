@@ -10,9 +10,12 @@ approvals and input. Credentials arrive through `TAUCODE_CUA_PLANNER_KEY` and
 Use **Request access** in Settings → Computer Use to request Screen Recording and
 Accessibility, then grant any missing access in System Settings. Screen Recording
 takes effect only after quitting and reopening taucode; use **Quit & Reopen**.
-Development builds are ad-hoc signed, so macOS may ask again after rebuilds.
+Use the configured development signing identity across rebuilds to preserve the
+app's identity. Unsigned or differently signed builds may require access again.
 
-`configure.grounding.mode` accepts `pixels` (default) or `ui-tars`. Pixel mode
+`configure.grounding.mode` accepts `elements` (default), `pixels` or `ui-tars`.
+Element mode prefers accessibility controls and falls back to pixel grounding.
+Pixel mode
 uses the actual dimensions of an aspect-preserving image capped at 1920 pixels
 on its long side. UI-TARS uses `grounding.width`/`height` (1920×1080 or 1000×1000)
 and its specialized prompt. Planner images are capped at 1920 in both modes.
@@ -21,6 +24,12 @@ Each prediction has one 60-second deadline across reflection, planning,
 formatting corrections, grounding and retry backoff. Permanent provider errors
 fail immediately; OpenAI-compatible routes rejecting system roles get one
 compatibility retry and retain that preference for the process lifetime.
+
+Pause releases held input. Resume discards observations and unexecuted actions
+from before the pause, then captures and plans again. This also applies when
+paused during capture, planning, approval or foreground-fallback waits. Already
+partially delivered input is never replayed automatically. Stop and wall-time
+limits remain active while paused.
 
 ## Live grounding eval (opt-in)
 

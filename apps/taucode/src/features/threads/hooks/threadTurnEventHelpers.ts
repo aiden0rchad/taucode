@@ -47,7 +47,7 @@ export function getThreadStartAction(
   if (isThreadHidden(workspaceId, threadId)) {
     return "skip" as const;
   }
-  if (shouldHideSubagentThreadFromSidebar(thread.source)) {
+  if (thread.ephemeral === true || shouldHideSubagentThreadFromSidebar(thread.source)) {
     return "hide" as const;
   }
   return "continue" as const;

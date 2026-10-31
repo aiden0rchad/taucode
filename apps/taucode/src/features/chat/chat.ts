@@ -13,10 +13,12 @@ export const chatTitle = (chat: Chat) => chat.chat.title || chat.preview || "New
 
 export function chatGroups(chats: Chat[], search: string, trash: boolean, now = new Date()) {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
-  const groups: Record<string, Chat[]> = trash ? { Trash: [] } : { Pinned: [], Today: [], "Previous 7 days": [], Older: [] };
+  const groups: Record<string, Chat[]> = trash ? { Trash: [] } : { Pinned: [], Working: [], Today: [], Yesterday: [], "Previous 7 days": [], Older: [] };
+  const terms = search.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
   for (const chat of [...chats].sort((a, b) => b.updatedAt - a.updatedAt)) {
-    if (Boolean(chat.chat.deletedAt) !== trash || !chatTitle(chat).toLowerCase().includes(search.toLowerCase())) continue;
-    const group = trash ? "Trash" : chat.chat.pinned ? "Pinned" : chat.updatedAt >= today ? "Today" : chat.updatedAt >= today - 7 * 86400 ? "Previous 7 days" : "Older";
+    const text = [chatTitle(chat), chat.preview, chat.model, chat.modelProvider].join(" ").toLocaleLowerCase();
+    if (Boolean(chat.chat.deletedAt) !== trash || !terms.every(term => text.includes(term))) continue;
+    const group = trash ? "Trash" : chat.chat.pinned ? "Pinned" : chat.running ? "Working" : chat.updatedAt >= today ? "Today" : chat.updatedAt >= today - 86400 ? "Yesterday" : chat.updatedAt >= today - 7 * 86400 ? "Previous 7 days" : "Older";
     groups[group].push(chat);
   }
   return groups;

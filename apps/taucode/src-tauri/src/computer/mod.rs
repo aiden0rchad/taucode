@@ -68,6 +68,29 @@ impl Computer {
         self.control.pause(paused);
         self.state.send_modify(|s| s["paused"] = json!(paused));
     }
+    fn control_run(&self, request: &Value) -> Result<(), String> {
+        let expected = request.get("runId").map(|id| id.as_str().ok_or("Invalid computer run ID")).transpose()?;
+        let mut accepted = false;
+        // Check and mutate under the state lock: a stale UI must never stop or
+        // resume a replacement run between a status read and its control call.
+        self.state.send_modify(|state| {
+            if state["running"] != true || expected.is_some_and(|id| state["id"] != id) {
+                return;
+            }
+            if request["action"] == "stop" {
+                self.control.stop();
+                self.pending.lock().unwrap().take();
+                state["approval"] = Value::Null;
+                state["paused"] = json!(false);
+            } else if !self.control.stopped() {
+                let paused = request["paused"] == true;
+                self.control.pause(paused);
+                state["paused"] = json!(paused);
+            } else { return; }
+            accepted = true;
+        });
+        if accepted { Ok(()) } else { Err("Computer run is no longer active".into()) }
+    }
     pub fn answer(&self, id: &str, accept: bool) -> Result<(), String> {
         let mut pending = self.pending.lock().map_err(|_| "Approval unavailable")?;
         if pending.as_ref().is_none_or(|(key, _)| key != id) {
@@ -115,12 +138,8 @@ impl Computer {
                 state["permissions"] = permissions();
                 Ok(state)
             }
-            Some("stop") => {
-                self.stop();
-                Ok(Value::Null)
-            }
-            Some("pause") => {
-                self.pause(p["paused"] == true);
+            Some("stop" | "pause") => {
+                self.control_run(&p)?;
                 Ok(Value::Null)
             }
             Some("prepare") => {
@@ -249,7 +268,7 @@ impl Computer {
             self.control.start();
             let _stop = StopOnDrop(self.clone());
             let id = uuid::Uuid::new_v4().to_string();
-            self.state.send_replace(json!({"id":id,"running":true,"paused":false,"steps":[],"instruction":instruction,"shortcut":limits.shortcut}));
+            self.state.send_replace(json!({"id":id,"running":true,"paused":false,"phase":"starting","mode":limits.mode,"steps":[],"instruction":instruction,"shortcut":limits.shortcut}));
             let resource = app.path().resource_dir().ok();
             let start = std::time::Instant::now();
             let result = async {
@@ -296,6 +315,7 @@ impl Computer {
                         .await?;
                     self.control
                         .install_input(native::NativeInput::background(session.clone()))?;
+                    self.state.send_modify(|state| state["targetApp"] = session.target_info());
                     Some(session)
                 } else {
                     None
@@ -312,8 +332,9 @@ impl Computer {
                     runner::run(&mut env, &self.control, &limits, &apps, instruction, start).await;
                 if let Some(s) = &env.session {
                     self.state.send_modify(|state| {
-                        state["targetApp"] = json!({"bundleId":s.bundle,"pid":s.pid});
+                        state["targetApp"] = s.target_info();
                         state["focusRestorations"] = json!(*s.guard.restorations.lock().unwrap());
+                        state["cursorHintsShown"] = json!(s.overlay.presented());
                     });
                 }
                 result
@@ -435,6 +456,9 @@ impl runner::Environment for Live {
             })
             .await
             .map_err(|e| e.to_string())??;
+            if let Some(session) = &self.session {
+                self.computer.state.send_modify(|state| state["targetApp"] = session.target_info());
+            }
             Ok(runner::Frame {
                 thumbnail: f.thumbnail,
                 png: f.png,
@@ -585,7 +609,7 @@ impl runner::Environment for Live {
                             return Err("AX action completion unknown after timeout; background fallback unavailable".into());
                         }
                         _ if s.fallback_reason.lock().unwrap().as_deref().is_some_and(|r| r.starts_with("background_keyboard_")) => {
-                            return Err(format!("{}Background keyboard delivery requires activation or lost its target focus; no input dispatched", runner::RECOVERABLE));
+                            return Err(format!("{}Background keyboard target is not focused or its focus could not be confirmed; no input dispatched", runner::RECOVERABLE));
                         }
                         _ => runner::Preparation::NeedsForeground,
                     },
@@ -718,6 +742,9 @@ impl runner::Environment for Live {
                 Err("Approval declined or cancelled".into())
             }
         })
+    }
+    fn phase(&mut self, phase: runner::Phase) {
+        self.computer.state.send_modify(|s| s["phase"] = json!(phase));
     }
     fn progress(&mut self, mut step: Value) -> Result<(), String> {
         if let Some(s) = &self.session {

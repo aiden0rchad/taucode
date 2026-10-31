@@ -33,6 +33,8 @@ type MessagesProps = {
   threadId: string | null;
   workspaceId?: string | null;
   isThinking: boolean;
+  lastTurnStatus?: string;
+  waitingForApproval?: boolean;
   isLoadingMessages?: boolean;
   hasOlderHistory?: boolean;
   isLoadingHistory?: boolean;
@@ -89,6 +91,7 @@ export const Messages = memo(function Messages({
   onOpenThreadLink,
   onQuoteMessage, onSideChat, sideChatDisabledReason, onSendToMain,
   onRetryMessage, onChangeModel,
+  lastTurnStatus, waitingForApproval = false,
 }: MessagesProps) {
   const features = useFeatures();
   if (!features.sideChats) onSideChat = undefined;
@@ -327,10 +330,14 @@ export const Messages = memo(function Messages({
         })}
         {planFollowupNode}
         {userInputNode}
+        {(userInputNode || waitingForApproval) && <p role="status" className="thread-recovery-state">Waiting for you — {waitingForApproval ? "review the approval request to continue." : "answer the question above to continue."}</p>}
+        {!isThinking && !isLoadingMessages && !userInputNode && !waitingForApproval && (lastTurnStatus === "interrupted" || (lastTurnStatus === "failed" && !latestFailed)) && <p role="status" className={`thread-recovery-state ${lastTurnStatus === "failed" ? "is-failed" : ""}`}>
+          <strong>{lastTurnStatus === "interrupted" ? "Stopped" : "Failed"}</strong> — Review the saved progress, then send a follow-up to continue. Nothing restarts automatically.
+        </p>}
         <WorkingIndicator
-          isThinking={isThinking}
+          isThinking={isThinking && !userInputNode && !waitingForApproval}
           processingStartedAt={processingStartedAt}
-          lastDurationMs={latestFailed ? null : lastDurationMs}
+          lastDurationMs={latestFailed || lastTurnStatus === "failed" || lastTurnStatus === "interrupted" || userInputNode || waitingForApproval ? null : lastDurationMs}
           hasItems={items.length > 0}
           reasoningLabel={latestReasoningLabel}
           showPollingFetchStatus={showPollingFetchStatus}

@@ -108,6 +108,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
   });
 
   const web = active ? Boolean(active.chat.web) : newWeb;
+  const groups = chatGroups(chat.chats, search, trash);
   const toggleWeb = () => { if (active) { void mutate("web", active.id, { web: !web }); } else setNewWeb(!web); };
 
   return <WorkspaceShell titleActions={<span className="thread-header-model" title={formatModelRef(settings, model).title}>pi · {formatModelRef(settings, model).name}</span>} reservedShortcuts={Object.entries(settings).filter(([key, value]) => key.endsWith("Shortcut") && typeof value === "string").map(([, value]) => String(value))} scope={`chat:${chat.active ?? "new"}`} title={active ? chatTitle(active) : "New chat"} onNavigate={scope => { const id = scope.slice(5); if (id === "new") chat.setActive(null); else void chat.open(id); }} actions={active ? [{ label: "Rename", onClick: () => { setRename(active.id); setName(chatTitle(active)); } }, { label: "Copy", onClick: () => { void navigator.clipboard.writeText(chatMarkdown(chatTitle(active), chat.messages)).catch(e => chat.setError(String(e))); } }, { label: "Export", onClick: () => { void run(() => exportMarkdownFile(chatMarkdown(chatTitle(active), chat.messages), "chat.md", "Export chat")); } }, { label: "Move to Trash", onClick: () => { void mutate("trash", active.id); } }] : []} searchUrl={settings.browser?.searchUrl} onInterrupt={() => chatRequest("stop", { threadId: chat.active }).then(() => {})}><div className={`chat-layout${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
@@ -117,7 +118,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
       {!searchOpen && <NewConversationRow label="New chat" disabled={busy} shortcut={settings.newAgentShortcut} handleShortcut onSearch={() => setSearchOpen(true)} onNew={() => { chat.setActive(null); clearDraft(); setNewWeb(false); setModel(defaultModel || modelKey(settings.agentPolicy?.defaultModel) || models[0]?.key || ""); setTrash(false); if (window.innerWidth < 760) setSidebarCollapsed(true); }} />}
       {searchOpen && <label className="sidebar-search is-open"><Search aria-hidden /><input autoFocus onKeyDown={e => { if (e.key === "Escape") { setSearch(""); setSearchOpen(false); } }} ref={searchInput} type="search" aria-label="Search chats" placeholder="Search chats" value={search} onChange={e => setSearch(e.target.value)} /><IconButton type="button" className="ghost" aria-label="Close search" onClick={() => { setSearch(""); setSearchOpen(false); }}><X aria-hidden /></IconButton></label>}
       <div ref={sidebarBodyRef} onScroll={updateScrollFade} className={`chat-list sidebar-body${scrollFade.top ? " fade-top" : ""}${scrollFade.bottom ? " fade-bottom" : ""}`}>
-        {Object.entries(chatGroups(chat.chats, search, trash)).map(([group, entries]) => entries.length > 0 && <section key={group} aria-label={group}>
+        {Object.entries(groups).map(([group, entries]) => entries.length > 0 && <section key={group} aria-label={group}>
           <h2 className="sidebar-section-header"><span className="sidebar-section-title">{group}</span></h2>
           {entries.map(entry => <RowMenu key={entry.id} label={chatTitle(entry)} actions={trash ? [{ label: "Restore", disabled: busy || Date.now() / 1000 - (entry.chat.deletedAt ?? 0) > 30 * 86400, onClick: () => { void mutate("restore", entry.id); } }] : [
             { label: entry.chat.pinned ? "Unpin" : "Pin", disabled: busy, onClick: () => { void mutate("pin", entry.id, { pinned: !entry.chat.pinned }); } },
@@ -132,7 +133,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
             </button>}
           </RowMenu>)}
         </section>)}
-        {!chat.chats.length && <p className="chat-muted">Your conversations will appear here.</p>}
+        {Object.values(groups).every(entries => !entries.length) && <div className="sidebar-search-empty" role="status"><p>{search.trim() ? `No conversations match “${search.trim()}”.` : trash ? "Trash is empty." : "Your conversations will appear here."}</p>{search.trim() && <button type="button" className="ghost" onClick={() => setSearch("")}>Clear search</button>}</div>}
       </div>
       <SidebarBottomRail onOpenSettings={onOpenSettings} onOpenDebug={() => {}} showDebugButton={false}><IconButton size="lg" className="ghost sidebar-utility-button" aria-label={trash ? "Back to chats" : "Trash"} title={trash ? "Back to chats" : "Trash"} aria-pressed={trash} onClick={() => setTrash(!trash)}><Trash size={14} aria-hidden /></IconButton></SidebarBottomRail>
     </aside>
@@ -150,11 +151,14 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
             <div className="message-hover-actions"><IconButton type="button" className="ghost" aria-label="Copy message" title="Copy message" onClick={() => { void navigator.clipboard.writeText(message.text).catch(() => chat.setError("Could not copy message.")); }}><Copy aria-hidden /></IconButton>{message.id === lastUser?.id && <IconButton className="ghost" aria-label="Edit and resend" title="Edit and resend" disabled={disabled} onClick={() => { setDraft(message.text); setAttachments(message.images?.map((url, i) => ({ name: `Image ${i + 1}`, url })) ?? []); setEditing(message.id); composerInput.current?.focus(); }}><Pencil aria-hidden /></IconButton>}{message.role === "assistant" && message.id === chat.messages[chat.messages.length - 1]?.id && lastUser && <IconButton className="ghost" aria-label="Regenerate last answer" title="Regenerate last answer" disabled={disabled} onClick={() => { void run(() => chat.send(lastUser.text, lastUser.images ?? [], model || null, lastUser.id, web, reasoning.level)); }}><RotateCcw aria-hidden /></IconButton>}</div>
           </article>)}
 
-          {chat.running && <p role="status" className="chat-muted">Responding…</p>}
           <div ref={end} />
         </div>
       </div>
       <form className="chat-composer chat-column" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }} onDrop={e => { e.preventDefault(); setDragOver(false); if (!disabled) addFiles(Array.from(e.dataTransfer.files)); }}>
+        {(chat.running || chat.turnStatus === "interrupted" || chat.turnStatus === "failed") && <p role="status" className={`chat-turn-state${chat.running ? "" : ` is-${chat.turnStatus}`}`}>
+          <strong>{chat.running ? "Working" : chat.turnStatus === "interrupted" ? "Stopped" : "Failed"}</strong>
+          {chat.running ? " — You can stop this response below." : chat.turnStatus === "interrupted" ? " — Send a follow-up to continue, or regenerate the last answer." : " — Review the error, then retry or choose another model."}
+        </p>}
         <input ref={fileInput} hidden type="file" aria-label="Attach files" multiple disabled={disabled} onChange={e => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
         <ComposerShell reasoning={{ modelName: formatModelRef(settings, model).name, models: models.map(m => ({ id: m.key, name: m.displayName || m.id, provider: m.provider })), selectedModelId: model, defaultModelId: settings.agentPolicy?.defaultModel ? settings.agentPolicy.defaultModel.providerId + "/" + settings.agentPolicy.defaultModel.modelId : undefined, onSelectModel: selectModel, capability, value: reasoning.requested, onChange: reasoning.onChange, disabled, onOpenSettings }} menu={<><button type="button" disabled={disabled} onClick={() => fileInput.current?.click()}>Attach files or images</button>{features.browser && features.connectors && settings.mcpServers?.some(c => c.id === "taucode-browser" && c.enabled) && <button type="button" disabled={disabled} aria-pressed={web} onClick={toggleWeb}><Globe aria-hidden />{web ? "Turn off Web" : "Turn on Web"}</button>}<button type="button" disabled={disabled || !model} onClick={() => { void run(async () => {
           const value = defaultModel === model ? "" : model;

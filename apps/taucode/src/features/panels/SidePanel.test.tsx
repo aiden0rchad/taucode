@@ -77,6 +77,33 @@ it("opens a URL as its own tab, switches browser pages and restores a missing ho
   await waitFor(() => expect(host.tabs[0]?.url).toBe("https://example.com/"));
   expect(screen.getByRole("button", { name: "Downloads" })).toBeTruthy();
 });
+it("reveals the selected tab and its close button after opening, switching and reopening the panel", async () => {
+  const reveal = vi.fn();
+  const original = HTMLElement.prototype.scrollIntoView;
+  HTMLElement.prototype.scrollIntoView = reveal;
+  try {
+    render(shell());
+    fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+    fireEvent.click(screen.getByRole("button", { name: /Changes/ }));
+    const changes = screen.getByRole("tab", { name: "Changes" }).parentElement;
+    expect(reveal.mock.instances[reveal.mock.instances.length - 1]).toBe(changes);
+    fireEvent.click(screen.getByRole("button", { name: "New panel tab" }));
+    fireEvent.click(screen.getByRole("button", { name: /New page/ }));
+    const page = await screen.findByRole("tab", { name: "New page" });
+    await waitFor(() => expect(reveal.mock.instances[reveal.mock.instances.length - 1]).toBe(page.parentElement));
+    reveal.mockClear();
+    act(() => { host = { ...host, tabs: host.tabs.map(tab => ({ ...tab, title: "A much longer page title" })) }; callbacks.forEach(callback => callback(host)); });
+    expect(reveal.mock.instances[reveal.mock.instances.length - 1]).toBe(page.parentElement);
+    fireEvent.click(screen.getByRole("tab", { name: "Changes" }));
+    expect(reveal.mock.instances[reveal.mock.instances.length - 1]).toBe(changes);
+    fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+    reveal.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
+    expect(reveal.mock.instances[reveal.mock.instances.length - 1]).toBe(changes);
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original;
+  }
+});
 it("opens Task by default and validates corrupt saved tab data", () => {
   render(shell("work:task", [{ id: "task", label: "Task", content: <p>Plan and outputs</p> }]));
   expect(screen.getByRole("tab", { name: "Task", selected: true })).toBeTruthy();
@@ -379,4 +406,42 @@ it("routes native View commands through the current panel and conversation histo
   vi.mocked(browserRequest).mockClear();
   act(() => menu.view("new_browser_tab"));
   expect(browserRequest).not.toHaveBeenCalled();
+});
+
+it("switches duplicate-title tabs from the full list and shows live page status", async () => {
+  host = { tabs: Array.from({ length: 9 }, (_, i) => ({ id: `host-${i}`, title: "Preview", url: `https://preview.test/${i}`, loading: i === 8 })), active: "host-0" };
+  localStorage.setItem("taucode.panel.code:one", JSON.stringify({ open: true, active: "tab-0", tabs: host.tabs.map((page, i) => ({ id: `tab-${i}`, kind: "browser", title: page.title, url: page.url, target: page.id })) }));
+  render(shell());
+  const list = screen.getByRole("combobox", { name: "All panel tabs" });
+  expect(within(list).getAllByRole("option")).toHaveLength(9);
+  expect(within(list).getByRole("option", { name: /9\. Preview.*preview.test\/8.*Loading/ })).toBeTruthy();
+  fireEvent.change(list, { target: { value: "tab-8" } });
+  await waitFor(() => expect(host.active).toBe("host-8"));
+  const selected = screen.getByRole("tab", { name: "Preview", selected: true });
+  expect(selected.getAttribute("aria-description")).toBe("Loading");
+  act(() => { host = { ...host, tabs: host.tabs.map(page => page.id === "host-8" ? { ...page, loading: false, error: "Connection refused" } : page) }; callbacks.forEach(callback => callback(host)); });
+  expect(selected.getAttribute("aria-description")).toBe("Failed to load: Connection refused");
+  expect(within(list).getByRole("option", { name: /Connection refused/ })).toBeTruthy();
+  expect(JSON.stringify(readPanel("code:one"))).not.toContain("Connection refused");
+});
+it("keeps saved URLs, order and selection while restoring the selected page before lazy tabs", async () => {
+  const tabs = [0, 1, 2].map(i => ({ id: `saved-${i}`, kind: "browser", title: `Saved ${i}`, url: `https://saved.test/${i}`, target: `old-${i}` }));
+  localStorage.setItem("taucode.panel.code:one", JSON.stringify({ open: true, active: "saved-1", tabs }));
+  const request = vi.mocked(browserRequest).getMockImplementation()!;
+  let finish!: () => void;
+  vi.mocked(browserRequest).mockImplementation(async input => {
+    if (input.action === "navigate") await new Promise<void>(resolve => { finish = resolve; });
+    return request(input);
+  });
+  render(shell());
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+  expect(readPanel("code:one").tabs.map(tab => [tab.id, tab.title, tab.url])).toEqual(tabs.map(tab => [tab.id, tab.title, tab.url]));
+  expect(readPanel("code:one").active).toBe("saved-1");
+  await act(async () => { fireEvent.change(screen.getByRole("combobox", { name: "All panel tabs" }), { target: { value: "saved-2" } }); });
+  expect(host.tabs).toHaveLength(1);
+  vi.mocked(browserRequest).mockImplementation(request);
+  await act(async () => { finish(); });
+  await waitFor(() => expect(host.tabs[0].url).toBe("https://saved.test/1"));
+  await waitFor(() => expect(host.tabs[1]?.url).toBe("https://saved.test/2"));
+  expect(readPanel("code:one").tabs.map(tab => tab.id)).toEqual(tabs.map(tab => tab.id));
 });

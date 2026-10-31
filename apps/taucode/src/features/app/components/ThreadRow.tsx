@@ -128,8 +128,10 @@ export function ThreadRow({
         : statusClass === "reviewing"
       ? "Reviewing"
       : hasPendingUserInput
-        ? "Waiting"
-        : null;
+        ? "Waiting for you"
+        : statusClass === "failed" ? "Failed"
+        : statusClass === "stopped" ? "Stopped"
+        : statusClass === "processing" ? "Working" : null;
   const subagentLabel =
     thread.isSubagent && (thread.subagentNickname || thread.subagentRole)
       ? thread.subagentNickname ?? thread.subagentRole ?? null

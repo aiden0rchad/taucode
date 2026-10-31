@@ -52,7 +52,7 @@ describe("UI preview IPC", () => {
     expect(items.find(i => i.kind === "tool" && i.agentsTree)).toMatchObject({ agentsTree: [{ id: "agent-review", children: [{ id: "agent-tests" }] }] });
     expect(fixtures.threads[3].sideOf?.threadId).toBe("thread-rich");
     expect(fixtures.checkpoints.map(c => c.metadata.kind)).toEqual(["before", "after"]);
-    expect(Object.fromEntries(Object.entries(chatGroups(fixtures.chats, "", false)).map(([key, value]) => [key, value.length]))).toEqual({ Pinned: 0, Today: 3, "Previous 7 days": 2, Older: 1 });
+    expect(Object.fromEntries(Object.entries(chatGroups(fixtures.chats, "", false)).map(([key, value]) => [key, value.length]))).toEqual({ Pinned: 0, Working: 1, Today: 2, Yesterday: 0, "Previous 7 days": 2, Older: 1 });
     expect(fixtures.work.tasks.map(t => t.status)).toEqual(["running", "needs-input", "queued", "done"]);
   });
 

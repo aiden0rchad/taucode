@@ -185,6 +185,28 @@ it("treats a new native blank tab as idle and focuses its URL without stealing f
   expect(screen.getByRole("button", { name: "Stop loading" })).toBeTruthy();
 });
 
+it("replaces native loading guidance with a retryable navigation error", async () => {
+  render(<BrowserPane onClose={vi.fn()} onTakeOver={vi.fn()} />);
+  await waitFor(() => expect(subscribeBrowser).toHaveBeenCalled());
+  const pending: BrowserState = { ...state, backend: "native", tabs: [{ ...state.tabs[0], ready: false, loading: true }] };
+  act(() => receive(pending));
+  expect(screen.getByText("Loading page…")).toBeTruthy();
+  act(() => receive({ ...pending, tabs: [{ ...pending.tabs[0], loading: false, error: "Could not connect to the server." }] }));
+  expect(screen.getByRole("alert").textContent).toContain("Could not connect to the server.");
+  expect(screen.queryByText("Loading page…")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(browserRequest).toHaveBeenCalledWith({ action: "navigate", url: pending.tabs[0].url });
+  vi.mocked(browserRequest).mockClear();
+  fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+  expect(browserRequest).toHaveBeenCalledWith({ action: "navigate", url: pending.tabs[0].url });
+  act(() => receive(pending));
+  expect(screen.getByText("Loading page…")).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+  act(() => receive({ ...pending, tabs: [{ ...pending.tabs[0], loading: false, ready: true }] }));
+  fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+  expect(browserRequest).toHaveBeenCalledWith({ action: "reload" });
+});
+
 it.each(["Escape", "Close"])("returns annotation focus to its trigger after explicit %s", async dismiss => {
   vi.stubGlobal("Image", class { naturalWidth = 800; naturalHeight = 600; src = ""; decode = async () => {}; });
   vi.mocked(browserRequest).mockImplementation(async params => params.action === "screenshot" ? "AAAA" : undefined);

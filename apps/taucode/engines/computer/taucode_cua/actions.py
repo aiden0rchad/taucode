@@ -50,6 +50,8 @@ def parse_action(agent, code):
         return action
     except ProviderError:
         raise
+    except (ValueError, TypeError) as error:
+        return {'kind': 'fail', 'reason': f'Action not executed: {error}'}
     except Exception as error:
         return {'kind': 'fail', 'reason': str(error)}
 
@@ -174,9 +176,9 @@ class StructuredACI(OSWorldACI):
 
     @agent_action
     def scroll(self, element_description: str, clicks: int, shift: bool = False):
-        """Scroll at a described element; positive up, negative down; shift for horizontal."""
+        """Scroll by integer clicks from -100 to 100; positive up, negative down; shift for horizontal."""
         if type(clicks) is not int or abs(clicks) > 100:
-            raise ValueError('Invalid scroll distance')
+            raise ValueError('Scroll clicks must be an integer from -100 to 100; use smaller steps')
         return dict(self.ground(element_description), kind='scroll', clicks=clicks, shift=boolean(shift))
 
     @agent_action

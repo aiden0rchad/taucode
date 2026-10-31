@@ -149,6 +149,17 @@ impl Control {
             .input
             .stop();
     }
+    pub fn release_key(&self, key: u16) -> Result<(), String> {
+        let mut held = self.held.lock().map_err(|_| "Input lock poisoned")?;
+        // Escape/Enter can dismiss the focused field on key-down. Releasing a
+        // key we already own is cleanup through the same bound input, not a
+        // new action in the resulting focus. Pause/stop may have released it.
+        if held.keys.contains(&key) {
+            held.input.post(&Event::Key(key, false))?;
+            held.keys.retain(|v| *v != key);
+        }
+        Ok(())
+    }
     pub fn release(&self) {
         self.release_with(false);
     }

@@ -174,6 +174,15 @@ describe("useThreadTurnEvents", () => {
     expect(safeMessageActivity).not.toHaveBeenCalled();
   });
 
+  it("hides ephemeral metadata sessions before they enter the sidebar", () => {
+    const { result, dispatch, recordThreadActivity } = makeOptions();
+    act(() => {
+      result.current.onThreadStarted("ws-1", { id: "internal", ephemeral: true, preview: "Metadata" });
+    });
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({ type: "hideThread", workspaceId: "ws-1", threadId: "internal" });
+    expect(recordThreadActivity).not.toHaveBeenCalled();
+  });
+
   it("hides memory consolidation thread started events", () => {
     const { result, dispatch, recordThreadActivity, safeMessageActivity } =
       makeOptions();

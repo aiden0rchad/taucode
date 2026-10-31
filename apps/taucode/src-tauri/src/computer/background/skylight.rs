@@ -383,6 +383,16 @@ fn focus_record(wid: u32) -> [u8; 0xF8] {
     buf[0x3C..0x40].copy_from_slice(&wid.to_le_bytes());
     buf
 }
+// Cua's activate_without_raise_with(..., false): update the target's AppKit
+// key-window state without defocusing the user or changing WindowServer's front process.
+pub fn refresh_document_window(pid: i32, window: u32) -> bool {
+    let Some(post) = post_event_record_to_fn() else { return false; };
+    let mut psn = [0u8; 8];
+    if !get_process_psn_for_window(window, pid, &mut psn) { return false; }
+    let mut record = focus_record(window);
+    record[0x8A] = 0x01;
+    unsafe { post(psn.as_ptr().cast(), record.as_ptr()) == 0 }
+}
 pub fn get_process_psn_for_window(window_id: u32, pid: libc::pid_t, out_psn: &mut [u8; 8]) -> bool {
     // Try modern path: CGSMainConnectionID → SLSGetWindowOwner → SLSGetConnectionPSN
     if let (Some(get_owner), Some(get_psn), Some(conn_id_fn)) = (

@@ -140,6 +140,9 @@ export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettin
     send({ action: "key", type, key: e.key, code: e.code, keyCode: e.keyCode, text: e.key.length === 1 ? e.key : e.key === "Enter" ? "\r" : "", modifiers: modifiers(e), mac: isMacPlatform() });
   };
   const pageError = error || state.error || active?.error;
+  // WKWebView has nothing to reload when its first navigation never committed.
+  const reload = () => send(native && !blank && active?.url && (pageError || !active.ready)
+    ? { action: "navigate", url: active.url } : { action: "reload" });
   return <section className={`browser-pane ds-panel${agentActive || state.agent ? " browser-agent-active" : ""}`} aria-label="Browser">
     {!embedded && <header className="ds-panel-header"><strong>Browser</strong><button className="ghost" onClick={onClose} aria-label="Close browser pane"><X aria-hidden /></button></header>}
     {(agentActive || state.agent) && <div className="browser-agent" role="status"><span>Agent is using the browser</span><button className="secondary" onClick={() => { void Promise.resolve(onTakeOver()).catch(e => setError(String(e))); }}>Take over</button></div>}
@@ -153,7 +156,7 @@ export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettin
     <form className="browser-toolbar" onSubmit={e => { e.preventDefault(); try { send({ action: "navigate", url: normalizeBrowserUrl(url, searchUrl) }); } catch (err) { setError(String(err)); } }}>
       <button className="ghost" type="button" aria-label="Back" disabled={native && active?.canGoBack === false} onClick={() => send({ action: "back" })}><ArrowLeft aria-hidden /></button>
       <button className="ghost" type="button" aria-label="Forward" disabled={native && active?.canGoForward === false} onClick={() => send({ action: "forward" })}><ArrowRight aria-hidden /></button>
-      <button className="ghost" type="button" aria-label={loading ? "Stop loading" : "Reload"} onClick={() => send({ action: loading ? "stop" : "reload" })}>{loading ? <X aria-hidden /> : <RotateCw aria-hidden />}</button>
+      <button className="ghost" type="button" aria-label={loading ? "Stop loading" : "Reload"} onClick={() => loading ? send({ action: "stop" }) : reload()}>{loading ? <X aria-hidden /> : <RotateCw aria-hidden />}</button>
       <div className="browser-address">{url.startsWith("https:") && <LockKeyhole aria-hidden />}<input ref={address} aria-label="URL or search" placeholder="Search or enter a URL" value={url} onChange={e => setUrl(e.target.value)} onFocus={e => e.target.select()} /></div>
       <button className="ghost" type="button" aria-label="Downloads" onClick={() => { void openBrowserDownloads().catch(e => setError(String(e))); }}><Download aria-hidden /></button>
       {onBrowserContext && state.capabilities?.screenshot && <button ref={annotateButton} className="ghost" type="button" aria-label="Annotate page" title="Select or annotate the page" aria-pressed={Boolean(capture)} disabled={!active || blank || active.loading || capturing || agentActive || state.agent} onClick={() => void annotate()}><Pencil aria-hidden /></button>}
@@ -180,7 +183,7 @@ export function BrowserPane({ embedded = false, searchUrl = defaultBrowserSettin
       </>}
       {blank && <div className="browser-empty">Enter a URL or search to open a page.</div>}
       {capture && onBrowserContext && <BrowserAnnotations key={`${capture.tab}:${capture.url}`} capture={capture} onAdd={onBrowserContext} onClose={reason => { setCapture(null); if (reason === "dismiss") annotateButton.current?.focus(); }} />}
-      {pageError && <div className="browser-error" role="alert"><p>{pageError}</p><button onClick={() => send({ action: native ? "reload" : "attach", ...(!native ? size.current : {}) })}>Retry</button></div>}
+      {pageError && <div className="browser-error" role="alert"><p>{pageError}</p><button onClick={() => native ? reload() : send({ action: "attach", ...size.current })}>Retry</button></div>}
       {!blank && !native && !state.frame && !pageError && <div className="browser-empty">{state.tabs?.length ? "Connecting to the page…" : "Open a tab to browse together."}</div>}
     </div>
   </section>;
