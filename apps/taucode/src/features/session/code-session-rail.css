@@ -1,9 +1,10 @@
 .code-session-rail { height: 100%; overflow: auto; min-width: 0; padding: 12px 10px 16px; box-sizing: border-box; color: var(--text-primary); font-size: 12px; scrollbar-gutter: stable; }
 .code-session-card { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); margin-bottom: 8px; background: var(--surface-card-muted); }
 .code-session-card-header { display: flex; align-items: center; min-height: 38px; gap: 2px; padding: 0 6px; position: relative; }
-.code-session-card-toggle { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 8px 3px; border: 0; background: none; color: var(--text-strong); text-align: left; font: inherit; font-weight: 550; cursor: pointer; }
-.code-session-card-toggle > span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.code-session-card-toggle > small { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.code-session-card-toggle { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 8px 3px; border: 0; background: none; color: var(--text-strong); text-align: left; font: inherit; font-weight: 500; cursor: pointer; }
+.code-session-card-toggle > span { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-session-card-toggle > svg:first-child { display: none; }
+.code-session-card-toggle > small { margin-left: auto; color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .code-session-card-toggle > svg:last-child { transform: rotate(-90deg); color: var(--text-muted); }
 .code-session-card-toggle > svg.is-open { transform: none; }
 .code-session-reorder { display: flex; align-items: center; flex: 0 0 24px; }

@@ -71,7 +71,7 @@ it.each([
     if (query.includes("mode=code")) {
       const views = screen.getByRole("toolbar", { name: "Workspace views" });
       expect(views.closest(".workspace-titlebar")).toBeTruthy();
-      expect(within(views).getByRole("button", { name: "Toggle session rail" })).toBeTruthy();
+      expect(within(views).getByRole("button", { name: "Session rail" })).toBeTruthy();
       expect(document.querySelector('.dock-pane[data-dock-pane="session"]')).toBeTruthy();
     } else {
       const toggle = screen.getByRole("button", { name: "Toggle side panel" });
@@ -287,7 +287,7 @@ it.each(["chat", "work"])("keeps %s actions in the title row without a secondary
     expect(screen.getByRole("menuitem", { name: "Export" })).toBeTruthy();
   }
 });
-it("uses desktop Code chrome and a focused dock pane at 960px", async () => {
+it("uses desktop Code chrome and a floating session rail at 960px", async () => {
   vi.stubGlobal("innerWidth", 960); vi.stubEnv("MODE", "uipreview");
   window.history.replaceState(null, "", "/?mode=code&thread=thread-rich&panel=new");
   installUiPreview(); render(<App />);
@@ -298,10 +298,11 @@ it("uses desktop Code chrome and a focused dock pane at 960px", async () => {
   expect(screen.queryByRole("dialog", { name: "Side panel" })).toBeNull();
   const input = screen.getByPlaceholderText("Ask taucode to do something… Type / for commands");
   fireEvent.change(input, { target: { value: "Keep this draft" } });
-  fireEvent.click(screen.getByRole("button", { name: "Toggle session rail" }));
+  fireEvent.click(screen.getByRole("button", { name: "Session rail" }));
+  fireEvent.click(screen.getByRole("button", { name: "Session rail" }));
   expect(document.querySelector('.dock-pane[data-dock-pane="session"]')?.hasAttribute("hidden")).toBe(false);
-  expect(input.closest(".main")?.hasAttribute("inert")).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Show conversation" }));
+  expect(input.closest(".main")?.hasAttribute("inert")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Session rail" }));
   expect(input.closest(".main")?.hasAttribute("inert")).toBe(false);
   expect((input as HTMLTextAreaElement).value).toBe("Keep this draft");
 });

@@ -50,6 +50,7 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
     const sidebar = localStorage.getItem("codexmonitor.sidebarCollapsed") === "true" || window.innerWidth < 760 ? 0 : 280;
     const width = window.innerWidth - sidebar;
+    if (this.classList.contains("dock-session-space")) return { width: width * Number(this.closest<HTMLElement>(".dock-workspace")!.style.getPropertyValue("--dock-conversation-width")) } as DOMRect;
     if (this.classList.contains("dock-stage")) return { x: sidebar, y: 100, left: sidebar, top: 100, width, height: 600 } as DOMRect;
     if (this.classList.contains("panel-resize-overlay")) return { x: 0, y: 0, width: window.innerWidth, height: 900 } as DOMRect;
     if (this.classList.contains("sidebar")) return { x: 0, y: 0, left: 0, top: 0, width: 280, height: 700 } as DOMRect;
@@ -416,6 +417,7 @@ it("keeps a newer user selection when delayed creation notifications arrive", as
 
 it("paints dock geometry during a drag and persists only its final frame", async () => {
   const view = render(shell());
+  fireEvent.click(screen.getByRole("button", { name: "Toggle Terminal" }));
   const divider = screen.getByRole("separator", { name: "Resize dock split 1" });
   divider.setPointerCapture = vi.fn(); divider.hasPointerCapture = () => true; divider.releasePointerCapture = vi.fn();
   const saved = JSON.stringify(layout());
@@ -425,12 +427,48 @@ it("paints dock geometry during a drag and persists only its final frame", async
   fireEvent.pointerMove(divider, { pointerId: 1, clientX: 950, clientY: 100 });
   await frame();
   expect(JSON.stringify(layout())).toBe(saved);
-  expect(Number(pane("session").style.getPropertyValue("--dock-box-x"))).toBeCloseTo((950 - 280) / 1320, 4);
+  expect(Number(pane("terminal").style.getPropertyValue("--dock-box-x"))).toBeCloseTo((950 - 280) / 1320, 4);
   fireEvent.pointerMove(divider, { pointerId: 1, clientX: 1000, clientY: 100 });
   fireEvent.pointerUp(divider, { pointerId: 1 });
-  expect(dockGeometry(layout().tree).panes.session.x / 100).toBeCloseTo((1000 - 280) / 1320, 4);
+  expect(dockGeometry(layout().tree).panes.terminal.x / 100).toBeCloseTo((1000 - 280) / 1320, 4);
   expect(screen.getByRole("textbox", { name: "Conversation draft" })).toBe(draft);
   expect((draft as HTMLInputElement).value).toBe("keep me");
   const final = layout(); view.unmount(); render(shell());
   expect(layout()).toEqual(final);
+});
+
+
+it("uses one session toggle without dock controls and keeps the chat interactive when floating", () => {
+  render(shell());
+  const rail = pane("session"), toggle = screen.getByRole("button", { name: "Session rail" });
+  expect(rail.querySelector(".dock-pane-header")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Expand Session rail" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Close Session rail pane" })).toBeNull();
+  expect(rail.classList.contains("ds-popover")).toBe(false);
+  const saved = layout().tree;
+  vi.stubGlobal("innerWidth", 720); fireEvent(window, new Event("resize"));
+  expect(rail.hidden).toBe(false);
+  expect(rail.classList.contains("ds-popover")).toBe(true);
+  const draft = screen.getByRole("textbox", { name: "Conversation draft" });
+  expect(draft.closest("[inert]")).toBeNull();
+  fireEvent.change(draft, { target: { value: "keep this draft" } });
+  vi.stubGlobal("innerWidth", 1600); fireEvent(window, new Event("resize"));
+  expect(rail.classList.contains("ds-popover")).toBe(false);
+  expect(layout().tree).toEqual(saved);
+  fireEvent.click(toggle); expect(rail.hidden).toBe(true);
+  fireEvent.click(toggle); expect(rail.hidden).toBe(false);
+  expect((draft as HTMLInputElement).value).toBe("keep this draft");
+});
+
+it("dismisses the floating rail outside or with Escape and restores keyboard focus", () => {
+  vi.stubGlobal("innerWidth", 720); render(shell());
+  const toggle = screen.getByRole("button", { name: "Session rail" });
+  fireEvent.pointerDown(screen.getByRole("textbox", { name: "Conversation draft" }));
+  expect(pane("session").hidden).toBe(true);
+  fireEvent.click(toggle);
+  const railButton = screen.getByRole("button", { name: "Inspect changes" });
+  fireEvent.pointerDown(railButton); expect(pane("session").hidden).toBe(false);
+  railButton.focus(); fireEvent.keyDown(railButton, { key: "Escape" });
+  expect(pane("session").hidden).toBe(true);
+  expect(document.activeElement).toBe(toggle);
 });

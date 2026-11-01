@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { flushSync } from "react-dom";
-import { ArrowLeft, ArrowRight, Folder, GitBranch, Globe, Maximize2, Minimize2, PanelRight, Plus, Terminal, MessageSquare, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Folder, GitBranch, Globe, Maximize2, Minimize2, SquareMenu, Plus, Terminal, MessageSquare, X } from "lucide-react";
 import { IconButton } from "@/features/design-system/components/IconButton";
 import { DiagnosticBoundary } from "@/features/diagnostics/DiagnosticBoundary";
 import { RowMenu } from "@/features/chat/RowMenu";
@@ -28,19 +28,33 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
   const available = new Set(["conversation", ...(sessionRail ? ["session"] : []), ...tools.map(tool => tool.id), ...(features.browser ? ["browser"] : [])]);
   let tree = state.open ? saved.tree : { type: "pane" as const, id: "conversation" };
   for (const id of dockPanes(tree)) if (!available.has(id)) tree = removeDockPane(tree, id) ?? { type: "pane", id: "conversation" };
+  const sessionOpen = dockPanes(tree).includes("session");
+  tree = removeDockPane(tree, "session") ?? { type: "pane", id: "conversation" };
   const geometry = dockGeometry(tree), visible = new Set(Object.keys(geometry.panes));
   const expanded = saved.expanded && visible.has(saved.expanded) ? saved.expanded : null;
   const stage = useRef<HTMLDivElement>(null);
+  const sessionSpace = useRef<HTMLDivElement>(null);
+  const [sessionFloating, setSessionFloating] = useState(false);
   const [compact, setCompact] = useState(layout.conversationWidth < 760);
   useLayoutEffect(() => {
     const element = stage.current; if (!element) return;
-    const measure = () => setCompact(element.getBoundingClientRect().width < 760);
-    const observer = new ResizeObserver(measure); observer.observe(element); measure();
+    const composer = mainRef.current?.querySelector<HTMLElement>(".composer");
+    const measure = () => {
+      const width = element.getBoundingClientRect().width;
+      resize.appRef.current?.style.setProperty("--dock-composer-height", `${composer?.offsetHeight ?? 0}px`);
+      setCompact(width < 760);
+      setSessionFloating((sessionSpace.current?.getBoundingClientRect().width ?? width) < 840);
+    };
+    const observer = new ResizeObserver(measure); observer.observe(element);
+    if (sessionSpace.current) observer.observe(sessionSpace.current);
+    if (composer) observer.observe(composer);
+    measure();
     return () => observer.disconnect();
-  }, [layout.conversationWidth]);
+  }, [layout.conversationWidth, geometry.panes.conversation?.w, scope, mainRef, resize.appRef]);
   const focused = expanded ?? (saved.focused && visible.has(saved.focused) ? saved.focused : "conversation");
   const covered = Boolean(expanded || compact && focused !== "conversation");
   const conversation = compact ? full : geometry.panes.conversation;
+  const sessionShown = sessionOpen && !covered;
   const panes = useRef(new Map<string, HTMLElement>());
   const browserTabsRef = useRef<HTMLDivElement>(null);
   const browserContentId = useId();
@@ -49,6 +63,7 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
   const mounted = useRef({ scope, ids: new Set<string>() });
   if (mounted.current.scope !== scope) mounted.current = { scope, ids: new Set() };
   for (const id of visible) mounted.current.ids.add(id);
+  if (sessionOpen) mounted.current.ids.add("session");
   const { startResize } = usePanelResize();
   const hidePane = (id: string) => {
     const restore = panes.current.get(id)?.contains(document.activeElement);
@@ -61,13 +76,17 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
     }
   };
   const toggle = (id: string) => {
+    if (id === "session") {
+      if (sessionShown) hidePane(id);
+      else setDock(layout => ({ ...showDockPane(layout, id), expanded: null, focused: "conversation" }));
+      return;
+    }
     if (visible.has(id) && (compact ? focused === id : !expanded || expanded === id)) { hidePane(id); return; }
     if (id === "browser") {
       const tab = state.tabs.find(tab => tab.kind === "browser" && tab.id === state.browserActive) ?? state.tabs.find(tab => tab.kind === "browser");
       if (tab) update(state => panelReducer(state, { type: "select", id: tab.id }));
       else void openPage();
-    } else if (id === "session") setDock(layout => ({ ...showDockPane(layout, id), expanded: null }));
-    else openTool(id);
+    } else openTool(id);
   };
   useEffect(() => {
     if (!covered) return;
@@ -85,6 +104,21 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
       if (restore && previous.isConnected && panes.current.get(fill)?.contains(document.activeElement)) previous.focus();
     };
   }, [covered, expanded, focused, mainRef, scope]);
+  useEffect(() => {
+    if (!sessionShown || !sessionFloating) return;
+    const dismiss = (event: PointerEvent | KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const target = event.target as Element | null;
+      if (event instanceof KeyboardEvent) {
+        if (event.key !== "Escape" || target?.closest('[role="menu"], [role="dialog"]')) return;
+        event.preventDefault();
+        hidePane("session");
+      } else if (!target?.closest('[data-dock-pane="session"], [data-pane-toggle="session"], [role="menu"], [role="dialog"], .ds-popover')) hidePane("session");
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", dismiss);
+    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", dismiss); };
+  });
   const menu = (id: string) => [
     ...(["left", "right", "top", "bottom"] as DockSide[]).map(side => ({ label: `Move ${side}`, onClick: () => setDock(layout => moveDockPane(layout, id, side)) })),
     { label: "Fill", onClick: () => setDock(layout => ({ ...layout, expanded: id })) },
@@ -119,7 +153,7 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
     ...(features.browser && mounted.current.ids.has("browser") ? [{ id: "browser", label: "Browser", content: <BrowserPane embedded onBrowserContext={addBrowserContext} searchUrl={searchUrl} agentActive={browser.agentActive} onTakeOver={browser.agentActive ? browser.takeOver : onInterrupt} onClose={() => hidePane("browser")} /> }] : []),
   ];
   const measurement = <div key="dock-measurement" className="dock-stage" ref={stage} aria-hidden="true" />;
-  return <div className={`workspace-shell dock-workspace${compact ? " is-compact" : ""}${layout.sidebarOverlay ? " sidebar-overlay" : ""}${covered ? " panel-expanded" : ""}`} ref={resize.appRef} style={{
+  return <div className={`workspace-shell dock-workspace${sessionShown ? " has-session" : ""}${sessionFloating ? " session-floating" : ""}${compact ? " is-compact" : ""}${layout.sidebarOverlay ? " sidebar-overlay" : ""}${covered ? " panel-expanded" : ""}`} ref={resize.appRef} style={{
     "--right-panel-width": "0px", "--sidebar-width": `${layout.sidebarWidth}px`, "--layout-sidebar-column": layout.sidebarColumn ? "var(--sidebar-width)" : "0px",
     "--dock-conversation-x": (conversation?.x ?? 0) / 100, "--dock-conversation-y": `${conversation?.y ?? 0}%`, "--dock-conversation-width": (conversation?.w ?? 100) / 100, "--dock-conversation-height": `${conversation?.h ?? 100}%`,
   } as CSSProperties}>
@@ -130,7 +164,7 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
       {actions.length > 0 && <RowMenu label="thread" size="md" actions={actions}><span /></RowMenu>}
       <div className="dock-toolbar" role="toolbar" aria-label="Workspace views" data-tauri-drag-region="false">
         {compact && <IconButton className="ghost" aria-label="Show conversation" title="Conversation" aria-pressed={focused === "conversation"} onClick={() => setDock(layout => ({ ...layout, expanded: null, focused: "conversation" }))}><MessageSquare aria-hidden /></IconButton>}
-        {sessionRail && <IconButton className="ghost" data-pane-toggle="session" aria-label="Toggle session rail" title="Session rail" aria-pressed={visible.has("session") && (!compact || focused === "session")} onClick={() => toggle("session")}><PanelRight aria-hidden /></IconButton>}
+        {sessionRail && <IconButton className="ghost" data-pane-toggle="session" aria-label="Session rail" title="Session rail" aria-expanded={sessionShown} aria-pressed={sessionShown} onClick={() => toggle("session")}><SquareMenu aria-hidden /></IconButton>}
         {quickTools.filter(tool => available.has(tool.id)).map(tool => <IconButton className="ghost" data-pane-toggle={tool.id} key={tool.id} aria-label={`Toggle ${tool.label}`} title={tool.label} aria-pressed={visible.has(tool.id) && (!compact || focused === tool.id)} disabled={tool.id === "browser" && busy} onClick={() => toggle(tool.id)}><tool.icon aria-hidden /></IconButton>)}
         <RowMenu label="View options" size="md" portal actions={[
           ...tools.filter(tool => !quickTools.some(quick => quick.id === tool.id)).map(tool => ({ label: tool.label, onClick: () => toggle(tool.id) })),
@@ -141,12 +175,13 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
     </header>
     <div className="workspace-body dock-body">
       <div className="workspace-main" ref={mainRef}>{children}</div>
+      <div className="dock-session-space" ref={sessionSpace} aria-hidden="true" />
       {/* Moving existing panes past this keyed anchor refreshes WebKit's native AX children on expansion without remounting live content. */}
         {[...(expanded ? [measurement] : []), ...content.filter(pane => mounted.current.ids.has(pane.id)).map(pane => {
-          const shown = visible.has(pane.id) && (compact ? focused === pane.id : !expanded || expanded === pane.id);
+          const shown = pane.id === "session" ? sessionShown : visible.has(pane.id) && (compact ? focused === pane.id : !expanded || expanded === pane.id);
           const box = compact || expanded === pane.id ? full : geometry.panes[pane.id] ?? full;
-          return <section className={`dock-pane${expanded === pane.id ? " is-expanded" : ""}${pane.id === "session" ? " dock-session-rail" : ""}`} key={pane.id} data-dock-pane={pane.id} aria-label={pane.label} hidden={!shown} tabIndex={-1} ref={element => { if (element) panes.current.set(pane.id, element); else panes.current.delete(pane.id); }} style={position(box)}>
-            <header className="dock-pane-header" draggable onDragStart={event => {
+          return <section className={`dock-pane${expanded === pane.id ? " is-expanded" : ""}${pane.id === "session" ? ` dock-session-rail${sessionFloating ? " ds-popover" : ""}` : ""}`} key={pane.id} data-dock-pane={pane.id} aria-label={pane.label} hidden={!shown} tabIndex={-1} ref={element => { if (element) panes.current.set(pane.id, element); else panes.current.delete(pane.id); }} style={pane.id === "session" ? undefined : position(box)}>
+            {pane.id !== "session" && <header className="dock-pane-header" draggable onDragStart={event => {
               if ((event.target as HTMLElement).closest("button, input, select")) { event.preventDefault(); return; }
               event.dataTransfer.setData("application/x-taucode-pane", pane.id);
             }} onDragOver={event => event.preventDefault()} onDrop={event => {
@@ -163,7 +198,7 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
             }}><BrowserTabIcon status={pageStatuses[tab.target ?? ""]} /><span>{tab.title}</span></button><IconButton aria-label={`Close ${tab.title}`} onClick={() => closeBrowserTab(tab)}><X aria-hidden /></IconButton></div>)}</div><PanelTabList tabs={browserTabs} active={selectedBrowser?.id} statuses={pageStatuses} label="All browser tabs" onSelect={id => update(s => panelReducer(s, { type: "select", id }))} /><IconButton aria-label="New browser tab" disabled={busy} onClick={() => { void openPage(); }}><Plus aria-hidden /></IconButton></> : <strong>{pane.label}</strong>}
               <RowMenu label={`${pane.label} pane`} portal actions={menu(pane.id)}><IconButton className="ghost" aria-label={`${expanded === pane.id ? "Restore" : "Expand"} ${pane.label}`} onClick={() => setDock(layout => ({ ...layout, expanded: layout.expanded === pane.id ? null : pane.id }))}>{expanded === pane.id ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}</IconButton></RowMenu>
               <IconButton className="ghost" aria-label={`Close ${pane.label} pane`} onClick={() => hidePane(pane.id)}><X aria-hidden /></IconButton>
-            </header>
+            </header>}
             <div className="dock-pane-content" {...(pane.id === "browser" ? { id: browserContentId, role: "tabpanel", "aria-labelledby": selectedBrowser ? `${browserContentId}-${selectedBrowser.id}` : undefined } : {})}><DiagnosticBoundary panel={pane.id}>{pane.content}</DiagnosticBoundary></div>
           </section>;
         }), ...(!expanded ? [measurement] : [])]}
