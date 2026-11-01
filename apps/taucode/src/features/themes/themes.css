@@ -121,7 +121,7 @@
 :root[data-translucent="true"] .sidebar { color: var(--text-strong); }
 :root[data-translucent="true"] .sidebar :is(button, a, span), :root[data-translucent="true"] .main-topbar, :root[data-translucent="true"] .workspace-titlebar, :root[data-translucent="true"] .workspace-titlebar button { color: var(--text-strong); }
 :root[data-translucent="true"] .main { background: transparent; }
-:root[data-translucent="true"] .content { background: var(--surface-messages); }
+:root[data-translucent="true"] :is(.content, .dock-session-space) { background: var(--surface-messages); }
 :root[data-translucent="true"] :is(.chat-main, .home) { background: var(--surface-messages); }
 :root[data-translucent="true"] :is(.tabbed-side-panel, .settings-sidebar, .settings-titlebar) { background: var(--surface-sidebar-opaque); }
 :root[data-translucent="true"] .workspace-main .main-header-actions.has-overflow .main-header-actions-content.is-open { background: var(--surface-popover); }

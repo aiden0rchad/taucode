@@ -167,6 +167,9 @@
 .dock-body { position: relative; isolation: isolate; overflow: hidden; }
 .dock-workspace .workspace-main { position: absolute; inset: 0; width: 100%; }
 .dock-workspace .workspace-main > :is(.app, .chat-layout) { position: relative; }
+/* One tint layer spans the conversation and rail, including below the composer. */
+.dock-workspace .dock-body .workspace-main > :is(.app, .chat-layout),
+.dock-workspace .dock-body .workspace-main :is(.content, .chat-main, .home) { background: transparent; }
 .dock-workspace .workspace-main > :is(.app, .chat-layout) > :is(.main, .chat-main, .tablet-main),
 .dock-workspace .workspace-main > .app > .compact-shell {
   position: absolute;
@@ -198,7 +201,13 @@
   top: var(--dock-conversation-y);
   height: var(--dock-conversation-height);
 }
-.dock-session-space { width: var(--session-space-width); pointer-events: none; visibility: hidden; }
+.dock-session-space {
+  left: calc(var(--dock-content-inset) + (100% - var(--dock-content-inset)) * var(--dock-conversation-x));
+  width: var(--session-space-width);
+  pointer-events: none;
+  z-index: var(--z-behind);
+}
+.dock-workspace.panel-expanded .dock-session-space { visibility: hidden; }
 .dock-session-rail {
   --session-rail-width: min(280px, calc(var(--session-space-width) - 16px));
   width: var(--session-rail-width);

@@ -183,6 +183,26 @@ async function checkSessionRail(page, base) {
   await page.keyboard.press('Escape'); await rail.waitFor({ state: 'hidden' });
   assert(await toggle.evaluate(element => document.activeElement === element), 'Escape did not restore toggle focus');
   console.log('PASS Session rail dock/float, composer clearance, dismissal and draft continuity');
+  await page.setViewportSize({ width: 1440, height: 800 });
+  for (const theme of ['light', 'dark', 'glass-light', 'glass-dark']) {
+    await page.goto(`${base}/?mode=code&thread=thread-rich&panel=new&theme=${theme}`);
+    await page.waitForFunction(theme => document.documentElement.dataset.themeId === theme, theme);
+    await toggle.waitFor();
+    if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+    await page.locator('.dock-workspace.has-session:not(.session-floating)').waitFor();
+    const surface = page.locator('.dock-session-space'), s = await surface.boundingBox(), c = await chat.boundingBox(), r = await rail.boundingBox();
+    assert(s && c && r && Math.abs(s.x - c.x) < 1 && Math.abs(s.y - c.y) < 1 && Math.abs(s.height - c.height) < 1 && Math.abs(s.x + s.width - r.x - r.width) < 1, `${theme}: shared tint must span the entire chat and rail`);
+    assert(await surface.evaluate(element => getComputedStyle(element).visibility === 'visible'), `${theme}: shared surface is hidden`);
+    assert(await page.locator('.workspace-main > .app, .workspace-main .content').evaluateAll(elements => elements.every(element => {
+      const style = getComputedStyle(element);
+      return style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.backgroundImage === 'none';
+    })), `${theme}: extra chat tint would create a seam`);
+    assert(await surface.evaluate(element => {
+      const style = getComputedStyle(element);
+      return document.documentElement.dataset.translucent === 'true' ? style.backgroundColor.startsWith('rgba(') && style.backgroundColor !== 'rgba(0, 0, 0, 0)' : style.backgroundImage.includes('linear-gradient');
+    }), `${theme}: conversation material was lost`);
+  }
+  console.log('PASS Shared chat/rail surface in light, dark and both glass themes');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
