@@ -65,7 +65,11 @@ pub fn select(content: &SCShareableContent, pid: i32) -> Result<SCWindow, String
         .windows()
         .into_iter()
         .filter(|w| {
+            // Preview with no document keeps a 0x0 layer-zero window that cannot be captured.
+            let size = w.frame().size;
             w.window_layer() == 0
+                && size.width >= 1.
+                && size.height >= 1.
                 && w.owning_application()
                     .is_some_and(|a| a.process_id() == pid)
         })

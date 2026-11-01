@@ -183,7 +183,15 @@ async fn execute(
             env.verify_target()?;
             let focused = Action::Hotkey { keys: vec![] };
             let current = env.policy_target(if grounded { action } else { &focused })?;
-            verify_policy_target("Typing field changed before input", policy_target, &current)?;
+            // A targeted field keeps its identity (checked separately) when its label changes, as
+            // a search field's does when its placeholder goes away on focus. Policy still holds
+            // unless the new label is a password or similar field.
+            let relabelled = grounded
+                && Target { label: current.label.clone(), ..policy_target.clone() } == current
+                && !super::policy::sensitive_field(&current.label);
+            if !relabelled {
+                verify_policy_target("Typing field changed before input", policy_target, &current)?;
+            }
         }
         Ok(())
     };

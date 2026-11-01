@@ -6,6 +6,9 @@ use serde::Serialize;
 use std::time::{Duration, Instant};
 
 pub const MAX_ELEMENTS: usize = 250;
+/// Children read at once from one element. The rest of a long list (Notes' 174 notes) waits
+/// until the rest of the window, such as its toolbar, has been read.
+const LIST_BATCH: usize = 20;
 pub const SNAPSHOT_BUDGET: Duration = Duration::from_secs(1);
 
 fn secure_field(role: &str, subrole: Option<&str>) -> bool {
@@ -192,9 +195,13 @@ impl<H> Snapshot<H> {
         };
         let deadline = provider.now() + budget;
         let mut pending: Vec<_> = root.into_iter().map(|h| (h, None, 0)).collect();
+        let mut deferred = vec![];
         while self.elements.len() < cap && provider.now() < deadline {
             if super::ax_actions::check_walk().is_err() {
                 break;
+            }
+            if pending.is_empty() {
+                pending.extend(deferred.drain(..).rev());
             }
             let Some((handle, parent, depth)) = pending.pop() else {
                 break;
@@ -218,13 +225,15 @@ impl<H> Snapshot<H> {
                     provider.children(&handle, remaining)
                 });
                 self.partial += skips;
-                pending.extend(
-                    children
-                        .into_iter()
-                        .take(remaining)
-                        .rev()
-                        .map(|h| (h, Some(index), depth + 1)),
-                );
+                let mut children: Vec<_> = children
+                    .into_iter()
+                    .take(remaining)
+                    .map(|h| (h, Some(index), depth + 1))
+                    .collect();
+                if children.len() > LIST_BATCH {
+                    deferred.extend(children.drain(LIST_BATCH..));
+                }
+                pending.extend(children.into_iter().rev());
             } else {
                 self.status = if depth >= 25 {
                     "depth_cap"
@@ -237,7 +246,7 @@ impl<H> Snapshot<H> {
         }
         if self.elements.len() == cap {
             self.status = "element_cap";
-        } else if !pending.is_empty() {
+        } else if !pending.is_empty() || !deferred.is_empty() {
             self.status = "time_budget";
         } else if self.status == "complete" && self.elements.iter().any(|n| n.role.is_empty()) {
             self.status = "ax_read_error";
@@ -328,6 +337,48 @@ impl Provider for Native<'_> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_long_list_does_not_crowd_out_the_toolbar() {
+        use super::*;
+        // Notes: a split view whose list has 174 rows, then the toolbar with Search.
+        struct Window;
+        impl Provider for Window {
+            type Handle = usize;
+            fn now(&self) -> Instant {
+                Instant::now()
+            }
+            fn read(&self, handle: &usize) -> Node {
+                let role = match handle {
+                    0 => "AXWindow",
+                    1 => "AXTable",
+                    2 => "AXToolbar",
+                    3 => "AXTextField",
+                    _ => "AXRow",
+                };
+                Node { role: role.into(), ..Node::default() }
+            }
+            fn children(&self, handle: &usize, limit: usize) -> Vec<usize> {
+                match handle {
+                    0 => vec![1, 2],
+                    1 => (100..274).collect(),
+                    2 => vec![3],
+                    _ => vec![],
+                }
+                .into_iter()
+                .take(limit)
+                .collect()
+            }
+        }
+        let mut snapshot = Snapshot::default();
+        snapshot.replace(&Window, Some(0), 50, SNAPSHOT_BUDGET);
+        assert_eq!(snapshot.status, "element_cap");
+        assert!(snapshot.elements.iter().any(|n| n.role == "AXTextField"));
+        // Parents still come before their children.
+        assert!(snapshot.elements.iter().all(|n| n.parent_index.is_none_or(|p| p < n.index)));
+        snapshot.replace(&Window, Some(0), MAX_ELEMENTS, SNAPSHOT_BUDGET);
+        assert_eq!(snapshot.status, "complete");
+        assert_eq!(snapshot.elements.len(), 178);
+    }
     #[test]
     fn a_field_that_resizes_on_focus_stays_the_same_target() {
         // Dictionary's search field narrowed by 3.5 px when it took focus.

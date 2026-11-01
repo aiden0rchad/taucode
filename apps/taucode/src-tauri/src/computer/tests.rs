@@ -1883,7 +1883,8 @@ async fn planning_app_change_cancels_with_binding_diagnostics() {
 
 #[tokio::test]
 async fn grounded_typing_rechecks_selected_metadata_instead_of_focus() {
-    for changed in [None, Some("role"), Some("label"), Some("secure")] {
+    // A benign relabel (a search field losing its placeholder on focus) still types.
+    for changed in [None, Some("relabel"), Some("role"), Some("label"), Some("secure")] {
         let mut env = fake(vec![
             json!({"kind":"type","text":"hello","overwrite":false,"enter":false,"snapshot_id":1,"element_index":0}),
             json!({"kind":"done","summary":"done"}),
@@ -1895,7 +1896,8 @@ async fn grounded_typing_rechecks_selected_metadata_instead_of_focus() {
             let mut target = env.policy_evidence.clone();
             match field {
                 "role" => target.role = "AXTextField".into(),
-                "label" => target.label = "private label".into(),
+                "relabel" => target.label = "Search".into(),
+                "label" => target.label = "private password".into(),
                 "secure" => target.secure = true,
                 _ => unreachable!(),
             }
@@ -1907,13 +1909,13 @@ async fn grounded_typing_rechecks_selected_metadata_instead_of_focus() {
         let s = settings();
         let result =
             runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
-        if changed.is_some() {
+        if changed.is_some_and(|c| c != "relabel") {
             let error = result.unwrap_err();
             assert!(
                 error.contains("Typing field changed before input"),
                 "{error}"
             );
-            assert!(!error.contains("private label"));
+            assert!(!error.contains("private password"));
             assert!(input.0.lock().unwrap().is_empty());
         } else {
             assert!(result.is_ok(), "{result:?}");

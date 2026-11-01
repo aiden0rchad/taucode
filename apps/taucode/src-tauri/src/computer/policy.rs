@@ -364,7 +364,7 @@ pub fn check_pane(app: &str, target: &Target) -> Result<(), String> {
     }
     Ok(())
 }
-fn sensitive_field(label: &str) -> bool {
+pub(crate) fn sensitive_field(label: &str) -> bool {
     label
         .split(|c: char| !c.is_alphanumeric() && c != '_')
         .any(|word| {

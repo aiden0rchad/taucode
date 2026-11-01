@@ -376,6 +376,82 @@ impl Element {
         let focused = Self::owned_value(focused);
         status == 0 && focused.as_ref().is_some_and(|e| unsafe { CFEqual(self.0, e.0) })
     }
+    /// This element is `ancestor` or a few levels inside it.
+    pub(super) fn within(&self, ancestor: &Element) -> bool {
+        let mut current = Some(self.clone());
+        for _ in 0..8 {
+            match current {
+                Some(e) if unsafe { CFEqual(e.0, ancestor.0) } => return true,
+                Some(e) => current = e.attr("AXParent"),
+                None => return false,
+            }
+        }
+        false
+    }
+    /// The text field to type into for this target: itself, or for a wrapper such as SwiftUI's
+    /// search field group in Notes, the first text field a few levels inside it.
+    pub(super) fn text_input_within(&self) -> Option<Element> {
+        let text = |e: &Element| {
+            matches!(e.text("AXRole").as_deref(), Some("AXTextField" | "AXTextArea" | "AXComboBox"))
+        };
+        let mut level = vec![self.clone()];
+        for _ in 0..4 {
+            if let Some(field) = level.iter().find(|e| text(e)) {
+                return Some(field.clone());
+            }
+            level = level.iter().flat_map(|e| e.children("AXChildren", 16)).take(48).collect();
+        }
+        None
+    }
+    /// Gives an unfocused, non-secure text field of this window keyboard focus, as a click on it
+    /// would, and confirms it took. Typing never focuses anything else.
+    /// A non-secure text field of this window, which typing may focus. Returns role/subrole.
+    pub(super) fn typable_field(&self, pid: i32, window: u32) -> Result<(String, String), String> {
+        let role = self.text("AXRole").unwrap_or_default();
+        let subrole = self.text("AXSubrole").unwrap_or_default();
+        if !matches!(role.as_str(), "AXTextField" | "AXTextArea" | "AXComboBox") {
+            return Err(format!("not a text field ({role}/{subrole})"));
+        }
+        if super::super::policy::secure_field(&role, &subrole) {
+            return Err("secure field".into());
+        }
+        if !self.belongs_to(pid, window) {
+            return Err("field is outside the target window".into());
+        }
+        Ok((role, subrole))
+    }
+    /// Err explains, by roles and statuses only, why focus was not given.
+    pub(super) fn focus_text_field(&self, pid: i32, window: u32) -> Result<(), String> {
+        let (role, subrole) = self.typable_field(pid, window)?;
+        let confirmed = || {
+            (0..10).any(|_| {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                self.has_keyboard_focus(pid)
+            })
+        };
+        let mut tried = vec![];
+        if Element::settable(self, "AXFocused") {
+            let status = self.with_timeout(0.05, || unsafe {
+                AXUIElementSetAttributeValue(self.0, string(&NSString::from_str("AXFocused")), kCFBooleanTrue)
+            });
+            if status == 0 && confirmed() {
+                return Ok(());
+            }
+            tried.push(format!("AXFocused ({status})"));
+        } else {
+            tried.push("AXFocused not settable".into());
+        }
+        // Some search fields (Notes, Maps) take focus only when pressed, as a click would.
+        if self.actions().iter().any(|a| a == "AXPress") {
+            let status = self.apply("AXPress", None);
+            if status == 0 && confirmed() {
+                return Ok(());
+            }
+            tried.push(format!("AXPress ({status})"));
+        }
+        let focused = target(pid, None).map(|e| format!("{}/{}", e.text("AXRole").unwrap_or_default(), e.text("AXSubrole").unwrap_or_default()));
+        Err(format!("{role}/{subrole} focus not confirmed after {}; focused element {focused:?}", tried.join(", ")))
+    }
     fn owner(&self) -> Option<i32> {
         let mut pid = 0;
         (unsafe { AXUIElementGetPid(self.0, &mut pid) } == 0).then_some(pid)
@@ -858,11 +934,13 @@ pub(super) fn focused_policy_window(pid: i32) -> Option<u32> {
     e.window_id()
         .or_else(|| e.attr("AXWindow").and_then(|w| w.window_id()))
 }
+/// Windows with a window ID. Finder lists its desktop as a window without one, so with every
+/// Finder window closed it still needs reopening.
 pub(super) fn window_count(pid: i32) -> Result<usize, String> {
     Element::app(pid)
         .ok_or("Target application unavailable")?
         .children_result("AXWindows", 128)
-        .map(|windows| windows.len())
+        .map(|windows| windows.iter().filter(|w| w.window_id().is_some()).count())
 }
 pub fn focused_window(pid: i32) -> Option<u32> {
     Element::app(pid)?.attr("AXFocusedWindow")?.window_id()
@@ -1173,8 +1251,11 @@ pub(super) fn focused_insertion(
     } = action
     {
         if !(*overwrite && element.settable("AXValue")) && !element.settable("AXSelectedText") {
-            return target(pid, None)
-                .filter(|e| e.belongs_to(pid, window) && e.settable("AXSelectedText"));
+            // Only the target's own focused field (TextEdit's text view inside its scroll area),
+            // never another focused field of the window such as an open note's body.
+            return target(pid, None).filter(|e| {
+                e.belongs_to(pid, window) && e.settable("AXSelectedText") && e.within(element)
+            });
         }
     }
     None

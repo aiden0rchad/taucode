@@ -1430,3 +1430,43 @@ Live, signed build, approvals off (your `settings.json` backed up as
   `app-approvals.json`).
 
 Tests: Rust `computer::` 134, `shared::` 459; frontend 215; typecheck clean.
+
+### Computer Use app sweep — November 1
+
+With approvals off, one small, read-mostly run per app in the signed build. The
+first pass failed in 5 of 9 apps; each failure got its own fix:
+
+- **Preview** with no document kept a 0x0 window, and capture picked it. Window
+  selection now skips zero-size windows.
+- **Notes** (174 notes): the depth-first element walk filled its cap with list
+  rows before reaching the toolbar. A long list's rows past the first 20 now wait
+  until the rest of the window is read (parents still precede children).
+- **Notes / Maps search fields**: typing into an unfocused field was refused.
+  Typing now looks inside a wrapper (Notes' SwiftUI search group) for its text
+  field, focuses it with `AXFocused` or `AXPress` and confirms focus. Where
+  neither works, a typed action at a point lets its own click focus the field;
+  every keystroke still checks that field has focus first.
+- **Maps**: its search field relabels itself on focus, which the element and
+  typing-target checks treated as a different field. The same targeted text
+  field may now relabel unless the new label is a password, card or similar field.
+- **Reminders**: AXPress on a "What's New" Continue button returned -25204. An
+  uncertain press whose element is gone (its sheet closed) now counts as done;
+  if the element is still there it stays uncertain, so nothing is ever replayed.
+- **Finder** with no windows open: its desktop counts as an AX window without an
+  ID, so no window was reopened. Only windows with IDs count now.
+- Safety: when a target cannot take text, typing used to fall back to whatever
+  field had focus in the window (for example an open note's body). It now only
+  falls back to a field inside the target.
+
+Final pass: Dictionary, Clock, Reminders (search), Stickies, Weather (waited
+for data), Maps (searched Eiffel Tower), Finder (Applications, first 3 items),
+System Settings (read-only, selected pane) and Safari (window title) pass.
+
+Known gaps, not fixed:
+- **Notes toolbar search**: the click lands but Notes' SwiftUI search field does
+  not take keyboard focus while Notes is in the background, so typing stops
+  before the first keystroke (`background_keyboard_focus_changed`).
+- **Preview's Open dialog** runs in a separate system process; Cancel pressed
+  through AX returns -25204 and the dialog stays, so the run stops as uncertain.
+
+Tests: Rust `computer::` 135, `shared::` 461; frontend 215; typecheck clean.

@@ -408,8 +408,12 @@ impl Session {
                 )
             })?;
         }
+        // The same text field may relabel itself (Maps' search field on focus) unless it now
+        // reads as a password or similar field.
+        let relabelled = matches!(prior.role.as_str(), "AXTextField" | "AXTextArea" | "AXComboBox")
+            && !super::policy::sensitive_field(&current.label);
         if prior.role != current.role
-            || prior.label != current.label
+            || (prior.label != current.label && !relabelled)
             || prior.secure != current.secure
             || (prior.role != "AXMenuItem" && !ax_tree::same_place(prior.frame, current.frame))
             || !current.enabled
@@ -507,7 +511,21 @@ impl Session {
                         false
                     }
                 } else {
-                    let handled = ax_actions::element_action(element, action, &mut reason)?;
+                    let handled = match ax_actions::element_action(element, action, &mut reason) {
+                        // A button whose press macOS could not confirm, but which is gone (a sheet
+                        // it dismissed closed), was pressed. Still there, it stays uncertain.
+                        Err(error) if error.starts_with(super::runner::UNCERTAIN)
+                            && matches!(action, Action::Click { .. })
+                            && (0..3).any(|_| {
+                                std::thread::sleep(std::time::Duration::from_millis(30));
+                                !element.alive()
+                            }) =>
+                        {
+                            *reason = Some(format!("{}; confirmed: pressed element removed", reason.as_deref().unwrap_or_default()));
+                            true
+                        }
+                        result => result?,
+                    };
                     let disabled = self.menus.lock().unwrap().resolve(&["command".into(), "f".into()])
                         .is_err_and(|diagnostic| diagnostic.reason == "disabled");
                     if !handled && refresh_textedit_document(&self.bundle, &node.role, action, disabled) {
@@ -575,6 +593,7 @@ impl Session {
     pub fn prepare_events(&self, action: &Action) -> bool {
         *self.keyboard_target.lock().unwrap() = None;
         *self.keyboard_role.lock().unwrap() = None;
+        let mut click_focus = false;
         if matches!(action, Action::Type { .. }) {
             let selected = *self.selected.lock().unwrap();
             let target = if let Some((id, index)) = selected {
@@ -585,8 +604,33 @@ impl Session {
             } else {
                 ax_actions::target(self.pid, action_point(action))
             };
-            if target.as_ref().is_none_or(|e| !e.has_keyboard_focus(self.pid)) {
-                *self.fallback_reason.lock().unwrap() = Some("background_keyboard_target_not_focused".into());
+            let window = self.window.lock().unwrap().as_ref().map(|w| w.id);
+            let mut focus = String::new();
+            let target = match (target, window) {
+                (Some(e), Some(w)) if !e.has_keyboard_focus(self.pid) => match e.text_input_within() {
+                    Some(field) if field.has_keyboard_focus(self.pid) => Some(field),
+                    Some(field) => match field.focus_text_field(self.pid, w) {
+                        Ok(()) => Some(field),
+                        // Typing at a point clicks the field first (Notes' search field takes
+                        // focus no other way); every keystroke still checks the field has focus.
+                        Err(_) if action_point(action).is_some() && field.typable_field(self.pid, w).is_ok() => {
+                            click_focus = true;
+                            Some(field)
+                        }
+                        Err(error) => {
+                            focus = format!("; focus: {error}");
+                            Some(e)
+                        }
+                    },
+                    None => {
+                        focus = format!("; focus: no text field within {}", e.text("AXRole").unwrap_or_default());
+                        Some(e)
+                    }
+                },
+                (target, _) => target,
+            };
+            if !click_focus && target.as_ref().is_none_or(|e| !e.has_keyboard_focus(self.pid)) {
+                *self.fallback_reason.lock().unwrap() = Some(format!("background_keyboard_target_not_focused{focus}"));
                 return false;
             }
             // Elementless typing remembers the role; targeted typing also where the field is.
@@ -600,7 +644,8 @@ impl Session {
             .lock()
             .unwrap()
             .get_or_insert_with(|| "action_requires_pixel_events".into());
-        if let Some(check) = self.keyboard_blocked(action) {
+        // The field gains focus from the action's own click; keystrokes recheck it.
+        if let Some(check) = self.keyboard_blocked(action).filter(|c| !(click_focus && *c == "keyboard_target_unfocused")) {
             let focus = self.focus_state();
             let mut reason = self.fallback_reason.lock().unwrap();
             *reason = Some(format!(
