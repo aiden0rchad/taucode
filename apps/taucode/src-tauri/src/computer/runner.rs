@@ -251,6 +251,8 @@ async fn execute(
             } => {
                 if let (Some(x), Some(y)) = (x, y) {
                     click([*x, *y], 0, 1)?;
+                    // Let the app move focus to the clicked field before keystrokes are checked.
+                    tokio::time::sleep(Duration::from_millis(120)).await;
                 }
                 // Field focus can change after the click; the exact approved context is rechecked.
                 if *overwrite {
@@ -686,11 +688,14 @@ pub async fn run(
                 phase = "waitMs";
                 phase_start = Instant::now();
                 let entry = pending.as_mut().unwrap();
-                entry["kind"] = json!("approval_wait");
-                entry["reason"] = json!(reason);
-                env.progress(entry.clone())?;
-                env.phase(Phase::WaitingForApproval);
-                control.until(env.approve(reason, &action, &after)).await?;
+                // With approvals off the fallback setting is the user's consent.
+                if settings.ask_approval {
+                    entry["kind"] = json!("approval_wait");
+                    entry["reason"] = json!(reason);
+                    env.progress(entry.clone())?;
+                    env.phase(Phase::WaitingForApproval);
+                    control.until(env.approve(reason, &action, &after)).await?;
+                }
                 control.checkpoint().await?;
                 observation!(verify_observation());
                 verify_app(
@@ -722,7 +727,7 @@ pub async fn run(
                     entry["waitMs"].as_u64().unwrap_or(0)
                         + phase_start.elapsed().as_millis() as u64
                 );
-                entry["foregroundApproval"] = json!(true);
+                entry["foregroundApproval"] = json!(settings.ask_approval);
                 entry.as_object_mut().unwrap().remove("kind");
                 phase = "executeMs";
                 phase_start = Instant::now();

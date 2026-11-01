@@ -429,21 +429,30 @@ pub fn key_window_of_pid(pid: i32) -> Option<u32> {
 
 // Reference set_front_process_persistently: restore only the prior process/window,
 // with kCPSNoWindows (0x400) to avoid changing window order.
-pub fn restore_activation(previous: i32, window: Option<u32>, from: i32) -> bool {
-    type SetFrontProcessFn = unsafe extern "C" fn(*const c_void, u32, u32) -> i32;
+type SetFrontProcessFn = unsafe extern "C" fn(*const c_void, u32, u32) -> i32;
+fn set_front_fn() -> Option<SetFrontProcessFn> {
     static SET_FRONT: OnceLock<Option<SetFrontProcessFn>> = OnceLock::new();
-    let set_front = *SET_FRONT.get_or_init(|| {
+    *SET_FRONT.get_or_init(|| {
         find_sym(b"_SLPSSetFrontProcessWithOptions\0")
             .or_else(|| find_sym(b"SLPSSetFrontProcessWithOptions\0"))
             .map(|p| unsafe { as_fn(p) })
-    });
+    })
+}
+fn set_front(set_front: SetFrontProcessFn, pid: i32, window: u32, options: u32) -> bool {
+    let mut psn = [0u8; 8];
+    get_process_psn_for_window(window, pid, &mut psn)
+        && unsafe { set_front(psn.as_ptr().cast(), window, options) == 0 }
+}
+/// Makes `pid` the front process with `window` in front (kCPSUserGenerated), for the
+/// foreground fallback when macOS refuses activation requested by a background app.
+pub fn bring_to_front(pid: i32, window: u32) -> bool {
+    set_front_fn().is_some_and(|f| set_front(f, pid, window, 0x200))
+}
+pub fn restore_activation(previous: i32, window: Option<u32>, from: i32) -> bool {
+    let set_front_fn = set_front_fn();
     let window = window.or_else(|| key_window_of_pid(previous));
-    if let (Some(set_front), Some(window)) = (set_front, window) {
-        let mut psn = [0u8; 8];
-        if !get_process_psn_for_window(window, previous, &mut psn) {
-            return false;
-        }
-        unsafe { set_front(psn.as_ptr().cast(), window, 0x400) == 0 }
+    if let (Some(f), Some(window)) = (set_front_fn, window) {
+        set_front(f, previous, window, 0x400)
     } else {
         restore_focus_after_without_raise(
             previous,

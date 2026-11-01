@@ -1490,3 +1490,37 @@ answered ("The Keeper's Last Light").
 Tests: Rust `chats` 5 (steer input checks, idle chat refused); frontend Chat 32
 (queue and flush in order, paused after stop, steer shortcut and fallback);
 related suites 631; typecheck clean.
+
+### Closing the sweep gaps — November 1
+
+**Notes toolbar search, closed when the field is idle.** Its SwiftUI search field
+refuses `AXFocused`, has no `AXPress`, and ignores background clicks. With
+**Allow foreground fallback** on (now on in your settings; backup at
+`settings.json.before-foreground-fallback`), a field that cannot be focused in
+the background takes the foreground path. Four fixes made that path work:
+- activation: `activateWithOptions` is refused for a background caller on
+  current macOS, so the SkyLight front-process call is the fallback; the window
+  is raised and the target must actually be in front before any real event;
+- with approvals off, the fallback no longer asks "take over the mouse?";
+- typing into a wrapper is judged by the text field inside it, which is what
+  takes focus;
+- a typed action waits 120 ms after its own click before checking focus.
+Live: Notes typed "taucode sweep" through the foreground path and reported 0
+matching notes (run c3673f11). Still open: with a query already in the field,
+Notes rebuilds it continuously, so the element planned a moment earlier is gone
+at input time and the step is cancelled and replanned (runs 8796e923, cab1d925).
+
+**Preview's Open dialog, not closed.** Diagnostics found its window is AppKit's
+`open-panel` (identifier), drawn by another process; the Cancel button's parent
+chain stops at a split group after a failed press. AX press (-25204, unconfirmed),
+a background click, and a foreground click all left the dialog open on this
+two-display setup (5120×1440 main display plus the 2x built-in). The routing
+attempts were removed, since they took over the screen without effect; an
+unconfirmed press now records the element's ancestry and window identity.
+
+Also kept: per-event checks for pointer events now compare only the target
+app, since a dialog from another process makes the secure-field reading
+flicker and had cancelled a click halfway. Keystrokes still recheck it.
+
+Tests: Rust `computer::` 136 (fallback without approval; pointer versus
+keystroke checks); frontend 164; typecheck clean.

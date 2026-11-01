@@ -110,6 +110,9 @@ pub struct Session {
     delivery: Mutex<Option<delivery::Scope>>,
     observed: Mutex<Option<[u8; 32]>>,
     attempted: Mutex<Option<(Action, [u8; 32])>>,
+    /// Set from the foreground-fallback setting: a field that background input cannot focus
+    /// (Notes' toolbar search) then takes the foreground path instead of failing.
+    pub prefer_foreground: AtomicBool,
 }
 impl Session {
     pub async fn bind(
@@ -174,6 +177,7 @@ impl Session {
             delivery: Mutex::new(None),
             observed: Mutex::new(None),
             attempted: Mutex::new(None),
+            prefer_foreground: AtomicBool::new(false),
         });
         session.guard.start(Arc::downgrade(&session));
         Ok(session)
@@ -381,7 +385,13 @@ impl Session {
                     .map(|(_, e)| e)
             })
             .transpose()?;
-        let mut target = ax_actions::policy_target(self.pid, Some(window.id), action, element)?;
+        // Typing into a wrapper (Notes' search group) is judged by the text field inside it,
+        // which is what takes focus.
+        let field = match action {
+            Action::Type { .. } => element.and_then(|e| e.text_input_within()),
+            _ => None,
+        };
+        let mut target = ax_actions::policy_target(self.pid, Some(window.id), action, field.as_ref().or(element))?;
         if let Some((id, index)) = selected {
             let (node, element) = snapshot.resolve(id, index)?;
             if node.role == "AXMenuItem" {
@@ -524,7 +534,13 @@ impl Session {
                             *reason = Some(format!("{}; confirmed: pressed element removed", reason.as_deref().unwrap_or_default()));
                             true
                         }
-                        result => result?,
+                        Err(error) => {
+                            if error.starts_with(super::runner::UNCERTAIN) {
+                                *reason = Some(format!("{}; ancestry: {}; window: {}", reason.as_deref().unwrap_or_default(), element.ancestry(), ax_actions::window_identity(self.pid, window.id)));
+                            }
+                            return Err(error);
+                        }
+                        Ok(handled) => handled,
                     };
                     let disabled = self.menus.lock().unwrap().resolve(&["command".into(), "f".into()])
                         .is_err_and(|diagnostic| diagnostic.reason == "disabled");
@@ -613,6 +629,10 @@ impl Session {
                         Ok(()) => Some(field),
                         // Typing at a point clicks the field first (Notes' search field takes
                         // focus no other way); every keystroke still checks the field has focus.
+                        Err(error) if self.prefer_foreground.load(Ordering::SeqCst) && field.typable_field(self.pid, w).is_ok() => {
+                            *self.fallback_reason.lock().unwrap() = Some(format!("background_text_field_unfocusable; focus: {error}"));
+                            return false;
+                        }
                         Err(_) if action_point(action).is_some() && field.typable_field(self.pid, w).is_ok() => {
                             click_focus = true;
                             Some(field)
@@ -750,8 +770,16 @@ impl Session {
             .ok_or_else(|| format!("Target activation (begin_foreground): pid={}, NSRunningApplication=nil after successful process check", self.pid))?;
         self.foreground.store(true, Ordering::SeqCst);
         #[allow(deprecated)]
-        if !app.activateWithOptions(objc2_app_kit::NSApplicationActivationOptions(0)) {
-            return Err("Target activation failed".into());
+        let asked = app.activateWithOptions(objc2_app_kit::NSApplicationActivationOptions(0))
+            || skylight::bring_to_front(self.pid, window.id);
+        ax_actions::raise_window(self.pid, window.id);
+        // Real pointer events land on whatever window is in front, so confirm the target is.
+        let front = (0..25).any(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            focus_guard::front_pid() == Some(self.pid)
+        });
+        if !asked || !front {
+            return Err(format!("Target activation failed: asked={asked}, front={:?}", focus_guard::front_pid()));
         }
         ax_actions::restore_window(self.pid, window.id);
         *self.path.lock().unwrap() = Some("foreground");

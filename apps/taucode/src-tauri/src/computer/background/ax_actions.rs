@@ -376,6 +376,20 @@ impl Element {
         let focused = Self::owned_value(focused);
         status == 0 && focused.as_ref().is_some_and(|e| unsafe { CFEqual(self.0, e.0) })
     }
+    /// Roles, subroles and identifiers from this element up to its window, never titles or
+    /// values: diagnostics for presses macOS cannot confirm.
+    pub(super) fn ancestry(&self) -> String {
+        let mut parts = vec![];
+        let mut current = Some(self.clone());
+        while let Some(e) = current.take().filter(|_| parts.len() < 12) {
+            let role = e.text("AXRole").unwrap_or_default();
+            parts.push(format!("{role}/{}#{}", e.text("AXSubrole").unwrap_or_default(), e.text("AXIdentifier").unwrap_or_default()));
+            if role != "AXWindow" {
+                current = e.attr("AXParent");
+            }
+        }
+        parts.join(" < ")
+    }
     /// This element is `ancestor` or a few levels inside it.
     pub(super) fn within(&self, ancestor: &Element) -> bool {
         let mut current = Some(self.clone());
@@ -968,6 +982,20 @@ pub(super) fn minimized(pid: i32, id: u32) -> Result<bool, String> {
     }
 }
 
+/// The window's role, subrole and identifier (never its title), for diagnostics.
+pub fn window_identity(pid: i32, id: u32) -> String {
+    window_element(pid, id).0.map_or("unreadable".into(), |w| {
+        format!("{}/{}#{}", w.text("AXRole").unwrap_or_default(), w.text("AXSubrole").unwrap_or_default(), w.text("AXIdentifier").unwrap_or_default())
+    })
+}
+/// Raises the target window above the app's other windows (AXRaise).
+pub fn raise_window(pid: i32, id: u32) {
+    if let (Some(window), _) = window_element(pid, id) {
+        window.with_timeout(0.05, || unsafe {
+            AXUIElementPerformAction(window.0, string(&NSString::from_str("AXRaise")))
+        });
+    }
+}
 pub fn restore_window(pid: i32, id: u32) {
     let Some(app) = Element::app(pid) else {
         return;

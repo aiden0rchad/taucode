@@ -199,10 +199,10 @@ describe("computer use", () => {
     const save = vi.fn().mockResolvedValue(undefined);
     render(<SettingsComputerSection appSettings={{ computer: defaultComputerSettings } as AppSettings} onUpdateAppSettings={save} />);
     expect((screen.getByLabelText("Input mode") as HTMLSelectElement).value).toBe("background");
-    expect(screen.getByLabelText("Allow foreground fallback (approval required for each step)").getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByLabelText("Allow foreground fallback").getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByLabelText("Show virtual cursor").getAttribute("aria-pressed")).toBe("true");
     fireEvent.change(screen.getByLabelText("Input mode"), { target: { value: "foreground" } });
-    fireEvent.click(screen.getByLabelText("Allow foreground fallback (approval required for each step)"));
+    fireEvent.click(screen.getByLabelText("Allow foreground fallback"));
     fireEvent.click(screen.getByLabelText("Show virtual cursor"));
     fireEvent.click(screen.getByText("Save Computer Use"));
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ computer: expect.objectContaining({ mode: "foreground", allowForegroundFallback: true, virtualCursor: false }) })));

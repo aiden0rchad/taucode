@@ -426,6 +426,7 @@ impl Computer {
                             })?
                         })
                         .await?;
+                    session.prefer_foreground.store(limits.allow_foreground_fallback, std::sync::atomic::Ordering::SeqCst);
                     self.control
                         .install_input(native::NativeInput::background(session.clone()))?;
                     self.state.send_modify(|state| state["targetApp"] = session.target_info());

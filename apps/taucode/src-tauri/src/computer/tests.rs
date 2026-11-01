@@ -1174,6 +1174,26 @@ async fn fallback_requires_setting_and_fresh_approval_before_any_input() {
             assert!(env.steps.iter().any(|s| s["foregroundApproval"] == true));
         }
     }
+    // With approvals off, the enabled fallback takes over without asking.
+    let mut env = fake(vec![
+        serde_json::json!({"kind":"click","x":10,"y":10,"button":"left","clicks":1,"hold_keys":[]}),
+        serde_json::json!({"kind":"done","summary":"done"}),
+    ]);
+    env.needs_foreground = true;
+    env.approval = false;
+    let s = Settings {
+        mode: "background".into(),
+        allow_foreground_fallback: true,
+        ask_approval: false,
+        ..settings()
+    };
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let result = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await;
+    assert!(result.is_ok(), "{result:?}");
+    assert_eq!((env.approved, env.takeovers.get()), (0, 1));
+    assert!(!input.0.lock().unwrap().is_empty());
 }
 #[tokio::test]
 async fn loop_fake_capture_planner_input_and_progress() {
@@ -2036,4 +2056,19 @@ async fn completion_returns_verified_observation_without_another_capture() {
     );
     assert!(!env.phases.contains(&runner::Phase::Settling));
     assert!(input.0.lock().unwrap().is_empty());
+}
+#[test]
+fn pointer_events_recheck_the_app_and_keystrokes_also_the_secure_state() {
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let approved = context();
+    let flickered = Context { secure: true, ..context() };
+    let click = Event::Mouse { point: [1., 1.], button: 0, down: true, clicks: 1 };
+    // A dialog from another process flips the secure reading; the click still goes through.
+    assert!(control.post(click.clone(), &approved, || Ok(flickered.clone())).is_ok());
+    assert!(control.post(Event::Text("x".into()), &approved, || Ok(flickered.clone())).is_err());
+    let other_app = Context { app: "com.apple.finder".into(), ..context() };
+    assert!(control.post(click, &approved, || Ok(other_app)).is_err());
+    control.release();
 }

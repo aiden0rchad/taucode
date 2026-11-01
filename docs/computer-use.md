@@ -59,6 +59,8 @@ Computer Use does not ask for approval by default. Turn on **Ask for approval** 
 
 With approvals off, Computer Use still never types into password, card or other sensitive fields; it refuses those actions.
 
+Computer Use works in the background. Some fields only take keyboard focus in the app in front, such as the search field in Notes. Turn on **Allow foreground fallback** to let Computer Use briefly bring the app forward and use the real mouse and keyboard for that step, then return you to your app. With **Ask for approval** on, it asks first. With approval off, the setting is your consent.
+
 Some apps are never allowed, whatever you approve: password managers (1Password, Bitwarden, LastPass, Dashlane, NordPass, KeePassXC, Passwords), Keychain Access, terminals (Terminal, iTerm2, Warp, Ghostty, WezTerm, kitty, Rio, Wave, Termius), known banking apps, the macOS password and Touch ID prompts, and taucode itself. Add more under **Blocked app bundle IDs**.
 
 An agent names apps by name (`Calculator`, `Find My`) or bundle ID (`com.apple.calculator`). In ask mode the name is looked up among installed apps; in listed mode a name that matches more than one allowed app is refused.

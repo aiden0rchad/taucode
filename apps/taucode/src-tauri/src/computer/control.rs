@@ -101,7 +101,11 @@ impl Control {
         expected: &Context,
         context: impl FnOnce() -> Result<Context, String>,
     ) -> Result<(), String> {
-        if context()? != *expected {
+        let current = context()?;
+        // The secure-field state guards keystrokes. A pointer event only needs the same app: a
+        // dialog drawn by another process (Preview's Open panel) makes that state flicker.
+        let pointer = matches!(event, Event::Mouse { .. } | Event::Move(..));
+        if if pointer { current.app != expected.app } else { current != *expected } {
             return Err("Focus or secure-field state changed; action cancelled".into());
         }
         let mut held = self.held.lock().map_err(|_| "Input lock poisoned")?;
