@@ -57,6 +57,7 @@ export default defineConfig({
         { text: 'Troubleshooting', link: '/troubleshooting' },
         { text: 'Frequently asked questions', link: '/faq' },
         { text: 'Diagnostics journal', link: '/diagnostics' },
+        { text: 'Updates & reporting issues', link: '/updates-and-issues' },
         { text: 'Evals & model comparisons', link: '/evals' },
       ] },
       { text: 'Build & contribute', collapsed: false, items: [

@@ -66,7 +66,7 @@ Keep a backup of important project files and app state. Read the release's sourc
 
 For source checkouts, inspect local changes before pulling, install from the committed lockfiles, and fetch any newly needed Cargo dependencies explicitly. Do not delete app data as a routine update step.
 
-Automatic updater artifacts are disabled in the current Tauri configuration. Do not rely on the old upstream README's update descriptions as a taucode distribution promise.
+taucode checks GitHub Releases for a newer version and links to the download, but it never installs updates itself; automatic updater artifacts stay disabled in the Tauri configuration. See [Updates & reporting issues](updates-and-issues.md).
 
 ## Follow development
 

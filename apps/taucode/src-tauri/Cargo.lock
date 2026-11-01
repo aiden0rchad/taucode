@@ -614,6 +614,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-web-kit",
  "portable-pty",
+ "regex",
  "reqwest 0.12.28",
  "rmcp",
  "screencapturekit",
@@ -635,6 +636,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "toml_edit 0.20.2",
+ "url",
  "uuid",
  "whisper-rs",
 ]

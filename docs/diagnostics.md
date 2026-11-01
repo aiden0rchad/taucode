@@ -4,7 +4,7 @@ Diagnostics are optional local records that help explain what went wrong. You do
 
 ## If you are reporting a problem
 
-Open **Settings → Diagnostics** to enable recording, reproduce the problem, then inspect the relevant events or summary. Recording starts off; enabling it does not recreate past events. Review anything you share for private information. The journal does not automatically post a GitHub issue.
+Open **Settings → Diagnostics** to enable recording, reproduce the problem, then inspect the relevant events or summary. Recording starts off; enabling it does not recreate past events. Review anything you share for private information. The journal does not automatically post a GitHub issue. **Report on GitHub** prepares one for you to review, with open issue codes and fingerprints but no event content; see [Updates & reporting issues](updates-and-issues.md).
 
 **Digest** means a summary of recent records; **retention** means how long records are kept. The rest of this page explains the available levels and advanced reader tools.
 

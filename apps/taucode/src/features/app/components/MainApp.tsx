@@ -27,6 +27,7 @@ import { useBranchSwitcherShortcut } from "@/features/git/hooks/useBranchSwitche
 import { useRenameWorktreePrompt } from "@/features/workspaces/hooks/useRenameWorktreePrompt";
 import { useLayoutController } from "@app/hooks/useLayoutController";
 import { useUpdaterController } from "@app/hooks/useUpdaterController";
+import { setIssueReportContext } from "@/features/report/issueReportContext";
 import { useResponseRequiredNotificationsController } from "@app/hooks/useResponseRequiredNotificationsController";
 import { useErrorToasts } from "@/features/notifications/hooks/useErrorToasts";
 import { useComposerShortcuts } from "@/features/composer/hooks/useComposerShortcuts";
@@ -1764,6 +1765,8 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
   const conversationTeam = features.subagents && !!activeThreadId && teamEngines.some(engine => engine.id === parentEngine && engine.protocol === "pi-rpc");
   const projectPolicy = useMemo(() => mergePolicy(appSettings.agentPolicy ?? defaultAgentPolicy, activeWorkspace?.settings.agentPolicy), [appSettings.agentPolicy, activeWorkspace?.settings.agentPolicy]);
   const team = useConversationPolicy(conversationTeam ? activeWorkspaceId : null, conversationTeam ? activeThreadId : null, !!activeWorkspace?.connected, projectPolicy);
+  const reportModel = selectedModel?.id ?? resolvedModel;
+  useEffect(() => setIssueReportContext({ engine: parentEngine, model: reportModel }), [parentEngine, reportModel]);
   const sideChats = useSideChats({
     workspace: activeWorkspace, threadId: activeThreadId,
     threads: threadsByWorkspace[activeWorkspaceId ?? ""] ?? [],

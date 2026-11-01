@@ -2,7 +2,8 @@ import { SettingsIconButton } from "@/features/design-system/components/settings
 import { formatModelRef } from "@settings/registry";
 import "./diagnostics.css";
 import { useEffect, useState } from "react";
-import { Check, Copy, FolderOpen, Inbox, Terminal, Bot, Repeat, MessageSquarePlus, X } from "lucide-react";
+import { Check, Copy, FolderOpen, Inbox, Terminal, Bot, Repeat, MessageSquarePlus, X, Github } from "lucide-react";
+import { IssueReportDialog } from "@/features/report/IssueReportDialog";
 import type { AppSettings } from "@/types";
 import { diagnosticsRequest } from "@services/tauri";
 import { SettingsPage, SettingsGroup, SettingsFieldRow, SettingsSelect, SettingsSegmented, SettingsButton, SettingsTextArea, SettingsToggleRow, SettingsToggleSwitch } from "@/features/design-system/components/settings/SettingsPrimitives";
@@ -37,6 +38,7 @@ export function DiagnosticsSettings({ appSettings, onUpdateAppSettings }: { appS
   const [error, setError] = useState("");
   const [confirm, setConfirm] = useState(false);
   const [copied, setCopied] = useState("");
+  const [report, setReport] = useState<{ fingerprint?: string }>();
   const filters = { ...(status ? { status } : {}), ...(area ? { area } : {}), limit: 100 };
   const refresh = async () => { setInfo(await diagnosticsRequest<Info>("info")); setIssues(await diagnosticsRequest<JournalIssue[]>("diag_issues", filters)); };
   useEffect(() => {
@@ -63,7 +65,7 @@ export function DiagnosticsSettings({ appSettings, onUpdateAppSettings }: { appS
       <SettingsToggleRow title="Include content snippets" subtitle="May save up to 300 characters of redacted content. Review before sharing."><SettingsToggleSwitch pressed={opts.includeContentSnippets} onClick={() => update({ includeContentSnippets: !opts.includeContentSnippets })} /></SettingsToggleRow>
       <SettingsToggleRow title="Expose to taucode agents" subtitle="Requires Connectors. Applies to new sessions."><SettingsToggleSwitch pressed={opts.exposeToAgents} onClick={() => update({ exposeToAgents: !opts.exposeToAgents })} /></SettingsToggleRow>
     </SettingsGroup>
-    {info && <SettingsGroup title="Journal" actions={<><SettingsButton className="ghost diagnostics-feedback-button" disabled={!enabled} onClick={() => openFeedback()}><MessageSquarePlus size={14} />Log an issue or idea</SettingsButton><SettingsButton disabled={!enabled} onClick={() => run(async () => { await diagnosticsRequest("regenerate"); await refresh(); })}>Regenerate digest</SettingsButton><SettingsButton className="diagnostics-danger" onClick={() => setConfirm(true)}>Clear all data</SettingsButton></>}>
+    {info && <SettingsGroup title="Journal" actions={<><SettingsButton className="ghost diagnostics-feedback-button" disabled={!enabled} onClick={() => openFeedback()}><MessageSquarePlus size={14} />Log an issue or idea</SettingsButton><SettingsButton className="ghost diagnostics-feedback-button" onClick={() => setReport({})}><Github size={14} />Report on GitHub</SettingsButton><SettingsButton disabled={!enabled} onClick={() => run(async () => { await diagnosticsRequest("regenerate"); await refresh(); })}>Regenerate digest</SettingsButton><SettingsButton className="diagnostics-danger" onClick={() => setConfirm(true)}>Clear all data</SettingsButton></>}>
       <div className="diagnostics-path"><code title={info.dir} aria-label={info.dir}><span>{info.dir.slice(0, Math.ceil(info.dir.length / 2))}</span><span>{info.dir.slice(Math.ceil(info.dir.length / 2))}</span></code><SettingsIconButton className="diagnostics-icon-button" aria-label="Open folder" title="Open folder" onClick={() => run(() => diagnosticsRequest("open"))}><FolderOpen size={16} /></SettingsIconButton>{copyButton(info.dir, "path")}</div>
       <div className="diagnostics-stats"><span><strong>{info.openIssues}</strong> open issues</span><span><strong>{info.eventsToday}</strong> events today</span><span title={info.lastDigest ?? undefined}>digest {info.lastDigest ? relativeTime(info.lastDigest) : "Not generated"}</span>{info.dropped > 0 && <span>{info.dropped} dropped events</span>}</div>
       {confirm && <div className="diagnostics-confirm" role="alert"><p>Delete all diagnostic events, issues and annotations?</p><SettingsButton className="diagnostics-danger" onClick={() => run(async () => { await diagnosticsRequest("clear", { confirmed: true }); setConfirm(false); setSelected(undefined); await refresh(); })}>Confirm clear</SettingsButton><SettingsButton onClick={() => setConfirm(false)}>Cancel</SettingsButton></div>}
@@ -76,7 +78,7 @@ export function DiagnosticsSettings({ appSettings, onUpdateAppSettings }: { appS
       <ul className="diagnostics-issue-list">{issues.map(issue => <li key={issue.fingerprint} className="diagnostics-issue-row"><SettingsButton className="diagnostics-issue" aria-expanded={selected?.issue.fingerprint === issue.fingerprint} onClick={() => run(async () => { setNote(""); setSelected(await diagnosticsRequest("diag_issue", { fingerprint: issue.fingerprint })); })}><span className={"diagnostics-severity diagnostics-severity-" + issue.severity} aria-label={issue.severity} /><span className="diagnostics-issue-title" title={issue.title}>{issue.title}</span><span className="diagnostics-chip">{issue.area}</span><span className="diagnostics-count">×{issue.count}</span><time dateTime={issue.lastSeen} title={issue.lastSeen}>{relativeTime(issue.lastSeen)}</time><span className={"diagnostics-chip diagnostics-status-" + issue.status}>{issue.status}</span>{issue.regressed && <span className="diagnostics-chip diagnostics-regressed">Regressed</span>}</SettingsButton></li>)}</ul>
       {selected && <section className="diagnostics-detail" aria-label="Issue details">
         <div className="diagnostics-detail-heading"><h3>{selected.issue.title}</h3><SettingsIconButton className="diagnostics-icon-button" aria-label="Close details" onClick={() => setSelected(undefined)}><X size={16} /></SettingsIconButton></div>
-        <div className="diagnostics-identifiers"><code>{selected.issue.code}</code>{copyButton(selected.issue.code, "issue code")}<code>{selected.issue.fingerprint}</code>{copyButton(selected.issue.fingerprint, "fingerprint")}</div>
+        <div className="diagnostics-identifiers"><SettingsButton className="ghost diagnostics-feedback-button" onClick={() => setReport({ fingerprint: selected.issue.fingerprint })}><Github size={14} />Report on GitHub</SettingsButton><code>{selected.issue.code}</code>{copyButton(selected.issue.code, "issue code")}<code>{selected.issue.fingerprint}</code>{copyButton(selected.issue.fingerprint, "fingerprint")}</div>
         <dl className="diagnostics-facts"><div><dt>First seen</dt><dd>{new Date(selected.issue.firstSeen).toLocaleString()}</dd></div><div><dt>Last seen</dt><dd>{new Date(selected.issue.lastSeen).toLocaleString()}</dd></div><div><dt>Engines</dt><dd>{selected.issue.engines.join(", ") || "None recorded"}</dd></div><div><dt>Models</dt><dd>{selected.issue.models.map(model => formatModelRef(appSettings, model).title).join(", ") || "None recorded"}</dd></div></dl>
         <h4>Evidence sample</h4><pre className="diagnostics-evidence">{selected.issue.lastEvent.message}{selected.issue.lastEvent.detail && Object.keys(selected.issue.lastEvent.detail).length > 0 ? "\n" + JSON.stringify(selected.issue.lastEvent.detail, null, 2) : ""}</pre>
         <h4>Recent events</h4><ul className="diagnostics-events">{selected.events.map((event, index) => <li key={index}><time title={event.ts}>{relativeTime(event.ts)}</time><code>{event.code}</code><span>{event.message}</span></li>)}</ul>
@@ -87,5 +89,6 @@ export function DiagnosticsSettings({ appSettings, onUpdateAppSettings }: { appS
     </SettingsGroup>
     <span className="diagnostics-copy-status" role="status">{copied ? copied + " copied" : ""}</span>
     {error && <p role="alert">{error}</p>}
+    {report && <IssueReportDialog fingerprint={report.fingerprint} onClose={() => setReport(undefined)} />}
   </SettingsPage>;
 }

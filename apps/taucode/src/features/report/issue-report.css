@@ -1,0 +1,73 @@
+.issue-report-card {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border-radius: 14px;
+  padding: 20px;
+  display: grid;
+  gap: 8px;
+}
+
+.issue-report-included {
+  font-size: 12px;
+  color: var(--ds-text-subtle);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--ds-surface-muted);
+}
+
+.issue-report-included ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.issue-report-included p {
+  margin: 4px 0 0;
+}
+
+.issue-report-body {
+  min-height: 220px;
+  font-family: var(--code-font-family);
+  font-size: 12px;
+  resize: vertical;
+}
+
+.issue-report-screenshot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ds-text-subtle);
+}
+
+.issue-report-screenshot > div {
+  display: flex;
+  gap: 6px;
+}
+
+.issue-report-screenshot button,
+.issue-report-card .ds-modal-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.issue-report-status {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ds-text-subtle);
+}
+
+/* Screenshots for reports show the app, not the dialogs on top of it, on an opaque
+   background because the window material behind the webview is not captured. */
+.taucode-capturing .ds-modal {
+  visibility: hidden !important;
+}
+
+html.taucode-capturing,
+html.taucode-capturing body {
+  background: var(--surface-app) !important;
+}

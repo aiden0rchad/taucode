@@ -25,6 +25,8 @@ taucode is a desktop app that stores working state locally, but the features you
 | Runtime installation | Package registries and runtime distribution services supply dependencies on first install or update. |
 | MCP connector | The local server or remote endpoint receives the arguments and credentials required for its tools. |
 | Remote daemon | Requests, tool results, and workspace operations cross the configured connection to that host. |
+| Update check | GitHub's Releases API receives an anonymous request carrying taucode's version, at most once a day and when you click **Check for updates**. |
+| Issue reports | Nothing is sent by taucode. **Report an issue** opens GitHub in your browser with the text you reviewed; GitHub receives it only if you submit. |
 | Sentry reporting | The current frontend initializes inherited Sentry reporting unless disabled at build time. |
 
 Using a local model changes the inference destination. It does not automatically disable website access, connector traffic, runtime downloads, or Sentry.

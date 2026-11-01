@@ -19,6 +19,7 @@ mod event_sink;
 mod files;
 mod git;
 mod git_utils;
+mod github;
 mod local_usage;
 #[cfg(desktop)]
 mod menu;
@@ -271,6 +272,10 @@ pub fn run() {
             providers::provider_test_and_fetch,
             connectors::connector_request,
             diagnostics::diagnostics_request,
+            github::app_update_check,
+            github::issue_report_draft,
+            github::issue_report_open,
+            github::issue_report_screenshot,
             settings::get_app_settings,
             settings::update_app_settings,
             settings::get_codex_config_path,

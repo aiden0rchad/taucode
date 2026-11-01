@@ -37,6 +37,7 @@ vi.mock("@services/tauri", async () => {
     ...actual,
     connectWorkspace: vi.fn(),
     getAppBuildType: vi.fn(),
+    checkAppUpdate: vi.fn().mockResolvedValue({ status: "noReleases", currentVersion: "0.0.0", message: "No releases published yet." }),
     getModelList: vi.fn(),
     getConfigModel: vi.fn(),
     getExperimentalFeatureList: vi.fn(),
@@ -694,13 +695,17 @@ describe("SettingsView Display", () => {
 });
 
 describe("SettingsView About", () => {
-  it("hides app update controls even when automatic checks were enabled", async () => {
-    renderAboutSection({ appSettings: { automaticAppUpdateChecksEnabled: true } });
-    await waitFor(() => {
-      expect(screen.queryByText("Automatically check for app updates")).toBeNull();
-      expect(screen.queryByRole("button", { name: "Check for updates" })).toBeNull();
-      expect(screen.queryByText("App Updates")).toBeNull();
-    });
+  it("checks GitHub on demand and reports a repo without releases calmly", async () => {
+    localStorage.clear();
+    const onToggleAutomaticAppUpdateChecks = vi.fn();
+    renderAboutSection({ appSettings: { automaticAppUpdateChecksEnabled: true }, onToggleAutomaticAppUpdateChecks });
+    expect(screen.getByText("Not checked yet.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    await waitFor(() => expect(screen.getByText("No releases published yet.")).toBeTruthy());
+    const row = screen.getByText("Check for updates automatically").closest(".settings-toggle-row") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button"));
+    expect(onToggleAutomaticAppUpdateChecks).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Report an issue…" })).toBeTruthy();
   });
 });
 

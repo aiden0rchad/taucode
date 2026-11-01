@@ -1176,6 +1176,36 @@ export async function getAppBuildType(): Promise<AppBuildType> {
   return invoke<AppBuildType>("app_build_type");
 }
 
+export type AppUpdateCheck = {
+  status: "available" | "latest" | "noReleases" | "unavailable";
+  currentVersion: string;
+  latestVersion?: string;
+  name?: string;
+  notes?: string;
+  htmlUrl?: string;
+  downloadUrl?: string;
+  publishedAt?: string;
+  message?: string;
+};
+
+export function checkAppUpdate(): Promise<AppUpdateCheck> {
+  return invoke<AppUpdateCheck>("app_update_check");
+}
+
+export type IssueReportContext = { engine?: string; model?: string; buildType?: string; commit?: string; fingerprint?: string };
+
+export function issueReportDraft(context: IssueReportContext): Promise<{ title: string; body: string }> {
+  return invoke("issue_report_draft", { context });
+}
+
+export function openIssueReport(title: string, body: string): Promise<{ truncated: boolean }> {
+  return invoke("issue_report_open", { title, body });
+}
+
+export function issueReportScreenshot(action: "copy" | "save"): Promise<{ copied?: boolean; path?: string }> {
+  return invoke("issue_report_screenshot", { action });
+}
+
 export async function sendNotification(
   title: string,
   body: string,
