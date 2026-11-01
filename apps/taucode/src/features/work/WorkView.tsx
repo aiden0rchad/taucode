@@ -3,6 +3,7 @@ import { formatModelRef } from "@settings/registry";
 import { useSidebarScrollFade } from '@app/hooks/useSidebarScrollFade';
 import { DigitalRain } from "@/features/themes/DigitalRain";
 import { useFeatures } from "@settings/features";
+import { Squircle } from "@/features/design-system/components/squircle/Squircle";
 import { SidebarTree } from "@app/components/SidebarTree";
 import { formatRelativeTimeShort } from "@utils/time";
 import { buildThreadTranscript } from "@utils/threadText";
@@ -289,7 +290,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       {needs.length > 0 && <button className="ghost work-input-callout" onClick={jumpToInput}><span className="thread-status work-status-needs-input" aria-hidden />{needs.length} {needs.length === 1 ? "task needs" : "tasks need"} your input</button>}
       <div className="sidebar-section-header"><span className="sidebar-section-title">Spaces</span><div className="mode-section-actions"><IconButton size="sm" className="ghost sidebar-title-add" aria-label="Add space…" title="Add space…" disabled={busy} onClick={() => { void run(async () => { const path = await pickWorkspacePath(); if (path) { setFolder(path); setReadOnlyFolders([]); work.setActive(null); if (window.innerWidth < 760) setSidebarCollapsed(true); } }); }}><Plus size={14} aria-hidden /></IconButton><WorkConcurrency value={work.state.concurrency} disabled={busy} onChange={count => { void run(() => work.mutate("concurrency", { count })); }} /></div></div>
       <div ref={sidebarBodyRef} onScroll={updateScrollFade} className={`chat-list sidebar-body${scrollFade.top ? " fade-top" : ""}${scrollFade.bottom ? " fade-bottom" : ""}`}>
-        {work.state.spaces.filter(space => !searchTerms.length || matchingTasks.some(task => task.spaceId === space.id)).map(space => <section className={`work-space project-group-card${(task?.spaceId ?? selectedSpace) === space.id ? " is-selected" : ""}`} key={space.id} aria-label={space.name}>
+        {work.state.spaces.filter(space => !searchTerms.length || matchingTasks.some(task => task.spaceId === space.id)).map(space => <Squircle as="section" className={`work-space project-group-card${(task?.spaceId ?? selectedSpace) === space.id ? " is-selected" : ""}`} key={space.id} aria-label={space.name}>
           <h2 className="workspace-row" data-depth={0} title={space.path}><button className="ghost sidebar-section-title work-space-toggle" aria-expanded={!isSpaceCollapsed(space.id)} onClick={() => setCollapsedSpaces(current => current.includes(space.id) ? current.filter(id => id !== space.id) : [...current, space.id])}>{isSpaceCollapsed(space.id) ? <Folder aria-hidden /> : <FolderOpen aria-hidden />}<span className="workspace-name">{space.name}</span><ChevronDown className="work-space-chevron" aria-hidden /></button><span className="workspace-count">{work.state.tasks.filter(t => t.spaceId === space.id).length}</span><IconButton size="sm" type="button" className="ghost sidebar-title-add" aria-label={`New task in ${space.name}`} title={`New task in ${space.name}`} disabled={busy || space.readOnly} onClick={() => { setSpaceId(space.id); work.setActive(null); if (window.innerWidth < 760) setSidebarCollapsed(true); }}><Plus aria-hidden /></IconButton></h2>
           {!isSpaceCollapsed(space.id) && space.readOnly && <p className="chat-muted">Read-only history. Choose an available space to continue.</p>}
           {!isSpaceCollapsed(space.id) && !!space.readOnlyFolders.length && <details className="work-readonly-folders"><summary><FolderLock aria-hidden /><span>{space.readOnlyFolders.length} read-only {space.readOnlyFolders.length === 1 ? "folder" : "folders"}</span><ChevronDown aria-hidden /></summary>{space.readOnlyFolders.map(path => <p key={path} className="chat-muted">{path}</p>)}</details>}
@@ -297,7 +298,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
             const tasks = matchingTasks.filter(t => t.spaceId === space.id && (statuses as readonly string[]).includes(t.status));
             return tasks.length > 0 && <section className="work-task-group" key={label} aria-label={`${space.name}: ${label}`}><h3>{label}<span>{tasks.length}</span></h3><SidebarTree rows={tasks.map(task => ({ ...task, depth: 0 }))} rowKey={task => task.id} selected={task => work.active === task.id}>{taskButton}</SidebarTree></section>;
           })}
-        </section>)}
+        </Squircle>)}
         {!!searchTerms.length && !matchingTasks.length && <div className="sidebar-search-empty" role="status"><p>No tasks match “{search.trim()}”.</p><button type="button" className="ghost" onClick={() => setSearch("")}>Clear search</button></div>}
       </div>
       <SidebarBottomRail onOpenSettings={onOpenSettings} onOpenDebug={() => {}} showDebugButton={false} />

@@ -9,7 +9,7 @@ const dark = tokens(read("themes.dark"));
 it("defines the window radius and shared project spacing", () => {
   const css = read("visual-refresh");
   expect(css).toContain("--radius-window: 12px;");
-  expect(css).toContain(".sidebar .workspace-group-content { gap: 6px; }");
+  expect(css).toContain(".sidebar .workspace-group-content { gap: 4px; }");
 });
 function luminance(hex) {
   const channels = hex.slice(1).match(/../g).map(channel => parseInt(channel, 16) / 255);

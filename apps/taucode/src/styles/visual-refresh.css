@@ -74,7 +74,7 @@ button:disabled, select:disabled { opacity: .4; }
 .sidebar .mode-new { width: 100%; min-height: 28px; justify-content: flex-start; }
 .sidebar-search { display: flex; align-items: center; gap: 8px; padding: 4px 8px; color: var(--text-subtle); }
 .chat-layout .sidebar-search input { width: 100%; padding: 4px 0; border: 0; background: transparent; }
-.sidebar .mode-switcher { padding: 3px; gap: 2px; margin-bottom: 10px; border: 0; border-radius: var(--radius-row); background: var(--surface-card-muted); }
+.sidebar .mode-switcher { padding: 3px; gap: 2px; margin-bottom: 6px; border: 0; border-radius: var(--radius-row); background: var(--surface-card-muted); }
 .sidebar .mode-switcher button { height: 28px; padding: 4px 12px; border-radius: var(--radius-chip); }
 .sidebar .mode-switcher button[aria-pressed="true"] { box-shadow: none; }
 .sidebar-bottom-actions { width: 100%; }
@@ -307,7 +307,7 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 .thread-tree-toggle { position: absolute; inset: -5px; border: 0; background: var(--surface-sidebar); color: var(--text-muted); padding: 0; opacity: 0; z-index: var(--z-sticky); }
 .thread-tree-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
 .thread-row:hover .thread-tree-toggle, .thread-row:focus-within .thread-tree-toggle { opacity: 1; }
-.sidebar .thread-list, .sidebar .thread-bucket, .sidebar .pinned-section { gap: 2px; }
+.sidebar .thread-list, .sidebar .thread-bucket, .sidebar .pinned-section { gap: 1px; }
 .sidebar .thread-list-nested { margin-left: 0; }
 .sidebar .thread-more { height: 24px; padding: 0 8px; color: var(--text-muted); font-size: 11.5px; }
 .sidebar .workspace-row { height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 4px; padding: 0 6px; border-radius: var(--radius-row); }
@@ -327,10 +327,10 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 .sidebar .workspace-row:hover .workspace-toggle, .sidebar .workspace-row:focus-within .workspace-toggle,
 .sidebar .workspace-group-header:hover .group-toggle, .sidebar .workspace-group-header:focus-within .group-toggle { opacity: 1; }
 
-.sidebar-tree, .sidebar-tree-children { display: flex; flex-direction: column; gap: 2px; }
+.sidebar-tree, .sidebar-tree-children { display: flex; flex-direction: column; gap: 1px; }
 .sidebar-tree-children { margin-left: 24px; }
 .sidebar-tree-node { position: relative; min-width: 0; }
-.sidebar-tree-node > .sidebar-tree-children { margin-top: 2px; }
+.sidebar-tree-node > .sidebar-tree-children { margin-top: 1px; }
 /* Guides are measured from glyph bounds, independent of row height and label width. */
 .sidebar-tree { position: relative; }
 .sidebar-tree-guides { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
@@ -394,7 +394,7 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 @media (prefers-reduced-motion: reduce) { .sidebar .thread-status.processing { animation: none; } }
 
 .thread-header-model { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 11.5px; }
-.sidebar .workspace-card-content-inner { padding-top: 2px; }
+.sidebar .workspace-card-content-inner { padding-top: 0; }
 .sidebar .work-space > .workspace-row { margin: 6px 0 2px; }
 .sidebar .workspace-count:empty::after { content: "0"; }
 
@@ -417,12 +417,17 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 
 /* Header and tree share the padded origin, preserving guide alignment. */
 .sidebar .project-group-card {
+  --radius-window: 8px;
+  --squircle-background: color-mix(in srgb, var(--surface-sidebar), var(--text-primary) 1%);
+  --squircle-border: color-mix(in srgb, var(--tree-line) 60%, transparent);
+  --squircle-border-active: var(--tree-line-active);
   padding: 3px;
   overflow: visible;
   margin: 0;
 }
-.sidebar .workspace-group-content { gap: 6px; }
-.sidebar .work-space { margin-bottom: 6px; }
+.sidebar .project-group-card.is-selected { --squircle-border: var(--tree-line-active); }
+.sidebar .workspace-group-content { gap: 4px; }
+.sidebar .work-space { margin-bottom: 4px; }
 .sidebar .work-space > .workspace-row { margin: 0 0 2px; }
 .composer-shell.squircle { --squircle-border-active: var(--border-accent); --squircle-background: var(--surface-composer); padding: 1px; }
 .composer-shell.squircle:focus-within { --squircle-border: var(--border-accent); }
