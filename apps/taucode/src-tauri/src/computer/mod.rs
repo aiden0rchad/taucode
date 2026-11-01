@@ -715,9 +715,12 @@ impl runner::Environment for Live {
                 .and_then(|s| s["target"].as_str())
                 .unwrap_or("")
                 .to_owned();
-            self.computer.state.send_modify(|s| {
-                s["approval"] = json!({"id":id,"reason":reason,"target":target,"action":action,"app":context.app})
-            });
+            let approval = json!({"id":id,"reason":reason,"target":target,"action":action,"app":context.app});
+            self.computer
+                .state
+                .send_modify(|s| s["approval"] = approval.clone());
+            // Pushed as well as polled: a background window's timers are throttled.
+            let _ = tauri::Emitter::emit_to(&self.app, "main", "computer-approval", approval);
             use tauri_plugin_notification::NotificationExt;
             if let Err(error) = self
                 .app
@@ -735,6 +738,7 @@ impl runner::Environment for Live {
             self.computer
                 .state
                 .send_modify(|s| s["approval"] = Value::Null);
+            let _ = tauri::Emitter::emit_to(&self.app, "main", "computer-approval", Value::Null);
             if approved {
                 // Approving in the main UI may activate taucode. Restore only the exact app
                 // the user just approved, then let the loop recheck the secure field.

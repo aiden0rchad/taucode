@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { computerRequest } from "@services/tauri";
+import { subscribeComputerApproval } from "@services/events";
 import { ToastActions, ToastBody, ToastCard, ToastError, ToastHeader, ToastTitle, ToastViewport } from "@/features/design-system/components/toast/ToastPrimitives";
 import type { ComputerRun } from "./computer";
 
@@ -23,8 +24,10 @@ export function ComputerApprovals() {
       }
       if (active) timer = setTimeout(() => void poll(), delay);
     };
+    // The push shows a new approval at once; polling recovers anything missed.
+    const unsubscribe = subscribeComputerApproval(next => { if (active) setApproval(next); });
     void poll();
-    return () => { active = false; clearTimeout(timer); };
+    return () => { active = false; clearTimeout(timer); unsubscribe(); };
   }, []);
   if (!approval) return null;
   const decide = async (accept: boolean) => {

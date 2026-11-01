@@ -10,6 +10,8 @@ import type { AppSettings } from "@/types";
 import { buildConversationItem } from "@/utils/threadItems.conversion";
 import { prepareThreadItems } from "@/utils/threadItems.explore";
 vi.mock("@services/tauri", () => ({ engineRuntime: async () => [{ engine: "computer", state: "ready", message: "Ready" }], computerRequest: vi.fn(), computerRequestPermissions: vi.fn() }));
+const approvalPush = vi.hoisted(() => ({ listener: null as null | ((approval: unknown) => void) }));
+vi.mock("@services/events", () => ({ subscribeComputerApproval: (listener: (approval: unknown) => void) => { approvalPush.listener = listener; return () => { approvalPush.listener = null; }; } }));
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const step = { step: 1, thumbnail: "aGVsbG8=", action: { kind: "click" }, reflection: "Found button" };
 describe("computer use", () => {
@@ -76,6 +78,20 @@ describe("computer use", () => {
     render(<ComputerApprovalStatus detail='{"instruction":"Calculate"}' />);
     expect(await screen.findByText("Computer Use · Waiting for approval")).toBeTruthy();
     expect(screen.getByText(/Waiting for approval: Confirm typing/)).toBeTruthy();
+  });
+  it("shows a pushed approval at once instead of waiting for the next status poll", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(computerRequest).mockResolvedValue({ running: false, steps: [], approval: null });
+      render(<ComputerApprovals />);
+      await act(async () => { await Promise.resolve(); });
+      expect(computerRequest).toHaveBeenCalledTimes(1);
+      act(() => approvalPush.listener?.({ id: "a1", reason: "Confirm typing", target: "Display", action: { kind: "type" }, app: "com.apple.calculator" }));
+      expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy();
+      expect(computerRequest).toHaveBeenCalledTimes(1);
+      act(() => approvalPush.listener?.(null));
+      expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    } finally { vi.useRealTimers(); }
   });
   it("keeps diagnostics collapsed and prepares a continuation without replaying input", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);

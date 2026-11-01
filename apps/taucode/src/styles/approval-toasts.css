@@ -13,13 +13,17 @@
 }
 
 .approval-toast {
-  --ds-toast-enter-duration: 0.2s;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   max-height: min(520px, calc(100vh - 140px));
   min-height: 0;
   overflow: hidden;
+}
+
+/* A fade-in stalls while the window is in the background, leaving the prompt invisible. */
+.approval-toasts .approval-toast {
+  animation: none;
 }
 
 .approval-toast-header {

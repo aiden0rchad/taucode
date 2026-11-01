@@ -1,4 +1,5 @@
 import type { CodegraphStatus } from "@services/tauri";
+import type { ComputerRun } from "@/features/computer/computer";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AppServerEvent,
@@ -101,6 +102,7 @@ function createEventHub<T>(eventName: string) {
 
 const appServerHub = createEventHub<AppServerEvent>("app-server-event");
 export const subscribeThemesChanged = createEventHub<void>('themes-changed').subscribe;
+export const subscribeComputerApproval = createEventHub<ComputerRun["approval"]>("computer-approval").subscribe;
 const dictationDownloadHub = createEventHub<DictationModelStatus>("dictation-download");
 const dictationEventHub = createEventHub<DictationEvent>("dictation-event");
 const terminalOutputHub = createEventHub<TerminalOutputEvent>("terminal-output");
