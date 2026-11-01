@@ -2,24 +2,24 @@
 
 taucode is in **early development**. The source is available for inspection and building; published test artifacts are experimental. A package version or a passing build is not a stable-release or feature-parity guarantee.
 
-This page describes the documented **0.7.68** baseline as of **October 30, 2026**. See [GitHub Releases](https://github.com/aiden0rchad/taucode/releases) for the assets actually published and the commit behind each build.
+This page describes the documented **0.7.69** baseline as of **November 1, 2026**. See [GitHub Releases](https://github.com/aiden0rchad/taucode/releases) for the assets actually published and the commit behind each build.
 
 ## Installable artifacts
 
-The current [October 30 test release](https://github.com/aiden0rchad/taucode/releases/tag/build-2026-10-30-b6848c7) provides both desktop downloads. For step-by-step installation and help choosing a file, use [Installation & first run](getting-started.md#_1-install-the-app).
+The current [v0.7.69 release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69) provides both desktop downloads. For step-by-step installation and help choosing a file, use [Installation & first run](getting-started.md#_1-install-the-app).
 
 ### Windows x64 test build
 
-The [October 30 test release](https://github.com/aiden0rchad/taucode/releases/tag/build-2026-10-30-b6848c7) contains:
+The [v0.7.69 release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69) contains:
 
-- `taucode_0.7.68_x64-setup.exe`
+- `taucode_0.7.69_x64-setup.exe`
 - `SHA256SUMS`
 
-It is an **unsigned prerelease** for 64-bit Intel/AMD Windows. The release records its source commit. CI checked compilation, silent installation, bundled Node/npm/uv, and a ten-second app startup. Full provider, browser, tool, credential, and task verification is still needed.
+It is an **unsigned early-development release** for 64-bit Intel/AMD Windows. The release records its source commit. The release notes record the compilation, installation, bundled-runtime and startup checks for this version. Full provider, browser, tool, credential, and task verification is still needed.
 
 ### macOS
 
-The same [test release](https://github.com/aiden0rchad/taucode/releases/tag/build-2026-10-30-b6848c7) includes **taucode_0.7.68_aarch64.dmg** for **Apple Silicon Macs**, `macos-arm64-release-manifest.json`, and shared `SHA256SUMS`.
+The same [test release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69) includes **taucode_0.7.69_aarch64.dmg** for **Apple Silicon Macs**, `macos-arm64-release-manifest.json`, and shared `SHA256SUMS`.
 
 The package passed the release's recorded bundle, signature, entitlement, bundled-runtime, daemon RPC, and mounted-DMG checks. It uses a **local development signing identity** and is **not notarized**. These checks do not make it a stable release or guarantee opening on every Mac. Follow the [installation steps](getting-started.md#macos-apple-silicon).
 

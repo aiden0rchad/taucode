@@ -14,7 +14,7 @@ Bring your own API keys or local models, then choose the engine that runs them.
 [![License: MIT](https://img.shields.io/badge/license-MIT-79dac8)](LICENSE)
 [![Status](https://img.shields.io/badge/status-early_development-e9c580)](docs/releases.md)
 
-[Documentation](https://aiden0rchad.github.io/taucode/) · [Getting started](docs/getting-started.md) · [Builds & limitations](docs/releases.md) · [FAQ](docs/faq.md) · [Report a problem](https://github.com/aiden0rchad/taucode/issues/new/choose)
+[Documentation](https://aiden0rchad.github.io/taucode/) · [Getting started](docs/getting-started.md) · [Changelog](CHANGELOG.md) · [Builds & limitations](docs/releases.md) · [FAQ](docs/faq.md) · [Report a problem](https://github.com/aiden0rchad/taucode/issues/new/choose)
 </div>
 
 ![taucode: Your models. Your workspace. Code, conversations, and document work in one desktop app.](docs/public/taucode-banner.svg)
@@ -58,14 +58,14 @@ Code uses the selected enabled engine. Chat and Work use dedicated pi profiles; 
 
 **New to AI tools?** Start with the [beginner guide](docs/start-here.md), follow [installation and first run](docs/getting-started.md), then try the [first Work task](docs/first-task.md). The [glossary](docs/glossary.md) explains unfamiliar terms.
 
-### Download a test build
+### Download the latest desktop build
 
-The [October 30 test release](https://github.com/aiden0rchad/taucode/releases/tag/build-2026-10-30-b6848c7) includes:
+The [v0.7.69 release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69) includes:
 
 | Your computer | File |
 | --- | --- |
-| Apple Silicon Mac | `taucode_0.7.68_aarch64.dmg` — development signed, not notarized. |
-| Intel/AMD Windows x64 | `taucode_0.7.68_x64-setup.exe` — unsigned. |
+| Apple Silicon Mac | `taucode_0.7.69_aarch64.dmg` — development signed, not notarized. |
+| Intel/AMD Windows x64 | `taucode_0.7.69_x64-setup.exe` — unsigned. |
 
 These are experimental packages. Follow the [step-by-step installation guide](docs/getting-started.md) and read the [build notes and limits](docs/releases.md). The download includes supporting runtimes; development tools are needed for source builds, not normal use of the packaged app.
 
