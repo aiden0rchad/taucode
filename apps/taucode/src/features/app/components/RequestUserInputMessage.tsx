@@ -177,7 +177,7 @@ export function RequestUserInputMessage({
                     autoComplete="off"
                     value={notes[questionId] ?? ""}
                     onChange={(event) => handleNotesChange(questionId, event.target.value)}
-                  /> : <textarea
+                  /> : <textarea writingsuggestions="false"
                     className="request-user-input-notes"
                     aria-label={question.question}
                     placeholder={notePlaceholder}

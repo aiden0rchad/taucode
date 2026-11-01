@@ -112,6 +112,10 @@ describe("Composer send triggers", () => {
     expect(container.querySelector(".composer-select-wrap--effort")).toBeNull();
     expect(container.querySelectorAll(".composer-shell-actions button")).toHaveLength(3);
   });
+  it("opts the message box out of system inline predictions a space would accept", () => {
+    render(<ComposerHarness onSend={vi.fn()} />);
+    expect(screen.getByRole("textbox").getAttribute("writingsuggestions")).toBe("false");
+  });
   it("opens Code tools and inserts a file mention", () => {
     render(<ComposerHarness onSend={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Add attachments and tools" }));

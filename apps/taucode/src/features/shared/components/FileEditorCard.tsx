@@ -76,7 +76,7 @@ export function FileEditorCard({
         </div>
       </div>
       {error ? <div className={classNames.error}>{error}</div> : null}
-      <textarea
+      <textarea writingsuggestions="false"
         className={classNames.textarea}
         value={value}
         onChange={(event) => onChange(event.target.value)}

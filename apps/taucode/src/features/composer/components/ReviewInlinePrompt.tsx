@@ -266,7 +266,7 @@ const CustomStep = memo(function CustomStep({
       <label className="review-inline-label" htmlFor="review-inline-custom-instructions">
         Instructions
       </label>
-      <textarea
+      <textarea writingsuggestions="false"
         id="review-inline-custom-instructions"
         className="review-inline-textarea"
         value={reviewPrompt.customInstructions}

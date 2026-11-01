@@ -243,7 +243,7 @@ export function ComposerInput({
           onRemoveAttachment={onRemoveAttachment}
         />
         <div className="composer-input-row">
-          <textarea
+          <textarea writingsuggestions="false"
             aria-label="Message"
             rows={1}
             ref={textareaRef}

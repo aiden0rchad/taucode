@@ -29,7 +29,7 @@ export function PlanReadyFollowupMessage({
             <div className="request-user-input-question-text">
               Start building from this plan, or describe changes to the plan.
             </div>
-            <textarea aria-label="Plan changes"
+            <textarea writingsuggestions="false" aria-label="Plan changes"
               className="request-user-input-notes"
               placeholder="Describe what you want to change in the plan..."
               value={changes}

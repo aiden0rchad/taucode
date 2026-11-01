@@ -169,7 +169,7 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
         {dragOver && <div className="composer-drop-overlay">Drop files or images</div>}
         {!!attachments.length && <ul className="chat-attachments">{attachments.map((a, index) => <li key={index}><img src={a.url || getFileTypeIconUrl(a.name)} alt="" />{a.name}<IconButton type="button" disabled={busy} aria-label={`Remove ${a.name}`} onClick={() => setAttachments(current => current.filter((_, i) => i !== index))}><X aria-hidden /></IconButton></li>)}</ul>}
         {editing && <div className="chat-editing">Editing the last message · creates a new branch <button type="button" onClick={() => { clearDraft(); composerInput.current?.focus(); }}>Cancel</button></div>}
-        <textarea ref={composerInput} aria-label="Message" placeholder="Ask anything" rows={1} value={draft} disabled={busy} onChange={e => setDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { e.preventDefault(); if (!disabled) addFiles(files); } }} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} />
+        <textarea writingsuggestions="false" ref={composerInput} aria-label="Message" placeholder="Ask anything" rows={1} value={draft} disabled={busy} onChange={e => setDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { e.preventDefault(); if (!disabled) addFiles(files); } }} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} />
 
         {chat.error && <p role="alert">{chat.error}</p>}
         </ComposerShell>
