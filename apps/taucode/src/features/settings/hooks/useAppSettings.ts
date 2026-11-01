@@ -13,6 +13,7 @@ import {
   CODE_FONT_SIZE_DEFAULT,
   clampCodeFontSize,
   normalizeFontFamily,
+  normalizeUiFontFamily,
 } from "@utils/fonts";
 import {
   DEFAULT_OPEN_APP_ID,
@@ -260,10 +261,7 @@ function normalizeAppSettings(settings: AppSettings): AppSettings {
     codexArgs: settings.codexArgs?.trim() ? settings.codexArgs.trim() : null,
     uiScale: clampUiScale(settings.uiScale),
     theme: typeof settings.theme === "string" && /^[a-z0-9-]{1,40}$/.test(settings.theme) ? settings.theme : "system",
-    uiFontFamily: normalizeFontFamily(
-      settings.uiFontFamily,
-      DEFAULT_UI_FONT_FAMILY,
-    ),
+    uiFontFamily: normalizeUiFontFamily(settings.uiFontFamily),
     codeFontFamily: normalizeFontFamily(
       settings.codeFontFamily,
       DEFAULT_CODE_FONT_FAMILY,

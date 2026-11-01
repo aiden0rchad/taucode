@@ -9,6 +9,7 @@ import {
   updateAppSettings,
 } from "@services/tauri";
 import { UI_SCALE_DEFAULT, UI_SCALE_MAX } from "@utils/uiScale";
+import { DEFAULT_UI_FONT_FAMILY } from "@utils/fonts";
 
 vi.mock("@services/tauri", () => ({
   getAppSettings: vi.fn(),
@@ -49,7 +50,7 @@ describe("useAppSettings", () => {
 
     expect(result.current.settings.uiScale).toBe(UI_SCALE_MAX);
     expect(result.current.settings.theme).toBe("nope");
-    expect(result.current.settings.uiFontFamily).toContain("system-ui");
+    expect(result.current.settings.uiFontFamily).toBe(DEFAULT_UI_FONT_FAMILY);
     expect(result.current.settings.codeFontFamily).toContain("ui-monospace");
     expect(result.current.settings.codeFontSize).toBe(16);
     expect(result.current.settings.personality).toBe("friendly");
@@ -66,11 +67,24 @@ describe("useAppSettings", () => {
 
     expect(result.current.settings.uiScale).toBe(UI_SCALE_DEFAULT);
     expect(result.current.settings.theme).toBe("glass-dark");
-    expect(result.current.settings.uiFontFamily).toContain("system-ui");
+    expect(result.current.settings.uiFontFamily).toBe(DEFAULT_UI_FONT_FAMILY);
     expect(result.current.settings.codeFontFamily).toContain("ui-monospace");
     expect(result.current.settings.backendMode).toBe("local");
     expect(result.current.settings.dictationModelId).toBe("base");
     expect(result.current.settings.interruptShortcut).toBeTruthy();
+  });
+
+  it.each([
+    ['system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', DEFAULT_UI_FONT_FAMILY],
+    ['-apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', DEFAULT_UI_FONT_FAMILY],
+    ['  Avenir, sans-serif  ', 'Avenir, sans-serif'],
+  ])("updates legacy UI defaults while preserving custom fonts: %s", async (uiFontFamily, expected) => {
+    getAppSettingsMock.mockResolvedValue({ uiFontFamily, codeFontFamily: 'JetBrains Mono, monospace' } as AppSettings);
+    const { result } = renderHook(() => useAppSettings());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.settings.uiFontFamily).toBe(expected);
+    expect(result.current.settings.codeFontFamily).toBe('JetBrains Mono, monospace');
+    expect(updateAppSettingsMock).not.toHaveBeenCalled();
   });
 
   it("persists settings via updateAppSettings and updates local state", async () => {
@@ -110,7 +124,7 @@ describe("useAppSettings", () => {
       expect.objectContaining({
         theme: "nope",
         uiScale: 0.1,
-        uiFontFamily: expect.stringContaining("system-ui"),
+        uiFontFamily: DEFAULT_UI_FONT_FAMILY,
         codeFontFamily: expect.stringContaining("ui-monospace"),
         codeFontSize: 11,
         notificationSoundsEnabled: false,

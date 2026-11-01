@@ -769,7 +769,7 @@ fn default_automatic_app_update_checks_enabled() -> bool {
 }
 
 fn default_ui_font_family() -> String {
-    "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif".to_string()
+    "-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif".to_string()
 }
 
 fn default_code_font_family() -> String {

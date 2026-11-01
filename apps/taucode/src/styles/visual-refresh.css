@@ -53,7 +53,7 @@
   --composer-model-select-width: 16ch;
   --context-free: 0;
 }
-body { font-family: var(--ui-font-family); font-size: 13px; line-height: 1.45; }
+body { font-family: var(--ui-font-family); font-weight: 400; font-size: 13px; line-height: 1.45; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 button, input, select, textarea { font-family: inherit; }
 button { transition-duration: 120ms; }
 svg.lucide { width: 16px; height: 16px; stroke-width: 1.75; flex-shrink: 0; }

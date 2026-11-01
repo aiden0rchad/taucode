@@ -21,6 +21,7 @@ import {
   listWorkspaces,
 } from "@services/tauri";
 import { DEFAULT_COMMIT_MESSAGE_PROMPT } from "@utils/commitMessagePrompt";
+import { DEFAULT_UI_FONT_FAMILY } from "@utils/fonts";
 import { SettingsView } from "./SettingsView";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -613,7 +614,7 @@ describe("SettingsView Display", () => {
     await waitFor(() => {
       expect(onUpdateAppSettings).toHaveBeenCalledWith(
         expect.objectContaining({
-          uiFontFamily: expect.stringContaining("system-ui"),
+          uiFontFamily: DEFAULT_UI_FONT_FAMILY,
         }),
       );
       expect(onUpdateAppSettings).toHaveBeenCalledWith(
