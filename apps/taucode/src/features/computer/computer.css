@@ -17,3 +17,5 @@
 .computer-failure p { margin: 8px 0; }
 .computer-failure details { margin: 12px 0; }
 .computer-failure button { min-height: 36px; }
+.computer-always-apps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.computer-always-apps li { display: flex; align-items: center; justify-content: space-between; gap: 8px; overflow-wrap: anywhere; }

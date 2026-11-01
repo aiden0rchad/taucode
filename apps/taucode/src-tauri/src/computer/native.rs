@@ -117,6 +117,51 @@ pub fn target(app_or_file: &str) -> Result<(String, Retained<NSURL>), String> {
         Ok((app_or_file.into(), url))
     }
 }
+/// Finds an installed app by bundle ID or by name ("Notes", "Find My"), returning its bundle
+/// ID and name. Like Codex desktop, a run may name any installed app.
+pub fn find_app(requested: &str) -> Option<(String, String)> {
+    let requested = requested.trim();
+    let requested = requested.strip_suffix(".app").unwrap_or(requested);
+    if requested.is_empty() || requested.contains(['/', '\0']) {
+        return None;
+    }
+    let identify = |url: &NSURL| {
+        let id = NSBundle::bundleWithURL(url)?.bundleIdentifier()?.to_string();
+        let name = objc2_foundation::NSFileManager::defaultManager()
+            .displayNameAtPath(&*url.path()?)
+            .to_string();
+        Some((id, name.strip_suffix(".app").unwrap_or(&name).to_owned()))
+    };
+    // "Find My" is FindMy.app on disk, so names compare without spaces.
+    let key = |name: &str| name.replace(' ', "").to_lowercase();
+    let ws = NSWorkspace::sharedWorkspace();
+    if let Some(url) = ws.URLForApplicationWithBundleIdentifier(&NSString::from_str(requested)) {
+        return identify(&url);
+    }
+    for running in ws.runningApplications().iter() {
+        if running.localizedName().is_some_and(|n| n.to_string().eq_ignore_ascii_case(requested)) {
+            if let Some(found) = running.bundleURL().and_then(|url| identify(&url)) {
+                return Some(found);
+            }
+        }
+    }
+    let file = format!("{}.app", key(requested));
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    [
+        Some("/Applications".into()),
+        Some("/Applications/Utilities".into()),
+        Some("/System/Applications".into()),
+        Some("/System/Applications/Utilities".into()),
+        home.map(|h| h.join("Applications")),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(|dir: std::path::PathBuf| std::fs::read_dir(dir).ok())
+    .flatten()
+    .flatten()
+    .find(|entry| key(&entry.file_name().to_string_lossy()) == file)
+    .and_then(|entry| identify(&NSURL::fileURLWithPath(&NSString::from_str(&entry.path().to_string_lossy()))))
+}
 pub fn open_app(app_or_file: &str, expected: &str) -> Result<(), String> {
     let (bundle, url) = target(app_or_file)?;
     if bundle != expected {
@@ -488,4 +533,20 @@ pub(super) unsafe fn thumbnail(
     let result = encode_png(thumb);
     CFRelease(thumb);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn installed_apps_are_found_by_name_or_bundle_id() {
+        let calculator = Some(("com.apple.calculator".to_string(), "Calculator".to_string()));
+        for requested in ["Calculator", " calculator ", "Calculator.app", "com.apple.calculator"] {
+            assert_eq!(super::find_app(requested), calculator, "{requested}");
+        }
+        assert_eq!(super::find_app("Find My"), Some(("com.apple.findmy".into(), "Find My".into())));
+        assert_eq!(super::find_app("voice memos").map(|(id, _)| id).as_deref(), Some("com.apple.VoiceMemos"));
+        for missing in ["", "No Such App 7f3c", "../Calculator", "/System/Applications/Calculator"] {
+            assert_eq!(super::find_app(missing), None, "{missing}");
+        }
+    }
 }

@@ -48,7 +48,18 @@ Some menus, hosted views, secure fields, or transient controls may not support t
 
 Background typing and shortcuts briefly route the Mac's keyboard focus to the target window. While you are typing, taucode holds its keyboard input until you pause, so your keystrokes are not sent to the target app. If you press a key during taucode's own keyboard input, it stops sending input, does not replay anything, and only inspects the app to report what is visibly complete.
 
-An agent can name allowed apps by bundle ID (`com.apple.calculator`) or by name (`Calculator`). A name that matches more than one allowed app is refused.
+## App access
+
+App access works like Codex desktop. **Settings → Computer Use → App access** has two modes:
+
+- **Ask for each app** (default): a run can use any installed app. The first time a run uses an app, taucode asks *Allow Computer Use to use "Notes"?* with **Decline**, **Allow for this session** (until taucode quits) or **Always allow**. Always-allowed apps are listed in settings, where you can remove them. Apps in the "allowed without asking" list skip the prompt.
+- **Only listed apps**: a run can use only the bundle IDs in the allowed list.
+
+Browsers, messaging and mail apps, Contacts, Calendar, Finder and System Settings show a warning in the prompt: an app that can reach your accounts or files adds prompt-injection risk.
+
+Some apps are never allowed, whatever you approve: password managers (1Password, Bitwarden, LastPass, Dashlane, NordPass, KeePassXC, Passwords), Keychain Access, terminals (Terminal, iTerm2, Warp, Ghostty, WezTerm, kitty, Rio, Wave, Termius), known banking apps, the macOS password and Touch ID prompts, and taucode itself. Add more under **Blocked app bundle IDs**.
+
+An agent names apps by name (`Calculator`, `Find My`) or bundle ID (`com.apple.calculator`). In ask mode the name is looked up among installed apps; in listed mode a name that matches more than one allowed app is refused.
 
 Keep sensitive apps and documents out of the allowed scope. App restrictions reduce the target set; they do not make an inaccurate model accurate.
 

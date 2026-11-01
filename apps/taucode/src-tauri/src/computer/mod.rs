@@ -22,14 +22,23 @@ use std::{
 use tauri::{AppHandle, Manager};
 use tokio::sync::{oneshot, watch};
 
+/// The user's reply to an approval prompt. `Always` is offered only for app approvals.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Answer {
+    Decline,
+    Accept,
+    Always,
+}
 pub struct Computer {
     owned: std::sync::atomic::AtomicBool,
     pub data: PathBuf,
     pub control: Control,
     pub state: watch::Sender<Value>,
     busy: tokio::sync::Mutex<()>,
-    pending: Mutex<Option<(String, oneshot::Sender<bool>)>>,
+    pending: Mutex<Option<(String, oneshot::Sender<Answer>)>>,
     shortcut: Mutex<Option<String>>,
+    /// Apps approved "for this session"; forgotten when taucode quits.
+    session_apps: Mutex<std::collections::HashSet<String>>,
 }
 #[cfg(not(target_os = "macos"))]
 struct Unsupported;
@@ -54,6 +63,7 @@ impl Computer {
             busy: tokio::sync::Mutex::new(()),
             pending: Mutex::new(None),
             shortcut: Mutex::new(None),
+            session_apps: Mutex::default(),
         })
     }
     pub fn stop(&self) {
@@ -91,14 +101,58 @@ impl Computer {
         });
         if accepted { Ok(()) } else { Err("Computer run is no longer active".into()) }
     }
-    pub fn answer(&self, id: &str, accept: bool) -> Result<(), String> {
+    pub fn answer(&self, id: &str, answer: Answer) -> Result<(), String> {
         let mut pending = self.pending.lock().map_err(|_| "Approval unavailable")?;
         if pending.as_ref().is_none_or(|(key, _)| key != id) {
             return Err("Approval expired".into());
         }
         let (_, sender) = pending.take().unwrap();
-        let _ = sender.send(accept);
+        let _ = sender.send(answer);
         Ok(())
+    }
+    fn always_apps(&self) -> Vec<String> {
+        std::fs::read(self.data.join("computer/app-approvals.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default()
+    }
+    fn save_always_apps(&self, apps: &[String]) -> Result<(), String> {
+        let path = self.private_dir()?.join("app-approvals.json");
+        let temp = path.with_extension("tmp");
+        std::fs::write(&temp, serde_json::to_vec(apps).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+        std::fs::rename(temp, path).map_err(|e| e.to_string())
+    }
+    /// Shows an approval prompt in the main window and a system notification, then waits.
+    #[cfg(target_os = "macos")]
+    async fn await_approval(
+        &self,
+        app: &AppHandle,
+        mut approval: Value,
+        notice: String,
+    ) -> Result<Answer, String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        approval["id"] = json!(id);
+        let (tx, rx) = oneshot::channel();
+        *self.pending.lock().map_err(|_| "Approval unavailable")? = Some((id, tx));
+        self.state.send_modify(|s| s["approval"] = approval.clone());
+        // Pushed as well as polled: a background window's timers are throttled.
+        let _ = tauri::Emitter::emit_to(app, "main", "computer-approval", approval);
+        use tauri_plugin_notification::NotificationExt;
+        if let Err(error) = app
+            .notification()
+            .builder()
+            .title("taucode needs your approval")
+            .body(notice)
+            .show()
+        {
+            self.state
+                .send_modify(|s| s["notificationError"] = json!(error.to_string()));
+        }
+        let answer = rx.await.unwrap_or(Answer::Decline);
+        self.state.send_modify(|s| s["approval"] = Value::Null);
+        let _ = tauri::Emitter::emit_to(app, "main", "computer-approval", Value::Null);
+        Ok(answer)
     }
     #[cfg(target_os = "macos")]
     fn arm(&self, app: &AppHandle, s: &Settings) -> Result<(), String> {
@@ -132,6 +186,15 @@ impl Computer {
                     std::fs::read(self.data.join("computer/runs").join(format!("{id}.json")))
                         .map_err(|_| "Computer run log unavailable")?;
                 serde_json::from_slice(&bytes).map_err(|_| "Invalid computer run log".into())
+            }
+            Some("appApprovals") => Ok(json!(self.always_apps())),
+            Some("forgetApp") => {
+                let id = p["app"].as_str().ok_or("Missing app")?;
+                let mut always = self.always_apps();
+                always.retain(|a| a != id);
+                self.save_always_apps(&always)?;
+                self.session_apps.lock().map_err(|_| "Approvals unavailable")?.remove(id);
+                Ok(Value::Null)
             }
             Some("status") => {
                 let mut state = self.state.borrow().clone();
@@ -252,15 +315,41 @@ impl Computer {
                     .ok_or("max_steps must be within configured limit")?;
                 limits.max_steps = n as u32;
             }
+            let ask = limits.app_access == "ask";
+            // Apps this run still needs the user's approval for: (bundle ID, name).
+            let mut asks = vec![];
             let apps: Vec<String> = match p.get("apps") {
+                None if ask && limits.allowed_apps.is_empty() => {
+                    return Err("Name the apps this run should use, for example [\"Notes\"]".into())
+                }
                 None => limits.app_ids(),
                 Some(v) => {
-                    let requested: Vec<String> = serde_json::from_value(v.clone()).map_err(|_| "Expected app bundle IDs")?;
-                    requested.iter().map(|app| resolve_app(app, &limits).ok_or_else(|| if limits.allowed_apps.is_empty() {
-                        "Select allowed apps in Computer Use settings".to_string()
-                    } else {
-                        format!("{app} is not an allowed Computer Use app. Allowed bundle IDs: {}.", limits.app_ids().join(", "))
-                    })).collect::<Result<_, _>>()?
+                    let requested: Vec<String> = serde_json::from_value(v.clone()).map_err(|_| "Expected app names or bundle IDs")?;
+                    let always = self.always_apps();
+                    let mut apps = vec![];
+                    for name in &requested {
+                        let (bundle, label) = match resolve_app(name, &limits) {
+                            Some(bundle) => (bundle.clone(), bundle),
+                            None if ask => native::find_app(name).ok_or_else(|| format!("No installed app matches {name}. Use the app's name or bundle ID."))?,
+                            None if limits.allowed_apps.is_empty() => return Err("Select allowed apps in Computer Use settings".into()),
+                            None => return Err(format!("{name} is not an allowed Computer Use app. Allowed bundle IDs: {}.", limits.app_ids().join(", "))),
+                        };
+                        if let Some(reason) = app_blocked(&bundle, &limits) {
+                            return Err(reason);
+                        }
+                        if !limits.allowed_apps.iter().any(|a| a.bundle_id == bundle) {
+                            limits.allowed_apps.push(bundle.as_str().into());
+                            let approved = always.contains(&bundle)
+                                || self.session_apps.lock().map_err(|_| "Approvals unavailable")?.contains(&bundle);
+                            if !approved {
+                                asks.push((bundle.clone(), label));
+                            }
+                        }
+                        if !apps.contains(&bundle) {
+                            apps.push(bundle);
+                        }
+                    }
+                    apps
                 }
             };
             if apps.is_empty() || apps.iter().any(|a| !app_allowed(a, &limits, &apps)) {
@@ -275,8 +364,27 @@ impl Computer {
             let id = uuid::Uuid::new_v4().to_string();
             self.state.send_replace(json!({"id":id,"running":true,"paused":false,"phase":"starting","mode":limits.mode,"steps":[],"instruction":instruction,"shortcut":limits.shortcut}));
             let resource = app.path().resource_dir().ok();
-            let start = std::time::Instant::now();
             let result = async {
+                for (bundle, name) in &asks {
+                    self.state.send_modify(|s| s["phase"] = json!("waitingForApproval"));
+                    let approval = json!({"kind":"app","app":bundle,"name":name,
+                        "reason":format!("Allow Computer Use to use \"{name}\"?"),
+                        "warning":high_risk_app(bundle).then_some(APP_RISK_WARNING)});
+                    let notice = format!("Allow Computer Use to use {name}?");
+                    match self.control.until(self.await_approval(&app, approval, notice)).await? {
+                        Answer::Decline => return Err(format!("Computer Use was not approved to use {name}")),
+                        answer => {
+                            self.session_apps.lock().map_err(|_| "Approvals unavailable")?.insert(bundle.clone());
+                            if answer == Answer::Always {
+                                let mut always = self.always_apps();
+                                always.push(bundle.clone());
+                                self.save_always_apps(&always)?;
+                            }
+                        }
+                    }
+                }
+                // Time spent deciding which apps to allow does not count against the run.
+                let start = std::time::Instant::now();
                 panels::show_hud(app.clone(), self).await?;
                 let sidecar = self
                     .control
@@ -702,43 +810,18 @@ impl runner::Environment for Live {
         context: &'a Context,
     ) -> crate::shared::providers::BoxFuture<'a, Result<(), String>> {
         Box::pin(async move {
-            let id = uuid::Uuid::new_v4().to_string();
-            let (tx, rx) = oneshot::channel();
-            *self
-                .computer
-                .pending
-                .lock()
-                .map_err(|_| "Approval unavailable")? = Some((id.clone(), tx));
             let target = self.computer.state.borrow()["steps"]
                 .as_array()
                 .and_then(|steps| steps.last())
                 .and_then(|s| s["target"].as_str())
                 .unwrap_or("")
                 .to_owned();
-            let approval = json!({"id":id,"reason":reason,"target":target,"action":action,"app":context.app});
-            self.computer
-                .state
-                .send_modify(|s| s["approval"] = approval.clone());
-            // Pushed as well as polled: a background window's timers are throttled.
-            let _ = tauri::Emitter::emit_to(&self.app, "main", "computer-approval", approval);
-            use tauri_plugin_notification::NotificationExt;
-            if let Err(error) = self
-                .app
-                .notification()
-                .builder()
-                .title("taucode needs your approval")
-                .body(format!("{reason} ({target})"))
-                .show()
-            {
-                self.computer
-                    .state
-                    .send_modify(|s| s["notificationError"] = json!(error.to_string()));
-            }
-            let approved = rx.await.unwrap_or(false);
-            self.computer
-                .state
-                .send_modify(|s| s["approval"] = Value::Null);
-            let _ = tauri::Emitter::emit_to(&self.app, "main", "computer-approval", Value::Null);
+            let approval = json!({"reason":reason,"target":target,"action":action,"app":context.app});
+            let approved = self
+                .computer
+                .await_approval(&self.app, approval, format!("{reason} ({target})"))
+                .await?
+                != Answer::Decline;
             if approved {
                 // Approving in the main UI may activate taucode. Restore only the exact app
                 // the user just approved, then let the loop recheck the secure field.

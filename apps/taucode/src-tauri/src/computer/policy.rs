@@ -7,6 +7,9 @@ pub(crate) use crate::types::{
 };
 
 pub fn validate(s: &Settings) -> Result<(), String> {
+    if !matches!(s.app_access.as_str(), "ask" | "listed") {
+        return Err("Invalid app access".into());
+    }
     if !matches!(s.mode.as_str(), "background" | "foreground") {
         return Err("Invalid computer mode".into());
     }
@@ -246,7 +249,59 @@ pub const ALWAYS_DENIED: &[&str] = &[
     "com.wf.wellsfargomobile",
     "com.revolut.revolut",
     "com.paypal.PPClient",
+    // Matching Codex desktop's safety list: more password managers and terminals, and the
+    // macOS prompts that ask for a password or Touch ID.
+    "com.1password.safari",
+    "com.nordsec.nordpass",
+    "com.dashlane.dashlanephonefinal",
+    "com.github.wez.wezterm",
+    "com.mitchellh.ghostty",
+    "net.kovidgoyal.kitty",
+    "com.raphaelamorim.rio",
+    "dev.commandline.waveterm",
+    "com.termius-dmg.mac",
+    "com.apple.SecurityAgent",
+    "com.apple.LocalAuthentication.UIAgent",
 ];
+/// Apps that can act on the user's accounts, messages or files beyond one document.
+/// They stay usable, but their approval prompt carries Codex desktop's risk warning.
+const HIGH_RISK_APPS: &[&str] = &[
+    "com.apple.Safari",
+    "com.apple.SafariTechnologyPreview",
+    "com.google.Chrome",
+    "org.mozilla.firefox",
+    "com.microsoft.edgemac",
+    "com.brave.Browser",
+    "com.operasoftware.Opera",
+    "com.vivaldi.Vivaldi",
+    "org.chromium.Chromium",
+    "company.thebrowser.Browser",
+    "com.duckduckgo.macos.browser",
+    "com.openai.atlas",
+    "com.openai.chat",
+    "com.apple.MobileSMS",
+    "com.apple.mail",
+    "com.apple.AddressBook",
+    "com.apple.iCal",
+    "com.apple.finder",
+    "com.apple.systempreferences",
+    "com.tinyspeck.slackmacgap",
+    "com.hnc.Discord",
+];
+pub const APP_RISK_WARNING: &str = "Allowing taucode to use this app adds risks such as prompt injection, which can lead to data theft or loss. Watch taucode closely while it uses this app.";
+pub fn high_risk_app(app: &str) -> bool {
+    HIGH_RISK_APPS.iter().any(|a| a.eq_ignore_ascii_case(app))
+}
+/// Why an app can never be used in this run, whatever the user approves.
+pub fn app_blocked(app: &str, s: &Settings) -> Option<String> {
+    if app.eq_ignore_ascii_case("dev.taucode.desktop") || ALWAYS_DENIED.iter().any(|a| a.eq_ignore_ascii_case(app)) {
+        Some(format!("Computer Use is not allowed to use {app} for safety reasons."))
+    } else if s.denied_apps.iter().any(|a| a.eq_ignore_ascii_case(app)) {
+        Some(format!("{app} is blocked in Computer Use settings."))
+    } else {
+        None
+    }
+}
 #[derive(Clone, Debug, PartialEq)]
 pub struct Context {
     pub app: String,
@@ -670,6 +725,19 @@ mod refinements {
         s.allowed_apps.push("org.example.calculator".into());
         assert_eq!(resolve_app("Calculator", &s), None, "ambiguous names are refused");
         assert_eq!(resolve_app("org.example.calculator", &s).as_deref(), Some("org.example.calculator"));
+    }
+    #[test]
+    fn safety_list_and_user_blocks_stop_an_app_before_any_approval() {
+        let mut s = settings();
+        s.denied_apps.push("com.apple.MobileSMS".into());
+        for app in ["com.apple.Passwords", "com.1password.1password", "COM.MITCHELLH.GHOSTTY", "com.apple.SecurityAgent", "dev.taucode.desktop"] {
+            assert!(app_blocked(app, &s).is_some_and(|r| r.contains("safety")), "{app}");
+        }
+        assert!(app_blocked("com.apple.mobilesms", &s).is_some_and(|r| r.contains("blocked in Computer Use settings")));
+        assert_eq!(app_blocked("com.apple.Notes", &s), None);
+        assert_eq!(Settings::default().app_access, "ask");
+        assert!(validate(&Settings { app_access: "everything".into(), ..settings() }).is_err());
+        assert!(high_risk_app("com.google.Chrome") && high_risk_app("com.apple.finder") && !high_risk_app("com.apple.Notes"));
     }
     fn field(role: &str, label: &str) -> Target {
         Target {

@@ -1368,3 +1368,31 @@ per step** in Settings → Computer Use (default 120, range 10–600). It is sen
 the sidecar at configure time, validated there, and named in the timeout message.
 Live: the settings field shows 120 and the run above was configured with it.
 Sidecar tests: 136 passed (one new); Rust `computer::` 130 and `shared::` 456 passed.
+
+### App access like Codex desktop — October 31
+
+Researched from the local Codex desktop install (ChatGPT.app `@oai/sky`
+`computer-use-policy.js`, the Codex protocol types `ComputerUseConfig` /
+`ComputerUseRequirements`, and the Computer Use service's bundle-ID list).
+Codex resolves the named app, refuses `forbidden` apps "for safety reasons" and
+policy-`denied` apps, and otherwise asks *Allow Computer Use to use "App"?* with
+session or always persistence and a risk warning for some apps.
+
+taucode now does the same. New setting `appAccess`: `ask` (default) or `listed`
+(the old allowlist-only behaviour). In ask mode a run may name any installed app
+by name or bundle ID (`native::find_app`: LaunchServices, running apps, then the
+standard Applications folders, names compared without spaces so "Find My" finds
+FindMy.app). Before the run starts, each app not yet allowed shows the app prompt
+(Decline / Allow for this session / Always allow). Always approvals are stored in
+`computer/app-approvals.json` and listed in settings with Remove. The safety list
+gained Codex's extra password managers, terminals and the macOS
+authentication prompts; it is checked before any prompt. Time spent on app
+prompts does not count against the run's wall time.
+
+Your settings: app access set to ask; blocked list set to Messages, Mail,
+Contacts, Photos, Journal, Phone, FaceTime, Find My, iPhone Mirroring and
+Privacy.com (backup at `settings.json.before-app-access`).
+
+Tests: Rust `computer::` 134 (safety list and user blocks; installed-app lookup
+by name, bundle ID and spaced names), `shared::` 458; frontend 215 (app prompt
+buttons and persistence, always-allowed list removal, mode switch); sidecar 136.

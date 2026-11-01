@@ -1913,6 +1913,9 @@ pub(crate) struct ComputerSettings {
     pub max_seconds: u64,
     /// Limit for one planning step, including provider retries.
     pub planner_seconds: u64,
+    /// "ask": any installed app after the user approves it, like Codex desktop.
+    /// "listed": only `allowed_apps`.
+    pub app_access: String,
     pub shortcut: String,
 }
 impl ComputerSettings {
@@ -1941,6 +1944,7 @@ impl Default for ComputerSettings {
             max_steps: 30,
             max_seconds: 300,
             planner_seconds: 120,
+            app_access: "ask".into(),
             shortcut: "Control+Alt+Super+Period".into(),
         }
     }

@@ -36,7 +36,11 @@ pub(crate) async fn computer_request(
         require_main_window(&window)?;
         state.computer.answer(
             params["id"].as_str().ok_or("Missing approval ID")?,
-            params["accept"] == true,
+            match (params["accept"] == true, params["persist"].as_str()) {
+                (false, _) => crate::shared::computer::Answer::Decline,
+                (true, Some("always")) => crate::shared::computer::Answer::Always,
+                (true, _) => crate::shared::computer::Answer::Accept,
+            },
         )?;
         return Ok(Value::Null);
     }

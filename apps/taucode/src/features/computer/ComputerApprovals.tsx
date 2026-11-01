@@ -30,13 +30,27 @@ export function ComputerApprovals() {
     return () => { active = false; clearTimeout(timer); unsubscribe(); };
   }, []);
   if (!approval) return null;
-  const decide = async (accept: boolean) => {
+  const decide = async (accept: boolean, persist?: "always") => {
     setBusy(true); setError("");
     try {
-      await computerRequest({ action: "approve", id: approval.id, accept });
+      await computerRequest({ action: "approve", id: approval.id, accept, ...(persist ? { persist } : {}) });
       setApproval(null);
     } catch (e) { setError(String(e)); } finally { setBusy(false); }
   };
+  // The first use of each app is approved once, like Codex desktop: for this session or always.
+  if (approval.kind === "app") return <ToastViewport className="approval-toasts" role="region" ariaLive="assertive" onKeyDown={event => event.stopPropagation()}>
+    <ToastCard className="approval-toast" role="alert">
+      <ToastHeader><ToastTitle>{approval.reason}</ToastTitle></ToastHeader>
+      <ToastBody>{approval.app}</ToastBody>
+      {approval.warning && <ToastBody>{approval.warning}</ToastBody>}
+      {error && <ToastError>{error}</ToastError>}
+      <ToastActions>
+        <button className="secondary" disabled={busy} onClick={() => void decide(false)}>Decline</button>
+        <button className="secondary" disabled={busy} onClick={() => void decide(true, "always")}>Always allow</button>
+        <button className="primary" disabled={busy} onClick={() => void decide(true)}>Allow for this session</button>
+      </ToastActions>
+    </ToastCard>
+  </ToastViewport>;
   return <ToastViewport className="approval-toasts" role="region" ariaLive="assertive" onKeyDown={event => event.stopPropagation()}>
     <ToastCard className="approval-toast" role="alert">
       <ToastHeader><ToastTitle>Computer Use approval needed</ToastTitle></ToastHeader>

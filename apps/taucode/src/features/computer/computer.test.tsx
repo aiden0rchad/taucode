@@ -162,7 +162,7 @@ describe("computer use", () => {
   it("persists typing confirmation and app access, migrating strings and locking System Settings", async () => {
     vi.mocked(computerRequest).mockResolvedValue({ steps: [] });
     const save = vi.fn().mockResolvedValue(undefined);
-    const computer = { ...defaultComputerSettings, allowedApps: ["com.apple.TextEdit", { bundleId: "com.apple.systempreferences", access: "full" }] };
+    const computer = { ...defaultComputerSettings, appAccess: "listed" as const, allowedApps: ["com.apple.TextEdit", { bundleId: "com.apple.systempreferences", access: "full" }] };
     render(<SettingsComputerSection appSettings={{ computer } as AppSettings} onUpdateAppSettings={save} />);
     expect((screen.getByLabelText("Typing confirmation") as HTMLSelectElement).value).toBe("sensitive");
     expect(screen.getByText(/Safe shortcuts: ⌘N, ⌘F, ⌘A, ⌘C, ⌘V, ⌘Z, ⌘⇧Z, arrows, Tab, Escape/)).toBeTruthy();
@@ -328,6 +328,33 @@ describe("computer use", () => {
     fireEvent.click(screen.getByText(accept ? "Approve" : "Decline", { selector: "button" }));
     await waitFor(() => expect(computerRequest).toHaveBeenCalledWith({ action: "approve", id: "approval", accept }));
     expect(screen.queryByText("Allow for session")).toBeNull();
+  });
+  it.each([["Allow for this session", {}], ["Always allow", { persist: "always" }]] as const)("asks once per app like Codex desktop (%s)", async (button, persist) => {
+    vi.mocked(computerRequest).mockResolvedValue({ running: true, steps: [], approval: { id: "app1", kind: "app", app: "com.google.Chrome", name: "Google Chrome", reason: 'Allow Computer Use to use "Google Chrome"?', warning: "Allowing taucode to use this app adds risks such as prompt injection." } });
+    render(<ComputerApprovals />);
+    expect(await screen.findByText('Allow Computer Use to use "Google Chrome"?')).toBeTruthy();
+    expect(screen.getByText(/prompt injection/)).toBeTruthy();
+    expect(screen.queryByText("Approve")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    await waitFor(() => expect(computerRequest).toHaveBeenCalledWith({ action: "approve", id: "app1", accept: true, ...persist }));
+  });
+  it("lists always-allowed apps in ask mode and can remove one", async () => {
+    let always = ["com.apple.Notes", "com.apple.Maps"];
+    vi.mocked(computerRequest).mockImplementation(async p => {
+      if (p.action === "appApprovals") return always as never;
+      if (p.action === "forgetApp") { always = always.filter(a => a !== p.app); return null as never; }
+      return { steps: [] } as never;
+    });
+    render(<SettingsComputerSection appSettings={{ computer: defaultComputerSettings } as AppSettings} onUpdateAppSettings={vi.fn()} />);
+    expect((screen.getByLabelText("App access") as HTMLSelectElement).value).toBe("ask");
+    expect(await screen.findByText("com.apple.Notes")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
+    await waitFor(() => expect(screen.queryByText("com.apple.Notes")).toBeNull());
+    expect(computerRequest).toHaveBeenCalledWith({ action: "forgetApp", app: "com.apple.Notes" });
+    expect(screen.getByText("com.apple.Maps")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("App access"), { target: { value: "listed" } });
+    expect(screen.queryByText("com.apple.Maps")).toBeNull();
+    expect(screen.getByLabelText("Allowed app bundle IDs (one per line)")).toBeTruthy();
   });
   it("shows registry models, coordinate presets and permission states", async () => {
     vi.mocked(computerRequest).mockResolvedValue({ steps: [], permissions: { screen: true, accessibility: false } });
