@@ -50,12 +50,14 @@ Background typing and shortcuts briefly route the Mac's keyboard focus to the ta
 
 ## App access
 
-App access works like Codex desktop. **Settings → Computer Use → App access** has two modes:
+**Settings → Computer Use → App access** has two modes:
 
-- **Ask for each app** (default): a run can use any installed app. The first time a run uses an app, taucode asks *Allow Computer Use to use "Notes"?* with **Decline**, **Allow for this session** (until taucode quits) or **Always allow**. Always-allowed apps are listed in settings, where you can remove them. Apps in the "allowed without asking" list skip the prompt.
+- **Any app** (default): a run can use any installed app that is not blocked.
 - **Only listed apps**: a run can use only the bundle IDs in the allowed list.
 
-Browsers, messaging and mail apps, Contacts, Calendar, Finder and System Settings show a warning in the prompt: an app that can reach your accounts or files adds prompt-injection risk.
+Computer Use does not ask for approval by default. Turn on **Ask for approval** to be asked, like Codex desktop, before a run uses a new app (*Allow Computer Use to use "Notes"?* with **Decline**, **Allow for this session** until taucode quits, or **Always allow**) and before risky actions such as send, buy or delete clicks, Return, and unsafe shortcuts. With it on, always-allowed apps are listed in settings, where you can remove them, and browsers, messaging and mail apps, Contacts, Calendar, Finder and System Settings show a prompt-injection warning in the app prompt.
+
+With approvals off, Computer Use still never types into password, card or other sensitive fields; it refuses those actions.
 
 Some apps are never allowed, whatever you approve: password managers (1Password, Bitwarden, LastPass, Dashlane, NordPass, KeePassXC, Passwords), Keychain Access, terminals (Terminal, iTerm2, Warp, Ghostty, WezTerm, kitty, Rio, Wave, Termius), known banking apps, the macOS password and Touch ID prompts, and taucode itself. Add more under **Blocked app bundle IDs**.
 
@@ -65,7 +67,7 @@ Keep sensitive apps and documents out of the allowed scope. App restrictions red
 
 ## Approval and takeover
 
-Inspect pending actions before approving them. The approval prompt appears in the taucode window as soon as an action needs approval, even while taucode is behind other windows, and a system notification is sent too. Time spent waiting for approval counts toward the run's **Maximum seconds**. Policies can distinguish reading, typing, activation, menus, and higher-risk operations. Features and access policies can deny actions even when the model requests them.
+With **Ask for approval** on, inspect pending actions before approving them. The approval prompt appears in the taucode window as soon as an action needs approval, even while taucode is behind other windows, and a system notification is sent too. Time spent waiting for approval counts toward the run's **Maximum seconds**. Policies can distinguish reading, typing, activation, menus, and higher-risk operations. Features and access policies can deny actions even when the model requests them.
 
 Use **Stop** or the available takeover control as soon as the automation is doing something unexpected. Input already delivered cannot be recalled. A checkpoint of the project folder cannot undo changes in another app.
 

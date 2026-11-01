@@ -1852,8 +1852,9 @@ pub(crate) enum ComputerAccess {
 #[serde(rename_all = "lowercase")]
 pub(crate) enum ConfirmTyping {
     Always,
-    #[default]
     Sensitive,
+    // Like Codex desktop: approving an app covers ordinary typing and Return there.
+    #[default]
     #[serde(rename = "risky-only")]
     RiskyOnly,
 }
@@ -1913,9 +1914,11 @@ pub(crate) struct ComputerSettings {
     pub max_seconds: u64,
     /// Limit for one planning step, including provider retries.
     pub planner_seconds: u64,
-    /// "ask": any installed app after the user approves it, like Codex desktop.
+    /// "ask": any installed app (approved first when `ask_approval` is on).
     /// "listed": only `allowed_apps`.
     pub app_access: String,
+    /// Ask before using a new app and before risky actions. Off: neither is asked.
+    pub ask_approval: bool,
     pub shortcut: String,
 }
 impl ComputerSettings {
@@ -1939,12 +1942,13 @@ impl Default for ComputerSettings {
             grounding_width: 1920,
             grounding_height: 1080,
             allowed_apps: vec![],
-            confirm_typing: ConfirmTyping::Sensitive,
+            confirm_typing: ConfirmTyping::RiskyOnly,
             denied_apps: vec![],
             max_steps: 30,
             max_seconds: 300,
             planner_seconds: 120,
             app_access: "ask".into(),
+            ask_approval: false,
             shortcut: "Control+Alt+Super+Period".into(),
         }
     }

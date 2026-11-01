@@ -101,6 +101,7 @@ fn settings() -> Settings {
     Settings {
         mode: "foreground".into(),
         allowed_apps: vec!["com.apple.TextEdit".into()],
+        ask_approval: true,
         ..Default::default()
     }
 }

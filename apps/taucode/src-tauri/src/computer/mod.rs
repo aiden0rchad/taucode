@@ -341,7 +341,7 @@ impl Computer {
                             limits.allowed_apps.push(bundle.as_str().into());
                             let approved = always.contains(&bundle)
                                 || self.session_apps.lock().map_err(|_| "Approvals unavailable")?.contains(&bundle);
-                            if !approved {
+                            if !approved && limits.ask_approval {
                                 asks.push((bundle.clone(), label));
                             }
                         }

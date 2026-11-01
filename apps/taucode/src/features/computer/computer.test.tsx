@@ -153,9 +153,10 @@ describe("computer use", () => {
   it("persists risky-only typing with a Return warning", async () => {
     vi.mocked(computerRequest).mockResolvedValue({ steps: [] });
     const save = vi.fn().mockResolvedValue(undefined);
-    render(<SettingsComputerSection appSettings={{ computer: defaultComputerSettings } as AppSettings} onUpdateAppSettings={save} />);
+    render(<SettingsComputerSection appSettings={{ computer: { ...defaultComputerSettings, confirmTyping: "sensitive" } } as AppSettings} onUpdateAppSettings={save} />);
+    expect(screen.queryByText(/Return can submit or send in some apps/)).toBeNull();
     fireEvent.change(screen.getByLabelText("Typing confirmation"), { target: { value: "risky-only" } });
-    expect(screen.getByRole("alert").textContent).toContain("Return can submit or send in some apps");
+    expect(screen.getByText(/Return can submit or send in some apps/)).toBeTruthy();
     fireEvent.click(screen.getByText("Save Computer Use"));
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ computer: expect.objectContaining({ confirmTyping: "risky-only" }) })));
   });
@@ -164,7 +165,7 @@ describe("computer use", () => {
     const save = vi.fn().mockResolvedValue(undefined);
     const computer = { ...defaultComputerSettings, appAccess: "listed" as const, allowedApps: ["com.apple.TextEdit", { bundleId: "com.apple.systempreferences", access: "full" }] };
     render(<SettingsComputerSection appSettings={{ computer } as AppSettings} onUpdateAppSettings={save} />);
-    expect((screen.getByLabelText("Typing confirmation") as HTMLSelectElement).value).toBe("sensitive");
+    expect((screen.getByLabelText("Typing confirmation") as HTMLSelectElement).value).toBe("risky-only");
     expect(screen.getByText(/Safe shortcuts: ⌘N, ⌘F, ⌘A, ⌘C, ⌘V, ⌘Z, ⌘⇧Z, arrows, Tab, Escape/)).toBeTruthy();
     const locked = screen.getByLabelText("Access for com.apple.systempreferences") as HTMLSelectElement;
     expect(locked.disabled).toBe(true);
@@ -338,15 +339,21 @@ describe("computer use", () => {
     fireEvent.click(screen.getByRole("button", { name: button }));
     await waitFor(() => expect(computerRequest).toHaveBeenCalledWith({ action: "approve", id: "app1", accept: true, ...persist }));
   });
-  it("lists always-allowed apps in ask mode and can remove one", async () => {
+  it("turns approvals on, then lists always-allowed apps and can remove one", async () => {
     let always = ["com.apple.Notes", "com.apple.Maps"];
     vi.mocked(computerRequest).mockImplementation(async p => {
       if (p.action === "appApprovals") return always as never;
       if (p.action === "forgetApp") { always = always.filter(a => a !== p.app); return null as never; }
       return { steps: [] } as never;
     });
-    render(<SettingsComputerSection appSettings={{ computer: defaultComputerSettings } as AppSettings} onUpdateAppSettings={vi.fn()} />);
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(<SettingsComputerSection appSettings={{ computer: defaultComputerSettings } as AppSettings} onUpdateAppSettings={save} />);
     expect((screen.getByLabelText("App access") as HTMLSelectElement).value).toBe("ask");
+    // Approvals are off by default, so there is no always-allowed list to manage.
+    expect(screen.queryByText("Always allowed apps")).toBeNull();
+    expect(screen.getByText(/Computer Use can use any installed app\. Password managers/)).toBeTruthy();
+    expect(screen.getByLabelText("Ask for approval").getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(screen.getByLabelText("Ask for approval"));
     expect(await screen.findByText("com.apple.Notes")).toBeTruthy();
     fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
     await waitFor(() => expect(screen.queryByText("com.apple.Notes")).toBeNull());
@@ -355,6 +362,8 @@ describe("computer use", () => {
     fireEvent.change(screen.getByLabelText("App access"), { target: { value: "listed" } });
     expect(screen.queryByText("com.apple.Maps")).toBeNull();
     expect(screen.getByLabelText("Allowed app bundle IDs (one per line)")).toBeTruthy();
+    fireEvent.click(screen.getByText("Save Computer Use"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ computer: expect.objectContaining({ askApproval: true }) })));
   });
   it("shows registry models, coordinate presets and permission states", async () => {
     vi.mocked(computerRequest).mockResolvedValue({ steps: [], permissions: { screen: true, accessibility: false } });

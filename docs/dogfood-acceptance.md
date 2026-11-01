@@ -1396,3 +1396,37 @@ Privacy.com (backup at `settings.json.before-app-access`).
 Tests: Rust `computer::` 134 (safety list and user blocks; installed-app lookup
 by name, bundle ID and spaced names), `shared::` 458; frontend 215 (app prompt
 buttons and persistence, always-allowed list removal, mode switch); sidecar 136.
+
+### Computer Use without approvals — November 1
+
+Asked: "get rid of computer use approval". New setting `askApproval`, off by
+default. With it off, a run asks nothing: apps are used without the app prompt
+and actions that used to wait for confirmation go ahead. Two guardrails stay
+because they are refusals, not prompts: the never-allowed and user-blocked apps,
+and typing into secure or sensitive fields (password, card, PIN...), which is
+refused. Turning it on restores the Codex-style app prompt and the action
+confirmations. The opt-in foreground fallback still asks before taking over the
+mouse. Typing confirmation now defaults to `risky-only`.
+
+Live fixes found while testing a cold-launched Dictionary:
+- A just-launched app refused AX reads (`AXWindows: ax_error(-25204)`) and the
+  windowless reopen aborted the run. The reopen is now retried until the
+  5-second window deadline.
+- Dictionary's toolbar search field resizes by a few points when focused, and is
+  rebuilt while it searches. The element check now accepts a field that still
+  covers the planned point; keyboard focus accepts a rebuilt field with the same
+  role, window and place.
+
+Live, signed build, approvals off (your `settings.json` backed up as
+`settings.json.before-risky-only`; `confirmTyping` set to `risky-only`):
+- Dictionary (cold launch): typed "serendipity" with Return, no prompt, reported
+  "the occurrence and development of events by chance in a happy or beneficial
+  way" (run 7ee92ca0).
+- Clock (never approved): no prompt, reported the "World Clock" tab (874a976e).
+- Passwords: "Computer Use is not allowed to use com.apple.Passwords for safety
+  reasons." Messages: "com.apple.MobileSMS is blocked in Computer Use settings."
+- Earlier, with approvals on: the Dictionary app prompt appeared at once and
+  both Allow for this session and Always allow worked (Dictionary saved to
+  `app-approvals.json`).
+
+Tests: Rust `computer::` 134, `shared::` 459; frontend 215; typecheck clean.

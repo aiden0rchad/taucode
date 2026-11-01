@@ -431,7 +431,37 @@ pub fn app_allowed(app: &str, s: &Settings, apps: &[String]) -> bool {
         && s.allowed_apps.iter().any(|a| a.bundle_id == app)
         && apps.iter().any(|a| a == app)
 }
+/// With approvals off, an action that would ask goes ahead, except typing into a password or
+/// other sensitive field, which is refused.
+#[allow(clippy::too_many_arguments)]
 pub fn decide(
+    a: &Action,
+    description: &str,
+    c: &Context,
+    target_info: &Target,
+    s: &Settings,
+    apps: &[String],
+    steps: u32,
+    elapsed: Duration,
+) -> Decision {
+    let decision = review(a, description, c, target_info, s, apps, steps, elapsed);
+    if s.ask_approval || !matches!(decision, Decision::Confirm(_)) {
+        return decision;
+    }
+    let keyboard = matches!(
+        a,
+        Action::Type { .. } | Action::Hotkey { .. } | Action::HoldAndPress { .. }
+    );
+    if keyboard && (c.secure || target_info.secure || sensitive_field(&target_info.label)) {
+        Decision::Deny(
+            "Computer Use does not type into password or other sensitive fields".into(),
+        )
+    } else {
+        Decision::Allow
+    }
+}
+#[allow(clippy::too_many_arguments)]
+fn review(
     a: &Action,
     description: &str,
     c: &Context,
@@ -711,6 +741,7 @@ mod refinements {
     fn settings() -> Settings {
         Settings {
             allowed_apps: vec!["com.apple.TextEdit".into(), SYSTEM_SETTINGS.into()],
+            ask_approval: true,
             ..Default::default()
         }
     }
@@ -1007,8 +1038,45 @@ mod refinements {
     }
 
     #[test]
+    fn without_approvals_risky_actions_go_ahead_but_secret_fields_are_refused() {
+        let s = Settings {
+            ask_approval: false,
+            confirm_typing: ConfirmTyping::Always,
+            ..settings()
+        };
+        assert!(!Settings::default().ask_approval);
+        for (action, label) in [(click(), "Send"), (typing(true), "Search")] {
+            assert_eq!(
+                decision(&action, &field("AXButton", label), &s, "com.apple.TextEdit"),
+                Decision::Allow
+            );
+        }
+        let secure = Target {
+            secure: true,
+            ..field("AXTextField", "Password")
+        };
+        for target in [secure, field("AXTextField", "Card number")] {
+            assert!(matches!(
+                decision(&typing(false), &target, &s, "com.apple.TextEdit"),
+                Decision::Deny(reason) if reason.contains("does not type into password")
+            ));
+        }
+        // Limits and blocked apps still apply.
+        assert!(matches!(
+            decision(&click(), &field("AXButton", "OK"), &s, "com.apple.Passwords"),
+            Decision::Deny(_)
+        ));
+    }
+
+    #[test]
     fn typing_modes_roles_secure_fields_and_enter() {
         let mut s = settings();
+        // The default, like Codex desktop, allows Return in an ordinary text field.
+        assert_eq!(
+            decision(&typing(true), &field("AXTextField", "Search"), &s, "com.apple.TextEdit"),
+            Decision::Allow
+        );
+        s.confirm_typing = ConfirmTyping::Sensitive;
         for role in ["AXTextField", "AXTextArea", "AXComboBox"] {
             let target = field(role, "Document");
             assert_eq!(
@@ -1037,7 +1105,11 @@ mod refinements {
                 secure: secure_field(role, subrole),
                 ..field(role, "Document")
             };
-            for mode in [ConfirmTyping::Always, ConfirmTyping::Sensitive] {
+            for mode in [
+                ConfirmTyping::Always,
+                ConfirmTyping::Sensitive,
+                ConfirmTyping::RiskyOnly,
+            ] {
                 s.confirm_typing = mode;
                 confirmed(decision(&typing(false), &target, &s, "com.apple.TextEdit"));
             }
@@ -1373,7 +1445,7 @@ mod refinements {
     #[test]
     fn settings_migrate_strings_and_reject_invalid_modes_or_access() {
         let s: Settings = serde_json::from_value(serde_json::json!({"allowedApps": ["com.apple.TextEdit", {"bundleId": "com.apple.Preview", "access": "read-only"}, {"bundleId": SYSTEM_SETTINGS, "access": "full"}]})).unwrap();
-        assert_eq!(s.confirm_typing, ConfirmTyping::Sensitive);
+        assert_eq!(s.confirm_typing, ConfirmTyping::RiskyOnly);
         assert_eq!(s.allowed_apps[0].access, Access::Full);
         assert_eq!(s.allowed_apps[1].access, Access::ReadOnly);
         assert_eq!(s.allowed_apps[2].access, Access::ReadOnly);
@@ -1382,7 +1454,7 @@ mod refinements {
             value["allowedApps"][0],
             serde_json::json!({"bundleId":"com.apple.TextEdit","access":"full"})
         );
-        assert_eq!(value["confirmTyping"], "sensitive");
+        assert_eq!(value["confirmTyping"], "risky-only");
         for invalid in [
             serde_json::json!({"confirmTyping":"never"}),
             serde_json::json!({"allowedApps":[{"bundleId":"app","access":"all"}]}),
