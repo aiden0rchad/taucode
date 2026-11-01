@@ -1,6 +1,6 @@
 # Updates & reporting issues
 
-taucode can tell you when a newer release is published on GitHub, and it can prepare a GitHub issue for you. Neither feature installs, uploads or posts anything by itself.
+taucode can tell you when a newer release is published on GitHub, and it can prepare a GitHub issue for you. Downloads start only when requested. Neither feature replaces the running app, uploads or posts anything by itself.
 
 ## Update check
 
@@ -8,7 +8,10 @@ taucode asks the GitHub Releases API for the latest release of [aiden0rchad/tauc
 
 - **On startup**, at most once a day, while **Settings → About → Check for updates automatically** is on (it is on by default). If a newer version exists, a small notice shows the version, its release notes and a **Download** button. **Later** hides that version until the next one is published.
 - **Settings → About → Check for updates** checks immediately and shows the result there.
-- **Download** opens the release's `.dmg` (or the release page, if there is no disk image) in your browser. You install it yourself, as with any other download. taucode never replaces itself.
+- **Download update** downloads the compatible release installer inside taucode, with progress and retry on failure. macOS uses `.dmg`, Windows uses `.exe`, and Linux uses `.AppImage`. If no matching installer exists, taucode says so.
+- The backend rechecks the selected version and resolves its asset from the official repository. It streams into a unique folder under Downloads, verifies the published size and [SHA-256 digest](https://docs.github.com/en/rest/releases/assets) when present, and removes partial downloads after errors. Closing About or dismissing the notice does not lose the transfer during the app session.
+- **Open installer** opens the completed download using the operating system. macOS downloads retain the quarantine attribute for normal security checks. Finish installation there; taucode does not replace its running bundle.
+- Automatic replacement requires signed updater artifacts and a configured updater public key; those are not configured. The existing native app-signing identity is separate from updater signing.
 
 What you may see:
 
@@ -47,6 +50,6 @@ The capture shows taucode's own window content without the Settings and report d
 
 ## For developers
 
-- Backend: `apps/taucode/src-tauri/src/github.rs` (`app_update_check`, `issue_report_draft`, `issue_report_open`, `issue_report_screenshot`).
+- Backend: `apps/taucode/src-tauri/src/github.rs` (`app_update_check`, `download::app_update_download`, `issue_report_draft`, `issue_report_open`, `issue_report_screenshot`).
 - Frontend: `src/features/update/` (startup check, throttle, notice) and `src/features/report/` (dialog and screenshot capture).
-- The inherited Tauri updater plugin stays unused: no updater artifacts or signing keys are configured, and taucode does not download or install updates.
+- The inherited Tauri updater plugin stays unused: no updater artifacts or signing keys are configured, so taucode downloads platform installers and leaves installation to the operating system.

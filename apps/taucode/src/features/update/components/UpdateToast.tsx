@@ -1,4 +1,5 @@
 import type { PostUpdateNoticeState, UpdateState } from "../hooks/useUpdater";
+import { UpdateDownload } from "./UpdateDownload";
 import { ReleaseNotes } from "./ReleaseNotes";
 import {
   ToastActions,
@@ -11,7 +12,6 @@ import {
 
 type UpdateToastProps = {
   state: UpdateState;
-  onUpdate: () => void;
   onDismiss: () => void;
   postUpdateNotice?: PostUpdateNoticeState;
   onDismissPostUpdateNotice?: () => void;
@@ -23,7 +23,7 @@ const messages: Partial<Record<UpdateState["stage"], string>> = {
   noReleases: "No releases published yet.",
 };
 
-export function UpdateToast({ state, onUpdate, onDismiss }: UpdateToastProps) {
+export function UpdateToast({ state, onDismiss }: UpdateToastProps) {
   if (state.stage === "idle") return null;
   const message = state.stage === "unavailable" ? state.error ?? "Couldn't check for updates." : messages[state.stage];
   return (
@@ -41,7 +41,7 @@ export function UpdateToast({ state, onUpdate, onDismiss }: UpdateToastProps) {
             {state.result?.notes ? <ReleaseNotes className="update-toast-notes" notes={state.result.notes} /> : null}
             <ToastActions className="update-toast-actions">
               <button className="secondary" onClick={onDismiss}>Later</button>
-              <button className="primary" onClick={onUpdate}>Download</button>
+              <UpdateDownload key={state.version} version={state.version ?? ""} available={!!state.result?.downloadUrl} />
             </ToastActions>
           </>
         ) : (

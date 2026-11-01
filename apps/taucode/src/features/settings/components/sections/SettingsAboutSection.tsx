@@ -4,11 +4,11 @@ import type { AppSettings } from "@/types";
 import {
   checkAppUpdate,
   getAppBuildType,
-  openBrowserUrl,
   type AppBuildType,
   type AppUpdateCheck,
 } from "@services/tauri";
 import { readLastUpdateCheck, recordUpdateCheck } from "@/features/update/hooks/useUpdater";
+import { UpdateDownload } from "@/features/update/components/UpdateDownload";
 import { ReleaseNotes } from "@/features/update/components/ReleaseNotes";
 import { IssueReportDialog } from "@/features/report/IssueReportDialog";
 
@@ -70,7 +70,6 @@ export function SettingsAboutSection({ appSettings, onToggleAutomaticAppUpdateCh
   const buildDateLabel = Number.isNaN(parsedBuildDate)
     ? buildDateValue || "unknown"
     : new Date(parsedBuildDate).toLocaleString();
-  const downloadUrl = update?.downloadUrl ?? update?.htmlUrl;
 
   return (
     <SettingsSection title="About" subtitle="App version and build metadata.">
@@ -79,16 +78,16 @@ export function SettingsAboutSection({ appSettings, onToggleAutomaticAppUpdateCh
         {Object.entries({ Version: __APP_VERSION__, "Build type": appBuildType, Branch: __APP_GIT_BRANCH__ || "unknown", Commit: __APP_COMMIT_HASH__ || "unknown", "Build date": buildDateLabel }).map(([label, value]) =>
           <SettingsRow key={label}><dt>{label}:</dt><dd><code>{value}</code></dd></SettingsRow>)}
       </dl>
-      <SettingsGroup title="App updates" subtitle="taucode checks GitHub Releases and links to the download. It never installs anything by itself.">
+      <SettingsGroup title="App updates" subtitle="Download updates here, then open the installer to finish updating.">
         <SettingsToggleRow title="Check for updates automatically" subtitle="At most once a day, when taucode starts.">
           <SettingsToggleSwitch pressed={appSettings.automaticAppUpdateChecksEnabled} onClick={onToggleAutomaticAppUpdateChecks} />
         </SettingsToggleRow>
         <SettingsRow className="settings-update-row">
           <span role="status">{checking ? "Checking GitHub…" : update ? updateCheckSummary(update) : "Not checked yet."}</span>
-          <span>
-            {update?.status === "available" && downloadUrl && <SettingsButton className="primary" onClick={() => void openBrowserUrl(downloadUrl)}>Download {update.latestVersion}</SettingsButton>}
+          <div>
+            {update?.status === "available" && <UpdateDownload key={update.latestVersion} version={update.latestVersion ?? ""} available={!!update.downloadUrl} />}
             <SettingsButton disabled={checking} onClick={() => void checkNow()}>Check for updates</SettingsButton>
-          </span>
+          </div>
         </SettingsRow>
         {update?.status === "available" && update.notes && <ReleaseNotes className="update-toast-notes" notes={update.notes} />}
       </SettingsGroup>

@@ -17,6 +17,20 @@
         "core:default",
         "core:webview:allow-set-webview-zoom",
         "opener:default",
+        {
+          "identifier": "opener:allow-open-path",
+          "allow": [
+            {
+              "path": "$DOWNLOAD/taucode-update-*/*.dmg"
+            },
+            {
+              "path": "$DOWNLOAD/taucode-update-*/*.exe"
+            },
+            {
+              "path": "$DOWNLOAD/taucode-update-*/*.AppImage"
+            }
+          ]
+        },
         "dialog:default",
         "process:default",
         "window-state:default",

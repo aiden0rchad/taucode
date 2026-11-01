@@ -1037,6 +1037,20 @@ mod tests {
         std::fs::remove_dir_all(home).unwrap();
     }
     #[test]
+    fn project_roles_override_without_mutating_global_policy() {
+        let base = AgentPolicy::default();
+        let before = serde_json::to_value(&base).unwrap();
+        let mut roles = base.subagents.roles.clone();
+        roles[0].instructions = "Only in project A".into();
+        let over: AgentPolicyOverride = serde_json::from_value(json!({"subagents":{"roles":roles}})).unwrap();
+        let a = effective_policy(&base, Some(&over));
+        let b = effective_policy(&base, None);
+        assert_eq!(a.subagents.roles[0].instructions, "Only in project A");
+        assert_eq!(serde_json::to_value(&b).unwrap(), before);
+        assert_eq!(serde_json::to_value(&base).unwrap(), before);
+        assert_eq!(a.subagents.roles.len(), b.subagents.roles.len());
+    }
+    #[test]
     fn keychain_values_only_reach_child_environment() {
         let p = provider(ProviderKind::Openai);
         let keys = Keys::default();

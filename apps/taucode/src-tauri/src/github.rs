@@ -1,5 +1,6 @@
 //! GitHub release checks and issue reports for taucode itself.
-//! Nothing here installs updates or posts issues: the user follows a link and acts on GitHub.
+//! Downloads installers on request; never replaces the running app or posts issues.
+pub(crate) mod download;
 use regex::Regex;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -18,6 +19,8 @@ const MAX_ISSUE_URL: usize = 7800;
 pub(crate) struct UpdateCheck {
     /// available | latest | noReleases | unavailable
     status: &'static str,
+    #[serde(skip)]
+    asset: Option<Value>,
     current_version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     latest_version: Option<String>,
@@ -37,7 +40,7 @@ pub(crate) struct UpdateCheck {
 
 impl UpdateCheck {
     fn unavailable(current: &str, message: impl Into<String>) -> Self {
-        Self { status: "unavailable", current_version: current.into(), latest_version: None, name: None, notes: None, html_url: None, download_url: None, published_at: None, message: Some(message.into()) }
+        Self { asset: None, status: "unavailable", current_version: current.into(), latest_version: None, name: None, notes: None, html_url: None, download_url: None, published_at: None, message: Some(message.into()) }
     }
 }
 
@@ -79,10 +82,10 @@ pub(crate) fn interpret_release(status: u16, rate_remaining: Option<&str>, body:
             if tag.is_empty() || parse_version(tag).is_none() { return UpdateCheck::unavailable(current, "The latest release has no version number."); }
             let latest = tag.trim_start_matches(['v', 'V']).to_string();
             let html_url = release["html_url"].as_str().map(str::to_string);
-            let download_url = release["assets"].as_array().and_then(|assets| {
-                assets.iter().filter_map(|asset| asset["browser_download_url"].as_str()).find(|url| url.ends_with(".dmg")).map(str::to_string)
-            }).or_else(|| html_url.clone());
+            let asset = download::release_asset(&release, std::env::consts::OS, std::env::consts::ARCH);
+            let download_url = asset.as_ref().and_then(|a| a["browser_download_url"].as_str()).map(str::to_owned);
             UpdateCheck {
+                asset,
                 status: if is_newer(&latest, current) { "available" } else { "latest" },
                 current_version: current.into(),
                 latest_version: Some(latest),
@@ -261,15 +264,15 @@ mod tests {
 
     #[test]
     fn interprets_release_responses() {
-        let release = json!({"tag_name":"v0.8.0","name":"taucode 0.8","body":"Notes","html_url":"https://github.com/aiden0rchad/taucode/releases/tag/v0.8.0","published_at":"2026-11-01T00:00:00Z","assets":[{"browser_download_url":"https://x/taucode.zip"},{"browser_download_url":"https://x/taucode.dmg"}]}).to_string();
+        let release = json!({"tag_name":"v0.8.0","name":"taucode 0.8","body":"Notes","html_url":"https://github.com/aiden0rchad/taucode/releases/tag/v0.8.0","published_at":"2026-11-01T00:00:00Z","assets":[{"browser_download_url":"https://x/taucode.zip"},{"name":"taucode.dmg","browser_download_url":"https://github.com/aiden0rchad/taucode/releases/download/v0.8.0/taucode.dmg"}]}).to_string();
         let check = interpret_release(200, None, &release, "0.7.68");
         assert_eq!(check.status, "available");
         assert_eq!(check.latest_version.as_deref(), Some("0.8.0"));
-        assert_eq!(check.download_url.as_deref(), Some("https://x/taucode.dmg"));
+        assert_eq!(check.download_url.as_deref(), if cfg!(target_os = "macos") { Some("https://github.com/aiden0rchad/taucode/releases/download/v0.8.0/taucode.dmg") } else { None });
         assert_eq!(check.notes.as_deref(), Some("Notes"));
         assert_eq!(interpret_release(200, None, &release, "0.8.0").status, "latest");
         let no_assets = json!({"tag_name":"0.8.0","html_url":"https://h"}).to_string();
-        assert_eq!(interpret_release(200, None, &no_assets, "0.7.0").download_url.as_deref(), Some("https://h"));
+        assert_eq!(interpret_release(200, None, &no_assets, "0.7.0").download_url.as_deref(), None);
         assert_eq!(interpret_release(404, None, "{}", "0.7.68").status, "noReleases");
         let limited = interpret_release(403, Some("0"), "{}", "0.7.68");
         assert_eq!(limited.status, "unavailable");

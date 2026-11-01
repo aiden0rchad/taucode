@@ -168,52 +168,6 @@ export type TextFileResponse = {
 export type GlobalAgentsResponse = TextFileResponse;
 export type GlobalCodexConfigResponse = TextFileResponse;
 export type AgentMdResponse = TextFileResponse;
-export type AgentSummary = {
-  name: string;
-  description: string | null;
-  developerInstructions: string | null;
-  configFile: string;
-  resolvedPath: string;
-  managedByApp: boolean;
-  fileExists: boolean;
-};
-
-export type AgentsSettings = {
-  configPath: string;
-  multiAgentEnabled: boolean;
-  maxThreads: number;
-  maxDepth: number;
-  agents: AgentSummary[];
-};
-
-export type SetAgentsCoreInput = {
-  multiAgentEnabled: boolean;
-  maxThreads: number;
-  maxDepth: number;
-};
-
-export type CreateAgentInput = {
-  name: string;
-  description?: string | null;
-  developerInstructions?: string | null;
-  template?: "blank" | string | null;
-  model?: string | null;
-  reasoningEffort?: string | null;
-};
-
-export type UpdateAgentInput = {
-  originalName: string;
-  name: string;
-  description?: string | null;
-  developerInstructions?: string | null;
-  renameManagedFile?: boolean;
-};
-
-export type DeleteAgentInput = {
-  name: string;
-  deleteManagedFile?: boolean;
-};
-
 type FileScope = "workspace" | "global";
 export type InstructionFile = "AGENTS.md" | "CLAUDE.md" | "GEMINI.md" | ".github/copilot-instructions.md";
 export type EditableInstructionFile = "AGENTS.md" | "CLAUDE.md";
@@ -254,39 +208,6 @@ export async function readGlobalCodexConfigToml(): Promise<GlobalCodexConfigResp
 
 export async function writeGlobalCodexConfigToml(content: string): Promise<void> {
   return fileWrite("global", "config", content);
-}
-
-export async function getAgentsSettings(): Promise<AgentsSettings> {
-  return invoke<AgentsSettings>("get_agents_settings");
-}
-
-export async function setAgentsCoreSettings(
-  input: SetAgentsCoreInput,
-): Promise<AgentsSettings> {
-  return invoke<AgentsSettings>("set_agents_core_settings", { input });
-}
-
-export async function createAgent(input: CreateAgentInput): Promise<AgentsSettings> {
-  return invoke<AgentsSettings>("create_agent", { input });
-}
-
-export async function updateAgent(input: UpdateAgentInput): Promise<AgentsSettings> {
-  return invoke<AgentsSettings>("update_agent", { input });
-}
-
-export async function deleteAgent(input: DeleteAgentInput): Promise<AgentsSettings> {
-  return invoke<AgentsSettings>("delete_agent", { input });
-}
-
-export async function readAgentConfigToml(agentName: string): Promise<string> {
-  return invoke<string>("read_agent_config_toml", { agentName });
-}
-
-export async function writeAgentConfigToml(
-  agentName: string,
-  content: string,
-): Promise<void> {
-  return invoke("write_agent_config_toml", { agentName, content });
 }
 
 export async function getConfigModel(workspaceId: string): Promise<string | null> {
@@ -1191,6 +1112,14 @@ export type AppUpdateCheck = {
 export function checkAppUpdate(): Promise<AppUpdateCheck> {
   return invoke<AppUpdateCheck>("app_update_check");
 }
+
+export type AppUpdateProgress = { downloaded: number; total: number };
+export function downloadAppUpdate(version: string, onProgress: (progress: AppUpdateProgress) => void): Promise<string> {
+  const channel = new Channel<AppUpdateProgress>();
+  channel.onmessage = onProgress;
+  return invoke<string>("app_update_download", { version, onProgress: channel });
+}
+export function openAppUpdate(path: string): Promise<void> { return openPath(path); }
 
 export type IssueReportContext = { engine?: string; model?: string; buildType?: string; commit?: string; fingerprint?: string };
 

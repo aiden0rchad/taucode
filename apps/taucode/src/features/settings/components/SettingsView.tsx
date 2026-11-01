@@ -215,7 +215,7 @@ export function SettingsView({
                activeSection === "agents" ? <SettingsPage title="Models & Agents" subtitle="Choose defaults, delegate work and manage engine runtimes.">
                  <SettingsSegmented tabs label="Models & Agents tabs" value={agentTab} options={["defaults", "subagents", "roles", "engines"].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1) }))} onChange={setAgentTab} />
                  {agentTab === "engines" ? <><SettingsRuntimeSetup /><details><summary>Codex engine</summary><SettingsSectionContainers activeSection="codex" orchestration={orchestration} /></details><details><summary>Engine features</summary><SettingsSectionContainers activeSection="codex-flags" orchestration={orchestration} /></details></> :
-                 <SettingsAgentPolicySection tab={agentTab as "defaults" | "subagents" | "roles"} appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} workspace={activeWorkspace} />}
+                 <SettingsAgentPolicySection key={`${activeWorkspace?.id ?? "global"}-${agentTab}`} onUpdateWorkspaceSettings={onUpdateWorkspaceSettings} tab={agentTab as "defaults" | "subagents" | "roles"} appSettings={appSettings} onUpdateAppSettings={onUpdateAppSettings} workspace={activeWorkspace} />}
                </SettingsPage> :
                <SettingsSectionContainers
                 activeSection={activeSection}

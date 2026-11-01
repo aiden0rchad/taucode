@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { checkAppUpdate, type AppUpdateCheck } from "../../../services/tauri";
 import type { DebugEntry } from "../../../types";
 
-// taucode only checks GitHub Releases and links to the download; it never installs anything.
+// Startup checks never download or install without a user action.
 type UpdateStage = "idle" | "checking" | AppUpdateCheck["status"];
 
 export type UpdateState = {
@@ -95,12 +95,6 @@ export function useUpdater({ enabled = true, autoCheckOnMount = false, onDebug }
 
   useEffect(() => () => clearTimeout(hideTimer.current), []);
 
-  const startUpdate = useCallback(() => {
-    const url = state.result?.downloadUrl ?? state.result?.htmlUrl;
-    if (!url) return;
-    void import("@tauri-apps/plugin-opener").then(({ openUrl }) => openUrl(url)).catch(() => {});
-  }, [state.result]);
-
   const dismiss = useCallback(() => {
     if (state.stage === "available" && state.version) writeStorage(dismissedKey, state.version);
     clearTimeout(hideTimer.current);
@@ -110,7 +104,6 @@ export function useUpdater({ enabled = true, autoCheckOnMount = false, onDebug }
   return {
     state,
     checkForUpdates,
-    startUpdate,
     dismiss,
     postUpdateNotice: null as PostUpdateNoticeState,
     dismissPostUpdateNotice: () => {},

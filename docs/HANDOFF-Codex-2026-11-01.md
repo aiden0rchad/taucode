@@ -8,17 +8,19 @@ work and the traps found along the way.
 ## 1. State right now
 
 - **Worktree:** `/Users/rolandleyco/taucode-m1w`, branch `m1-wiring`. Do all work here.
-- **Main checkout:** `/Users/rolandleyco/taucode`, branch `main`. `main` was
-  fast-forwarded to `80600e7`; `m1-wiring` is `main` plus this handoff commit.
-- **Nothing has been pushed.** No remote changes, tags or releases.
-- **Untracked files to leave alone:** `/Users/rolandleyco/taucode/.claude/launch.json`
-  and `/Users/rolandleyco/taucode-m1w/docs/HANDOFF-window-resize.md` (an older,
-  possibly stale note about window resizing; ask before deleting it).
-- **App build:** the signed debug build at
-  `apps/taucode/src-tauri/target/debug/bundle/macos/taucode.app` matches `80600e7`.
-- **Tests at `80600e7`:** Rust `cargo test --lib` 610 passed, 2 ignored. All test
-  targets: about 1,193 passed. Frontend settings 165, Chat 32, computer 41+,
-  typecheck clean. Sidecar (Python) 136 at the last run.
+- **Main checkout:** `/Users/rolandleyco/taucode`, branch `main`, currently
+  `8b67d06` from separate release work. This continuation changes only `m1-wiring`.
+- **Publishing:** GitHub has release `v0.7.69`. This continuation has not pushed,
+  tagged, published, or merged into `main`.
+- **Untracked file to leave alone:** `docs/HANDOFF-window-resize.md`.
+- **App build:** signed debug bundle at
+  `apps/taucode/src-tauri/target/debug/bundle/macos/taucode.app` includes the
+  continuation changes; strict codesign verification passes.
+- **Validation:** Rust library suite 597 passed, 2 ignored; all 229 frontend test
+  files passed (1,903 tests); TypeScript and `cargo check` pass. The Rust suite was
+  built with `cargo test --lib`; its final compiled test executable was rerun after
+  the last regression test was added. Frontend full-suite verification uses
+  `npx vitest run --maxWorkers=4` to avoid a Theme Gallery timeout during compilation.
 
 ## 2. Rules the user set (keep following them)
 
@@ -229,52 +231,58 @@ The brief's guess (the Codex-config agents editor writing to `~/.codex`) was wro
 - **Codex:** fixed by `2267b6c`.
 - **Claude ACP:** does not use taucode roles at all.
 
-### Is the brief done? Status per item
+### Current implementation
 
-| Brief item | Status |
-| --- | --- |
-| Find the real cause | Done (Codex shared home; brief's premise was wrong). |
-| Rule out conversations under two projects | Done (ruled out). |
-| Backend scope for create/update/delete in `agents_config_core` | **Not done, on purpose**: that code is unreachable. Decide whether to delete it (`agents_config_core.rs`, its Tauri commands in `codex/mod.rs`, daemon handlers in `bin/codex_monitor_daemon.rs` and `rpc/codex.rs`, `SettingsAgentsSection*`, `useSettingsAgentsSection`, the `projects[0]` lookup) or revive it. |
-| `get_agents_settings` with scopes | Not done (same reason). |
-| UI scope picker defaulting to the current project | **Partly**: scopes are labelled ("All projects" / "This project only"), but adding a project-only role still means opening that project's agent policy in Settings → Projects. A picker inside the Roles tab is not built. |
-| Engines check | Done (see above). |
-| Existing global agents unchanged; no file moves | Done. |
-| Rust test: project role absent elsewhere | Done (Codex level). |
-| Frontend tests | Labels and identifier attributes tested; no picker test (no picker). |
-| `cargo test --lib`, settings vitest, typecheck | Done, green. |
-| Live check A/B in the signed build | **Partly**: shared `config.toml` has no role tables and each running Codex carries only its project's roles in `-c agents=…`. The full "add a role in project A, restart A's Codex, confirm B lacks it" check was not completed (role names got capitalized by macOS, since fixed in `80600e7`). |
+- The active Roles tab has an **Apply roles to** picker. With a current project,
+  it defaults to **This project**; **All projects** edits the app policy.
+- Project changes use the existing workspace-ID-based settings command and start
+  from the effective policy. Only changed fields are saved; unrelated overrides
+  keep their values. Project role lists replace the inherited list, matching the
+  app's existing policy semantics. Each role shows its scope.
+- The unused `agents_config_core` editor, hook, IPC commands and daemon handlers
+  are removed. No user config or agent files are migrated, edited or deleted by
+  that removal. The active app-policy path is the source of truth.
+- Scope changes require saving or discarding edits first. The current workspace
+  comes from the app's selection, never `projects[0]`.
+- Codex, pi and omp use the effective project policy. Claude ACP still does not
+  implement taucode role delegation; it ignores these roles.
 
-So: the user-visible bug is fixed; the brief's literal plan was not built because its
-premise was wrong. Remaining optional work is in §9.
+### Signed-build acceptance
+
+- Add `alphaonly` through Models & Agents → Roles in `taucode-dogfood-focus-board`:
+  picker defaults to that project, and Save persists only its workspace override.
+- After relaunch, that project shows the role. Habit Tracker does not. Switching
+  to All projects also excludes it. All five other saved project policies and the
+  global policy exclude it; the shared Codex config contains no `alphaonly`.
+- The temporary override is removed through Use app policy. Its original value
+  and the unchanged global policy are verified against backups next to the data files.
+- Partial overrides returned by Rust contain null fields. Frontend merging ignores
+  those fields, matching Rust inheritance; this prevents Settings from crashing
+  after saving a project-only role. A regression test uses the serialized shape.
+- Codex process launch isolation is covered by the Rust test
+  `one_projects_codex_roles_never_reach_another_project`; the live A/B check verifies
+  the signed UI and persisted policy, not a new model turn in each engine.
 
 ## 8. Update check and issue reports (`8b2fad0`)
 
-See `docs/updates-and-issues.md`. Backend `src-tauri/src/github.rs`; frontend
-`src/features/update/` and `src/features/report/`. The repo has no published
-release yet, so the check shows "No releases published yet." The inherited Tauri
-updater plugin stays unused (no updater signing keys).
+See `docs/updates-and-issues.md`. Backend `src-tauri/src/github.rs` and
+`github/download.rs`; frontend `src/features/update/` and `src/features/report/`.
+GitHub has published `v0.7.69` with macOS ARM64 and Windows x64 installers.
+Update downloads run inside taucode with progress, size/checksum verification,
+retry and an **Open installer** action. The signed app downloaded `taucode_0.7.69_aarch64.dmg` (126,888,451 bytes),
+verified its SHA-256 against the published digest, and retained macOS quarantine.
+Open installer dispatches to macOS; installation over the local test build was
+not performed. The test download remains in Downloads.
 
-## 9. Open work, in suggested order
+Automatic bundle replacement remains
+unconfigured: the inherited updater plugin has no public key or updater artifacts.
 
-1. **Finish the agents live check.** Add a role named e.g. `alphaonly` to one
-   project's agent policy (Settings → Projects → "<project>: agent policy" → Add role,
-   or rename one) → Save project override. Make that project's Codex restart (quit
-   and relaunch taucode). Check with `ps -axo pid,args | grep "[c]odex.*app-server"`
-   plus `lsof -a -p <pid> -d cwd` that only that project's process has `"alphaonly"`
-   in its `-c agents=` argument, and that `engines/codex-home/config.toml` has no
-   `[agents."…"]` tables. Revert with a backup of `workspaces.json`.
-2. **Decide on the dead Codex-config agents editor** (§7 table). Recommendation:
-   delete it, since `prepare_codex` overwrites that `config.toml` on every Codex start
-   anyway, so anything it wrote would be lost.
-3. **Optional: a scope choice when adding a role** in Models & Agents → Roles
-   ("All projects" vs "This project"), writing a project override for the current
-   project. Note that a project override replaces the whole role list (and other
-   policy fields it sets), so "This project" should start from the effective roles.
-4. **Notes search with an existing query** (§5 gap 1).
-5. **Preview Open/Save dialog** (§5 gap 2).
-6. **Queue in Work mode** (§6).
-7. **Push** once the user approves.
+## 9. Other open work
+
+- Notes search with an existing query (§5 gap 1).
+- Preview Open/Save dialog (§5 gap 2).
+- Queue in Work mode (§6).
+- Release publishing and changes to `main` require the user's authorization.
 
 ## 10. Traps found on November 1
 

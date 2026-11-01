@@ -14,7 +14,6 @@ import type { AppSettings, WorkspaceInfo } from "@/types";
 import {
   connectWorkspace,
   getAppBuildType,
-  getAgentsSettings,
   getConfigModel,
   getExperimentalFeatureList,
   isMobileRuntime,
@@ -41,7 +40,6 @@ vi.mock("@services/tauri", async () => {
     getModelList: vi.fn(),
     getConfigModel: vi.fn(),
     getExperimentalFeatureList: vi.fn(),
-    getAgentsSettings: vi.fn(),
     isMobileRuntime: vi.fn(),
     listWorkspaces: vi.fn(),
     codegraphStatus: vi.fn().mockResolvedValue({ state: "ready", detail: "Private index is ready." }),
@@ -53,7 +51,6 @@ const getAppBuildTypeMock = vi.mocked(getAppBuildType);
 const getConfigModelMock = vi.mocked(getConfigModel);
 const getModelListMock = vi.mocked(getModelList);
 const getExperimentalFeatureListMock = vi.mocked(getExperimentalFeatureList);
-const getAgentsSettingsMock = vi.mocked(getAgentsSettings);
 const isMobileRuntimeMock = vi.mocked(isMobileRuntime);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
 connectWorkspaceMock.mockResolvedValue(undefined);
@@ -61,14 +58,6 @@ getAppBuildTypeMock.mockResolvedValue("release");
 getConfigModelMock.mockResolvedValue(null);
 isMobileRuntimeMock.mockResolvedValue(false);
 listWorkspacesMock.mockResolvedValue([]);
-getAgentsSettingsMock.mockResolvedValue({
-  configPath: "/Users/me/.codex/config.toml",
-  multiAgentEnabled: false,
-  maxThreads: 6,
-  maxDepth: 1,
-  agents: [],
-});
-
 const baseSettings: AppSettings = {
   codegraphEnabled: true,
   codexBin: null,
