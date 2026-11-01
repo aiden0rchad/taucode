@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppSettings, ProviderEntry } from "@/types";
-import { SettingsProvidersSection, SettingsAgentPolicySection } from "./SettingsRegistrySections";
+import { SettingsProvidersSection, SettingsAgentPolicySection, ProjectAgentPolicy } from "./SettingsRegistrySections";
 import { defaultAgentPolicy } from "../../registry";
 import { providerSetApiKey, providerHasApiKey, providerTestAndFetch } from "@services/tauri";
 vi.mock("@services/tauri", () => ({
@@ -136,6 +136,17 @@ describe("provider registry settings", () => {
     expect(document.getElementById(disclosure.getAttribute("aria-controls")!)?.hidden).toBe(false);
     expect((screen.getAllByLabelText("Max concurrent")[1] as HTMLInputElement).value).toBe("2");
     expect((screen.getAllByLabelText("Max per turn")[1] as HTMLInputElement).value).toBe("8");
+  });
+  it("says which projects a roles editor affects", () => {
+    const workspace = { id: "ws", name: "Project", path: "/project", connected: true, settings: { sidebarCollapsed: false } };
+    const settings = { agentPolicy: defaultAgentPolicy } as AppSettings;
+    const app = render(<SettingsAgentPolicySection tab="roles" appSettings={settings} onUpdateAppSettings={vi.fn()} />);
+    expect(screen.getByText("All projects:")).toBeTruthy();
+    expect(screen.getByText(/To give one project different roles, use its agent policy in Settings → Projects/)).toBeTruthy();
+    app.unmount();
+    render(<ProjectAgentPolicy workspace={workspace} appSettings={settings} onUpdate={vi.fn()} />);
+    expect(screen.getByText("This project only:")).toBeTruthy();
+    expect(screen.queryByText("All projects:")).toBeNull();
   });
 });
 

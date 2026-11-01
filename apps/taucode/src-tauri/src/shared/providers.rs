@@ -1010,6 +1010,33 @@ mod tests {
         }
     }
     #[test]
+    fn one_projects_codex_roles_never_reach_another_project() {
+        let p = provider(ProviderKind::Openai);
+        let home = std::env::temp_dir().join(format!("taucode-roles-{}", uuid::Uuid::new_v4()));
+        let policy = |name: &str| {
+            let mut policy = AgentPolicy::default();
+            policy.subagents.roles = vec![serde_json::from_value(serde_json::json!({
+                "name": name, "description": "Project role", "model": null, "toolAccess": "read-only", "instructions": "Help."
+            })).unwrap()];
+            policy
+        };
+        let (alpha, beta) = (policy("alpha-only"), policy("beta-only"));
+        // Project A's Codex starts, then project B's, in the one shared Codex home.
+        let keys = Keys::default();
+        crate::shared::engines::prepare_codex(&home, &[p.clone()], &alpha, &keys, false).unwrap();
+        crate::shared::engines::prepare_codex(&home, &[p.clone()], &beta, &keys, false).unwrap();
+        let shared = std::fs::read_to_string(home.join("config.toml")).unwrap();
+        assert!(!shared.contains("alpha-only") && !shared.contains("beta-only"), "{shared}");
+        assert!(shared.contains("max_threads"));
+        let a = crate::shared::engines::codex_config_args(&[p.clone()], &alpha, &home).unwrap().join(" ");
+        assert!(a.contains("alpha-only") && !a.contains("beta-only"));
+        let b = crate::shared::engines::codex_config_args(&[p], &beta, &home).unwrap().join(" ");
+        assert!(b.contains("beta-only") && !b.contains("alpha-only"));
+        // Each project's role file still exists for its own `-c` config_file path.
+        assert!(a.contains("config_file") && std::fs::read_dir(home.join("roles")).unwrap().count() == 2);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+    #[test]
     fn keychain_values_only_reach_child_environment() {
         let p = provider(ProviderKind::Openai);
         let keys = Keys::default();

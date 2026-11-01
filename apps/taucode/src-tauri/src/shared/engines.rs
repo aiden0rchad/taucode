@@ -903,7 +903,7 @@ pub(crate) fn prepare_codex(
     if auth.exists() {
         std::fs::remove_file(auth).map_err(|e| e.to_string())?;
     }
-    write_config_file(&home.join("config.toml"), &config)?;
+    write_config_file(&home.join("config.toml"), &without_roles(&config)?)?;
     for (path, content) in files {
         std::fs::create_dir_all(path.parent().ok_or("Missing role directory")?)
             .map_err(|e| e.to_string())?;
@@ -1249,6 +1249,16 @@ mod tests {
     }
 }
 
+/// Every project's Codex shares this home, and Codex adds the roles of each config layer
+/// together. Roles therefore reach a project's Codex only through its own `-c` overrides;
+/// in the shared config.toml they would also show up in every other project.
+fn without_roles(config: &str) -> Result<String, String> {
+    let mut doc = config.parse::<toml_edit::Document>().map_err(|e| e.to_string())?;
+    if let Some(agents) = doc.get_mut("agents").and_then(toml_edit::Item::as_table_mut) {
+        agents.retain(|_, item| !item.is_table_like());
+    }
+    Ok(doc.to_string())
+}
 pub(crate) fn codex_config_args(
     providers: &[ProviderEntry],
     policy: &AgentPolicy,

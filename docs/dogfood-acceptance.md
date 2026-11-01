@@ -1524,3 +1524,37 @@ flicker and had cancelled a click halfway. Keystrokes still recheck it.
 
 Tests: Rust `computer::` 136 (fallback without approval; pointer versus
 keystroke checks); frontend 164; typecheck clean.
+
+### Project roles leaking into other projects — November 1
+
+Report: "I add an agent to a project and it also adds another agent on other
+projects." Cause: the Codex engine. Every project's Codex shares taucode's one
+managed Codex home (`engines/codex-home`), and `prepare_codex` rewrote its
+`config.toml`, roles included, from the effective policy of whichever project's
+Codex started last. Each Codex process also gets its own project's roles through
+`-c` overrides, but Codex loads agent roles layer by layer and adds them together
+(`agent-roles/src/loader.rs`), so a project saw its own roles plus the last
+project's. Fix: the shared `config.toml` keeps no `[agents.<role>]` tables; each
+project's roles reach only its own Codex through `-c`. Plain values such as
+`max_threads` stay in the shared file because a higher layer overrides them.
+
+Ruled out: conversations under two projects (matching picks the single longest
+project folder with a path-boundary check), and the old Codex-config "Agents"
+editor (`SettingsAgentsSection`, `agents_config_core`), which no settings page
+renders any more. pi keeps a policy per project (`pi/agent/<project>`); other
+pi-protocol engines (omp) read the effective policy per project. Claude ACP does
+not use taucode roles.
+
+UI: Models & Agents → Roles edits the roles for all projects but showed the
+current project's effective policy below, which read as project-scoped. Its
+Roles section now says "All projects" and points to Settings → Projects, and a
+project's agent policy says "This project only".
+
+Live (signed build): the shared `config.toml` has no role tables while every
+running Codex process carries its project's roles in `-c agents=…`. A live A/B
+check (a role added to one project, then that project's Codex restarted) was not
+completed: role names typed into the settings field get their first letter
+capitalized by macOS on blur, which fails the slug rule; this is a separate bug.
+
+Tests: Rust lib 610 (new: project A's and B's roles never reach the other or
+the shared config; fails on the old code); settings 124; typecheck clean.

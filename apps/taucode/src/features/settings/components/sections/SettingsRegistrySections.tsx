@@ -109,7 +109,7 @@ export function SettingsProvidersSection({ appSettings, onUpdateAppSettings }: P
   </SettingsGroup></SettingsPage>;
 }
 
-export function AgentPolicyEditor({ policy, providers, onChange, tab }: { tab?: "defaults" | "subagents" | "roles"; policy: AgentPolicy; providers: ProviderEntry[]; onChange: (p: AgentPolicy) => void }) {
+export function AgentPolicyEditor({ policy, providers, onChange, tab, scope }: { tab?: "defaults" | "subagents" | "roles"; policy: AgentPolicy; providers: ProviderEntry[]; onChange: (p: AgentPolicy) => void; scope?: "all" | "project" }) {
   const engines = useEngines();
   const models = providers.filter(p => p.enabled).flatMap(p => p.models.filter(m => m.enabled).map(m => ({ value: p.id + "/" + m.id, label: p.name + " / " + (m.displayName || m.id) })));
   const sub = policy.subagents;
@@ -142,7 +142,7 @@ export function AgentPolicyEditor({ policy, providers, onChange, tab }: { tab?: 
     {chain && tab === "defaults" && <SettingsGroup title="Team models" subtitle="Choose smaller cloud or local models where suitable. Inherit uses the default subagent model, then the parent's model. Edit tools and instructions in Roles.">
       {sub.roles.filter(isCommandRole).map(role => <div key={role.name}>{modelSelect(`${commandRoleTitle(role.name)} model`, modelKey(role.model), value => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.map(r => r.name === role.name ? { ...r, model: modelRef(value) } : r) } }))}</div>)}
     </SettingsGroup>}
-    {(!tab || tab === "roles") && <SettingsGroup title="Roles" subtitle="Named specialists with their own model, tools and instructions.">
+    {(!tab || tab === "roles") && <SettingsGroup title="Roles" subtitle={<>Named specialists with their own model, tools and instructions.{scope === "all" ? <> <strong>All projects:</strong> these roles apply to every project without its own roles. To give one project different roles, use its agent policy in Settings → Projects.</> : scope === "project" ? <> <strong>This project only:</strong> these roles replace the ones set for all projects.</> : null}</>}>
     {sub.roles.map((role, index) => {
       if (chain && !isCommandRole(role)) return null;
       const change = (patch: Partial<typeof role>) => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.map((r, i) => i === index ? { ...r, ...patch } : r) } });
@@ -175,7 +175,7 @@ export function SettingsAgentPolicySection({ appSettings, onUpdateAppSettings, w
     } catch (e) { setError(String(e)); setSaveState("idle"); }
   };
   return <div className="registry-settings">
-    <AgentPolicyEditor tab={tab} policy={policy} providers={appSettings.providers ?? []} onChange={next => { setPolicy(next); setError(""); }} />
+    <AgentPolicyEditor tab={tab} scope="all" policy={policy} providers={appSettings.providers ?? []} onChange={next => { setPolicy(next); setError(""); }} />
     {(validation || error) && <p role="alert">{validation || error}</p>}
     {workspace && <SettingsGroup collapsible title={<>Effective policy for {workspace.name} (app + workspace)</>} disabled><AgentPolicyEditor policy={mergePolicy(savedPolicy, workspace.settings.agentPolicy)} providers={appSettings.providers ?? []} onChange={() => {}} /></SettingsGroup>}
     <div className="settings-section-actions"><SettingsButton className="primary" disabled={!dirty || !!validation || saveState === "saving"} onClick={() => void save()}>{saveState === "saving" ? "Saving…" : !dirty && saveState === "saved" ? "Saved" : "Save policy"}</SettingsButton><span className="settings-visually-hidden" role="status">{!dirty && saveState === "saved" ? "Policy saved" : ""}</span></div>
@@ -189,7 +189,7 @@ export function ProjectAgentPolicy({ workspace, appSettings, onUpdate }: { works
   const [error, setError] = useState("");
   const validation = policyError(policy, appSettings.providers ?? []);
   return <details><summary>{workspace.name}: agent policy</summary>
-    <AgentPolicyEditor policy={policy} providers={appSettings.providers ?? []} onChange={setPolicy} />
+    <AgentPolicyEditor scope="project" policy={policy} providers={appSettings.providers ?? []} onChange={setPolicy} />
     {(validation || error) && <p role="alert">{validation || error}</p>}
     <SettingsButton type="button" disabled={!!validation} onClick={() => void onUpdate(workspace.id, { agentPolicy: policy }).catch(e => setError(String(e)))}>Save project override</SettingsButton>
     <SettingsButton type="button" onClick={() => void onUpdate(workspace.id, { agentPolicy: null }).then(() => setPolicy(base)).catch(e => setError(String(e)))}>Use app policy</SettingsButton>
