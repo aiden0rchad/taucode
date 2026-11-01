@@ -2,7 +2,7 @@
 
 taucode is in **early development**. The source is available for inspection and building; published test artifacts are experimental. A package version or a passing build is not a stable-release or feature-parity guarantee.
 
-This page describes the documented **0.7.69** baseline as of **November 1, 2026**. See [GitHub Releases](https://github.com/aiden0rchad/taucode/releases) for the assets actually published and the commit behind each build.
+The source version is **0.7.70**, prepared on **November 1, 2026**. It includes the interface, resizing, project-role editing and in-app installer-download changes in the [changelog](https://github.com/aiden0rchad/taucode/blob/main/CHANGELOG.md). The published download baseline below remains **0.7.69** until the new release assets are published. See [GitHub Releases](https://github.com/aiden0rchad/taucode/releases) for the assets actually published and the commit behind each build.
 
 ## Installable artifacts
 
@@ -66,7 +66,7 @@ Keep a backup of important project files and app state. Read the release's sourc
 
 For source checkouts, inspect local changes before pulling, install from the committed lockfiles, and fetch any newly needed Cargo dependencies explicitly. Do not delete app data as a routine update step.
 
-taucode checks GitHub Releases for a newer version and links to the download, but it never installs updates itself; automatic updater artifacts stay disabled in the Tauri configuration. See [Updates & reporting issues](updates-and-issues.md).
+taucode checks GitHub Releases for a newer version and can download the compatible installer inside the app, with progress and retry. It opens the completed installer through the operating system; installation remains manual and automatic updater artifacts stay disabled in the Tauri configuration. See [Updates & reporting issues](updates-and-issues.md).
 
 ## Follow development
 

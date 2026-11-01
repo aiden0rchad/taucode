@@ -60,7 +60,7 @@ Code uses the selected enabled engine. Chat and Work use dedicated pi profiles; 
 
 ### Download the latest desktop build
 
-The [v0.7.69 release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69) includes:
+Source version **0.7.70** is prepared on `main`; see the [changelog](CHANGELOG.md). Until it is published, the [v0.7.69 release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69) includes:
 
 | Your computer | File |
 | --- | --- |

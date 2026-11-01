@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.70 — November 1, 2026
+
+### A more cohesive desktop interface
+
+- **Typography:** use Codex Desktop's system-font stack across the interface and chat, with lighter macOS text smoothing. Existing default settings update automatically; custom fonts and monospace code remain intact.
+- **Projects:** restore squircle project cards with room around their contents, tighter chat rows and clearer selection.
+- **Session rail:** dock beside wide chats and float over narrower chats from one toolbar toggle. Share the conversation's gradient and translucency, use the full available height, and simplify section headers and reordering controls.
+- **Scrolling and resizing:** quieter chat scrollbars, no visible rail scrollbar, and less work during sidebar and pane resizing. Preserve mounted panes and drafts while moving dividers.
+- **Window and settings:** improve window-size restoration and titlebar spacing at reduced UI scales; add settings search and consistent dialog and feedback layouts.
+- **Roles:** use the current project for role editing and remove the redundant global custom-agent editor. Existing global definitions remain unchanged.
+- **Updates:** download the compatible GitHub release installer inside taucode, with progress, retry, size verification and SHA-256 verification when GitHub provides a digest. Open the completed installer through the operating system; installation remains manual.
+
+### Release status
+
+Prepared from local `main`; publication and platform installers are tracked on [GitHub Releases](https://github.com/aiden0rchad/taucode/releases). The download links below describe the previously published 0.7.69 release until 0.7.70 is published. This remains an early-development release; the UI work does not change signing or notarization requirements.
+
 ## 0.7.69 — November 1, 2026
 
 ### Desktop reliability and clearer controls
