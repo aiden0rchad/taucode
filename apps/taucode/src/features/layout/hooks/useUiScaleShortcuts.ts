@@ -31,6 +31,7 @@ export function useUiScaleShortcuts({
     if (typeof window === "undefined") {
       return;
     }
+    document.documentElement.style.setProperty("--ui-scale", String(uiScale));
     getCurrentWebview()
       .setZoom(uiScale)
       .catch(() => undefined);

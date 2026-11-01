@@ -1,45 +1,40 @@
 use tauri::Manager;
 
-// window-state 2.4.1 restores and tracks geometry through Window, but its exit
-// snapshot enumerates WebviewWindows and misses main after add_child. Tauri runs
-// plugin Exit callbacks before our app callback: supplement that same file here.
+// Capture before AppKit teardown; Exit can report a 1x scale on a Retina
+// window. The plugin writes at Exit, so merge this live snapshot afterwards.
 #[cfg(desktop)]
-pub(crate) fn save_main_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<(), String> {
+pub(crate) fn capture_main_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<serde_json::Map<String, serde_json::Value>> {
+    let mut state = serde_json::Map::new();
+    let Some(window) = app.get_window("main") else { return Ok(state); };
+    let maximized = window.is_maximized()?;
+    let fullscreen = window.is_fullscreen()?;
+    for (key, value) in [
+        ("maximized", maximized), ("fullscreen", fullscreen),
+        ("visible", window.is_visible()?), ("decorated", window.is_decorated()?),
+    ] { state.insert(key.into(), value.into()); }
+    if !maximized && !fullscreen && !window.is_minimized()? {
+        let size = window.inner_size()?;
+        let position = window.outer_position()?;
+        if size.width > 0 && size.height > 0 {
+            state.insert("width".into(), size.width.into());
+            state.insert("height".into(), size.height.into());
+        }
+        for key in ["x", "prev_x"] { state.insert(key.into(), position.x.into()); }
+        for key in ["y", "prev_y"] { state.insert(key.into(), position.y.into()); }
+    }
+    Ok(state)
+}
+
+// window-state omits main from its exit snapshot after add_child. Preserve
+// its other window records and supplement only main with the live snapshot.
+#[cfg(desktop)]
+pub(crate) fn save_main_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>, snapshot: serde_json::Map<String, serde_json::Value>) -> Result<(), String> {
     use tauri_plugin_window_state::AppHandleExt;
-    let Some(window) = app.get_window("main") else {
-        return Ok(());
-    };
     let save = || -> Result<(), Box<dyn std::error::Error>> {
         let path = app.path().app_config_dir()?.join(app.filename());
         let mut states: serde_json::Value = serde_json::from_slice(&std::fs::read(&path)?)?;
-        let state = states
-            .get_mut("main")
-            .and_then(|s| s.as_object_mut())
-            .ok_or("Missing main window state")?;
-        let maximized = window.is_maximized()?;
-        let fullscreen = window.is_fullscreen()?;
-        for (key, value) in [
-            ("maximized", maximized),
-            ("fullscreen", fullscreen),
-            ("visible", window.is_visible()?),
-            ("decorated", window.is_decorated()?),
-        ] {
-            state.insert(key.into(), value.into());
-        }
-        if !maximized && !fullscreen && !window.is_minimized()? {
-            let size = window.inner_size()?;
-            let position = window.outer_position()?;
-            if size.width > 0 && size.height > 0 {
-                state.insert("width".into(), size.width.into());
-                state.insert("height".into(), size.height.into());
-            }
-            for key in ["x", "prev_x"] {
-                state.insert(key.into(), position.x.into());
-            }
-            for key in ["y", "prev_y"] {
-                state.insert(key.into(), position.y.into());
-            }
-        }
+        states.get_mut("main").and_then(|s| s.as_object_mut())
+            .ok_or("Missing main window state")?.extend(snapshot);
         let temporary = path.with_extension("tmp");
         std::fs::write(&temporary, serde_json::to_vec_pretty(&states)?)?;
         std::fs::rename(temporary, path)?;

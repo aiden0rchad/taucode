@@ -53,3 +53,10 @@ it("keeps plus/minus keyboard aliases without handling consumed shortcuts twice"
   fireEvent.keyDown(window, { key: "-", metaKey: true });
   expect(result.current.uiScale).toBe(1);
 });
+
+it("exposes zoom so native window-control clearance stays constant", () => {
+  setup(.9);
+  expect(document.documentElement.style.getPropertyValue("--ui-scale")).toBe("0.9");
+  act(() => host.menu("zoom_reset"));
+  expect(document.documentElement.style.getPropertyValue("--ui-scale")).toBe("1");
+});

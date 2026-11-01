@@ -413,3 +413,24 @@ it("keeps a newer user selection when delayed creation notifications arrive", as
   expect(readPanel("code:one").browserActive).toBe(first);
   expect(host.active).toBe("page-1");
 });
+
+it("paints dock geometry during a drag and persists only its final frame", async () => {
+  const view = render(shell());
+  const divider = screen.getByRole("separator", { name: "Resize dock split 1" });
+  divider.setPointerCapture = vi.fn(); divider.hasPointerCapture = () => true; divider.releasePointerCapture = vi.fn();
+  const saved = JSON.stringify(layout());
+  const draft = screen.getByRole("textbox", { name: "Conversation draft" });
+  fireEvent.change(draft, { target: { value: "keep me" } });
+  fireEvent.pointerDown(divider, { pointerId: 1, button: 0, isPrimary: true, clientX: 1100 });
+  fireEvent.pointerMove(divider, { pointerId: 1, clientX: 950, clientY: 100 });
+  await frame();
+  expect(JSON.stringify(layout())).toBe(saved);
+  expect(Number(pane("session").style.getPropertyValue("--dock-box-x"))).toBeCloseTo((950 - 280) / 1320, 4);
+  fireEvent.pointerMove(divider, { pointerId: 1, clientX: 1000, clientY: 100 });
+  fireEvent.pointerUp(divider, { pointerId: 1 });
+  expect(dockGeometry(layout().tree).panes.session.x / 100).toBeCloseTo((1000 - 280) / 1320, 4);
+  expect(screen.getByRole("textbox", { name: "Conversation draft" })).toBe(draft);
+  expect((draft as HTMLInputElement).value).toBe("keep me");
+  const final = layout(); view.unmount(); render(shell());
+  expect(layout()).toEqual(final);
+});

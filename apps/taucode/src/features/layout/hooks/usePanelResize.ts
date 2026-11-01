@@ -21,9 +21,25 @@ export function usePanelResize() {
     const { cursor: previousCursor, userSelect } = document.body.style;
     document.body.style.cursor = cursor;
     document.body.style.userSelect = "none";
-    const move = (e: PointerEvent) => { if (e.pointerId === pointerId) onMove(e); };
+    document.documentElement.classList.add("panel-resizing");
+    let frame: number | null = null;
+    let pending: PointerEvent | null = null;
+    const flush = () => {
+      frame = null;
+      if (pending) { const event = pending; pending = null; onMove(event); }
+    };
+    const move = (e: PointerEvent) => {
+      if (e.pointerId !== pointerId) return;
+      e.preventDefault();
+      pending = e;
+      if (frame === null) frame = requestAnimationFrame(flush);
+    };
     const end = (e: PointerEvent) => { if (e.pointerId === pointerId) stop(); };
     const stop = () => {
+      if (cleanup.current !== stop) return;
+      cleanup.current = null;
+      if (frame !== null) cancelAnimationFrame(frame);
+      flush();
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", end);
       target.removeEventListener("pointercancel", end);
@@ -34,7 +50,7 @@ export function usePanelResize() {
       overlay.remove();
       document.body.style.cursor = previousCursor;
       document.body.style.userSelect = userSelect;
-      cleanup.current = null;
+      document.documentElement.classList.remove("panel-resizing");
       setIsResizing(false);
       onEnd();
     };

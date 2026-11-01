@@ -52,7 +52,7 @@ export async function checkCodeDock(page, { width, height, open }) {
       const browser = document.querySelector('[data-dock-pane=browser]:not([hidden])');
       if (browser) {
         const header = browser.querySelector('.dock-pane-header'), tabs = browser.querySelector('.dock-browser-tabs');
-        if (tabs.parentElement !== header || Math.abs(rect(header).height - 32) > 1) errors.push({ browserHeader: rect(header).toJSON(), tabsParent: tabs.parentElement.className });
+        if (tabs.parentElement !== header || Math.abs(rect(header).height - 40) > 1) errors.push({ browserHeader: rect(header).toJSON(), tabsParent: tabs.parentElement.className });
         const controls = [...header.querySelectorAll('button')].filter(button => /^(Expand Browser|Restore Browser|Actions for Browser pane|Close Browser pane)$/.test(button.getAttribute('aria-label')));
         for (let index = 0; index < controls.length; index++) {
           const control = controls[index], bounds = rect(control), hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);

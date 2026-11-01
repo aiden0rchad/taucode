@@ -74,7 +74,7 @@ button:disabled, select:disabled { opacity: .4; }
 .sidebar .mode-new { width: 100%; min-height: 28px; justify-content: flex-start; }
 .sidebar-search { display: flex; align-items: center; gap: 8px; padding: 4px 8px; color: var(--text-subtle); }
 .chat-layout .sidebar-search input { width: 100%; padding: 4px 0; border: 0; background: transparent; }
-.sidebar .mode-switcher { padding: 2px; gap: 4px; border-radius: var(--radius-row); background: var(--surface-app); }
+.sidebar .mode-switcher { padding: 3px; gap: 2px; margin-bottom: 10px; border: 0; border-radius: var(--radius-row); background: var(--surface-card-muted); }
 .sidebar .mode-switcher button { height: 28px; padding: 4px 12px; border-radius: var(--radius-chip); }
 .sidebar .mode-switcher button[aria-pressed="true"] { box-shadow: none; }
 .sidebar-bottom-actions { width: 100%; }
@@ -283,7 +283,7 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
   padding: 0 8px; gap: 6px; border-radius: 6px; margin: 0; width: 100%;
 }
 .sidebar .thread-content { gap: 0; overflow: hidden; }
-.sidebar .thread-name { line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar .thread-name { line-height: 18px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar .thread-details { display: none; }
 [data-sidebar-density="comfortable"] .sidebar .thread-details { display: flex; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar .thread-details > :not(.thread-context-label) { display: none; }
@@ -417,15 +417,10 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 
 /* Header and tree share the padded origin, preserving guide alignment. */
 .sidebar .project-group-card {
-  --radius-window: 8px;
-  --squircle-background: color-mix(in srgb, var(--surface-sidebar), var(--text-primary) 1%);
-  --squircle-border: color-mix(in srgb, var(--tree-line) 60%, transparent);
-  --squircle-border-active: var(--tree-line-active);
   padding: 3px;
   overflow: visible;
   margin: 0;
 }
-.sidebar .project-group-card.is-selected { --squircle-border: var(--tree-line-active); }
 .sidebar .workspace-group-content { gap: 6px; }
 .sidebar .work-space { margin-bottom: 6px; }
 .sidebar .work-space > .workspace-row { margin: 0 0 2px; }

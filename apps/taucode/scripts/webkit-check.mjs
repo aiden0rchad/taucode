@@ -93,6 +93,7 @@ try {
     });
     await check('Native browser toolbar', async () => {
       await open({ panel: 'browser' });
+      await page.getByRole('button', { name: 'Expand Browser', exact: true }).click();
       await page.locator('.browser-native-slot').waitFor();
       const pane = page.locator('.browser-pane');
       try {
@@ -193,11 +194,12 @@ try {
           await page.mouse.move(hit.x, hit.y); await page.mouse.down();
           try {
             await page.mouse.move(hit.x + delta, hit.y, { steps: 4 });
-            await page.waitForFunction(({ expectedWidth, expectedLeft }) =>
-              Number(localStorage.getItem('codexmonitor.sidebarWidth')) === expectedWidth &&
+            await page.waitForFunction(({ savedWidth, expectedLeft }) =>
+              Number(localStorage.getItem('codexmonitor.sidebarWidth')) === savedWidth &&
               Math.abs(document.querySelector('.tabbed-side-panel').getBoundingClientRect().left - expectedLeft) <= 1,
-            { expectedWidth: sidebarWidth + delta, expectedLeft: panelLeft + delta });
+            { savedWidth: sidebarWidth, expectedLeft: panelLeft + delta });
           } finally { await page.mouse.up(); }
+          assert.equal(await page.evaluate(() => Number(localStorage.getItem('codexmonitor.sidebarWidth'))), sidebarWidth + delta);
           await geometry(`sidebar pointer drag ${delta}px`);
         }
         assert.equal(await page.evaluate(() => Number(localStorage.getItem('codexmonitor.sidebarWidth'))), originalSidebarWidth, 'Pointer drag did not restore the sidebar preference');

@@ -1,6 +1,7 @@
 import { isWindowsPlatform } from "@utils/platformPaths";
 import { useLayoutEffect, useSyncExternalStore, type PointerEvent } from "react";
 
+import { workspaceLayout } from "@/features/panels/panelState";
 import { usePanelResize } from "./usePanelResize";
 
 const widthKey = "codexmonitor.sidebarWidth";
@@ -28,14 +29,20 @@ export function useSidebarState() {
   useLayoutEffect(() => {
     document.documentElement.style.setProperty("--sidebar-top-padding", isWindowsPlatform() ? "10px" : "36px");
     document.documentElement.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
-    localStorage.setItem(widthKey, String(sidebarWidth));
   }, [sidebarWidth]);
   const setSidebarWidth = (width: number) => write(widthKey, String(clamp(width)));
   const onSidebarResizeStart = (event: PointerEvent) => {
     const start = event.clientX;
     const sidebar = event.currentTarget.parentElement?.querySelector(".sidebar");
+    const shell = event.currentTarget.closest<HTMLElement>(".workspace-shell");
+    const shellWidth = shell?.getBoundingClientRect().width;
     const startWidth = sidebar?.getBoundingClientRect().width || sidebarWidth;
-    startResize(event, "col-resize", e => setSidebarWidth(startWidth + e.clientX - start));
+    let width = startWidth;
+    startResize(event, "col-resize", e => {
+      width = clamp(startWidth + e.clientX - start);
+      document.documentElement.style.setProperty("--sidebar-width", `${width}px`);
+      if (shell && shellWidth) shell.style.setProperty("--sidebar-width", `${workspaceLayout(shellWidth, width, false, 0, false).sidebarWidth}px`);
+    }, () => setSidebarWidth(width));
   };
   return { sidebarWidth, sidebarCollapsed, setSidebarWidth, setSidebarCollapsed: (value: boolean) => write(collapsedKey, String(value)), onSidebarResizeStart, isResizing };
 }

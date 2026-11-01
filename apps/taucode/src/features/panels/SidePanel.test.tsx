@@ -313,7 +313,10 @@ it("updates the expanded sidebar boundary through collapse, resize and narrow wi
   fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
   fireEvent.click(screen.getByRole("button", { name: /Terminal/ }));
   fireEvent.click(screen.getByRole("button", { name: "Expand side panel" }));
-  const column = () => view.container.querySelector<HTMLElement>(".workspace-shell")!.style.getPropertyValue("--layout-sidebar-column");
+  const column = () => {
+    const value = view.container.querySelector<HTMLElement>(".workspace-shell")!.style.getPropertyValue("--layout-sidebar-column");
+    return value === "var(--sidebar-width)" ? document.documentElement.style.getPropertyValue("--sidebar-width") : value;
+  };
   expect(column()).toBe("320px");
   fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" })); expect(column()).toBe("0px");
   fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" })); expect(column()).toBe("320px");

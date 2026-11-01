@@ -16,7 +16,8 @@ describe("Code session rail", () => {
   it("persists card collapse and keyboard reorder", () => {
     const data = props(); const view = render(<CodeSessionRail {...data} />);
     fireEvent.click(screen.getByRole("button", { name: "Environment" }));
-    fireEvent.click(screen.getByRole("button", { name: "Move Context up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Context section" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move Context up" }));
     view.unmount();
     render(<CodeSessionRail {...data} />);
     expect(document.querySelector(".code-session-card-toggle")?.textContent).toBe("Context");
@@ -42,7 +43,8 @@ describe("Code session rail", () => {
     fireEvent.dragStart(screen.getByTitle("Drag to reorder Changes"), { dataTransfer });
     fireEvent.drop(screen.getByRole("region", { name: "Environment" }), { dataTransfer });
     expect(document.querySelector(".code-session-card-toggle")?.textContent).toBe("Changes2");
-    expect(screen.getByRole("button", { name: "Move Changes down" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Changes section" }));
+    expect(screen.getByRole("menuitem", { name: "Move Changes down" })).toBeTruthy();
     expect(JSON.parse(localStorage.getItem("taucode.code.sessionRail")!).order[0]).toBe("Changes");
   });
   it("opens connector configuration from a connector disclosure", () => {
@@ -61,7 +63,7 @@ describe("Code session rail", () => {
   it("saves a named folder profile and leaves the form open on failure", async () => {
     const data = props(); vi.mocked(data.onSaveEnvironment).mockRejectedValueOnce(new Error("Disk full"));
     render(<CodeSessionRail {...data} />);
-    fireEvent.click(screen.getByRole("button", { name: "Save environment…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(screen.getByLabelText("Name")).toBe(document.activeElement);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "My setup" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
@@ -76,4 +78,15 @@ describe("Code session rail", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stop task Dev server" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Already exited"));
   });
+});
+
+it("keeps empty sections compact, opens new output, and remembers explicit disclosure choices", () => {
+  const data = props();
+  const view = render(<CodeSessionRail {...data} outputs={[]} />);
+  expect(screen.getByRole("button", { name: "Outputs (0)" }).getAttribute("aria-expanded")).toBe("false");
+  view.rerender(<CodeSessionRail {...data} />);
+  expect(screen.getByRole("button", { name: "result.md" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Outputs (1)" }));
+  view.unmount(); render(<CodeSessionRail {...data} />);
+  expect(screen.queryByRole("button", { name: "result.md" })).toBeNull();
 });

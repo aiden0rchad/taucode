@@ -80,12 +80,12 @@ it.each([
     expect(document.querySelector(".browser-toggle")).toBeNull();
     if (query.includes("mode=code")) {
       expect(screen.getByPlaceholderText("Ask taucode to do something… Type / for commands").closest(".squircle")).toBeTruthy();
-      expect(document.querySelectorAll(".workspace-card.squircle")).toHaveLength(3);
+      expect(document.querySelectorAll(".workspace-card")).toHaveLength(3);
       expect(document.querySelector(".sidebar .squircle .squircle")).toBeNull();
       expect(screen.getByRole("button", { name: "Orbit" }).closest(".workspace-card")?.querySelector(".workspace-card-content.collapsed")).toBeTruthy();
     }
     if (query.includes("mode=work")) {
-      await waitFor(() => expect(document.querySelectorAll(".work-space.squircle")).toHaveLength(2));
+      await waitFor(() => expect(document.querySelectorAll(".work-space")).toHaveLength(2));
       expect(document.querySelector(".sidebar .squircle .squircle")).toBeNull();
     }
     if (query.includes("composer=attachments")) expect(document.querySelectorAll(".chat-attachments li")).toHaveLength(2);
@@ -315,7 +315,7 @@ it.each(["code", "chat", "work"].flatMap(mode => [760, 960, 1180, 1440].map(widt
     if (this.classList.contains("dock-stage")) {
       const shell = this.closest<HTMLElement>(".workspace-shell")!;
       const rail = shell.querySelector(".app.layout-tablet") ? 72 : 0;
-      const left = parseFloat(shell.style.getPropertyValue("--layout-sidebar-column")) + rail;
+      const left = (shell.style.getPropertyValue("--layout-sidebar-column") === "0px" ? 0 : parseFloat(shell.style.getPropertyValue("--sidebar-width"))) + rail;
       return { width: width - left, height: 700, top: 0, left, right: width, bottom: 700, x: left, y: 0, toJSON: () => ({}) };
     }
     return rect.call(this);
@@ -333,7 +333,7 @@ it.each(["code", "chat", "work"].flatMap(mode => [760, 960, 1180, 1440].map(widt
   const sidebar = conversation.parentElement!.querySelector(":scope > .sidebar")!;
   expect(sidebar).toBeTruthy();
   if (mode === "code") {
-    const compact = width - parseFloat(shell.style.getPropertyValue("--layout-sidebar-column")) < 760;
+    const compact = width - (shell.style.getPropertyValue("--layout-sidebar-column") === "0px" ? 0 : parseFloat(shell.style.getPropertyValue("--sidebar-width"))) < 760;
     expect(shell.classList.contains("is-compact")).toBe(compact);
     expect(shell.style.getPropertyValue("--right-panel-width")).toBe("0px");
     expect(parseFloat(shell.style.getPropertyValue("--dock-conversation-width"))).toBeGreaterThan(0);
@@ -358,7 +358,7 @@ it.each(["code", "chat", "work"].flatMap(mode => [760, 960, 1180, 1440].map(widt
   for (const panelOpen of [false, true]) {
     if (panelOpen) fireEvent.click(screen.getByRole("button", { name: "Toggle side panel" }));
     const sidebarWidth = parseFloat(shell.style.getPropertyValue("--sidebar-width"));
-    const sidebarColumn = parseFloat(shell.style.getPropertyValue("--layout-sidebar-column"));
+    const sidebarColumn = (shell.style.getPropertyValue("--layout-sidebar-column") === "0px" ? 0 : parseFloat(shell.style.getPropertyValue("--sidebar-width")));
     const panel = shell.querySelector<HTMLElement>(".tabbed-side-panel")!;
     const panelColumn = panelOpen && !panel.classList.contains("is-overlay") ? parseFloat(shell.style.getPropertyValue("--right-panel-width")) : 0;
     expect(sidebarColumn).toBe(sidebarWidth);

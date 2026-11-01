@@ -1,7 +1,6 @@
 import Plus from "lucide-react/dist/esm/icons/plus";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
 import { IconButton } from "@/features/design-system/components/IconButton";
-import { Squircle } from "@/features/design-system/components/squircle/Squircle";
 import { ProjectEngine } from "./SidebarTree";
 import type { MouseEvent } from "react";
 
@@ -46,7 +45,7 @@ export function WorkspaceCard({
   const contentCollapsedClass = isCollapsed ? " collapsed" : "";
 
   return (
-    <ProjectEngine engine={workspace.settings.agentPolicy?.defaultEngine}><Squircle className={`workspace-card project-group-card${isActive ? " is-selected" : ""}`}>
+    <ProjectEngine engine={workspace.settings.agentPolicy?.defaultEngine}><div className={`workspace-card project-group-card${isActive ? " is-selected" : ""}`}>
       <div
         className={`workspace-row ${isActive ? "active" : ""}`}
         title={[workspace.name, summary].filter(Boolean).join(" · ")}
@@ -130,6 +129,6 @@ export function WorkspaceCard({
       >
         <div className="workspace-card-content-inner">{children}</div>
       </div>
-    </Squircle></ProjectEngine>
+    </div></ProjectEngine>
   );
 }

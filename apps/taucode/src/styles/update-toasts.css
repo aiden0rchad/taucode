@@ -146,3 +146,7 @@
     transform: translateX(-50%);
   }
 }
+
+.update-download { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+.update-download [role="status"] { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.update-download [role="alert"] { margin: 0; color: var(--status-error); }

@@ -31,14 +31,13 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
   const geometry = dockGeometry(tree), visible = new Set(Object.keys(geometry.panes));
   const expanded = saved.expanded && visible.has(saved.expanded) ? saved.expanded : null;
   const stage = useRef<HTMLDivElement>(null);
-  const [contentWidth, setContentWidth] = useState<number | null>(null);
+  const [compact, setCompact] = useState(layout.conversationWidth < 760);
   useLayoutEffect(() => {
     const element = stage.current; if (!element) return;
-    const measure = () => setContentWidth(element.getBoundingClientRect().width);
+    const measure = () => setCompact(element.getBoundingClientRect().width < 760);
     const observer = new ResizeObserver(measure); observer.observe(element); measure();
     return () => observer.disconnect();
   }, [layout.conversationWidth]);
-  const compact = (contentWidth ?? layout.conversationWidth) < 760;
   const focused = expanded ?? (saved.focused && visible.has(saved.focused) ? saved.focused : "conversation");
   const covered = Boolean(expanded || compact && focused !== "conversation");
   const conversation = compact ? full : geometry.panes.conversation;
@@ -121,7 +120,7 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
   ];
   const measurement = <div key="dock-measurement" className="dock-stage" ref={stage} aria-hidden="true" />;
   return <div className={`workspace-shell dock-workspace${compact ? " is-compact" : ""}${layout.sidebarOverlay ? " sidebar-overlay" : ""}${covered ? " panel-expanded" : ""}`} ref={resize.appRef} style={{
-    "--right-panel-width": "0px", "--sidebar-width": `${layout.sidebarWidth}px`, "--layout-sidebar-column": `${layout.sidebarColumn}px`,
+    "--right-panel-width": "0px", "--sidebar-width": `${layout.sidebarWidth}px`, "--layout-sidebar-column": layout.sidebarColumn ? "var(--sidebar-width)" : "0px",
     "--dock-conversation-x": (conversation?.x ?? 0) / 100, "--dock-conversation-y": `${conversation?.y ?? 0}%`, "--dock-conversation-width": (conversation?.w ?? 100) / 100, "--dock-conversation-height": `${conversation?.h ?? 100}%`,
   } as CSSProperties}>
     <header id="titlebar" className="workspace-titlebar" data-tauri-drag-region>
@@ -173,16 +172,41 @@ export function DockWorkspace({ children, scope, title, tools = [], searchUrl, o
           const style: CSSProperties = horizontal
             ? { ...position({ ...box, x: box.x + box.w * node.ratio }), width: 8, transform: "translateX(-4px)" }
             : { ...position({ ...box, y: box.y + box.h * node.ratio }), height: 8, transform: "translateY(-4px)" };
-          return <div key={node.id} className={`dock-divider ${horizontal ? "is-horizontal" : "is-vertical"}`} role="separator" aria-label={`Resize dock split ${index + 1}`} aria-orientation={horizontal ? "vertical" : "horizontal"} aria-valuemin={15} aria-valuemax={85} aria-valuenow={Math.round(node.ratio * 100)} tabIndex={0} style={style} onKeyDown={event => {
+          return <div key={node.id} data-dock-split={node.id} className={`dock-divider ${horizontal ? "is-horizontal" : "is-vertical"}`} role="separator" aria-label={`Resize dock split ${index + 1}`} aria-orientation={horizontal ? "vertical" : "horizontal"} aria-valuemin={15} aria-valuemax={85} aria-valuenow={Math.round(node.ratio * 100)} tabIndex={0} style={style} onKeyDown={event => {
             if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
             event.preventDefault(); const ratio = event.key === "Home" ? .15 : event.key === "End" ? .85 : node.ratio + (["ArrowLeft", "ArrowUp"].includes(event.key) ? -.05 : .05);
             setDock(layout => ({ ...layout, tree: resizeDockSplit(layout.tree, node.id, ratio) }));
           }} onPointerDown={event => {
             const bounds = stage.current?.getBoundingClientRect(); if (!bounds || !bounds.width || !bounds.height) return;
+            const root = resize.appRef.current;
+            if (!root) return;
+            let ratio = node.ratio;
+            const dividers = [...root.querySelectorAll<HTMLElement>("[data-dock-split]")];
+            const place = (element: HTMLElement, box: DockBox, axis?: "horizontal" | "vertical") => {
+              element.style.setProperty("--dock-box-x", String(box.x / 100));
+              element.style.setProperty("--dock-box-width", String(box.w / 100));
+              element.style.top = `${box.y}%`;
+              if (axis !== "vertical") element.style.height = `${box.h}%`;
+            };
             startResize(event, horizontal ? "col-resize" : "row-resize", event => {
-              const ratio = horizontal ? ((event.clientX - bounds.left) / bounds.width * 100 - box.x) / box.w : ((event.clientY - bounds.top) / bounds.height * 100 - box.y) / box.h;
-              setDock(layout => ({ ...layout, tree: resizeDockSplit(layout.tree, node.id, ratio) }));
-            });
+              ratio = Math.min(.85, Math.max(.15, horizontal ? ((event.clientX - bounds.left) / bounds.width * 100 - box.x) / box.w : ((event.clientY - bounds.top) / bounds.height * 100 - box.y) / box.h));
+              const next = dockGeometry(resizeDockSplit(tree, node.id, ratio));
+              for (const [id, box] of Object.entries(next.panes)) {
+                if (id === "conversation") {
+                  root.style.setProperty("--dock-conversation-x", String(box.x / 100));
+                  root.style.setProperty("--dock-conversation-width", String(box.w / 100));
+                  root.style.setProperty("--dock-conversation-y", `${box.y}%`);
+                  root.style.setProperty("--dock-conversation-height", `${box.h}%`);
+                } else { const pane = panes.current.get(id); if (pane) place(pane, box); }
+              }
+              for (const { node, box } of next.splits) {
+                const divider = dividers.find(element => element.dataset.dockSplit === node.id);
+                if (divider) {
+                  place(divider, node.axis === "horizontal" ? { ...box, x: box.x + box.w * node.ratio } : { ...box, y: box.y + box.h * node.ratio }, node.axis);
+                  divider.setAttribute("aria-valuenow", String(Math.round(node.ratio * 100)));
+                }
+              }
+            }, () => setDock(layout => ({ ...layout, tree: resizeDockSplit(layout.tree, node.id, ratio) })));
           }} />;
         })}
       {error && <p className="dock-error" role="alert">{error}</p>}
