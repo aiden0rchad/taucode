@@ -3,17 +3,13 @@
 .code-session-card-header { display: flex; align-items: center; min-height: 38px; gap: 2px; padding: 0 6px; position: relative; }
 .code-session-card-toggle { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 8px 3px; border: 0; background: none; color: var(--text-strong); text-align: left; font: inherit; font-weight: 500; cursor: pointer; }
 .code-session-card-toggle > span { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.code-session-card-toggle > svg:first-child { display: none; }
-.code-session-card-toggle > small { margin-left: auto; color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .code-session-card-toggle > svg:last-child { transform: rotate(-90deg); color: var(--text-muted); }
 .code-session-card-toggle > svg.is-open { transform: none; }
-.code-session-reorder { display: flex; align-items: center; flex: 0 0 24px; }
-.code-session-reorder > .mode-row { width: 24px; margin: 0; }
-.code-session-reorder .mode-row-menu-trigger { position: static; translate: none; opacity: 0; }
-.code-session-grip { display: flex; align-items: center; justify-content: center; position: absolute; right: 32px; width: 16px; opacity: 0; cursor: grab; background: var(--surface-sidebar); border-radius: 4px; color: var(--text-muted); }
+.code-session-grip { flex: 0 0 24px; opacity: 0; cursor: grab; color: var(--text-muted); }
 .code-session-card.is-dragging { opacity: .5; }
-.code-session-card-header:hover .code-session-grip, .code-session-card-header:hover .mode-row-menu-trigger, .code-session-card-header:focus-within .mode-row-menu-trigger { opacity: 1; }
-.code-session-reorder .ds-icon-button { width: 24px; height: 24px; }
+.code-session-card-header:hover .code-session-grip, .code-session-card-header:focus-within .code-session-grip { opacity: 1; }
+.code-session-grip:active { cursor: grabbing; }
+@media (hover: none) { .code-session-grip { opacity: 1; } }
 .code-session-card-body { padding: 0 10px 10px; }
 .code-session-card-body[hidden] { display: none; }
 .code-session-rail p { margin: 5px 0 8px; line-height: 1.5; }

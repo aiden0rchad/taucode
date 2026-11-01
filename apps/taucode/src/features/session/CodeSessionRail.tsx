@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, GripVertical, Folder, Cpu, FileOutput, GitBranch, Layers, ListTodo, Monitor, Plug, Server, Square, X } from "lucide-react";
+import { ChevronDown, GripVertical, Folder, Cpu, FileOutput, GitBranch, Plug, Square, X } from "lucide-react";
 import type { BranchInfo, CodeEnvironment, McpServerEntry, SkillOption, ThreadTokenUsage, WorkspaceInfo } from "@/types";
 import type { ManagedTasksController } from "@/features/tasks/useManagedTasks";
 import { BackgroundTasks } from "@/features/tasks/BackgroundTasks";
 import { useSidePanel } from "@/features/panels/SidePanel";
-import { RowMenu } from "@/features/chat/RowMenu";
 import { IconButton } from "@/features/design-system/components/IconButton";
 import { ModalShell } from "@/features/design-system/components/modal/ModalShell";
 import { contextUsage } from "./useCodeSessionData";
@@ -13,7 +12,6 @@ import "./code-session-rail.css";
 
 const sections = ["Environment", "Context", "Connectors", "Outputs", "Changes", "Servers", "Background tasks"] as const;
 type Section = typeof sections[number];
-const icons = { Environment: Monitor, Context: Layers, Connectors: Plug, Outputs: FileOutput, Changes: GitBranch, Servers: Server, "Background tasks": ListTodo };
 const storageKey = "taucode.code.sessionRail";
 function readPreferences(): { order: Section[]; closed: Section[]; expanded: Section[] } {
   try {
@@ -165,7 +163,6 @@ export function CodeSessionRail(props: CodeSessionRailProps) {
   return <div className="code-session-rail" aria-label="Session details">
     {error && <p role="alert">{error}</p>}
     {preferences.order.map((section, index) => {
-      const Icon = icons[section];
       const empty = counts[section] === 0 && !(section === "Connectors" && (props.connectorError || props.connectorsLoading)) && !(section === "Background tasks" && props.tasks.error) && !(section === "Changes" && props.git.error && !isMissingRepo(props.git.error));
       const open = !preferences.closed.includes(section) && (!empty || preferences.expanded.includes(section)); const id = `code-session-${section.toLowerCase().replace(/ /g, "-")}`;
       return <section className={`code-session-card${dragged === section ? " is-dragging" : ""}`} key={section} onDragOver={event => { if (dragged) event.preventDefault(); }} onDrop={event => {
@@ -173,8 +170,11 @@ export function CodeSessionRail(props: CodeSessionRailProps) {
         if (dragged && dragged !== section) setPreferences(current => { const order = current.order.filter(id => id !== dragged); order.splice(order.indexOf(section), 0, dragged); return { ...current, order }; });
         setDragged(null);
       }} aria-labelledby={`${id}-heading`}><div className="code-session-card-header">
-        <button className="code-session-card-toggle" aria-label={`${section}${counts[section] === undefined ? "" : ` (${counts[section]})`}`} id={`${id}-heading`} aria-expanded={open} aria-controls={id} onClick={() => setPreferences(current => ({ ...current, closed: open ? [...current.closed, section] : current.closed.filter(id => id !== section), expanded: open ? current.expanded.filter(id => id !== section) : [...current.expanded.filter(id => id !== section), section] }))}><Icon size={14} aria-hidden /><span>{section}</span>{counts[section] !== undefined && <small>{counts[section]}</small>}<ChevronDown size={12} className={open ? "is-open" : ""} aria-hidden /></button>
-        <div className="code-session-reorder"><span draggable title={`Drag to reorder ${section}`} className="code-session-grip" aria-hidden onDragStart={event => { event.dataTransfer.setData("text/plain", section); event.dataTransfer.effectAllowed = "move"; setDragged(section); }} onDragEnd={() => setDragged(null)}><GripVertical size={12} /></span><RowMenu label={`${section} section`} portal actions={[{ label: `Move ${section} up`, disabled: index === 0, onClick: () => move(section, -1) }, { label: `Move ${section} down`, disabled: index === preferences.order.length - 1, onClick: () => move(section, 1) }]}><span /></RowMenu></div>
+        <button className="code-session-card-toggle" aria-label={`${section}${counts[section] === undefined ? "" : ` (${counts[section]})`}`} id={`${id}-heading`} aria-expanded={open} aria-controls={id} onClick={() => setPreferences(current => ({ ...current, closed: open ? [...current.closed, section] : current.closed.filter(id => id !== section), expanded: open ? current.expanded.filter(id => id !== section) : [...current.expanded.filter(id => id !== section), section] }))}><span>{section}</span><ChevronDown size={12} className={open ? "is-open" : ""} aria-hidden /></button>
+        <IconButton size="sm" draggable className="code-session-grip" aria-label={`Reorder ${section}`} aria-description={`Position ${index + 1} of ${preferences.order.length}. Drag or use the Up and Down arrow keys to reorder.`} title={`Drag to reorder ${section} · ↑/↓`} onKeyDown={event => {
+          if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+          event.preventDefault(); event.stopPropagation(); move(section, event.key === "ArrowUp" ? -1 : 1);
+        }} onDragStart={event => { event.dataTransfer.setData("text/plain", section); event.dataTransfer.effectAllowed = "move"; setDragged(section); }} onDragEnd={() => setDragged(null)}><GripVertical size={12} aria-hidden /></IconButton>
       </div><div className="code-session-card-body" id={id} hidden={!open}>{contents[section]}</div></section>;
     })}
     {saving && <SaveEnvironment key={props.workspace.id} workspace={props.workspace} workspaces={props.workspaces} engine={props.engine} modelId={props.modelId} onSave={props.onSaveEnvironment} onClose={() => setSaving(false)} />}

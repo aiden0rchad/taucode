@@ -16,8 +16,11 @@ describe("Code session rail", () => {
   it("persists card collapse and keyboard reorder", () => {
     const data = props(); const view = render(<CodeSessionRail {...data} />);
     fireEvent.click(screen.getByRole("button", { name: "Environment" }));
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Context section" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Move Context up" }));
+    const handle = screen.getByRole("button", { name: "Reorder Context" });
+    handle.focus();
+    fireEvent.keyDown(handle, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(handle);
+    fireEvent.keyDown(handle, { key: "ArrowUp" });
     view.unmount();
     render(<CodeSessionRail {...data} />);
     expect(document.querySelector(".code-session-card-toggle")?.textContent).toBe("Context");
@@ -40,12 +43,12 @@ describe("Code session rail", () => {
   it("reorders cards by drag while keeping keyboard controls available", () => {
     render(<CodeSessionRail {...props()} />);
     const dataTransfer = { setData: vi.fn(), effectAllowed: "none" };
-    fireEvent.dragStart(screen.getByTitle("Drag to reorder Changes"), { dataTransfer });
+    fireEvent.dragStart(screen.getByRole("button", { name: "Reorder Changes" }), { dataTransfer });
     fireEvent.drop(screen.getByRole("region", { name: "Environment" }), { dataTransfer });
-    expect(document.querySelector(".code-session-card-toggle")?.textContent).toBe("Changes2");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Changes section" }));
-    expect(screen.getByRole("menuitem", { name: "Move Changes down" })).toBeTruthy();
-    expect(JSON.parse(localStorage.getItem("taucode.code.sessionRail")!).order[0]).toBe("Changes");
+    expect(document.querySelector(".code-session-card-toggle")?.textContent).toBe("Changes");
+    expect(screen.queryByRole("button", { name: "Actions for Changes section" })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("button", { name: "Reorder Changes" }), { key: "ArrowDown" });
+    expect(JSON.parse(localStorage.getItem("taucode.code.sessionRail")!).order.slice(0, 2)).toEqual(["Environment", "Changes"]);
   });
   it("opens connector configuration from a connector disclosure", () => {
     const data = props(); render(<CodeSessionRail {...data} />);
