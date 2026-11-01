@@ -27,6 +27,18 @@ pub struct Node {
     pub value_settable: bool,
 }
 
+/// The element still covers the centre of where it was planned. Fields such as a toolbar search
+/// field resize slightly when they take focus; a moved or replaced element does not pass.
+pub fn same_place(before: Option<[f64; 4]>, after: Option<[f64; 4]>) -> bool {
+    match (before, after) {
+        (Some([x, y, w, h]), Some([ax, ay, aw, ah])) => {
+            let (cx, cy) = (x + w / 2., y + h / 2.);
+            cx >= ax && cx <= ax + aw && cy >= ay && cy <= ay + ah
+        }
+        (before, after) => before == after,
+    }
+}
+
 pub fn label(mut read: impl FnMut(&str) -> Option<String>) -> String {
     ["AXTitle", "AXDescription", "AXHelp", "AXIdentifier"]
         .into_iter()
@@ -316,6 +328,17 @@ impl Provider for Native<'_> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_field_that_resizes_on_focus_stays_the_same_target() {
+        // Dictionary's search field narrowed by 3.5 px when it took focus.
+        let before = Some([437.5, 7.0, 245.5, 38.0]);
+        assert!(super::same_place(before, Some([441.0, 7.0, 242.0, 38.0])));
+        assert!(!super::same_place(before, Some([700.0, 7.0, 242.0, 38.0])));
+        assert!(!super::same_place(before, Some([437.5, 60.0, 245.5, 38.0])));
+        assert!(!super::same_place(before, None));
+        assert!(super::same_place(None, None));
+    }
+
     use super::*;
     #[test]
     fn grounding_clips_scrolled_content_without_changing_validation_bounds() {

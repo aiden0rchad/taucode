@@ -87,6 +87,7 @@ pub fn select(content: &SCShareableContent, pid: i32) -> Result<SCWindow, String
     Ok(windows[index].clone())
 }
 // Retry missing usable windows; reopen once only when AXWindows is readable and empty.
+// A just-launched app can refuse AX reads for a moment, so a failed reopen is retried.
 // Minimized windows remain failures. Injected time keeps launch tests deterministic.
 pub fn retry_windowless<T>(
     mut select: impl FnMut() -> Result<T, String>,
@@ -96,19 +97,27 @@ pub fn retry_windowless<T>(
 ) -> Result<T, String> {
     let deadline = now() + std::time::Duration::from_secs(5);
     let mut reopened = false;
+    let mut reopen_error = None;
     loop {
         let result = select();
         if !result
             .as_ref()
             .err()
             .is_some_and(|e| e.contains("Target has no window;"))
-            || now() >= deadline
         {
             return result;
         }
+        if now() >= deadline {
+            return result.map_err(|e| match reopen_error {
+                Some(reopen) => format!("{e}; reopen: {reopen}"),
+                None => e,
+            });
+        }
         if !reopened {
-            reopen()?;
-            reopened = true;
+            match reopen() {
+                Ok(()) => reopened = true,
+                Err(error) => reopen_error = Some(error),
+            }
         }
         wait(std::time::Duration::from_millis(200).min(deadline.saturating_duration_since(now())));
     }
@@ -337,6 +346,41 @@ mod tests {
                 assert_eq!(clock.get() - start, Duration::from_secs(5));
             }
         }
+        // A just-launched app refuses AX reads at first: reopen is retried, not fatal.
+        let clock = Cell::new(Instant::now());
+        let calls = Cell::new(0);
+        let reopens = Cell::new(0);
+        let result = retry_windowless(
+            || {
+                calls.set(calls.get() + 1);
+                if calls.get() == 4 {
+                    Ok(7)
+                } else {
+                    Err("Target has no window; listed=0".into())
+                }
+            },
+            || {
+                reopens.set(reopens.get() + 1);
+                if reopens.get() < 3 {
+                    Err("AXWindows: ax_error(-25204)".into())
+                } else {
+                    Ok(())
+                }
+            },
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+        assert_eq!((result, reopens.get()), (Ok(7), 3));
+        let result: Result<(), _> = retry_windowless(
+            || Err("Target has no window; listed=0".into()),
+            || Err("AXWindows: ax_error(-25204)".into()),
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+        assert_eq!(
+            result.unwrap_err(),
+            "Target has no window; listed=0; reopen: AXWindows: ax_error(-25204)"
+        );
         for error in [
             "Target window is minimized; listed=1",
             "Target process exited",

@@ -601,13 +601,18 @@ fn select_row_with(element: &impl RowElement, action: &Action) -> Result<bool, S
         None => Ok(false),
     }
 }
-/// Whether elementless typing still targets the element it started on. Some apps rebuild a
-/// non-editable focused element as they redraw (Calculator's display is `AXUnknown`), so a new
-/// object with the same role in the same window still counts. Text inputs and element-targeted
-/// typing (no recorded role) need the identical element.
-pub(super) fn focus_matches(identical: bool, recorded_role: Option<&str>, current: impl FnOnce() -> Option<(bool, String)>) -> bool {
-    identical || recorded_role.is_some_and(|role| role == "AXUnknown"
-        && current().is_some_and(|(same_window, current_role)| same_window && current_role == role))
+/// Whether typing still targets the element it started on. Apps rebuild focused elements as they
+/// redraw: Calculator's `AXUnknown` display, Dictionary's search field while it searches. A new
+/// object with the same role in the same window still counts when it is an elementless
+/// `AXUnknown` target, or, for a targeted field (recorded frame), when it sits in the same place.
+pub(super) type Focus = (bool, String, Option<[f64; 4]>);
+pub(super) fn focus_matches(identical: bool, recorded: Option<&(String, Option<[f64; 4]>)>, current: impl FnOnce() -> Option<Focus>) -> bool {
+    identical || recorded.is_some_and(|(role, frame)| current().is_some_and(|(same_window, current_role, current_frame)| {
+        same_window && &current_role == role && match frame {
+            Some(_) => super::ax_tree::same_place(*frame, current_frame),
+            None => role == "AXUnknown",
+        }
+    }))
 }
 pub(super) fn elementless_keyboard(action: &Action, selected: bool) -> bool {
     !selected
@@ -1213,17 +1218,24 @@ mod element_tests {
     #[test]
     fn rebuilt_non_editable_focus_in_the_same_window_still_matches() {
         use super::focus_matches;
-        let current = |same: bool, role: &str| { let role = role.to_owned(); move || Some((same, role)) };
+        let current = |same: bool, role: &str, frame: Option<[f64; 4]>| { let role = role.to_owned(); move || Some((same, role, frame)) };
+        let elementless = |role: &str| (role.to_owned(), None);
         assert!(focus_matches(true, None, || unreachable!()));
         // Calculator rebuilds its AXUnknown display element while focus stays in its window.
-        assert!(focus_matches(false, Some("AXUnknown"), current(true, "AXUnknown")));
-        assert!(!focus_matches(false, Some("AXUnknown"), current(false, "AXUnknown")), "another window");
-        assert!(!focus_matches(false, Some("AXUnknown"), current(true, "AXTextField")), "focus moved to a field");
-        assert!(!focus_matches(false, Some("AXUnknown"), || None), "focus unreadable");
-        // Text inputs and element-targeted typing keep strict identity.
-        assert!(!focus_matches(false, Some("AXTextField"), current(true, "AXTextField")));
-        assert!(!focus_matches(false, Some("AXTextArea"), current(true, "AXTextArea")));
-        assert!(!focus_matches(false, None, current(true, "AXUnknown")));
+        assert!(focus_matches(false, Some(&elementless("AXUnknown")), current(true, "AXUnknown", None)));
+        assert!(!focus_matches(false, Some(&elementless("AXUnknown")), current(false, "AXUnknown", None)), "another window");
+        assert!(!focus_matches(false, Some(&elementless("AXUnknown")), current(true, "AXTextField", None)), "focus moved to a field");
+        assert!(!focus_matches(false, Some(&elementless("AXUnknown")), || None), "focus unreadable");
+        // Elementless text inputs keep strict identity.
+        assert!(!focus_matches(false, Some(&elementless("AXTextField")), current(true, "AXTextField", None)));
+        assert!(!focus_matches(false, Some(&elementless("AXTextArea")), current(true, "AXTextArea", None)));
+        assert!(!focus_matches(false, None, current(true, "AXUnknown", None)));
+        // Dictionary rebuilds its targeted search field in place while it searches.
+        let field = ("AXTextField".to_owned(), Some([441.0, 7.0, 242.0, 38.0]));
+        assert!(focus_matches(false, Some(&field), current(true, "AXTextField", Some([441.0, 7.0, 242.0, 38.0]))));
+        assert!(!focus_matches(false, Some(&field), current(true, "AXTextField", Some([40.0, 300.0, 242.0, 38.0]))), "another field");
+        assert!(!focus_matches(false, Some(&field), current(false, "AXTextField", Some([441.0, 7.0, 242.0, 38.0]))), "another window");
+        assert!(!focus_matches(false, Some(&field), current(true, "AXTextArea", Some([441.0, 7.0, 242.0, 38.0]))), "another role");
     }
     #[test]
     fn rows_and_descendants_select_but_controls_press() {

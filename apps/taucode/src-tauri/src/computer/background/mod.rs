@@ -106,7 +106,7 @@ pub struct Session {
     pressed: Mutex<Option<ax_actions::Element>>,
     keyboard_target: Mutex<Option<ax_actions::Element>>,
     // Role of an elementless typing target whose app may rebuild it in place (see ax_actions::focus_matches).
-    keyboard_role: Mutex<Option<String>>,
+    keyboard_role: Mutex<Option<(String, Option<[f64; 4]>)>>,
     delivery: Mutex<Option<delivery::Scope>>,
     observed: Mutex<Option<[u8; 32]>>,
     attempted: Mutex<Option<(Action, [u8; 32])>>,
@@ -411,7 +411,7 @@ impl Session {
         if prior.role != current.role
             || prior.label != current.label
             || prior.secure != current.secure
-            || (prior.role != "AXMenuItem" && prior.frame != current.frame)
+            || (prior.role != "AXMenuItem" && !ax_tree::same_place(prior.frame, current.frame))
             || !current.enabled
         {
             return Err(format!("{}AX target changed after planning: snapshot={id}, index={index}, role before={} after={}, label_changed={}, secure before={} after={}, frame before={:?} after={:?}, enabled={}; capture again",
@@ -589,9 +589,11 @@ impl Session {
                 *self.fallback_reason.lock().unwrap() = Some("background_keyboard_target_not_focused".into());
                 return false;
             }
-            if selected.is_none() && action_point(action).is_none() {
-                *self.keyboard_role.lock().unwrap() = target.as_ref().and_then(|e| e.text("AXRole"));
-            }
+            // Elementless typing remembers the role; targeted typing also where the field is.
+            let elementless = selected.is_none() && action_point(action).is_none();
+            *self.keyboard_role.lock().unwrap() = target.as_ref().and_then(|e| {
+                Some((e.text("AXRole")?, if elementless { None } else { Some(e.frame()?) }))
+            });
             *self.keyboard_target.lock().unwrap() = target;
         }
         self.fallback_reason
@@ -672,8 +674,8 @@ impl Session {
         let Some(element) = target.as_ref() else { return true; };
         let role = self.keyboard_role.lock().unwrap().clone();
         let window = self.window.lock().unwrap().as_ref().map(|w| w.id);
-        ax_actions::focus_matches(element.has_keyboard_focus(self.pid), role.as_deref(), || {
-            ax_actions::target(self.pid, None).map(|e| (window.is_some_and(|w| e.belongs_to(self.pid, w)), e.text("AXRole").unwrap_or_default()))
+        ax_actions::focus_matches(element.has_keyboard_focus(self.pid), role.as_ref(), || {
+            ax_actions::target(self.pid, None).map(|e| (window.is_some_and(|w| e.belongs_to(self.pid, w)), e.text("AXRole").unwrap_or_default(), e.frame()))
         })
     }
     fn end_delivery(&self, settle: bool) {
