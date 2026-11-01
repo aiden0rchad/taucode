@@ -1312,6 +1312,11 @@ Also found:
   ("Prompt is required for imagegen tool"), failing 5 of 11 runs before any input.
   Not addressed here.
 
-Tests: 130 computer tests, 456 `shared::` Rust tests (0 failed). Pending: live
-re-run on the latest build (the screen locked before relaunch), including the
-first-Escape refusal diagnostics.
+Tests: 130 computer tests, 456 `shared::` Rust tests (0 failed).
+
+Live re-run on the latest signed build (17:23), nobody typing: four consecutive
+runs (`be37eea2`, `1ce4fb27`, `91161e25`, `a03bf62b`) each pressed Escape and typed
+a 35-character string in one delivery (540–634 ms) and finished `done`. No focus
+stops, no first-Escape refusals, no planner errors. The earlier first-Escape
+refusals did not recur, so their cause is still unknown; the preparation
+diagnostics now in place will name the failing check if they come back.
