@@ -60,11 +60,11 @@ Code uses the selected enabled engine. Chat and Work use dedicated pi profiles; 
 
 ### Download the latest desktop build
 
-Source version **0.7.70** is prepared on `main`; see the [changelog](CHANGELOG.md). Until it is published, the [v0.7.69 release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69) includes:
+The [v0.7.70 macOS release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.70) is the latest desktop build. Windows remains on [v0.7.69](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69). See the [changelog](CHANGELOG.md).
 
 | Your computer | File |
 | --- | --- |
-| Apple Silicon Mac | `taucode_0.7.69_aarch64.dmg` — development signed, not notarized. |
+| Apple Silicon Mac | `taucode_0.7.70_aarch64.dmg` — development signed, not notarized. |
 | Intel/AMD Windows x64 | `taucode_0.7.69_x64-setup.exe` — unsigned. |
 
 These are experimental packages. Follow the [step-by-step installation guide](docs/getting-started.md) and read the [build notes and limits](docs/releases.md). The download includes supporting runtimes; development tools are needed for source builds, not normal use of the packaged app.

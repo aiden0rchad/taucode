@@ -14,19 +14,19 @@ An **API key** is a secret credential from the provider’s API dashboard. Cloud
 
 ## 1. Install the app
 
-The current downloads are **early test builds**, not a stable release. The [test release page](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69) has the files, checksums, and build notes.
+The current downloads are **early test builds**, not a stable release. The [macOS release page](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.70) and [Windows release page](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69) have the files, checksums, and build notes.
 
 | Your computer | Download or setup path |
 | --- | --- |
-| Mac with Apple Silicon | `taucode_0.7.69_aarch64.dmg` from the test release. |
-| Windows on a 64-bit Intel/AMD PC | `taucode_0.7.69_x64-setup.exe` from the same test release. |
+| Mac with Apple Silicon | `taucode_0.7.70_aarch64.dmg` from the macOS release. |
+| Windows on a 64-bit Intel/AMD PC | `taucode_0.7.69_x64-setup.exe` from the Windows release. |
 | Intel Mac or Linux | Use the advanced [source-build instructions](#build-from-source); further platform validation is needed. |
 | iPhone/iPad | Experimental [remote/iOS setup](remote.md); not a beginner desktop-install path. |
 
 ### macOS: Apple Silicon
 
 1. Choose **Apple menu → About This Mac**. A **Chip** entry naming Apple M-series hardware means Apple Silicon. An Intel processor needs a different build path.
-2. On the [test release page](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69), expand **Assets** if needed and download **taucode_0.7.69_aarch64.dmg**. The source-code ZIP is for developers, not the installer.
+2. On the [macOS release page](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.70), expand **Assets** if needed and download **taucode_0.7.70_aarch64.dmg**. The source-code ZIP is for developers, not the installer.
 3. Open the downloaded DMG and copy **taucode.app** into **Applications**.
 4. Open taucode from Applications.
 

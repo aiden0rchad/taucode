@@ -197,7 +197,7 @@ The brief's guess (the Codex-config agents editor writing to `~/.codex`) was wro
   **dead code**: no settings page renders them. Settings → "Agents" shows **Models &
   Agents**, whose Roles tab edits the app policy (`settings.json` →
   `agentPolicy.subagents.roles`). Per-project roles live in Settings → Projects →
-  "<project>: agent policy" (`workspace.settings.agentPolicy`).
+  `"<project>: agent policy"` (`workspace.settings.agentPolicy`).
 - taucode's Codex never uses `~/.codex`. It uses one **shared** managed home,
   `engines/codex-home` (`src-tauri/src/codex/home.rs`).
 - `prepare_codex` (`src-tauri/src/shared/engines.rs`) rewrote that home's

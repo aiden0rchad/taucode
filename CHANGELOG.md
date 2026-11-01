@@ -14,7 +14,7 @@
 
 ### Release status
 
-Prepared from local `main`; publication and platform installers are tracked on [GitHub Releases](https://github.com/aiden0rchad/taucode/releases). The download links below describe the previously published 0.7.69 release until 0.7.70 is published. This remains an early-development release; the UI work does not change signing or notarization requirements.
+Published as a [macOS Apple Silicon release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.70), with a [DMG installer](https://github.com/aiden0rchad/taucode/releases/download/v0.7.70/taucode_0.7.70_aarch64.dmg), build manifest and SHA-256 checksums. Windows remains on [0.7.69](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69). This remains an early-development release; the macOS package is development-signed and not notarized.
 
 ## 0.7.69 — November 1, 2026
 

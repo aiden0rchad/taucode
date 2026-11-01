@@ -2,11 +2,11 @@
 
 taucode is in **early development**. The source is available for inspection and building; published test artifacts are experimental. A package version or a passing build is not a stable-release or feature-parity guarantee.
 
-The source version is **0.7.70**, prepared on **November 1, 2026**. It includes the interface, resizing, project-role editing and in-app installer-download changes in the [changelog](https://github.com/aiden0rchad/taucode/blob/main/CHANGELOG.md). The published download baseline below remains **0.7.69** until the new release assets are published. See [GitHub Releases](https://github.com/aiden0rchad/taucode/releases) for the assets actually published and the commit behind each build.
+The source version is **0.7.70**, prepared on **November 1, 2026**. It includes the interface, resizing, project-role editing and in-app installer-download changes in the [changelog](https://github.com/aiden0rchad/taucode/blob/main/CHANGELOG.md). The latest macOS download is **0.7.70**; Windows remains on **0.7.69**. See [GitHub Releases](https://github.com/aiden0rchad/taucode/releases) for the assets actually published and the commit behind each build.
 
 ## Installable artifacts
 
-The current [v0.7.69 release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69) provides both desktop downloads. For step-by-step installation and help choosing a file, use [Installation & first run](getting-started.md#_1-install-the-app).
+The [v0.7.70 release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.70) provides the latest macOS package. The [v0.7.69 release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69) remains the latest Windows download. For step-by-step installation and help choosing a file, use [Installation & first run](getting-started.md#_1-install-the-app).
 
 ### Windows x64 test build
 
@@ -19,7 +19,7 @@ It is an **unsigned early-development release** for 64-bit Intel/AMD Windows. Th
 
 ### macOS
 
-The same [test release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69) includes **taucode_0.7.69_aarch64.dmg** for **Apple Silicon Macs**, `macos-arm64-release-manifest.json`, and shared `SHA256SUMS`.
+The [v0.7.70 release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.70) includes **taucode_0.7.70_aarch64.dmg** for **Apple Silicon Macs**, `macos-arm64-release-manifest.json`, and `SHA256SUMS`.
 
 The package passed the release's recorded bundle, signature, entitlement, bundled-runtime, daemon RPC, and mounted-DMG checks. It uses a **local development signing identity** and is **not notarized**. These checks do not make it a stable release or guarantee opening on every Mac. Follow the [installation steps](getting-started.md#macos-apple-silicon).
 
