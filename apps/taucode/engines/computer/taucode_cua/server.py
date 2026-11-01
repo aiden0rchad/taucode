@@ -44,6 +44,7 @@ class Server:
     def __init__(self):
         self.agent = None
         self.mode = "elements"
+        self.planner_seconds = 60
 
     def dispatch(self, method, params):
         if method == 'health':
@@ -53,11 +54,15 @@ class Server:
                 raise ValueError('Only macOS is supported')
             planner = engine_params(params['planner'], 'planner')
             grounding = engine_params(params['grounding'], 'grounding')
+            seconds = params.get('planner_seconds', 60)
+            if type(seconds) is not int or not 10 <= seconds <= 600:
+                raise ValueError('Invalid planning time limit')
             aci = StructuredACI(None, 'darwin', planner, grounding)
             # The planner already verifies the previous action from each fresh screenshot.
             self.agent = AgentS3(planner, aci, platform='darwin', enable_reflection=False)
             self.size = [grounding['grounding_width'], grounding['grounding_height']]
             self.mode = grounding['grounding_mode']
+            self.planner_seconds = seconds
             return {'ok': True}
         if self.agent is None:
             raise ValueError('Configure the planner first')
@@ -81,7 +86,7 @@ class Server:
         snapshot = params.get('ax_snapshot')
         if snapshot is not None:
             usable_elements(snapshot)
-        with predict_budget():
+        with predict_budget(self.planner_seconds):
             planner_png, size = downscale(png)
             # Frames arrive in window-local points; scale to the planner image.
             if snapshot is not None:

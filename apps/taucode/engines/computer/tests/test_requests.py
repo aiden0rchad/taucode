@@ -79,7 +79,7 @@ def test_hung_request_is_interrupted():
         def generate(self, messages, **kwargs):
             time.sleep(1)
     start = time.monotonic()
-    with pytest.raises(ProviderError, match='prediction limit'), predict_budget(0.03):
+    with pytest.raises(ProviderError, match='0.03 second prediction limit'), predict_budget(0.03):
         Engine().generate([])
     assert time.monotonic() - start < 0.5
 

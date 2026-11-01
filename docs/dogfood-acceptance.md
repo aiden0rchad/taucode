@@ -1346,3 +1346,25 @@ no hosted-tool error. Sidecar tests: 135 passed (two new).
 
 Remaining: provider latency is high (first predictions up to 60 s on this route),
 so a hosted-tool retry can exhaust the budget on a slow request.
+
+### Approval prompt and planning limit — October 31
+
+Approval prompt: earlier, one Computer Use approval existed in the accessibility
+tree for 10+ seconds while nothing was drawn in the window. The prompt relied on
+two things a background WKWebView slows down: a 500 ms status poll (timers are
+throttled in hidden pages) and a fade-in from opacity 0 (animations stall).
+Reproduced on the old build with taucode behind other windows: two seconds into
+the wait, the prompt was still partly faded. Fix: the backend pushes a
+`computer-approval` event to the main window when an approval starts and ends
+(polling stays as a fallback), and approval prompts have no entry animation.
+Live (signed build, taucode launched with `open -g` and never brought forward,
+run `5256fe54`): the prompt was fully drawn in the first capture after the run
+reached its approval wait; approved through it, and Calculator showed 15.
+Tests: a pushed approval shows the prompt with no extra status poll (fails on
+the old component); a style test checks the prompt has no entry animation.
+
+Planning limit: the fixed 60 s limit per planning step is now **Planning seconds
+per step** in Settings → Computer Use (default 120, range 10–600). It is sent to
+the sidecar at configure time, validated there, and named in the timeout message.
+Live: the settings field shows 120 and the run above was configured with it.
+Sidecar tests: 136 passed (one new); Rust `computer::` 130 and `shared::` 456 passed.

@@ -334,7 +334,7 @@ impl Sidecar {
         };
         s.call(
             "configure",
-            json!({"planner":planner,"grounding":grounding,"platform":"darwin"}),
+            json!({"planner":planner,"grounding":grounding,"platform":"darwin","planner_seconds":settings.computer.planner_seconds.clamp(10, 600)}),
         )
         .await?;
         s.call("reset", json!({})).await?;

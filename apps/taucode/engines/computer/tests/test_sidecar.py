@@ -152,3 +152,21 @@ def test_each_step_verifies_previous_action_without_a_second_reflection_request(
     assert 'agent.wait(0.1)' in calls[1]
     assert 'Previous action was interrupted after input started: preserve partial text.' in calls[2]
     assert 'READ-ONLY VERIFICATION: AX timeout; inspect without replay.' in calls[3]
+
+def test_planning_limit_comes_from_configuration(monkeypatch):
+    import taucode_cua.server as server_module
+    server=Server()
+    config={'kind':'openai','model':'test','base_url':'http://localhost:1234/v1'}
+    for bad in (5, 601, '90', 90.5):
+        with pytest.raises(ValueError, match='planning time limit'):
+            server.dispatch('configure',{'planner':config,'grounding':config,'platform':'darwin','planner_seconds':bad})
+    assert server.dispatch('configure',{'planner':config,'grounding':config,'platform':'darwin','planner_seconds':150})=={'ok':True}
+    budgets=[]
+    real=server_module.predict_budget
+    monkeypatch.setattr(server_module,'predict_budget',lambda seconds=60: budgets.append(seconds) or real(seconds))
+    class Fake:
+        def predict(self,instruction,observation):return {},[{'kind':'done','summary':'ok'}]
+    server.agent=Fake()
+    buffer=io.BytesIO();Image.new('RGB',(4,4)).save(buffer,format='PNG')
+    server.dispatch('predict',{'instruction':'test','screenshot_png_b64':base64.b64encode(buffer.getvalue()).decode(),'screen_size':[4,4]})
+    assert budgets==[150]

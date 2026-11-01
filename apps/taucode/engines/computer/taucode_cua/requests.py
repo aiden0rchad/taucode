@@ -61,14 +61,19 @@ def with_note(messages, note):
         last['content'].append({'type': 'text', 'text': note})
     return messages
 
-_deadline = ContextVar('predict_deadline', default=None)
+_deadline = ContextVar('predict_deadline', default=None)  # (monotonic deadline, limit in seconds)
 _no_system = set()
 
 
+def limit_reached(seconds):
+    return PredictionTimeout(f'Provider request exceeded the {seconds:g} second prediction limit')
+
+
 def remaining():
-    seconds = _deadline.get() - time.monotonic()
+    deadline, limit = _deadline.get()
+    seconds = deadline - time.monotonic()
     if seconds <= 0:
-        raise PredictionTimeout('Provider request exceeded the 60 second prediction limit')
+        raise limit_reached(limit)
     return seconds
 
 
@@ -77,11 +82,11 @@ def predict_budget(seconds=60):
     if _deadline.get() is not None:
         yield
         return
-    token = _deadline.set(time.monotonic() + seconds)
+    token = _deadline.set((time.monotonic() + seconds, seconds))
     # The macOS stdio sidecar is single-threaded. This also bounds slow/streaming
     # responses whose per-read SDK timeout alone cannot enforce a total deadline.
     def expired(*_):
-        raise PredictionTimeout('Provider request exceeded the 60 second prediction limit')
+        raise limit_reached(seconds)
     previous = signal.signal(signal.SIGALRM, expired)
     signal.setitimer(signal.ITIMER_REAL, seconds)
     try:

@@ -36,6 +36,8 @@ The planner decides what action to attempt. Grounding maps that action to an obs
 
 Do not assume a model that handles ordinary image chat can reliably ground desktop controls. Test a harmless, bounded task and inspect the actual target/result.
 
+Each planning step has a time limit, **Planning seconds per step** in Settings → Computer Use (default 120, range 10–600). It covers the provider request and its retries. Raise it for slow providers or local models; the run's **Maximum seconds** still bounds the whole run.
+
 Screenshots and relevant app context can be sent to the selected provider. A remote planner or grounding model makes this an external data transfer; see [privacy](privacy.md).
 
 ## Foreground and background interaction
@@ -52,7 +54,7 @@ Keep sensitive apps and documents out of the allowed scope. App restrictions red
 
 ## Approval and takeover
 
-Inspect pending actions before approving them. Policies can distinguish reading, typing, activation, menus, and higher-risk operations. Features and access policies can deny actions even when the model requests them.
+Inspect pending actions before approving them. The approval prompt appears in the taucode window as soon as an action needs approval, even while taucode is behind other windows, and a system notification is sent too. Time spent waiting for approval counts toward the run's **Maximum seconds**. Policies can distinguish reading, typing, activation, menus, and higher-risk operations. Features and access policies can deny actions even when the model requests them.
 
 Use **Stop** or the available takeover control as soon as the automation is doing something unexpected. Input already delivered cannot be recalled. A checkpoint of the project folder cannot undo changes in another app.
 
