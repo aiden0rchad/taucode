@@ -18,7 +18,7 @@ afterEach(() => { cleanup(); document.head.innerHTML = ""; document.body.innerHT
 it("computes compact and comfortable height tokens for the same row", () => {
   const { container } = render('<aside class="sidebar"><button class="thread-row has-secondary-line">Title</button></aside>');
   const row = container.querySelector("button");
-  expect(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-row-height")).toBe("26px");
+  expect(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-row-height")).toBe("24px");
   expect(getComputedStyle(row).height).toBe("var(--sidebar-row-height)");
   expect(getComputedStyle(row).minHeight).toBe("0");
   document.documentElement.dataset.sidebarDensity = "comfortable";
@@ -63,7 +63,7 @@ it.each(["compact", "comfortable"])("keeps Work rows at most 32px and cards inse
     const token = getComputedStyle(sidebar).getPropertyValue("--sidebar-row-height") || getComputedStyle(document.documentElement).getPropertyValue("--sidebar-row-height");
     const style = getComputedStyle(row);
     const height = parseFloat(style.height.replace("var(--sidebar-row-height)", token));
-    expect(height).toBe(density === "compact" ? 26 : 32);
+    expect(height).toBe(density === "compact" ? 24 : 32);
     expect(height).toBeLessThanOrEqual(32);
     expect(style.minHeight).toBe("0");
     expect(style.boxSizing).toBe("border-box");

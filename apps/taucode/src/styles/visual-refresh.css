@@ -2,7 +2,7 @@
 :root {
   --app-height: 100dvh;
   --border: var(--border-subtle);
-  --sidebar-row-height: 26px;
+  --sidebar-row-height: 24px;
   --chat-diff-split-position-percent: 50%;
   --debug-panel-height: 180px;
   --ds-toast-enter-y: -6px;
@@ -331,6 +331,8 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
 .sidebar-tree-children { margin-left: 24px; }
 .sidebar-tree-node { position: relative; min-width: 0; }
 .sidebar-tree-node > .sidebar-tree-children { margin-top: 1px; }
+:root:not([data-sidebar-density="comfortable"]) .sidebar :is(.sidebar-tree, .sidebar-tree-children, .thread-list, .thread-bucket, .pinned-section) { gap: 0; }
+:root:not([data-sidebar-density="comfortable"]) .sidebar-tree-node > .sidebar-tree-children { margin-top: 0; }
 /* Guides are measured from glyph bounds, independent of row height and label width. */
 .sidebar-tree { position: relative; }
 .sidebar-tree-guides { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
@@ -421,7 +423,7 @@ button:hover:not(:disabled), button:active:not(:disabled) { box-shadow: none; }
   --squircle-background: color-mix(in srgb, var(--surface-sidebar), var(--text-primary) 1%);
   --squircle-border: color-mix(in srgb, var(--tree-line) 60%, transparent);
   --squircle-border-active: var(--tree-line-active);
-  padding: 3px;
+  padding: 5px;
   overflow: visible;
   margin: 0;
 }
