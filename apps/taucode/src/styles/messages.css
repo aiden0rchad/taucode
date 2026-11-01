@@ -1346,7 +1346,6 @@
 }
 
 .markdown .markdown-table-wrap {
-  --markdown-table-wide-col: max(18rem, 33%);
   margin: 10px 0;
   width: 100%;
   overflow-x: auto;
@@ -1356,12 +1355,11 @@
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
 }
 
+/* Columns size to their content within the message; only tables that cannot fit scroll. */
 .markdown .markdown-table {
-  width: max(100%, calc(var(--markdown-table-wide-col) * 2 + 40rem));
-  min-width: 0;
+  width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  table-layout: fixed;
 }
 
 .markdown .markdown-table th,
@@ -1370,7 +1368,9 @@
   text-align: left;
   vertical-align: top;
   white-space: normal;
-  overflow-wrap: anywhere;
+  /* Keep words whole: the message's break-word would let columns shrink mid-word. */
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .markdown .markdown-table thead th {
@@ -1398,34 +1398,6 @@
   background: color-mix(in srgb, var(--surface-control-hover) 36%, var(--surface-app));
 }
 
-.message .markdown .markdown-table td:first-child {
-  width: 22rem;
-}
-
-.message .markdown .markdown-table th:first-child,
-.message .markdown .markdown-table td:first-child {
-  width: 22rem;
-}
-
-.message .markdown .markdown-table th:nth-child(2),
-.message .markdown .markdown-table td:nth-child(2) {
-  width: 10rem;
-}
-
-.message .markdown .markdown-table th:nth-child(3),
-.message .markdown .markdown-table td:nth-child(3),
-.message .markdown .markdown-table th:nth-child(4),
-.message .markdown .markdown-table td:nth-child(4) {
-  width: var(--markdown-table-wide-col);
-}
-
-.message .markdown .markdown-table th:last-child,
-.message .markdown .markdown-table td:last-child {
-  width: 8rem;
-  white-space: nowrap;
-  font-weight: 650;
-  text-transform: capitalize;
-}
 
 .message .markdown .markdown-table td p {
   margin: 0;
