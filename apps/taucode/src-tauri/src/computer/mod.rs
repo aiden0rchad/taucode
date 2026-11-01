@@ -672,12 +672,12 @@ impl runner::Environment for Live {
     fn event_context(&self, event: &control::Event) -> Result<Context, String> {
         if let Some(s) = &self.session {
             s.window()?;
-            if matches!(event, control::Event::Key(..) | control::Event::Text(_))
-                && !s.events_available(&Action::Hotkey { keys: vec![] })
-            {
-                *s.fallback_reason.lock().unwrap() =
-                    Some("background_keyboard_focus_changed".into());
-                return Err("Target window no longer has the app's keyboard focus".into());
+            if matches!(event, control::Event::Key(..) | control::Event::Text(_)) {
+                if let Some(check) = s.keyboard_blocked(&Action::Hotkey { keys: vec![] }) {
+                    *s.fallback_reason.lock().unwrap() =
+                        Some(format!("background_keyboard_focus_changed: {check}; {}", s.focus_state()));
+                    return Err("Target window no longer has the app's keyboard focus".into());
+                }
             }
             if s.foreground.load(std::sync::atomic::Ordering::SeqCst) {
                 return native::event_context(event);

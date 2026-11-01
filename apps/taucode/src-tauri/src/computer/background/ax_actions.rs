@@ -601,6 +601,14 @@ fn select_row_with(element: &impl RowElement, action: &Action) -> Result<bool, S
         None => Ok(false),
     }
 }
+/// Whether elementless typing still targets the element it started on. Some apps rebuild a
+/// non-editable focused element as they redraw (Calculator's display is `AXUnknown`), so a new
+/// object with the same role in the same window still counts. Text inputs and element-targeted
+/// typing (no recorded role) need the identical element.
+pub(super) fn focus_matches(identical: bool, recorded_role: Option<&str>, current: impl FnOnce() -> Option<(bool, String)>) -> bool {
+    identical || recorded_role.is_some_and(|role| role == "AXUnknown"
+        && current().is_some_and(|(same_window, current_role)| same_window && current_role == role))
+}
 pub(super) fn elementless_keyboard(action: &Action, selected: bool) -> bool {
     !selected
         && matches!(
@@ -1202,6 +1210,21 @@ fn element_route<'a>(
 
 #[cfg(test)]
 mod element_tests {
+    #[test]
+    fn rebuilt_non_editable_focus_in_the_same_window_still_matches() {
+        use super::focus_matches;
+        let current = |same: bool, role: &str| { let role = role.to_owned(); move || Some((same, role)) };
+        assert!(focus_matches(true, None, || unreachable!()));
+        // Calculator rebuilds its AXUnknown display element while focus stays in its window.
+        assert!(focus_matches(false, Some("AXUnknown"), current(true, "AXUnknown")));
+        assert!(!focus_matches(false, Some("AXUnknown"), current(false, "AXUnknown")), "another window");
+        assert!(!focus_matches(false, Some("AXUnknown"), current(true, "AXTextField")), "focus moved to a field");
+        assert!(!focus_matches(false, Some("AXUnknown"), || None), "focus unreadable");
+        // Text inputs and element-targeted typing keep strict identity.
+        assert!(!focus_matches(false, Some("AXTextField"), current(true, "AXTextField")));
+        assert!(!focus_matches(false, Some("AXTextArea"), current(true, "AXTextArea")));
+        assert!(!focus_matches(false, None, current(true, "AXUnknown")));
+    }
     #[test]
     fn rows_and_descendants_select_but_controls_press() {
         #[derive(Clone)]

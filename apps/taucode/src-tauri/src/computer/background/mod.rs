@@ -105,6 +105,8 @@ pub struct Session {
     selected: Mutex<Option<(u64, usize)>>,
     pressed: Mutex<Option<ax_actions::Element>>,
     keyboard_target: Mutex<Option<ax_actions::Element>>,
+    // Role of an elementless typing target whose app may rebuild it in place (see ax_actions::focus_matches).
+    keyboard_role: Mutex<Option<String>>,
     delivery: Mutex<Option<delivery::Scope>>,
     observed: Mutex<Option<[u8; 32]>>,
     attempted: Mutex<Option<(Action, [u8; 32])>>,
@@ -168,6 +170,7 @@ impl Session {
             selected: Mutex::new(None),
             pressed: Mutex::new(None),
             keyboard_target: Mutex::new(None),
+            keyboard_role: Mutex::new(None),
             delivery: Mutex::new(None),
             observed: Mutex::new(None),
             attempted: Mutex::new(None),
@@ -550,24 +553,28 @@ impl Session {
         Ok(handled)
     }
     pub fn events_available(&self, action: &Action) -> bool {
+        self.keyboard_blocked(action).is_none()
+    }
+    /// Which keyboard-focus check fails for this action, if any.
+    pub fn keyboard_blocked(&self, action: &Action) -> Option<&'static str> {
         if !self.keyboard_target_matches() {
-            return false;
+            return Some("keyboard_target_unfocused");
         }
         if ax_actions::elementless_keyboard(action, self.selected.lock().unwrap().is_some()) {
-            return ax_actions::focused_policy_window(self.pid).is_some();
+            return ax_actions::focused_policy_window(self.pid).is_none().then_some("focused_element_unreadable");
         }
-        !matches!(
-            action,
-            Action::Type { .. } | Action::Hotkey { .. } | Action::HoldAndPress { .. }
-        ) || self
-            .window
-            .lock()
-            .unwrap()
-            .as_ref()
-            .is_some_and(|w| ax_actions::focused_window(self.pid) == Some(w.id))
+        (matches!(action, Action::Type { .. } | Action::Hotkey { .. } | Action::HoldAndPress { .. })
+            && !self.window.lock().unwrap().as_ref().is_some_and(|w| ax_actions::focused_window(self.pid) == Some(w.id)))
+            .then_some("focused_window_changed")
+    }
+    /// Focus diagnostics for a failed check: window IDs and roles only, never field contents.
+    pub fn focus_state(&self) -> serde_json::Value {
+        let window = self.window.lock().unwrap().as_ref().map(|w| w.id);
+        window.map_or(serde_json::Value::Null, |id| ax_actions::window_focus(self.pid, id))
     }
     pub fn prepare_events(&self, action: &Action) -> bool {
         *self.keyboard_target.lock().unwrap() = None;
+        *self.keyboard_role.lock().unwrap() = None;
         if matches!(action, Action::Type { .. }) {
             let selected = *self.selected.lock().unwrap();
             let target = if let Some((id, index)) = selected {
@@ -582,16 +589,20 @@ impl Session {
                 *self.fallback_reason.lock().unwrap() = Some("background_keyboard_target_not_focused".into());
                 return false;
             }
+            if selected.is_none() && action_point(action).is_none() {
+                *self.keyboard_role.lock().unwrap() = target.as_ref().and_then(|e| e.text("AXRole"));
+            }
             *self.keyboard_target.lock().unwrap() = target;
         }
         self.fallback_reason
             .lock()
             .unwrap()
             .get_or_insert_with(|| "action_requires_pixel_events".into());
-        if !self.events_available(action) {
+        if let Some(check) = self.keyboard_blocked(action) {
+            let focus = self.focus_state();
             let mut reason = self.fallback_reason.lock().unwrap();
             *reason = Some(format!(
-                "background_keyboard_requires_activation; {}",
+                "background_keyboard_requires_activation: {check}; {}; {focus}",
                 reason.as_deref().unwrap_or_default()
             ));
             return false;
@@ -657,8 +668,13 @@ impl Session {
         Ok(())
     }
     fn keyboard_target_matches(&self) -> bool {
-        self.keyboard_target.lock().unwrap().as_ref()
-            .is_none_or(|element| element.has_keyboard_focus(self.pid))
+        let target = self.keyboard_target.lock().unwrap();
+        let Some(element) = target.as_ref() else { return true; };
+        let role = self.keyboard_role.lock().unwrap().clone();
+        let window = self.window.lock().unwrap().as_ref().map(|w| w.id);
+        ax_actions::focus_matches(element.has_keyboard_focus(self.pid), role.as_deref(), || {
+            ax_actions::target(self.pid, None).map(|e| (window.is_some_and(|w| e.belongs_to(self.pid, w)), e.text("AXRole").unwrap_or_default()))
+        })
     }
     fn end_delivery(&self, settle: bool) {
         let scope = self.delivery.lock().unwrap().take();
@@ -696,6 +712,7 @@ impl Session {
     }
     pub fn end_foreground(&self) {
         *self.keyboard_target.lock().unwrap() = None;
+        *self.keyboard_role.lock().unwrap() = None;
         if self.foreground.swap(false, Ordering::SeqCst) {
             self.guard.restore();
         }

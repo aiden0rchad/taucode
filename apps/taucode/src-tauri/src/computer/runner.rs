@@ -141,6 +141,14 @@ fn verify_app(check: &str, before: &Context, after: &Context) -> Result<(), Stri
     }
     Ok(())
 }
+/// Done, Fail and Wait send no input, so they have no input target to resolve or verify.
+fn input_target(env: &impl Environment, action: &Action) -> Result<Target, String> {
+    if matches!(action, Action::Done { .. } | Action::Fail { .. } | Action::Wait { .. }) {
+        Ok(Target::default())
+    } else {
+        env.policy_target(action)
+    }
+}
 fn verify_policy_target(check: &str, before: &Target, after: &Target) -> Result<(), String> {
     if before != after {
         // Never log labels, pane titles, field values, or typed text.
@@ -586,7 +594,7 @@ pub async fn run(
                 ..current.clone()
             };
             observation!(env.verify_target());
-            let policy_target = observation!(env.policy_target(&action));
+            let policy_target = observation!(input_target(&*env, &action));
             let after = loop {
                 match decide(
                     &policy_action,
@@ -623,7 +631,7 @@ pub async fn run(
                 if let Err(reason) = verify_policy_target(
                     "AX policy target changed after approval",
                     &policy_target,
-                    &observation!(env.policy_target(&action)),
+                    &observation!(input_target(&*env, &action)),
                 ) {
                     // Nothing has been sent. Discard this approval and plan again.
                     recover!(reason);
@@ -698,7 +706,7 @@ pub async fn run(
                 verify_policy_target(
                     "AX policy target changed after fallback approval",
                     &policy_target,
-                    &observation!(env.policy_target(&action)),
+                    &observation!(input_target(&*env, &action)),
                 )?;
                 env.phase(Phase::Acting);
                 observation!(env.begin_foreground(control, &after));
@@ -724,7 +732,7 @@ pub async fn run(
                 verify_policy_target(
                     "AX policy target changed before input",
                     &policy_target,
-                    &observation!(env.policy_target(&action)),
+                    &observation!(input_target(&*env, &action)),
                 )?;
             }
             let outcome = if preparation == Preparation::Handled {

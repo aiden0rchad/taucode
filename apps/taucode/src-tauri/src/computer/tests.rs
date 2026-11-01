@@ -708,6 +708,22 @@ async fn user_typing_after_the_last_key_still_releases_input_and_only_verifies()
 }
 
 #[tokio::test]
+async fn done_and_fail_report_their_own_outcome_without_reading_an_input_target() {
+    for (action, succeeds) in [(json!({"kind":"done","summary":"Display reads 0"}), true), (json!({"kind":"fail","reason":"Planner could not continue"}), false)] {
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let mut env = fake(vec![action]);
+        let s = settings();
+        let result = runner::run(&mut env, &control, &s, &s.app_ids(), "Check", Instant::now()).await;
+        assert_eq!(result.is_ok(), succeeds);
+        if !succeeds { assert!(result.unwrap_err().contains("Planner could not continue")); }
+        assert_eq!(env.policy_reads.get(), 0);
+        assert!(input.0.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
 async fn recoverable_errors_have_caps_feedback_and_no_input() {
     let denied = json!({"kind":"switch_app","app":"com.apple.Terminal"});
     let done = json!({"kind":"done","summary":"done"});

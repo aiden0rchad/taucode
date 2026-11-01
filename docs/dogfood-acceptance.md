@@ -1287,3 +1287,31 @@ error toast clears once that tab's own error clears. Live: two relaunches with
 `TAUCODE_BROWSER_FAULT=layout:1` and one without kept the count at 3, and Retry
 recovered the tab with no lingering toast. Tabs already duplicated before the fix
 stay until closed.
+
+### Mid-typing keyboard-focus stops — October 31
+
+Reproduced without user typing (run `eb3bf0e1`, Calculator): typing stopped after
+`1,234,567,890+123` with `keyboard_target_unfocused`. The new diagnostics showed
+Calculator's `AXFocusedUIElement` still in the target window (role `AXUnknown`,
+window 32194) but a different object from the one captured when typing began:
+Calculator rebuilds that element as its display redraws, and the check compared
+identity only. Elementless typing now accepts a rebuilt focus element only when it
+is in the same window with the same role and that role is `AXUnknown`; text inputs
+and element-targeted typing still require the identical element. After the fix
+(one live run, `abbe067a`) `1234567890+1234567890=` typed in one delivery
+(`2,469,135,780`).
+
+Also found:
+- After that run, later runs refused their first Escape before any input ("focus
+  could not be confirmed"); the preparation refusal now records which check failed
+  and the focus state, to diagnose on the next live session.
+- The planner's own `fail`/`done` steps ran the pre-input target check, so runs
+  were recorded as "AX policy target left the captured window" and the planner's
+  reason was lost. Done/Fail/Wait no longer resolve an input target.
+- Planner-side: GPT 6.1 Sol repeatedly emitted a call to a hosted `imagegen` tool
+  ("Prompt is required for imagegen tool"), failing 5 of 11 runs before any input.
+  Not addressed here.
+
+Tests: 130 computer tests, 456 `shared::` Rust tests (0 failed). Pending: live
+re-run on the latest build (the screen locked before relaunch), including the
+first-Escape refusal diagnostics.
