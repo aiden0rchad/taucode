@@ -1320,3 +1320,29 @@ a 35-character string in one delivery (540–634 ms) and finished `done`. No foc
 stops, no first-Escape refusals, no planner errors. The earlier first-Escape
 refusals did not recur, so their cause is still unknown; the preparation
 diagnostics now in place will name the failing check if they come back.
+
+### Planner hosted-tool failures — October 31
+
+Cause: the planner route (LiteLLM at `litellm.lycshome.com`, GPT 6.1 Sol) exposes a
+hosted image-generation tool. On some first-step requests (screenshot plus
+instruction) the model emits an empty `imagegen` call; the backend's error
+("Prompt is required for imagegen tool…") comes back inside the reply, and the
+model then plans `fail`. Nothing has been sent to the app at that point.
+
+Fix (sidecar `provider_request`): a reply containing that backend error is
+requested again within the same 60 s prediction budget, up to two times. Each
+retry appends a note to the last user turn ("You have no tools, including image
+generation. Reply with text only and end with exactly one agent action."); the
+first request and the caller's history are unchanged. If every reply still has
+the error, the run ends with "Provider error: the planner model kept calling a
+hosted tool it cannot use (image generation); no input was sent".
+
+Live: without the note, plain repeats failed three times in a row for the same
+request (run `8389e545`), so repetition alone does not help. With the note (signed
+build, Calculator): run `29ee01bc` hit the error on its first planning call,
+recovered on the single retry (14.6 s first prediction), and completed; overall
+3 of 4 runs completed, the fourth (`60a7ecc1`) was a plain provider timeout with
+no hosted-tool error. Sidecar tests: 135 passed (two new).
+
+Remaining: provider latency is high (first predictions up to 60 s on this route),
+so a hosted-tool retry can exhaust the budget on a slow request.

@@ -158,3 +158,31 @@ def test_stdio_keeps_config_and_input_messages(monkeypatch):
     assert 'Invalid model configuration (credentials must use environment)' in responses[0]['error']['message']
     assert responses[1]['result'] == {'ok': True}
     assert responses[2]['error']['message'].startswith('Input error:')
+
+
+HOSTED_TOOL_REPLY = ('(Previous action verification)\nAn unintended tool call failed with: `Error parsing function call: '
+                     'Prompt is required for imagegen tool and cannot be empty or only whitespace.`\n'
+                     '(Grounded Action)\n```python\nagent.fail("stopped")\n```')
+
+
+def test_hosted_tool_failure_in_a_reply_is_requested_again(monkeypatch):
+    engine = LMMEngineOpenAI(model='fake', api_key='test')
+    calls = client(engine, [HOSTED_TOOL_REPLY, 'agent.done()'])
+    monkeypatch.setattr(requests.time, 'sleep', lambda _: pytest.fail('No backoff needed'))
+    messages = [{'role': 'system', 'content': 'instructions'},
+                {'role': 'user', 'content': [{'type': 'text', 'text': 'task'}]}]
+    original = copy.deepcopy(messages)
+    assert engine.generate(messages) == 'agent.done()'
+    assert len(calls) == 2
+    # The retry tells the model it has no tools; the first request and the caller's history are unchanged.
+    assert calls[0]['messages'] == original and messages == original
+    assert calls[1]['messages'][:1] == original[:1]
+    assert calls[1]['messages'][1]['content'] == original[1]['content'] + [{'type': 'text', 'text': requests.HOSTED_TOOL_NOTE}]
+
+
+def test_repeated_hosted_tool_failures_end_as_a_provider_error(monkeypatch):
+    engine = LMMEngineOpenAI(model='fake', api_key='test')
+    calls = client(engine, [HOSTED_TOOL_REPLY] * 5)
+    with pytest.raises(ProviderError, match='hosted tool.*no input was sent'):
+        engine.generate([])
+    assert len(calls) == 1 + requests.HOSTED_TOOL_RETRIES

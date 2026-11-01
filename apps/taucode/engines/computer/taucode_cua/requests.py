@@ -1,5 +1,6 @@
 """One retry budget shared by every provider call in a prediction."""
 import copy
+import logging
 import os
 import re
 import signal
@@ -38,6 +39,27 @@ def provider_message(error):
             return body['message']
     return str(error)
 
+
+# Some backends expose hosted tools (image generation) the planner cannot use. A model that
+# calls one gets this backend error inside its reply and then plans around it. Nothing has
+# been sent to the app during prediction, so the request is safe to repeat.
+HOSTED_TOOL_FAILURE = re.compile(r'Prompt is required for imagegen tool|Error parsing function call')
+HOSTED_TOOL_RETRIES = 2
+HOSTED_TOOL_NOTE = ('Your previous reply tried to call a tool. You have no tools, including image generation. '
+                    'Reply with text only and end with exactly one agent action.')
+
+
+def with_note(messages, note):
+    """Copy of messages with a note appended to the last user turn (keeps role alternation)."""
+    messages = copy.deepcopy(messages)
+    last = next((m for m in reversed(messages) if m['role'] == 'user'), None)
+    if last is None:
+        return messages + [{'role': 'user', 'content': note}]
+    if isinstance(last['content'], str):
+        last['content'] += '\n\n' + note
+    else:
+        last['content'].append({'type': 'text', 'text': note})
+    return messages
 
 _deadline = ContextVar('predict_deadline', default=None)
 _no_system = set()
@@ -98,11 +120,22 @@ def provider_request(generate):
             try:
                 route = (getattr(self, 'base_url', None), getattr(self, 'model', 'tgi'))
                 delay = 1
+                hosted_tool_retries = 0
                 while True:
                     kwargs['timeout'] = remaining()
                     sent = fold_system(messages) if getattr(self, 'system_fallback', False) and route in _no_system else messages
+                    if hosted_tool_retries:
+                        sent = with_note(sent, HOSTED_TOOL_NOTE)
                     try:
-                        return generate(self, sent, *args, **kwargs)
+                        result = generate(self, sent, *args, **kwargs)
+                        if not (isinstance(result, str) and HOSTED_TOOL_FAILURE.search(result)):
+                            return result
+                        if hosted_tool_retries >= HOSTED_TOOL_RETRIES:
+                            raise ProviderError('Provider error: the planner model kept calling a hosted tool it cannot use (image generation); no input was sent')
+                        hosted_tool_retries += 1
+                        last_error = 'planner model called an unavailable hosted tool'
+                        logging.warning('Planner reply contained a hosted-tool error; requesting again (%d/%d)', hosted_tool_retries, HOSTED_TOOL_RETRIES)
+                        continue
                     except ProviderError:
                         raise
                     except Exception as error:
