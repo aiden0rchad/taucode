@@ -72,6 +72,8 @@
 .diagnostics-copy-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .diagnostics-feedback { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; padding: 24px; }
 .diagnostics-feedback .settings-page { padding: 0; }
+.diagnostics-feedback .settings-field-row { grid-template-columns: minmax(0, 1fr); }
+.diagnostics-feedback .settings-page .settings-toggle-row { grid-template-columns: minmax(0, 1fr) auto; }
 .diagnostics-feedback textarea { min-height: 100px; resize: vertical; }
 .diagnostics-feedback-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .diagnostics-fallback { display: grid; justify-items: center; align-content: center; gap: 12px; min-height: 180px; margin: 16px; padding: 24px; border: 1px solid var(--border-muted); border-radius: 12px; background: var(--surface-control); text-align: center; color: var(--text-secondary); }

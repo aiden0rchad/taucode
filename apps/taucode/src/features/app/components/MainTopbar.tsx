@@ -1,5 +1,8 @@
 import { useFeatures } from "@settings/features";
 import type { ReactNode } from "react";
+import { MessageSquarePlus } from "lucide-react";
+import { IconButton } from "@/features/design-system/components/IconButton";
+import { openFeedback } from "@/features/diagnostics/client";
 
 type MainTopbarProps = {
   leftNode: ReactNode;
@@ -13,7 +16,7 @@ export function MainTopbar({ leftNode, actionsNode, className }: MainTopbarProps
   return (
     <div className={classNames} data-tauri-drag-region>
       <div className="main-topbar-left">{leftNode}</div>
-      <div className="actions">{actionsNode ?? null}{features.diagnostics && <button type="button" className="ghost" aria-label="Command palette" onClick={() => window.dispatchEvent(new Event("taucode:diagnostic-commands"))}>Commands</button>}</div>
+      <div className="actions">{actionsNode ?? null}{features.diagnostics && <IconButton aria-label="Log an issue or idea" title="Log an issue or idea" onClick={() => openFeedback()}><MessageSquarePlus aria-hidden /></IconButton>}</div>
     </div>
   );
 }

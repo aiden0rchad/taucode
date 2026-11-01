@@ -1,7 +1,7 @@
 import { SetupWizard } from "@/features/onboarding/SetupWizard";
 import type { SetupSection } from "@/features/onboarding/setupState";
 import { EvalsView } from "@/features/evals/EvalsView";
-import { FeedbackComposer, DiagnosticsCommands } from "@/features/diagnostics/FeedbackComposer";
+import { FeedbackComposer } from "@/features/diagnostics/FeedbackComposer";
 import { diagnosticContext, record } from "@/features/diagnostics/client";
 import { FeatureSettings, features, useFeatures } from "@settings/features";
 import { useSidebarDensity } from "@settings/hooks/useSidebarDensity";
@@ -107,7 +107,7 @@ export function ModeShell({ children, renderSettings }: { children: ReactNode; r
   }, [settings]);
   useEffect(() => { const enabled = features(settings); if ((mode === "chat" && !enabled.chatMode) || (mode === "work" && !enabled.workMode)) { setMode("code"); void setWindowMode("code").catch(e => setError(String(e))); } }, [mode, settings]);
   if (!loaded) return null;
-  return <FeatureSettings.Provider value={settings}>{settings?.features?.diagnostics && <><FeedbackComposer /><DiagnosticsCommands /></>}<ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings }}>
+  return <FeatureSettings.Provider value={settings}>{settings?.features?.diagnostics && <FeedbackComposer />}<ModeContext.Provider value={{ mode, select: next => { void select(next); }, updateSettings: setSettings }}>
     {mode !== "code" && !settingsOpen && settings && <ModeScale settings={settings} setSettings={setSettings} />}
     {error && <p role="alert" className="chat-mode-error">{error}</p>}
     {evalsFull && settings && <main className="evals-full"><div className="evals-windowbar" data-tauri-drag-region aria-hidden="true" /><EvalsView full initialRunId={evalsFull.runId} appSettings={settings} onUpdateAppSettings={async next => { const saved = await updateAppSettings(next); setSettings(saved); return saved; }} onClose={() => setEvalsFull(null)} /></main>}
