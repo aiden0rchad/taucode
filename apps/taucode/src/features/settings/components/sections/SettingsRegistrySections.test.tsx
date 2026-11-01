@@ -179,3 +179,35 @@ it("renders a provider card with a shared toggle, test status, icon actions and 
   fireEvent.click(screen.getByRole("button", { name: "Delete provider" }));
   await waitFor(() => expect(screen.queryByRole("article", { name: "Local provider" })).toBeNull());
 });
+
+it("defaults roles to the current project and preserves unrelated overrides", async () => {
+  const globalSave = vi.fn();
+  const projectSave = vi.fn().mockResolvedValue(undefined);
+  const workspace = { id: "project-b", name: "Project B", path: "/b", connected: true, settings: { sidebarCollapsed: false, agentPolicy: { subagents: { maxConcurrent: 2 } } } };
+  render(<SettingsAgentPolicySection tab="roles" workspace={workspace} appSettings={{ agentPolicy: defaultAgentPolicy } as AppSettings} onUpdateAppSettings={globalSave} onUpdateWorkspaceSettings={projectSave} />);
+  expect(screen.getByLabelText("Agent scope")).toHaveProperty("value", "project");
+  expect(screen.getByRole("option", { name: "This project — Project B" })).toBeTruthy();
+  fireEvent.click(screen.getByText("Add role"));
+  fireEvent.change(screen.getAllByLabelText("Name").slice(-1)[0], { target: { value: "beta-only" } });
+  expect(screen.getByLabelText("Agent scope")).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByText("Save policy"));
+  await waitFor(() => expect(projectSave).toHaveBeenCalledWith("project-b", { agentPolicy: { subagents: { maxConcurrent: 2, roles: expect.arrayContaining([expect.objectContaining({ name: "beta-only" })]) } } }));
+  expect(globalSave).not.toHaveBeenCalled();
+  expect(screen.getAllByText("· This project").length).toBeGreaterThan(0);
+  fireEvent.change(screen.getByLabelText("Agent scope"), { target: { value: "all" } });
+  expect(screen.queryByDisplayValue("beta-only")).toBeNull();
+  fireEvent.click(screen.getByText("Add role"));
+  fireEvent.click(screen.getByText("Save policy"));
+  await waitFor(() => expect(globalSave).toHaveBeenCalled());
+  cleanup();
+});
+
+it("renders partial project overrides returned with null fields by Rust", () => {
+  const override = JSON.parse('{"defaultEngine":null,"defaultModel":null,"subagents":{"enabled":null,"mode":null,"maxConcurrent":null,"maxPerTurn":null,"maxDepth":null,"maxRunMinutes":null,"dailyTokenLimit":null,"allowedModels":null,"defaultModel":null,"roles":[{"name":"alphaonly","description":"Project role","model":null,"toolAccess":"read-only","instructions":""}]}}');
+  const workspace = { id: "a", name: "A", path: "/a", connected: true, settings: { sidebarCollapsed: false, agentPolicy: override } };
+  render(<ProjectAgentPolicy workspace={workspace} appSettings={{ agentPolicy: defaultAgentPolicy } as AppSettings} onUpdate={vi.fn()} />);
+  expect(screen.getByDisplayValue("alphaonly")).toBeTruthy();
+  expect(screen.getByLabelText("Max concurrent")).toHaveProperty("value", String(defaultAgentPolicy.subagents.maxConcurrent));
+  expect(screen.getByLabelText("Default engine")).toHaveProperty("value", defaultAgentPolicy.defaultEngine);
+  cleanup();
+});

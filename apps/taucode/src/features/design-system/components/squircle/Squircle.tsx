@@ -33,6 +33,10 @@ export function Squircle({ as = "div", children, className = "", ref, style, ...
     let frame = 0, previousWidth = -1, previousHeight = -1;
     const measure = () => {
       frame = 0;
+      if (config.native) {
+        setShape({ ...config, fill: "", stroke: "", highlightPath: "" });
+        return;
+      }
       const { width, height } = element.getBoundingClientRect();
       if (width === previousWidth && height === previousHeight) return;
       previousWidth = width; previousHeight = height;
@@ -48,7 +52,7 @@ export function Squircle({ as = "div", children, className = "", ref, style, ...
     measure();
     const themeChanged = () => { cancelAnimationFrame(frame); config = read(); previousWidth = -1; measure(); };
     window.addEventListener('taucode-theme-applied', themeChanged);
-    const observer = new ResizeObserver(() => { if (!frame) frame = requestAnimationFrame(measure); });
+    const observer = new ResizeObserver(() => { if (!config.native && !frame) frame = requestAnimationFrame(measure); });
     observer.observe(element, { box: "border-box" });
     return () => { observer.disconnect(); cancelAnimationFrame(frame); window.removeEventListener('taucode-theme-applied', themeChanged); };
   }, [supported, styleKey]);

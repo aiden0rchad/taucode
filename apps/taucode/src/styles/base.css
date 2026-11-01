@@ -251,3 +251,6 @@ button.window-caption-control:focus-visible,
 }
 
 .app.sidebar-collapsed { grid-template-columns: 0 1fr; }
+
+/* Geometry follows the pointer without easing behind it. */
+.panel-resizing :is(.app, .sidebar, .workspace-main, .dock-pane, .dock-divider) { transition: none !important; }

@@ -34,7 +34,7 @@ export async function checkCodeDock(page, { width, height, open }) {
       const r = stage.getBoundingClientRect(), css = getComputedStyle(shell), m = main.getBoundingClientRect();
       const x = Number(css.getPropertyValue('--dock-conversation-x')), y = parseFloat(css.getPropertyValue('--dock-conversation-y')) / 100;
       const w = Number(css.getPropertyValue('--dock-conversation-width')), h = parseFloat(css.getPropertyValue('--dock-conversation-height')) / 100;
-      return Math.abs(m.left - r.left - r.width * x) < 1 && Math.abs(m.top - r.top - r.height * y) < 1 && Math.abs(m.width - r.width * w) < 1 && Math.abs(m.height - r.height * h) < 1;
+      return Math.abs(m.left - r.left - r.width * x) < 1 && Math.abs(m.top - r.top - r.height * y) < 1 && Math.abs(m.width - (r.width * w - parseFloat(css.getPropertyValue("--dock-rail-reserve")))) < 1 && Math.abs(m.height - r.height * h) < 1;
     });
     const errors = await page.evaluate(() => {
       const rect = element => element.getBoundingClientRect();
@@ -43,7 +43,7 @@ export async function checkCodeDock(page, { width, height, open }) {
       const expectedLeft = Math.max(body.left, rail ? rect(rail).right : body.left, !shell.classList.contains('sidebar-overlay') && localStorage.getItem('codexmonitor.sidebarCollapsed') !== 'true' && sidebar ? rect(sidebar).right : body.left);
       const errors = [];
       if (Math.abs(stage.left - expectedLeft) > 1 || Math.abs(stage.right - body.right) > 1) errors.push({ stage: stage.toJSON(), expectedLeft, body: body.toJSON() });
-      for (const pane of document.querySelectorAll('.dock-pane:not([hidden])')) {
+      for (const pane of document.querySelectorAll('.dock-pane:not(.dock-session-rail):not([hidden])')) {
         const actual = rect(pane), style = pane.style;
         const expected = { x: stage.left + stage.width * Number(style.getPropertyValue('--dock-box-x')), y: stage.top + stage.height * parseFloat(style.top) / 100, w: stage.width * Number(style.getPropertyValue('--dock-box-width')), h: stage.height * parseFloat(style.height) / 100 };
         if (Math.abs(actual.x - expected.x) > 1 || Math.abs(actual.y - expected.y) > 1 || Math.abs(actual.width - expected.w) > 1 || Math.abs(actual.height - expected.h) > 1) errors.push({ id: pane.dataset.dockPane, actual: actual.toJSON(), expected });
@@ -52,7 +52,7 @@ export async function checkCodeDock(page, { width, height, open }) {
       const browser = document.querySelector('[data-dock-pane=browser]:not([hidden])');
       if (browser) {
         const header = browser.querySelector('.dock-pane-header'), tabs = browser.querySelector('.dock-browser-tabs');
-        if (tabs.parentElement !== header || Math.abs(rect(header).height - 32) > 1) errors.push({ browserHeader: rect(header).toJSON(), tabsParent: tabs.parentElement.className });
+        if (tabs.parentElement !== header || Math.abs(rect(header).height - 40) > 1) errors.push({ browserHeader: rect(header).toJSON(), tabsParent: tabs.parentElement.className });
         const controls = [...header.querySelectorAll('button')].filter(button => /^(Expand Browser|Restore Browser|Actions for Browser pane|Close Browser pane)$/.test(button.getAttribute('aria-label')));
         for (let index = 0; index < controls.length; index++) {
           const control = controls[index], bounds = rect(control), hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
@@ -96,13 +96,13 @@ export async function checkCodeDock(page, { width, height, open }) {
   assert.equal(await page.locator('.dock-pane:not([hidden])').count(), 1, 'Compact Code must show one focused pane');
   assert.equal(await page.locator('[data-dock-pane=browser]').evaluate(element => element.style.getPropertyValue('--dock-box-width')), '1');
   await page.getByRole('button', { name: 'Show conversation', exact: true }).click();
-  assert.equal(await page.locator('.dock-pane:not([hidden])').count(), 0, 'Conversation must be accessible in compact mode');
+  assert.equal(await page.locator('.dock-pane:not(.dock-session-rail):not([hidden])').count(), 0, 'Conversation must be accessible in compact mode');
   assert(await page.locator('.workspace-main > .app > :is(.main,.tablet-main,.compact-shell)').evaluate(element => !element.hasAttribute('inert') && getComputedStyle(element).visibility !== 'hidden'));
   await page.getByRole('button', { name: 'Toggle Browser', exact: true }).click(); await geometry();
   await page.setViewportSize({ width, height });
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await page.locator('.dock-workspace:not(.is-compact)').waitFor(); await geometry();
-  assert(await page.locator('.dock-pane:not([hidden])').count() >= 3, 'Widening must restore the saved tiled panes');
+  assert(await page.locator('[data-dock-pane=terminal]').isVisible() && await page.locator('[data-dock-pane=browser]').isVisible(), 'Widening must restore the saved tiled tools');
   await page.getByRole('button', { name: 'Expand Browser', exact: true }).click();
   assert(await page.locator('.workspace-main > .app > :is(.main,.tablet-main,.compact-shell)').evaluate(element => element.hasAttribute('inert') && getComputedStyle(element).visibility === 'hidden'), 'Filled browser must exclude conversation from focus');
   const browserAccessibility = async () => {
@@ -149,6 +149,77 @@ export async function checkCodeDock(page, { width, height, open }) {
   }
 }
 
+async function checkSessionRail(page, base) {
+  await page.goto(`${base}/?mode=code&thread=thread-rich&panel=new`);
+  const toggle = page.getByRole('button', { name: 'Session rail', exact: true });
+  await toggle.waitFor();
+  if (await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).count()) await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click();
+  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+  const rail = page.locator('[data-dock-pane=session]');
+  const chat = page.locator('.workspace-main > .app > :is(.main,.tablet-main,.compact-shell)');
+  const draft = page.locator('.composer-shell textarea').first();
+  await draft.fill('Preserve this draft through rail resizing');
+  // Typing outside dismisses a floating rail; start wide and explicitly reopen.
+  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+  for (const width of [1440, 800, 360, 1440]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.waitForFunction(floating => document.querySelector('.dock-workspace').classList.contains('session-floating') === floating, width < 840);
+    const r = await rail.boundingBox(), c = await chat.boundingBox(), composer = await page.locator('.composer').boundingBox();
+    assert(r && c && composer, `Missing rail/chat/composer at ${width}`);
+    assert(r.x >= c.x && r.x + r.width <= (width < 840 ? c.x + c.width : width) + 1, `Rail outside chat area at ${width}`);
+    if (width < 840) assert(r.y + r.height <= composer.y + 1, `Floating rail covers composer at ${width}`);
+    else {
+      assert(Math.abs(r.y + r.height - c.y - c.height + 8) < 1, 'Docked rail must use the space beside the composer');
+      const messages = await page.locator('.messages').boundingBox();
+      assert(messages && Math.abs(messages.x + messages.width - r.x - r.width - 8) < 1, 'Chat scrollbar must sit outside the rail');
+      assert(await page.locator('.messages').evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        return element.contains(document.elementFromPoint(rect.right - 4, rect.top + 40));
+      }), 'Chat scrollbar must not be clipped or covered at the outer edge');
+    }
+    assert(width < 840 ? r.x < c.x + c.width : r.x >= c.x + c.width - 1, `Incorrect rail placement at ${width}`);
+    assert.equal(await rail.locator('.dock-pane-header').count(), 0, 'Rail must not have expand/close chrome');
+    assert(await draft.evaluate(element => !element.closest('[inert]')), 'Rail must keep chat interactive');
+    assert.equal(await draft.inputValue(), 'Preserve this draft through rail resizing');
+    assert.equal(await rail.locator('.code-session-rail').evaluate(element => getComputedStyle(element).scrollbarWidth), 'none', 'Rail scrollbar must stay hidden');
+  }
+  const railScroll = rail.getByRole('region', { name: 'Session details' });
+  const chatScroll = await page.locator('.messages').evaluate(element => element.scrollTop);
+  await railScroll.focus(); await page.keyboard.press('End');
+  await page.waitForFunction(() => document.querySelector('.code-session-rail').scrollTop > 0);
+  assert.equal(await page.locator('.messages').evaluate(element => element.scrollTop), chatScroll, 'Scrolling the rail must not move the chat');
+  await page.setViewportSize({ width: 800, height: 800 });
+  await page.locator('.dock-workspace.session-floating').waitFor();
+  const before = await chat.boundingBox();
+  await draft.click(); await rail.waitFor({ state: 'hidden' });
+  assert.deepEqual(await chat.boundingBox(), before, 'Dismissing floating rail resized chat');
+  await toggle.click(); await rail.waitFor({ state: 'visible' });
+  await rail.getByRole('button', { name: 'Environment', exact: true }).focus();
+  await page.keyboard.press('Escape'); await rail.waitFor({ state: 'hidden' });
+  assert(await toggle.evaluate(element => document.activeElement === element), 'Escape did not restore toggle focus');
+  console.log('PASS Session rail dock/float, composer clearance, dismissal and draft continuity');
+  await page.setViewportSize({ width: 1440, height: 800 });
+  for (const theme of ['light', 'dark', 'glass-light', 'glass-dark']) {
+    await page.goto(`${base}/?mode=code&thread=thread-rich&panel=new&theme=${theme}`);
+    await page.waitForFunction(theme => document.documentElement.dataset.themeId === theme, theme);
+    await toggle.waitFor();
+    if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+    await page.locator('.dock-workspace.has-session:not(.session-floating)').waitFor();
+    const surface = page.locator('.dock-session-space'), s = await surface.boundingBox(), c = await chat.boundingBox(), r = await rail.boundingBox();
+    assert(s && c && r && Math.abs(s.x - c.x) < 1 && Math.abs(s.y - c.y) < 1 && Math.abs(s.height - c.height) < 1 && Math.abs(s.x + s.width - r.x - r.width - 8) < 1, `${theme}: shared tint must span the entire chat and rail`);
+    assert(await surface.evaluate(element => getComputedStyle(element).visibility === 'visible'), `${theme}: shared surface is hidden`);
+    assert(await page.locator('.workspace-main > .app, .workspace-main .content').evaluateAll(elements => elements.every(element => {
+      const style = getComputedStyle(element);
+      return style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.backgroundImage === 'none';
+    })), `${theme}: extra chat tint would create a seam`);
+    assert(await surface.evaluate(element => {
+      const style = getComputedStyle(element);
+      return document.documentElement.dataset.translucent === 'true' ? style.backgroundColor.startsWith('rgba(') && style.backgroundColor !== 'rgba(0, 0, 0, 0)' : style.backgroundImage.includes('linear-gradient');
+    }), `${theme}: conversation material was lost`);
+  }
+  console.log('PASS Shared chat/rail surface in light, dark and both glass themes');
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const require = createRequire(new URL('../engines/browser/package.json', import.meta.url));
   const browser = await require('playwright').webkit.launch();
@@ -161,6 +232,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       } });
       await page.close();
     }
+    const railPage = await browser.newPage({ viewport: { width: 1440, height: 800 }, reducedMotion: 'reduce' });
+    await checkSessionRail(railPage, process.argv[2] ?? 'http://localhost:1421');
+    await railPage.close();
     const page = await browser.newPage({ viewport: { width: 1024, height: 720 }, hasTouch: true, reducedMotion: 'reduce' });
     await checkTabletSidebar(page, async params => {
       const url = new URL(process.argv[2] ?? 'http://localhost:1421'); url.search = new URLSearchParams(params).toString();

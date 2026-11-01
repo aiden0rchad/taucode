@@ -38,7 +38,6 @@ export function useUpdaterController({
 }: Params) {
   const {
     state: updaterState,
-    startUpdate,
     checkForUpdates,
     dismiss,
     postUpdateNotice,
@@ -119,7 +118,6 @@ export function useUpdaterController({
 
   return {
     updaterState,
-    startUpdate,
     checkForUpdates,
     dismissUpdate: dismiss,
     postUpdateNotice,

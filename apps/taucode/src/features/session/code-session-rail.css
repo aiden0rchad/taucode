@@ -1,22 +1,21 @@
-.code-session-rail { height: 100%; overflow: auto; min-width: 0; padding: 8px 10px 24px; color: var(--text-primary); font-size: 12px; scrollbar-gutter: stable; }
-.code-session-card { border-bottom: 1px solid var(--border-subtle); padding: 3px 0; }
-.code-session-card-header { display: flex; align-items: center; min-height: 34px; gap: 2px; }
-.code-session-card-toggle { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 7px 3px; border: 0; background: none; color: var(--text-strong); text-align: left; font: inherit; font-weight: 550; cursor: pointer; }
-.code-session-card-toggle > span { flex: 1; }
-.code-session-card-toggle > small { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.code-session-rail { height: 100%; overflow: auto; min-width: 0; padding: 12px 10px 16px; box-sizing: border-box; color: var(--text-primary); font-size: 12px; scrollbar-gutter: stable; }
+.code-session-card { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); margin-bottom: 8px; background: var(--surface-card-muted); }
+.code-session-card-header { display: flex; align-items: center; min-height: 38px; gap: 2px; padding: 0 6px; position: relative; }
+.code-session-card-toggle { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 8px 3px; border: 0; background: none; color: var(--text-strong); text-align: left; font: inherit; font-weight: 500; cursor: pointer; }
+.code-session-card-toggle > span { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .code-session-card-toggle > svg:last-child { transform: rotate(-90deg); color: var(--text-muted); }
 .code-session-card-toggle > svg.is-open { transform: none; }
-.code-session-reorder { display: flex; opacity: 0; }
-.code-session-grip { display: flex; align-items: center; justify-content: center; width: 16px; cursor: grab; color: var(--text-muted); }
+.code-session-grip { flex: 0 0 24px; opacity: 0; cursor: grab; color: var(--text-muted); }
 .code-session-card.is-dragging { opacity: .5; }
-.code-session-card-header:hover .code-session-reorder, .code-session-card-header:focus-within .code-session-reorder { opacity: 1; }
-.code-session-reorder .ds-icon-button { width: 24px; height: 24px; }
-.code-session-card-body { padding: 0 3px 10px; }
+.code-session-card-header:hover .code-session-grip, .code-session-card-header:focus-within .code-session-grip { opacity: 1; }
+.code-session-grip:active { cursor: grabbing; }
+@media (hover: none) { .code-session-grip { opacity: 1; } }
+.code-session-card-body { padding: 0 10px 10px; }
 .code-session-card-body[hidden] { display: none; }
 .code-session-rail p { margin: 5px 0 8px; line-height: 1.5; }
 .code-session-muted, .code-session-row small { color: var(--text-muted); font-size: 11px; }
-.code-session-field { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 6px; align-items: center; margin-block: 4px; color: var(--text-muted); }
-.code-session-field select { min-width: 0; width: 100%; font: inherit; color: var(--text-primary); background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: 5px; height: 27px; padding-inline: 5px; }
+.code-session-field { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 6px; align-items: center; margin-block: 4px; color: var(--text-muted); }
+.code-session-field select { min-width: 0; width: 100%; font: inherit; color: var(--text-primary); background: transparent; border: 1px solid transparent; border-radius: var(--radius-row); height: 27px; padding-inline: 5px; }
 .code-session-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 11px; }
 .code-session-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 27px; min-width: 0; }
 .code-session-row > span { min-width: 0; overflow-wrap: anywhere; }
@@ -70,3 +69,8 @@
 .dock-workspace .request-user-input-card[aria-label="Plan ready"] .request-user-input-notes { border-radius: 6px; min-height: 60px; font-size: 12px; }
 .dock-workspace .request-user-input-card[aria-label="Plan ready"] .request-user-input-actions { flex-wrap: wrap; gap: 6px; }
 .dock-workspace .request-user-input-card[aria-label="Plan ready"] .request-user-input-actions button { flex: 1 1 120px; min-height: 30px; height: auto; padding: 6px 10px; border-radius: 6px; font-size: 12px; line-height: 1.3; white-space: normal; }
+
+.code-session-field select:hover, .code-session-field select:focus-visible { background: var(--surface-hover); border-color: var(--border-subtle); }
+
+.code-session-connection { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--status-warning); }
+.code-session-connection[data-connected="true"] { background: var(--status-success); }

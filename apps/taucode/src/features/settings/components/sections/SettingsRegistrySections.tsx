@@ -146,7 +146,7 @@ export function AgentPolicyEditor({ policy, providers, onChange, tab, scope }: {
     {sub.roles.map((role, index) => {
       if (chain && !isCommandRole(role)) return null;
       const change = (patch: Partial<typeof role>) => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.map((r, i) => i === index ? { ...r, ...patch } : r) } });
-      return <SettingsGroup key={index} title={chain ? commandRoleTitle(role.name) : <>Role {index + 1}</>}>
+      return <SettingsGroup key={index} title={<>{chain ? commandRoleTitle(role.name) : `Role ${index + 1}`}{scope ? <small> · {scope === "all" ? "All projects" : "This project"}</small> : null}</>}>
         <SettingsFieldRow  title={<>Name</>}><SettingsTextField identifier readOnly={chain} value={role.name} onChange={e => change({ name: e.target.value })} /></SettingsFieldRow>
         <SettingsFieldRow  title={<>Description</>}><SettingsTextField value={role.description} onChange={e => change({ description: e.target.value })} /></SettingsFieldRow>
         {modelSelect(chain ? `${commandRoleTitle(role.name)} model` : "Role model", modelKey(role.model), v => change({ model: modelRef(v) }))}
@@ -159,8 +159,10 @@ export function AgentPolicyEditor({ policy, providers, onChange, tab, scope }: {
     </SettingsGroup>}
   </div>;
 }
-export function SettingsAgentPolicySection({ appSettings, onUpdateAppSettings, workspace, tab }: Props & { workspace?: WorkspaceInfo | null; tab?: "defaults" | "subagents" | "roles" }) {
-  const [policy, setPolicy] = useState(appSettings.agentPolicy ?? defaultAgentPolicy);
+export function SettingsAgentPolicySection({ appSettings, onUpdateAppSettings, workspace, tab, onUpdateWorkspaceSettings }: Props & { onUpdateWorkspaceSettings?: (id: string, settings: Partial<WorkspaceSettings>) => Promise<void>; workspace?: WorkspaceInfo | null; tab?: "defaults" | "subagents" | "roles" }) {
+  const base = appSettings.agentPolicy ?? defaultAgentPolicy;
+  const [scope, setScope] = useState<"all" | "project">(tab === "roles" && workspace && onUpdateWorkspaceSettings ? "project" : "all");
+  const [policy, setPolicy] = useState(scope === "project" && workspace ? mergePolicy(base, workspace.settings.agentPolicy) : base);
   const [savedPolicy, setSavedPolicy] = useState(policy);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState("");
@@ -170,14 +172,30 @@ export function SettingsAgentPolicySection({ appSettings, onUpdateAppSettings, w
     if (!dirty || validation || saveState === "saving") return;
     setSaveState("saving"); setError("");
     try {
-      await onUpdateAppSettings({ ...appSettings, agentPolicy: policy });
+      if (scope === "project" && workspace && onUpdateWorkspaceSettings) {
+        const changed = Object.fromEntries(Object.entries(policy.subagents).filter(([key, value]) =>
+          JSON.stringify(value) !== JSON.stringify(savedPolicy.subagents[key as keyof typeof savedPolicy.subagents])));
+        await onUpdateWorkspaceSettings(workspace.id, { agentPolicy: {
+          ...workspace.settings.agentPolicy,
+          ...(policy.defaultEngine !== savedPolicy.defaultEngine ? { defaultEngine: policy.defaultEngine } : {}),
+          subagents: { ...workspace.settings.agentPolicy?.subagents, ...changed },
+        } });
+      } else {
+        await onUpdateAppSettings({ ...appSettings, agentPolicy: policy });
+      }
       setSavedPolicy(policy); setSaveState("saved");
     } catch (e) { setError(String(e)); setSaveState("idle"); }
   };
   return <div className="registry-settings">
-    <AgentPolicyEditor tab={tab} scope="all" policy={policy} providers={appSettings.providers ?? []} onChange={next => { setPolicy(next); setError(""); }} />
+    {tab === "roles" && <SettingsFieldRow title="Apply roles to"><SettingsSelect aria-label="Agent scope" value={scope} disabled={dirty || saveState === "saving"} onChange={e => {
+      const nextScope = e.target.value as "all" | "project";
+      const next = nextScope === "project" && workspace ? mergePolicy(base, workspace.settings.agentPolicy) : base;
+      setScope(nextScope); setPolicy(next); setSavedPolicy(next); setSaveState("idle"); setError("");
+    }}><option value="project" disabled={!workspace || !onUpdateWorkspaceSettings}>This project{workspace ? ` — ${workspace.name}` : " (select a project first)"}</option><option value="all">All projects</option></SettingsSelect></SettingsFieldRow>}
+    {tab === "roles" && dirty && <SettingsButton disabled={saveState === "saving"} onClick={() => { setPolicy(savedPolicy); setError(""); }}>Discard changes</SettingsButton>}
+    <AgentPolicyEditor tab={tab} scope={scope} policy={policy} providers={appSettings.providers ?? []} onChange={next => { setPolicy(next); setError(""); }} />
     {(validation || error) && <p role="alert">{validation || error}</p>}
-    {workspace && <SettingsGroup collapsible title={<>Effective policy for {workspace.name} (app + workspace)</>} disabled><AgentPolicyEditor policy={mergePolicy(savedPolicy, workspace.settings.agentPolicy)} providers={appSettings.providers ?? []} onChange={() => {}} /></SettingsGroup>}
+    {workspace && scope === "all" && tab !== "roles" && <SettingsGroup collapsible title={<>Effective policy for {workspace.name} (app + workspace)</>} disabled><AgentPolicyEditor policy={mergePolicy(savedPolicy, workspace.settings.agentPolicy)} providers={appSettings.providers ?? []} onChange={() => {}} /></SettingsGroup>}
     <div className="settings-section-actions"><SettingsButton className="primary" disabled={!dirty || !!validation || saveState === "saving"} onClick={() => void save()}>{saveState === "saving" ? "Saving…" : !dirty && saveState === "saved" ? "Saved" : "Save policy"}</SettingsButton><span className="settings-visually-hidden" role="status">{!dirty && saveState === "saved" ? "Policy saved" : ""}</span></div>
   </div>;
 }

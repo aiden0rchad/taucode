@@ -99,3 +99,15 @@ it("batches resize notifications, ignores unchanged sizes and cleans up", () => 
   expect(disconnect).toHaveBeenCalledOnce();
   expect(cancel).toHaveBeenCalledWith(1);
 });
+
+it("lets native corners resize without measuring or scheduling React updates", () => {
+  vi.stubGlobal("CSS", { supports: () => true });
+  let resize = () => {};
+  vi.stubGlobal("ResizeObserver", class { constructor(callback: () => void) { resize = callback; } observe() {} disconnect() {} });
+  const measure = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
+  const raf = vi.spyOn(window, "requestAnimationFrame");
+  render(<Squircle />);
+  act(() => { resize(); resize(); });
+  expect(measure).not.toHaveBeenCalled();
+  expect(raf).not.toHaveBeenCalled();
+});

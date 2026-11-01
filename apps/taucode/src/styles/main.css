@@ -914,6 +914,15 @@
   }
 }
 
+.content,
+.dock-session-space {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-messages) 94%, var(--surface-app)) 0%,
+    var(--surface-messages) 100%
+  );
+}
+
 .content {
   display: flex;
   min-height: 0;
@@ -923,12 +932,6 @@
   grid-column: 1;
   grid-row: 1 / 3;
   position: relative;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--surface-messages) 94%, var(--surface-app)) 0%,
-      color-mix(in srgb, var(--surface-messages) 100%, var(--surface-app)) 100%
-    );
 }
 
 .chat-pane {

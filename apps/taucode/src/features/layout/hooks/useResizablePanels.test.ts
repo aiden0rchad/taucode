@@ -7,9 +7,10 @@ import { getRightPanelMaxWidth, useResizablePanels } from "./useResizablePanels"
 const widthKey = "codexmonitor.rightPanelWidth";
 beforeEach(() => {
   localStorage.clear();
+  vi.useFakeTimers();
   vi.stubGlobal("innerWidth", 1860);
 });
-afterEach(() => { cleanup(); document.body.innerHTML = ""; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); document.body.innerHTML = ""; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function setup(renderedWidth = 900) {
   const hook = renderHook(useResizablePanels);
@@ -27,7 +28,7 @@ function setup(renderedWidth = 900) {
   const start = (callback = hook.result.current.onRightPanelResizeStart, clientX = 900) => act(() => callback({
     currentTarget: handle, clientX, clientY: 300, pointerId: 1, button: 0, preventDefault() {},
   } as unknown as ReactPointerEvent));
-  const move = (clientX: number, clientY = 300, pointerId = 1) => act(() => fireEvent.pointerMove(handle, { clientX, clientY, pointerId }));
+  const move = (clientX: number, clientY = 300, pointerId = 1) => act(() => { fireEvent.pointerMove(handle, { clientX, clientY, pointerId }); vi.advanceTimersByTime(16); });
   const end = (type = "pointerup") => act(() => handle.dispatchEvent(new PointerEvent(type, { pointerId: 1 })));
   return { ...hook, app, handle, start, move, end };
 }

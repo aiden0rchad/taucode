@@ -211,7 +211,6 @@ type UseMainAppLayoutSurfacesArgs = {
   showMobilePollingFetchStatus: boolean;
   appModalsAboutOpen: boolean;
   updaterState: LayoutNodesOptions["primary"]["updateToastProps"]["state"];
-  startUpdate: LayoutNodesOptions["primary"]["updateToastProps"]["onUpdate"];
   dismissUpdate: LayoutNodesOptions["primary"]["updateToastProps"]["onDismiss"];
   postUpdateNotice: LayoutNodesOptions["primary"]["updateToastProps"]["postUpdateNotice"];
   dismissPostUpdateNotice: LayoutNodesOptions["primary"]["updateToastProps"]["onDismissPostUpdateNotice"];
@@ -353,7 +352,6 @@ function buildPrimarySurface({
   showMobilePollingFetchStatus,
   appModalsAboutOpen,
   updaterState,
-  startUpdate,
   dismissUpdate,
   postUpdateNotice,
   dismissPostUpdateNotice,
@@ -556,7 +554,6 @@ function buildPrimarySurface({
     },
     updateToastProps: {
       state: appModalsAboutOpen ? { stage: "idle" as const } : updaterState,
-      onUpdate: startUpdate,
       onDismiss: dismissUpdate,
       postUpdateNotice,
       onDismissPostUpdateNotice: dismissPostUpdateNotice,
@@ -1067,7 +1064,6 @@ export function useMainAppLayoutSurfaces({
   showMobilePollingFetchStatus,
   appModalsAboutOpen,
   updaterState,
-  startUpdate,
   dismissUpdate,
   postUpdateNotice,
   dismissPostUpdateNotice,
@@ -1221,7 +1217,6 @@ export function useMainAppLayoutSurfaces({
     showMobilePollingFetchStatus,
     appModalsAboutOpen,
     updaterState,
-    startUpdate,
     dismissUpdate,
     postUpdateNotice,
     dismissPostUpdateNotice,

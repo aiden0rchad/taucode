@@ -273,6 +273,7 @@ pub fn run() {
             connectors::connector_request,
             diagnostics::diagnostics_request,
             github::app_update_check,
+            github::download::app_update_download,
             github::issue_report_draft,
             github::issue_report_open,
             github::issue_report_screenshot,
@@ -366,13 +367,6 @@ pub fn run() {
             codex::list_models,
             codex::experimental_feature_list,
             codex::set_codex_feature_flag,
-            codex::get_agents_settings,
-            codex::set_agents_core_settings,
-            codex::create_agent,
-            codex::update_agent,
-            codex::delete_agent,
-            codex::read_agent_config_toml,
-            codex::write_agent_config_toml,
             codex::skills_list,
             prompts::prompts_list,
             prompts::prompts_create,
@@ -409,11 +403,15 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 
-    app.run(|app_handle, event| {
+    #[cfg(desktop)]
+    let mut main_window_snapshot = None;
+    app.run(move |app_handle, event| {
         if let tauri::RunEvent::Exit = event {
             #[cfg(desktop)]
-            if let Err(error) = window::save_main_state(app_handle) {
-                eprintln!("Cannot save main window state: {error}");
+            if let Some(snapshot) = main_window_snapshot.take() {
+                if let Err(error) = window::save_main_state(app_handle, snapshot) {
+                    eprintln!("Cannot save main window state: {error}");
+                }
             }
             taucode_diag_mcp::writer::stop();
             let state = app_handle.state::<state::AppState>();
@@ -425,6 +423,12 @@ pub fn run() {
         }
         #[cfg(desktop)]
         if let RunEvent::ExitRequested { api, .. } = event {
+            if main_window_snapshot.is_none() {
+                match window::capture_main_state(app_handle) {
+                    Ok(snapshot) => main_window_snapshot = Some(snapshot),
+                    Err(error) => eprintln!("Cannot capture main window state: {error}"),
+                }
+            }
             if !EXIT_CLEANUP_IN_PROGRESS.load(Ordering::SeqCst)
                 && !keep_daemon_running_after_close(app_handle)
             {

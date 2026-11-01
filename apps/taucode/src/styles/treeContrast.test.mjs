@@ -6,13 +6,10 @@ import { builtins } from '@/features/themes/builtins';
 const read = name => readFileSync(`src/styles/${name}.css`, "utf8");
 const tokens = css => Object.fromEntries([...css.matchAll(/(--[\w-]+):\s*(#[\da-f]{6});/gi)].map(([, key, value]) => [key, value]));
 const dark = tokens(read("themes.dark"));
-it("defines the window radius and shared group card treatments", () => {
+it("defines the window radius and shared project spacing", () => {
   const css = read("visual-refresh");
   expect(css).toContain("--radius-window: 12px;");
-  expect(css).toMatch(/\.sidebar \.project-group-card \{[^}]*--radius-window: 8px;/);
-  expect(css).toContain("--squircle-border: color-mix(in srgb, var(--tree-line) 60%, transparent);");
-  expect(css).toContain(".sidebar .project-group-card.is-selected { --squircle-border: var(--tree-line-active); }");
-  expect(css).toContain(".sidebar .workspace-group-content { gap: 6px; }");
+  expect(css).toContain(".sidebar .workspace-group-content { gap: 4px; }");
 });
 function luminance(hex) {
   const channels = hex.slice(1).match(/../g).map(channel => parseInt(channel, 16) / 255);

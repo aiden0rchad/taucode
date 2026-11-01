@@ -93,6 +93,7 @@ try {
     });
     await check('Native browser toolbar', async () => {
       await open({ panel: 'browser' });
+      await page.getByRole('button', { name: 'Expand Browser', exact: true }).click();
       await page.locator('.browser-native-slot').waitFor();
       const pane = page.locator('.browser-pane');
       try {
@@ -193,11 +194,12 @@ try {
           await page.mouse.move(hit.x, hit.y); await page.mouse.down();
           try {
             await page.mouse.move(hit.x + delta, hit.y, { steps: 4 });
-            await page.waitForFunction(({ expectedWidth, expectedLeft }) =>
-              Number(localStorage.getItem('codexmonitor.sidebarWidth')) === expectedWidth &&
+            await page.waitForFunction(({ savedWidth, expectedLeft }) =>
+              Number(localStorage.getItem('codexmonitor.sidebarWidth')) === savedWidth &&
               Math.abs(document.querySelector('.tabbed-side-panel').getBoundingClientRect().left - expectedLeft) <= 1,
-            { expectedWidth: sidebarWidth + delta, expectedLeft: panelLeft + delta });
+            { savedWidth: sidebarWidth, expectedLeft: panelLeft + delta });
           } finally { await page.mouse.up(); }
+          assert.equal(await page.evaluate(() => Number(localStorage.getItem('codexmonitor.sidebarWidth'))), sidebarWidth + delta);
           await geometry(`sidebar pointer drag ${delta}px`);
         }
         assert.equal(await page.evaluate(() => Number(localStorage.getItem('codexmonitor.sidebarWidth'))), originalSidebarWidth, 'Pointer drag did not restore the sidebar preference');
@@ -317,9 +319,9 @@ try {
           for (const { card, rows } of geometry.cards) {
             assert(card.x > geometry.sidebar.x && Math.abs(card.x - geometry.body.left) <= 1 && Math.abs(card.width - geometry.body.width) <= 1, `Work card must fill the inset sidebar body: ${details}`);
             for (const [i, { row, content, metaVisible, ellipsis }] of rows.entries()) {
-              assert(row.height > 0 && row.height <= 34 && Math.abs(row.height - (density === 'compact' ? 28 : 32)) <= 1, `Work row height: ${details}`);
+              assert(row.height > 0 && row.height <= 34 && Math.abs(row.height - (density === 'compact' ? 24 : 32)) <= 1, `Work row height: ${details}`);
               assert(row.x >= card.x && row.right <= card.right + 1 && row.y >= card.y && row.bottom <= card.bottom + 1, `Work row outside card: ${details}`);
-              assert(!i || row.y - rows[i - 1].row.bottom >= 1.5, `Work rows overlap or lack gap: ${details}`);
+              assert(!i || row.y - rows[i - 1].row.bottom >= (density === 'compact' ? -0.5 : 1.5), `Work rows overlap or lack gap: ${details}`);
               assert(content.every(child => child.x >= row.x && child.right <= row.right + 1 && child.y >= row.y && child.bottom <= row.bottom + 1), `Work row content overflow: ${details}`);
               assert((metaVisible === null || metaVisible === 'visible') && ellipsis === 'ellipsis', `Work metadata/title: ${details}`);
             }

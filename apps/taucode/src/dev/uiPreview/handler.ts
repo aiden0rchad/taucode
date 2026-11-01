@@ -319,7 +319,6 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "read_workspace_file": return { content: "export const greeting = 'Hello, world!';\n", truncated: false };
       case "file_read": return { content: "", exists: true, path: "/preview/config.toml" };
       case "get_codex_config_path": return "/preview/config.toml";
-      case "get_agents_settings": return { agents: [], features: {}, configPath: "/preview/config.toml" };
       case "skills_list": return { result: { data: [{ cwd: "/preview/atlas", skills: [], errors: [] }] } };
       case "prompts_list": return [];
       case "list_mcp_server_status":

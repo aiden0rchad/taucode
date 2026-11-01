@@ -5,6 +5,9 @@ import fixtures from "../../../../../docs/fixtures/diagnostics-redaction.json";
 import { configureDiagnostics, diagnosticsEnabled, instrumentInvoke, openFeedback, record, redact } from "./client";
 import { MessageRow } from "@/features/messages/components/MessageRows";
 import { DiagnosticBoundary } from "./DiagnosticBoundary";
+import { FeatureSettings } from "@settings/features";
+import { buildDefaultSettings } from "@settings/hooks/useAppSettings";
+import { MainTopbar } from "@app/components/MainTopbar";
 import { FeedbackComposer } from "./FeedbackComposer";
 import { agentSnippets } from "./DiagnosticsSettings";
 const send = vi.fn().mockResolvedValue(undefined);
@@ -41,6 +44,20 @@ describe("diagnostics", () => {
   it("opens the feedback composer from the response menu", () => {
     enable(); render(<><FeedbackComposer /><MessageRow diagnosticThreadId="thread" item={{ id: "response", kind: "message", role: "assistant", text: "Hello" }} isCopied={false} onCopy={() => {}} /></>);
     fireEvent.click(screen.getByText("Flag this response")); expect(screen.getByRole("dialog", { name: "Log an issue or idea" })).toBeTruthy();
+  });
+  it("opens feedback directly from the toolbar and prevents empty submissions", () => {
+    enable(); render(<FeatureSettings.Provider value={{ ...buildDefaultSettings(), features: { diagnostics: true } }}><MainTopbar leftNode={null} /><FeedbackComposer /></FeatureSettings.Provider>);
+    fireEvent.click(screen.getByRole("button", { name: "Log an issue or idea" }));
+    expect(screen.getByRole("dialog", { name: "Log an issue or idea" })).toBeTruthy();
+    const save = screen.getByRole("button", { name: "Save feedback" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "   " } });
+    expect(save.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "A useful note" } });
+    expect(save.disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(send).not.toHaveBeenCalled();
   });
   it("uses resolved paths in setup snippets", () => { const result = agentSnippets("/Applications/Tau code/bin", "/Users/test/data"); expect(result.claude).toContain("'/Applications/Tau code/bin'"); expect(result.codex).toContain('command = "/Applications/Tau code/bin"'); expect(result.codex).toContain("/Users/test/data"); });
 });

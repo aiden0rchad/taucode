@@ -568,7 +568,6 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     });
   const {
     updaterState,
-    startUpdate,
     dismissUpdate,
     postUpdateNotice,
     dismissPostUpdateNotice,
@@ -1749,7 +1748,6 @@ export default function MainApp({ settingsOnly = false, onCloseModeSettings, ini
     appModalsAboutOpen:
       appModalsProps.settingsOpen && appModalsProps.settingsSection === 'about',
     updaterState,
-    startUpdate,
     dismissUpdate,
     postUpdateNotice,
     dismissPostUpdateNotice,

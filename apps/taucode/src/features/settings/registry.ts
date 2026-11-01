@@ -76,5 +76,7 @@ export function policyError(p: AgentPolicy, providers: ProviderEntry[]): string 
 }
 
 export function mergePolicy(base: AgentPolicy, override: WorkspaceSettings["agentPolicy"]): AgentPolicy {
-  return { ...base, ...override, defaultModel: override?.defaultModel ?? base.defaultModel, subagents: { ...base.subagents, ...override?.subagents, defaultModel: override?.subagents?.defaultModel ?? base.subagents.defaultModel } };
+  // Rust serializes unset override fields as null; they mean inherit, not clear.
+  const present = (value: object | null | undefined) => Object.fromEntries(Object.entries(value ?? {}).filter(([, field]) => field != null));
+  return { ...base, ...present(override), subagents: { ...base.subagents, ...present(override?.subagents) } };
 }
