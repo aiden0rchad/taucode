@@ -66,7 +66,7 @@ export function SettingsProvidersSection({ appSettings, onUpdateAppSettings }: P
       {deleting === p.id && <div className="provider-delete-confirm" role="alertdialog" aria-label={`Delete ${p.name}?`}><p>Remove {p.name} and its model configuration?</p><SettingsButton type="button" disabled={busy} onClick={() => void run(async () => { await onUpdateAppSettings({ ...appSettings, providers: providers.filter(v => v.id !== p.id) }); if (editing === p.id) setDraft(null); setDeleting(null); })}>Delete provider</SettingsButton><SettingsButton type="button" onClick={() => setDeleting(null)}>Cancel</SettingsButton></div>}
     </article>)}</div>
     {draft && <form onSubmit={e => { e.preventDefault(); void run(() => save(draft)); }}>
-      <SettingsFieldRow  title={<>Provider ID</>}><SettingsTextField required pattern="[a-z0-9_-]{1,32}" maxLength={32} disabled={!!editing} value={draft.id} onChange={e => setDraft({ ...draft, id: e.target.value })} /></SettingsFieldRow>
+      <SettingsFieldRow  title={<>Provider ID</>}><SettingsTextField identifier required pattern="[a-z0-9_-]{1,32}" maxLength={32} disabled={!!editing} value={draft.id} onChange={e => setDraft({ ...draft, id: e.target.value })} /></SettingsFieldRow>
       <SettingsFieldRow  title={<>Name</>}><SettingsTextField required value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></SettingsFieldRow>
       <SettingsFieldRow  title={<>Kind</>}><SettingsSelect value={draft.kind} onChange={e => { const kind = e.target.value as ProviderKind; setDraft({ ...draft, kind, baseUrl: null, apiStyle: kind === "openai-compatible" ? "chat-completions" : null, auth: { type: kind === "ollama" || kind === "lmstudio" ? "none" : "apiKey" } }); }}>{kinds.map(k => <option key={k}>{k}</option>)}</SettingsSelect></SettingsFieldRow>
       <SettingsFieldRow  title={<>Base URL</>}><SettingsTextField type="url" required={draft.kind === "openai-compatible"} placeholder={draft.kind === "openai-compatible" ? "https://your-server/v1" : "Use provider default"} value={draft.baseUrl ?? ""} onChange={e => setDraft({ ...draft, baseUrl: e.target.value || null })} /></SettingsFieldRow>
@@ -78,10 +78,10 @@ export function SettingsProvidersSection({ appSettings, onUpdateAppSettings }: P
         <SettingsFieldRow  title={<>{hasKey ? "Replace API key" : "API key"}</>}><SettingsTextField type="password" autoComplete="new-password" value={key} onChange={e => setKey(e.target.value)} /></SettingsFieldRow>
         {hasKey && <><span>Saved in Keychain</span><SettingsButton type="button" disabled={busy} onClick={() => void run(async () => { await providerDeleteApiKey(draft.id); setHasKey(false); })}>Remove key</SettingsButton></>}
       </>}
-      {draft.auth.type === "env" && <SettingsFieldRow  title={<>Environment variable</>}><SettingsTextField required value={draft.auth.var} onChange={e => setDraft({ ...draft, auth: { type: "env", var: e.target.value } })} /></SettingsFieldRow>}
+      {draft.auth.type === "env" && <SettingsFieldRow  title={<>Environment variable</>}><SettingsTextField identifier required value={draft.auth.var} onChange={e => setDraft({ ...draft, auth: { type: "env", var: e.target.value } })} /></SettingsFieldRow>}
       {draft.auth.type === "command" && <>
         <SettingsFieldRow  title={<>Auth timeout (ms)</>}><SettingsNumberStepper type="number" min="1" step="1" value={draft.auth.timeoutMs ?? 15000} onChange={e => setDraft({ ...draft, auth: { ...draft.auth as Extract<ProviderAuth, { type: "command" }>, timeoutMs: Number(e.target.value) } })} /></SettingsFieldRow>
-        <SettingsFieldRow  title={<>Token command</>}><SettingsTextField required value={draft.auth.command} onChange={e => setDraft({ ...draft, auth: { ...draft.auth as Extract<ProviderAuth, { type: "command" }>, command: e.target.value } })} /></SettingsFieldRow>
+        <SettingsFieldRow  title={<>Token command</>}><SettingsTextField identifier required value={draft.auth.command} onChange={e => setDraft({ ...draft, auth: { ...draft.auth as Extract<ProviderAuth, { type: "command" }>, command: e.target.value } })} /></SettingsFieldRow>
         <SettingsFieldRow title={<>Arguments (one per line)</>} className="settings-field-row-long"><SettingsTextArea value={draft.auth.args.join("\n")} onChange={e => setDraft({ ...draft, auth: { ...draft.auth as Extract<ProviderAuth, { type: "command" }>, args: e.target.value.split("\n").filter(Boolean) } })} /></SettingsFieldRow>
       </>}
       <SettingsButton type="submit" disabled={busy}>Save provider</SettingsButton>
@@ -103,7 +103,7 @@ export function SettingsProvidersSection({ appSettings, onUpdateAppSettings }: P
           await onUpdateAppSettings({ ...appSettings, providers: providers.some(p => p.id === draft.id) ? providers.map(p => p.id === draft.id ? next : p) : [...providers, next] });
         })} />
       </div>)}</div>
-      <SettingsFieldRow  title={<>Model ID</>}><SettingsTextField value={manual} onChange={e => setManual(e.target.value)} /></SettingsFieldRow>
+      <SettingsFieldRow  title={<>Model ID</>}><SettingsTextField identifier value={manual} onChange={e => setManual(e.target.value)} /></SettingsFieldRow>
       <SettingsButton type="button" disabled={!manual.trim()} onClick={() => { if (!draft.models.some(m => m.id === manual.trim())) setDraft({ ...draft, models: [...draft.models, { id: manual.trim(), enabled: true }] }); setManual(""); }}>Add model ID manually</SettingsButton>
     </form>}
   </SettingsGroup></SettingsPage>;
@@ -147,7 +147,7 @@ export function AgentPolicyEditor({ policy, providers, onChange, tab, scope }: {
       if (chain && !isCommandRole(role)) return null;
       const change = (patch: Partial<typeof role>) => onChange({ ...policy, subagents: { ...sub, roles: sub.roles.map((r, i) => i === index ? { ...r, ...patch } : r) } });
       return <SettingsGroup key={index} title={chain ? commandRoleTitle(role.name) : <>Role {index + 1}</>}>
-        <SettingsFieldRow  title={<>Name</>}><SettingsTextField readOnly={chain} value={role.name} onChange={e => change({ name: e.target.value })} /></SettingsFieldRow>
+        <SettingsFieldRow  title={<>Name</>}><SettingsTextField identifier readOnly={chain} value={role.name} onChange={e => change({ name: e.target.value })} /></SettingsFieldRow>
         <SettingsFieldRow  title={<>Description</>}><SettingsTextField value={role.description} onChange={e => change({ description: e.target.value })} /></SettingsFieldRow>
         {modelSelect(chain ? `${commandRoleTitle(role.name)} model` : "Role model", modelKey(role.model), v => change({ model: modelRef(v) }))}
         <SettingsFieldRow  title={<>Tool access</>}><SettingsSelect value={role.toolAccess} onChange={e => change({ toolAccess: e.target.value as "read-only" | "full" })}><option value="read-only">Read only</option><option value="full">Full</option></SettingsSelect></SettingsFieldRow>

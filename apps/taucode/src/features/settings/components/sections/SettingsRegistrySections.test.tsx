@@ -148,6 +148,15 @@ describe("provider registry settings", () => {
     expect(screen.getByText("This project only:")).toBeTruthy();
     expect(screen.queryByText("All projects:")).toBeNull();
   });
+  it("keeps macOS from capitalizing or correcting role names", () => {
+    render(<SettingsAgentPolicySection tab="roles" appSettings={{ agentPolicy: defaultAgentPolicy } as AppSettings} onUpdateAppSettings={vi.fn()} />);
+    const name = screen.getAllByLabelText("Name")[0];
+    expect(name.getAttribute("autocapitalize")).toBe("off");
+    expect(name.getAttribute("autocorrect")).toBe("off");
+    expect(name.getAttribute("spellcheck")).toBe("false");
+    // Prose such as a role's description keeps the system's text help.
+    expect(screen.getAllByLabelText("Description")[0].getAttribute("autocapitalize")).toBeNull();
+  });
 });
 
 it("renders a provider card with a shared toggle, test status, icon actions and delete confirmation", async () => {

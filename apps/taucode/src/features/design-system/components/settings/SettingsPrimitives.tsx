@@ -117,10 +117,13 @@ export function SettingsSelect({ children, className, onChange, value, defaultVa
   </span>;
 }
 
-export function SettingsTextField({ className, disabled, ...props }: ComponentPropsWithoutRef<"input">) {
+/** `identifier` is for exact values such as IDs, slugs, commands and variable names: macOS
+ * would otherwise capitalize or correct them (a role named "scout" became "Scout"). */
+export function SettingsTextField({ className, disabled, identifier, ...props }: ComponentPropsWithoutRef<"input"> & { identifier?: boolean }) {
   const inherited = useContext(Disabled);
   const id = useContext(ControlId);
-  return <input id={id} {...props} disabled={disabled || inherited} className={joinClassNames("settings-input", className)} />;
+  const exact = identifier ? { autoCapitalize: "off", autoCorrect: "off", spellCheck: false } : {};
+  return <input id={id} {...exact} {...props} disabled={disabled || inherited} className={joinClassNames("settings-input", className)} />;
 }
 export function SettingsTextArea({ className, disabled, ...props }: ComponentPropsWithoutRef<"textarea">) {
   const inherited = useContext(Disabled);

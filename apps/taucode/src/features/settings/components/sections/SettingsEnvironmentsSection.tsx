@@ -63,6 +63,7 @@ export function SettingsEnvironmentsSection({
         </div>
         <div className="settings-field-row">
           <SettingsTextField
+            identifier
             id="settings-global-worktrees-folder"
             type="text"
             className="settings-input"
@@ -224,6 +225,7 @@ export function SettingsEnvironmentsSection({
             </div>
             <div className="settings-field-row">
               <SettingsTextField
+                identifier
                 id="settings-worktrees-folder"
                 type="text"
                 className="settings-input"

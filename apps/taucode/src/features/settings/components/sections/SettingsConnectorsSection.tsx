@@ -82,12 +82,12 @@ export function SettingsConnectorsSection({ appSettings, onUpdateAppSettings, wo
     {draft && <form onSubmit={e => { e.preventDefault(); void run(save); }}>
       <SettingsGroup disabled={busy} title={<>{editing ? "Edit connector" : "New connector"}</>}>
 
-        <SettingsFieldRow  title={<>Connector ID</>}><SettingsTextField required pattern="[a-z0-9_-]{1,32}" maxLength={32} disabled={!!editing} value={draft.id} onChange={e => setDraft({ ...draft, id: e.target.value })} /></SettingsFieldRow>
+        <SettingsFieldRow  title={<>Connector ID</>}><SettingsTextField identifier required pattern="[a-z0-9_-]{1,32}" maxLength={32} disabled={!!editing} value={draft.id} onChange={e => setDraft({ ...draft, id: e.target.value })} /></SettingsFieldRow>
         <SettingsFieldRow  title={<>Name</>}><SettingsTextField required value={draft.name ?? ""} onChange={e => setDraft({ ...draft, name: e.target.value })} /></SettingsFieldRow>
         {draft.transport && <>
           <SettingsFieldRow  title={<>Transport</>}><SettingsSelect value={draft.transport.type} onChange={e => { setSecrets({}); setDraft({ ...draft, transport: e.target.value === "stdio" ? { type: "stdio", command: "", args: [], env: {} } : { type: "http", url: "", headers: {} } }); }}><option value="stdio">Local command (stdio)</option><option value="http">HTTP</option></SettingsSelect></SettingsFieldRow>
           {draft.transport.type === "stdio" ? <>
-            <SettingsFieldRow  title={<>Command</>}><SettingsTextField required value={draft.transport.command} onChange={e => setDraft({ ...draft, transport: { ...draft.transport as Extract<NonNullable<McpServerEntry["transport"]>, { type: "stdio" }>, command: e.target.value } })} /></SettingsFieldRow>
+            <SettingsFieldRow  title={<>Command</>}><SettingsTextField identifier required value={draft.transport.command} onChange={e => setDraft({ ...draft, transport: { ...draft.transport as Extract<NonNullable<McpServerEntry["transport"]>, { type: "stdio" }>, command: e.target.value } })} /></SettingsFieldRow>
             <SettingsFieldRow title={<>Arguments (one per line)</>} className="settings-field-row-long"><SettingsTextArea value={draft.transport.args.join("\n")} onChange={e => { if (draft.transport?.type === "stdio") setDraft({ ...draft, transport: { ...draft.transport, args: e.target.value ? e.target.value.split("\n") : [] } }); }} /></SettingsFieldRow>
             <SettingsFieldRow  title={<>Working directory</>}><SettingsTextField value={draft.transport.cwd ?? ""} onChange={e => { if (draft.transport?.type === "stdio") setDraft({ ...draft, transport: { ...draft.transport, cwd: e.target.value || null } }); }} /></SettingsFieldRow>
           </> : <>
@@ -97,9 +97,9 @@ export function SettingsConnectorsSection({ appSettings, onUpdateAppSettings, wo
           </>}
           <h3>{draft.transport.type === "stdio" ? "Environment variables" : "Headers"}</h3>
           {Object.entries(credentials).map(([name, value]) => <div className="connector-credential" key={name}>
-            <SettingsFieldRow  title={<>Field name</>}><SettingsTextField required defaultValue={name} onBlur={e => { const next = e.target.value; if (next !== name && !Object.prototype.hasOwnProperty.call(credentials, next)) { const values = { ...credentials }; delete values[name]; values[next] = value; setCredentials(values); setSecrets({ ...secrets, [name]: "" }); } }} /></SettingsFieldRow>
+            <SettingsFieldRow  title={<>Field name</>}><SettingsTextField identifier required defaultValue={name} onBlur={e => { const next = e.target.value; if (next !== name && !Object.prototype.hasOwnProperty.call(credentials, next)) { const values = { ...credentials }; delete values[name]; values[next] = value; setCredentials(values); setSecrets({ ...secrets, [name]: "" }); } }} /></SettingsFieldRow>
             <SettingsToggleRow  title={<>Store {name} in Keychain</>}><SettingsToggleSwitch pressed={"secret" in value} onClick={() => { setCredentials({ ...credentials, [name]: !("secret" in value) ? { secret: true } : { value: "" } }); setSecrets({ ...secrets, [name]: "" }); }} /></SettingsToggleRow>
-            {"secret" in value ? secretInput(name) : <SettingsFieldRow  title={<>{name} value</>}><SettingsTextField value={value.value} onChange={e => setCredentials({ ...credentials, [name]: { value: e.target.value } })} /></SettingsFieldRow>}
+            {"secret" in value ? secretInput(name) : <SettingsFieldRow  title={<>{name} value</>}><SettingsTextField identifier value={value.value} onChange={e => setCredentials({ ...credentials, [name]: { value: e.target.value } })} /></SettingsFieldRow>}
             <SettingsButton type="button" onClick={() => { const values = { ...credentials }; delete values[name]; setCredentials(values); setSecrets({ ...secrets, [name]: "" }); }}>Remove {name}</SettingsButton>
           </div>)}
           <SettingsButton type="button" onClick={() => { let name = "NEW_FIELD"; while (Object.prototype.hasOwnProperty.call(credentials, name)) name += "_"; setCredentials({ ...credentials, [name]: { secret: true } }); }}>Add {draft.transport.type === "stdio" ? "environment variable" : "header"}</SettingsButton>
