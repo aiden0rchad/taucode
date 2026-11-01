@@ -1470,3 +1470,23 @@ Known gaps, not fixed:
   through AX returns -25204 and the dialog stays, so the run stops as uncertain.
 
 Tests: Rust `computer::` 135, `shared::` 461; frontend 215; typecheck clean.
+
+### Chat queuing and steering — November 1
+
+Chat mode disabled its composer while a reply ran; Code mode already had queue
+and steer, and Work steered follow-ups. Chat now matches Code: while a reply
+runs, Enter does the Settings follow-up behavior (queue by default) and
+Shift+Cmd+Enter the other. Queued messages show above the composer (edit,
+delete), send one at a time after a completed reply, and pause after a stopped
+or failed one. Steering uses a new `steer` chat action (same input checks as
+`send`, refused unless a reply is running) that calls pi's `turn/steer`; if the
+reply just ended, the message is queued instead.
+
+Live, signed build: asked for a 700-word story, steered "Also include a cat
+named Pixel." and queued "Now give the story a title." while it streamed. The
+story included Pixel; the queued message sent itself afterwards and was
+answered ("The Keeper's Last Light").
+
+Tests: Rust `chats` 5 (steer input checks, idle chat refused); frontend Chat 32
+(queue and flush in order, paused after stop, steer shortcut and fallback);
+related suites 631; typecheck clean.

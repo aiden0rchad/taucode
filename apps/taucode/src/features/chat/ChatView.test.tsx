@@ -225,3 +225,52 @@ it("keeps an accepted optimistic message if refreshing the chat list fails", asy
   await waitFor(() => expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty("value", ""));
   expect(screen.getByText("Already accepted", { selector: "p" })).toBeTruthy();
 });
+
+describe("follow-ups while a response runs", () => {
+  const start = () => act(() => listener({ workspace_id: "chats", message: { method: "turn/started", params: { threadId: "chat" } } }));
+  const finish = (status: string) => act(() => listener({ workspace_id: "chats", message: { method: "turn/completed", params: { threadId: "chat", turn: { status } } } }));
+  const write = (text: string, keys: Partial<KeyboardEvent> = {}) => {
+    const box = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.change(box, { target: { value: text } });
+    fireEvent.keyDown(box, { key: "Enter", ...keys });
+  };
+  it("queues them and sends each after the response completes", async () => {
+    render(<ChatView settings={settings} />); await open();
+    start();
+    expect(screen.getByRole("status").textContent).toContain("Enter queues a follow-up");
+    write("First follow-up");
+    write("Second follow-up");
+    expect(await screen.findByText("Queued")).toBeTruthy();
+    expect(screen.getByText("First follow-up")).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty("value", "");
+    expect(chatRequest).not.toHaveBeenCalledWith("send", expect.anything());
+    finish("completed");
+    await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("send", { threadId: "chat", input: [{ type: "text", text: "First follow-up" }] }));
+    expect(chatRequest).not.toHaveBeenCalledWith("send", { threadId: "chat", input: [{ type: "text", text: "Second follow-up" }] });
+    finish("completed");
+    await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("send", { threadId: "chat", input: [{ type: "text", text: "Second follow-up" }] }));
+    await waitFor(() => expect(screen.queryByText("Queued")).toBeNull());
+  });
+  it("pauses the queue when the response is stopped", async () => {
+    render(<ChatView settings={settings} />); await open();
+    start();
+    write("After the stop");
+    finish("interrupted");
+    expect(await screen.findByText("Paused because the response was stopped")).toBeTruthy();
+    expect(chatRequest).not.toHaveBeenCalledWith("send", expect.anything());
+  });
+  it("steers with the shortcut, and queues when the response already ended", async () => {
+    render(<ChatView settings={{ ...settings, steerEnabled: true, followUpMessageBehavior: "queue" }} />); await open();
+    start();
+    expect(screen.getByRole("status").textContent).toMatch(/Shift\+(Cmd|Ctrl)\+Enter adds it to this response/);
+    write("Also cover costs", { shiftKey: true, metaKey: true, ctrlKey: true });
+    await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("steer", { threadId: "chat", input: [{ type: "text", text: "Also cover costs" }] }));
+    expect(screen.getByText("Also cover costs", { selector: "p" })).toBeTruthy();
+    const original = vi.mocked(chatRequest).getMockImplementation()!;
+    vi.mocked(chatRequest).mockImplementation((action, params) => action === "steer" ? Promise.reject(new Error("No running response to steer")) : original(action, params));
+    write("Too late", { shiftKey: true, metaKey: true, ctrlKey: true });
+    expect(await screen.findByText("Queued")).toBeTruthy();
+    expect(screen.queryByText("Too late", { selector: "p" })).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});

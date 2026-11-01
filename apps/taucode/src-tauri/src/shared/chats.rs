@@ -69,6 +69,26 @@ impl Chats {
             Err(e) => Err(e.to_string()),
         }
     }
+    /// Chat input: inline text and images only, within size limits the model can take.
+    async fn input<'a>(&self, settings: &AppSettings, id: &str, params: &'a Value) -> Result<&'a Vec<Value>, String> {
+        let input = params["input"].as_array().ok_or("Missing chat input")?;
+        if input.is_empty() || input.len() > 32 { return Err("Attach at most 31 files".into()); }
+        for part in input {
+            match part["type"].as_str() {
+                Some("text") if part["text"].as_str().is_some_and(|v| v.len() <= 32 * 1024 * 1024) => (),
+                Some("image") if part["url"].as_str().is_some_and(|v| v.starts_with("data:image/") && v.len() <= 28 * 1024 * 1024) => (),
+                _ => return Err("Chat accepts only inline text and image attachments".into()),
+            }
+        }
+        if input.iter().any(|part| part["type"] == "image") {
+            let response = self.engine.request(WORKSPACE, "thread/read", json!({"threadId":id,"includeTurns":false})).await?;
+            let thread = &response["result"]["thread"];
+            if settings.providers.iter().find(|p| thread["modelProvider"] == p.id)
+                .and_then(|p| p.models.iter().find(|m| thread["model"] == m.id))
+                .is_some_and(|m| m.supports_images == Some(false)) { return Err("This model does not support images".into()); }
+        }
+        Ok(input)
+    }
     pub async fn request(&self, settings: &AppSettings, action: &str, params: Value) -> Result<Value, String> {
         if !settings.features().chat_mode && !matches!(action, "stop" | "interrupt" | "list" | "read") { return Err("Enable Chat in Settings → Features".into()); }
         // The public chat API never accepts cwd, access policies, local file paths, or arbitrary engine methods.
@@ -136,23 +156,14 @@ impl Chats {
                 }
                 "send" => {
                     self.engine.request(WORKSPACE, "thread/chatWeb/set", json!({"threadId":id,"web":meta.web && settings.mcp_servers.iter().any(|c| c.id == "taucode-browser" && c.enabled)})).await?;
-                    let input = params["input"].as_array().ok_or("Missing chat input")?;
-                    if input.is_empty() || input.len() > 32 { return Err("Attach at most 31 files".into()); }
-                    for part in input {
-                        match part["type"].as_str() {
-                            Some("text") if part["text"].as_str().is_some_and(|v| v.len() <= 32 * 1024 * 1024) => (),
-                            Some("image") if part["url"].as_str().is_some_and(|v| v.starts_with("data:image/") && v.len() <= 28 * 1024 * 1024) => (),
-                            _ => return Err("Chat accepts only inline text and image attachments".into()),
-                        }
-                    }
-                    if input.iter().any(|part| part["type"] == "image") {
-                        let response = self.engine.request(WORKSPACE, "thread/read", json!({"threadId":id,"includeTurns":false})).await?;
-                        let thread = &response["result"]["thread"];
-                        if settings.providers.iter().find(|p| thread["modelProvider"] == p.id)
-                            .and_then(|p| p.models.iter().find(|m| thread["model"] == m.id))
-                            .is_some_and(|m| m.supports_images == Some(false)) { return Err("This model does not support images".into()); }
-                    }
+                    let input = self.input(settings, id, &params).await?;
                     return self.engine.request(WORKSPACE, "turn/start", json!({"threadId":id,"input":input,"effort":params["effort"]})).await;
+                }
+                // Adds a message to the running response; pi reads it after its current step.
+                "steer" => {
+                    let input = self.input(settings, id, &params).await?;
+                    if !self.engine.is_running(id).await { return Err("No running response to steer".into()); }
+                    return self.engine.request(WORKSPACE, "turn/steer", json!({"threadId":id,"input":input})).await;
                 }
                 _ => return Err("Unknown chat action".into()),
             }
@@ -209,6 +220,10 @@ mod tests {
         restarted.request(&settings, "restore", json!({"threadId":id})).await.unwrap();
         assert!(restarted.request(&settings, "read", json!({"threadId":id})).await.is_ok());
         assert!(restarted.request(&settings, "send", json!({"threadId":id,"input":[{"type":"localImage","path":"/etc/passwd"}]})).await.unwrap_err().contains("inline"));
+        // Steering takes the same input checks, then needs a running response.
+        assert!(restarted.request(&settings, "steer", json!({"threadId":id,"input":[{"type":"localImage","path":"/etc/passwd"}]})).await.unwrap_err().contains("inline"));
+        let idle = restarted.request(&settings, "steer", json!({"threadId":id,"input":[{"type":"text","text":"also this"}]})).await.unwrap_err();
+        assert!(idle.contains("No running"), "{idle}");
         assert!(restarted.request(&settings, "web", json!({"threadId":id,"web":true})).await.is_err());
         assert!(restarted.request(&settings, "read", json!({"threadId":"../outside"})).await.is_err());
         let mut meta = restarted.metadata().unwrap();

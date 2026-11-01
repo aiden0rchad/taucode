@@ -4,6 +4,7 @@ import { chatRequest } from "@services/tauri";
 import { subscribeAppServerEvents } from "@services/events";
 import { buildConversationItem, buildItemsFromThread, previewThreadName, upsertItem, mergeThreadItems } from "@utils/threadItems";
 import { clampThreadName } from "@threads/utils/threadNaming";
+import type { QueuedMessage } from "@/types";
 import type { Chat, ChatMessage, ChatResponse, ChatThread } from "./chat";
 
 export function useChat() {
@@ -14,6 +15,9 @@ export function useChat() {
   const [turnStatus, setTurnStatus] = useState<Record<string, string>>({});
   const [turnErrors, setTurnErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
+  // Follow-ups written while a response runs, sent one at a time after it completes.
+  const [queued, setQueued] = useState<Record<string, QueuedMessage[]>>({});
+  const flushing = useRef(new Set<string>());
   useEffect(() => setError(""), [active]);
   const recordTurn = useCallback((id: string, turn: { status?: string; error?: { message?: string } } | undefined) => {
     if (!turn?.status) return;
@@ -101,21 +105,69 @@ export function useChat() {
     } else if (beforeUserItemId) id = await fork(id, model, beforeUserItemId);
     const title = clampThreadName(previewThreadName(text, "New chat"));
     if (!chats.find(c => c.id === id)?.chat.title && title) await chatRequest("rename", { threadId: id, title });
+    await deliver(id, text, images, effort);
+  };
+  const optimistic = (id: string, text: string, images: string[]) => {
     const optimisticId = `optimistic-user-${crypto.randomUUID()}`;
     revisions.current[id] = (revisions.current[id] ?? 0) + 1;
     setMessages(current => ({ ...current, [id]: [...(current[id] ?? []), { id: optimisticId, kind: "message", role: "user", text, images }] }));
+    return () => setMessages(current => ({ ...current, [id]: (current[id] ?? []).filter(item => item.id !== optimisticId) }));
+  };
+  const input = (text: string, images: string[]) => [{ type: "text", text }, ...images.map(url => ({ type: "image", url }))];
+  const deliver = async (id: string, text: string, images: string[], effort: string | null) => {
+    const undo = optimistic(id, text, images);
     setRunning(current => ({ ...current, [id]: true }));
     recordTurn(id, { status: "inProgress" });
     try {
       if (effort) localStorage.setItem(threadEffortKey(id), effort);
-      await chatRequest("send", { threadId: id, ...(effort ? { effort } : {}), input: [{ type: "text", text }, ...images.map(url => ({ type: "image", url }))] });
+      await chatRequest("send", { threadId: id, ...(effort ? { effort } : {}), input: input(text, images) });
       await refresh().catch(e => setError(String(e)));
     } catch (e) {
-      setMessages(current => ({ ...current, [id]: (current[id] ?? []).filter(item => item.id !== optimisticId) }));
+      undo();
       setRunning(current => ({ ...current, [id]: false }));
       recordTurn(id, { status: "failed", error: { message: String(e) } });
       throw e;
     }
   };
-  return { chats, active, setActive, messages: active ? messages[active] ?? [] : [], running: active ? Boolean(running[active]) : false, turnStatus: active ? turnStatus[active] : undefined, error: error || (active ? turnErrors[active] ?? "" : ""), setError, refresh, open, fork, send };
+  const queue = (text: string, images: string[]) => {
+    if (!active) return;
+    const item = { id: crypto.randomUUID(), text, images, createdAt: Date.now() };
+    setQueued(current => ({ ...current, [active]: [...(current[active] ?? []), item] }));
+  };
+  const unqueue = (itemId: string) => {
+    if (active) setQueued(current => ({ ...current, [active]: (current[active] ?? []).filter(item => item.id !== itemId) }));
+  };
+  /** Adds the message to the running response, or queues it if the response just ended. */
+  const steer = async (text: string, images: string[]) => {
+    if (!active) return "queued";
+    const undo = optimistic(active, text, images);
+    try {
+      await chatRequest("steer", { threadId: active, input: input(text, images) });
+      return "steered";
+    } catch (e) {
+      undo();
+      if (!/No running|turn changed/.test(String(e))) throw e;
+      queue(text, images);
+      return "queued";
+    }
+  };
+  useEffect(() => {
+    for (const [id, items] of Object.entries(queued)) {
+      // A stopped or failed response pauses the queue until the next one completes.
+      if (!items.length || running[id] || turnStatus[id] !== "completed" || flushing.current.has(id)) continue;
+      const [next, ...rest] = items;
+      flushing.current.add(id);
+      setQueued(current => ({ ...current, [id]: rest }));
+      void deliver(id, next.text, next.images ?? [], localStorage.getItem(threadEffortKey(id)))
+        .catch(e => {
+          setQueued(current => ({ ...current, [id]: [next, ...(current[id] ?? [])] }));
+          setTurnErrors(current => ({ ...current, [id]: String(e) }));
+        })
+        .finally(() => flushing.current.delete(id));
+    }
+  });
+  const pausedReason = active && queued[active]?.length && !running[active] && turnStatus[active] && turnStatus[active] !== "completed"
+    ? turnStatus[active] === "interrupted" ? "Paused because the response was stopped" : "Paused because the response failed"
+    : null;
+  return { chats, active, setActive, messages: active ? messages[active] ?? [] : [], running: active ? Boolean(running[active]) : false, turnStatus: active ? turnStatus[active] : undefined, error: error || (active ? turnErrors[active] ?? "" : ""), setError, refresh, open, fork, send, queue, unqueue, steer, queued: active ? queued[active] ?? [] : [], pausedReason };
 }
