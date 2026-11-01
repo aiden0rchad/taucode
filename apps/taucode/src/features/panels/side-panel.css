@@ -161,7 +161,7 @@
 
 /* Code's dock leaves stay in one DOM parent while the split tree changes. */
 .dock-workspace { --dock-content-inset: var(--layout-sidebar-column); --dock-rail-reserve: 0px; }
-.dock-workspace.has-session:not(.session-floating) { --dock-rail-reserve: 280px; }
+.dock-workspace.has-session:not(.session-floating) { --dock-rail-reserve: 288px; }
 .dock-workspace:has(.app.layout-tablet) { --dock-content-inset: calc(var(--tablet-nav-width, 72px) + var(--layout-sidebar-column)); }
 .dock-workspace:has(.app.layout-phone) { --dock-content-inset: 0px; }
 .dock-body { position: relative; isolation: isolate; overflow: hidden; }
@@ -170,6 +170,9 @@
 /* One tint layer spans the conversation and rail, including below the composer. */
 .dock-workspace .dock-body .workspace-main > :is(.app, .chat-layout),
 .dock-workspace .dock-body .workspace-main :is(.content, .chat-main, .home) { background: transparent; }
+.dock-workspace .content:not(.content-split) { margin-right: calc(-1 * var(--dock-rail-reserve)); }
+.dock-workspace .content:not(.content-split) .chat-pane-composer { width: calc(100% - var(--dock-rail-reserve)); }
+.dock-workspace .content:not(.content-split) .messages { padding-right: calc(32px + var(--dock-rail-reserve)); }
 .dock-workspace .workspace-main > :is(.app, .chat-layout) > :is(.main, .chat-main, .tablet-main),
 .dock-workspace .workspace-main > .app > .compact-shell {
   position: absolute;
@@ -211,16 +214,19 @@
 .dock-session-rail {
   --session-rail-width: min(280px, calc(var(--session-space-width) - 16px));
   width: var(--session-rail-width);
-  height: max(80px, calc(var(--dock-conversation-height) - var(--dock-composer-height, 0px) - 16px));
-  translate: 0 8px;
+  height: max(80px, calc(var(--dock-conversation-height) - 16px));
+  translate: -8px 8px;
   left: calc(var(--dock-content-inset) + (100% - var(--dock-content-inset)) * var(--dock-conversation-x) + var(--session-space-width) - var(--session-rail-width));
 }
 .dock-session-rail:not(.ds-popover) { border: 0; background: transparent; }
 .dock-session-rail.ds-popover {
+  height: max(80px, calc(var(--dock-conversation-height) - var(--dock-composer-height, 0px) - 16px));
   translate: -8px 8px;  z-index: var(--z-sheet);
   animation: none;
 }
 .dock-session-rail .dock-pane-content { overflow: hidden; }
+.dock-session-rail .code-session-rail { scrollbar-width: none; scrollbar-gutter: auto; }
+.dock-session-rail .code-session-rail::-webkit-scrollbar { display: none; }
 .dock-session-rail.ds-popover .code-session-card { border: 0; border-radius: 0; background: transparent; margin-bottom: 0; }
 .dock-session-rail.ds-popover .code-session-card + .code-session-card { border-top: 1px solid var(--border-subtle); }
 .dock-toolbar { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; }

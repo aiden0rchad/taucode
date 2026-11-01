@@ -167,12 +167,27 @@ async function checkSessionRail(page, base) {
     const r = await rail.boundingBox(), c = await chat.boundingBox(), composer = await page.locator('.composer').boundingBox();
     assert(r && c && composer, `Missing rail/chat/composer at ${width}`);
     assert(r.x >= c.x && r.x + r.width <= (width < 840 ? c.x + c.width : width) + 1, `Rail outside chat area at ${width}`);
-    assert(r.y + r.height <= composer.y + 1, `Rail covers composer at ${width}`);
+    if (width < 840) assert(r.y + r.height <= composer.y + 1, `Floating rail covers composer at ${width}`);
+    else {
+      assert(Math.abs(r.y + r.height - c.y - c.height + 8) < 1, 'Docked rail must use the space beside the composer');
+      const messages = await page.locator('.messages').boundingBox();
+      assert(messages && Math.abs(messages.x + messages.width - r.x - r.width - 8) < 1, 'Chat scrollbar must sit outside the rail');
+      assert(await page.locator('.messages').evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        return element.contains(document.elementFromPoint(rect.right - 4, rect.top + 40));
+      }), 'Chat scrollbar must not be clipped or covered at the outer edge');
+    }
     assert(width < 840 ? r.x < c.x + c.width : r.x >= c.x + c.width - 1, `Incorrect rail placement at ${width}`);
     assert.equal(await rail.locator('.dock-pane-header').count(), 0, 'Rail must not have expand/close chrome');
     assert(await draft.evaluate(element => !element.closest('[inert]')), 'Rail must keep chat interactive');
     assert.equal(await draft.inputValue(), 'Preserve this draft through rail resizing');
+    assert.equal(await rail.locator('.code-session-rail').evaluate(element => getComputedStyle(element).scrollbarWidth), 'none', 'Rail scrollbar must stay hidden');
   }
+  const railScroll = rail.getByRole('region', { name: 'Session details' });
+  const chatScroll = await page.locator('.messages').evaluate(element => element.scrollTop);
+  await railScroll.focus(); await page.keyboard.press('End');
+  await page.waitForFunction(() => document.querySelector('.code-session-rail').scrollTop > 0);
+  assert.equal(await page.locator('.messages').evaluate(element => element.scrollTop), chatScroll, 'Scrolling the rail must not move the chat');
   await page.setViewportSize({ width: 800, height: 800 });
   await page.locator('.dock-workspace.session-floating').waitFor();
   const before = await chat.boundingBox();
@@ -191,7 +206,7 @@ async function checkSessionRail(page, base) {
     if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
     await page.locator('.dock-workspace.has-session:not(.session-floating)').waitFor();
     const surface = page.locator('.dock-session-space'), s = await surface.boundingBox(), c = await chat.boundingBox(), r = await rail.boundingBox();
-    assert(s && c && r && Math.abs(s.x - c.x) < 1 && Math.abs(s.y - c.y) < 1 && Math.abs(s.height - c.height) < 1 && Math.abs(s.x + s.width - r.x - r.width) < 1, `${theme}: shared tint must span the entire chat and rail`);
+    assert(s && c && r && Math.abs(s.x - c.x) < 1 && Math.abs(s.y - c.y) < 1 && Math.abs(s.height - c.height) < 1 && Math.abs(s.x + s.width - r.x - r.width - 8) < 1, `${theme}: shared tint must span the entire chat and rail`);
     assert(await surface.evaluate(element => getComputedStyle(element).visibility === 'visible'), `${theme}: shared surface is hidden`);
     assert(await page.locator('.workspace-main > .app, .workspace-main .content').evaluateAll(elements => elements.every(element => {
       const style = getComputedStyle(element);

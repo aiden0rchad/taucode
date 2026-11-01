@@ -15,6 +15,11 @@
 }
 *:hover::-webkit-scrollbar-thumb, *.is-scrolling::-webkit-scrollbar-thumb { background-color: var(--scrollbar-thumb); }
 *::-webkit-scrollbar-thumb:hover { background-color: var(--scrollbar-thumb-hover); }
+/* Conversation thumbs appear during scrolling or when the thumb itself is hovered. */
+@supports not selector(::-webkit-scrollbar) {
+  .messages:not(.is-scrolling) { scrollbar-color: transparent transparent; }
+}
+.messages:not(.is-scrolling)::-webkit-scrollbar-thumb:not(:hover) { background: transparent; }
 :root[data-neon-palette="true"] :is(:hover, .is-scrolling)::-webkit-scrollbar-thumb {
   background-image: linear-gradient(var(--scrollbar-thumb), var(--scrollbar-thumb-hover));
   background-color: transparent;

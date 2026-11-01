@@ -160,7 +160,7 @@ export function CodeSessionRail(props: CodeSessionRailProps) {
     "Background tasks": <>{running.length ? running.map(task => <div className="code-session-row" key={task.id}><button className="code-session-file" title={task.command} onClick={() => openTool("background")}><span className="code-session-status" />{task.label || task.command}<small>{elapsed(task.startedAt)}</small></button><IconButton size="sm" aria-label={`Stop task ${task.label || task.command}`} disabled={props.tasks.busy} onClick={() => { stop(task.id); }}><Square size={11} /></IconButton></div>) : <p className="code-session-muted">No background tasks running.</p>}<button className="code-session-link" onClick={() => openTool("background")}>{finished ? `${finished} finished · View tasks` : "Manage tasks"}</button>{props.tasks.error && <p role="alert">{props.tasks.error}</p>}{!props.tasksEnabled && <p className="code-session-muted">Enable Terminal to start tasks.</p>}</>,
   };
   const counts: Partial<Record<Section, number>> = { Connectors: props.connectors.length, Outputs: props.outputs.length, Changes: props.git.files, Servers: servers.length, "Background tasks": running.length };
-  return <div className="code-session-rail" aria-label="Session details">
+  return <div className="code-session-rail" role="region" aria-label="Session details" tabIndex={0}>
     {error && <p role="alert">{error}</p>}
     {preferences.order.map((section, index) => {
       const empty = counts[section] === 0 && !(section === "Connectors" && (props.connectorError || props.connectorsLoading)) && !(section === "Background tasks" && props.tasks.error) && !(section === "Changes" && props.git.error && !isMissingRepo(props.git.error));
