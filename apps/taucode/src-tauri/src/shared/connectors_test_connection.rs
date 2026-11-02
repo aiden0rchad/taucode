@@ -290,8 +290,8 @@ mod tests {
     use super::*;
     struct Fake;
     impl rmcp::ServerHandler for Fake {
-        fn get_info(&self) -> rmcp::model::ServerInfo {
-            let mut info = rmcp::model::ServerInfo::default();
+        fn get_info(&self) -> rmcp::model::ServerConfig {
+            let mut info = rmcp::model::ServerConfig::default();
             info.capabilities = rmcp::model::ServerCapabilities::builder()
                 .enable_tools()
                 .build();

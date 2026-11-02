@@ -23,6 +23,8 @@ mod proxy_cli;
 mod rpc;
 #[path = "../rules.rs"]
 mod rules;
+// The daemon uses part of the shared modules; the app uses the rest.
+#[allow(dead_code)]
 #[path = "../shared/mod.rs"]
 mod shared;
 #[path = "../storage.rs"]

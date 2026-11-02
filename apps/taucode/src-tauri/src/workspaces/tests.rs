@@ -6,12 +6,10 @@ use std::sync::{Arc, Mutex as StdMutex};
 use super::settings::{apply_workspace_settings_update, sort_workspaces};
 use super::worktree::{
     build_clone_destination_path, sanitize_clone_dir_name, sanitize_worktree_name,
-    unique_worktree_path_for_rename,
 };
 use crate::backend::app_server::WorkspaceSession;
 use crate::shared::workspaces_core::{
     remove_workspace_core, remove_worktree_core, rename_worktree_core,
-    update_workspace_settings_core,
 };
 use crate::storage::{read_workspaces, write_workspaces};
 use crate::types::{

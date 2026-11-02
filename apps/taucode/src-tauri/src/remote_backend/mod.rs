@@ -251,9 +251,7 @@ mod tests {
         settings.remote_backend_host = "tcp.example:4732".to_string();
 
         let config = resolve_transport_config(&settings).expect("transport config");
-        let RemoteTransportConfig::Tcp { host, .. } = config else {
-            panic!("expected tcp transport config");
-        };
+        let RemoteTransportConfig::Tcp { host, .. } = config;
         assert_eq!(host, "tcp.example:4732");
     }
 

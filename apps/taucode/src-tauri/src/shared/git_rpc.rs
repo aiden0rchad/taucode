@@ -57,6 +57,7 @@ pub(crate) struct InitGitRepoRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Parsed only by the daemon.
 pub(crate) struct InitGitRepoRequiredRequest {
     pub(crate) workspace_id: String,
     pub(crate) branch: String,
@@ -73,6 +74,7 @@ pub(crate) struct CreateGitHubRepoRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Parsed only by the daemon.
 pub(crate) struct CreateGitHubRepoRequiredRequest {
     pub(crate) workspace_id: String,
     pub(crate) repo: String,
@@ -130,6 +132,7 @@ pub(crate) struct WorkspaceNameRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // Parsed only by the daemon.
 pub(crate) struct GenerateCommitMessageRequest {
     pub(crate) workspace_id: String,
     pub(crate) commit_message_model_id: Option<String>,

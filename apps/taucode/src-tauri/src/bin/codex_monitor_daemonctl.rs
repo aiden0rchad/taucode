@@ -1,5 +1,7 @@
 #[path = "../proxy_cli.rs"]
 mod proxy_cli;
+// The app uses the diagnostics helpers in this file.
+#[allow(dead_code)]
 #[path = "../daemon_binary.rs"]
 mod daemon_binary;
 #[allow(dead_code)]

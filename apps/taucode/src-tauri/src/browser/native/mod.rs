@@ -693,7 +693,7 @@ fn injected_fault(stage: &str) -> Result<(), String> {
         static FAULT: OnceLock<Option<(String, AtomicU32)>> = OnceLock::new();
         let fault = FAULT.get_or_init(|| parse_fault(&std::env::var("TAUCODE_BROWSER_FAULT").ok()?).map(|(stage, count)| (stage, AtomicU32::new(count))));
         if let Some((target, remaining)) = fault {
-            if target == stage && remaining.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok() {
+            if target == stage && remaining.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok() {
                 return Err(format!("injected test fault at {stage}"));
             }
         }
