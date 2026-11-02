@@ -159,6 +159,25 @@ Known gaps, not fixed:
    `ancestry:` and `window:` diagnostics. Next step: log the exact global point of
    the foreground click versus the Cancel button's AX frame on the external display.
 
+   **Findings (Nov 1 evening, Claude):**
+   - Gap 1 (Notes) is fixed in `681c3e1`: an empty-role AX read after approval is re-read,
+     not treated as a changed target. Verified live: replacing an existing query works.
+   - taucode's AXPress allows 50 ms (`ax_actions.rs` `apply`). On Preview's Cancel this
+     returns -25204, yet an external probe pressing with 50 ms saw the panel go away
+     within 0.5 s, with the button's handle still answering reads (status 0) for 600 ms.
+     So "pressed element removed" confirmation by liveness can never fire for this panel;
+     reachability from the window root (AXChildren links) is the signal to test.
+   - Claude's own background AXPress (2 s timeout) closed the panel cleanly.
+   - **Watching CG windows during a taucode run:** when the run binds Preview, the Open
+     panel's window is destroyed and recreated (new window id) at x≈5544 — past the
+     5120-wide main display, likely on the built-in screen. The planner then hits stale
+     window validation. Some "panel closed" readings may have been this move, not a close.
+   - Probe tools in `apps/taucode/scripts/ax-probes/` (build with `swiftc -O`): `press <timeout> [delay]` / `press check`, and `winwatch <s>`
+     that logs Preview's window ids/positions on change. AX probes must run from a process
+     with Accessibility (the Claude terminal tab), not the sandboxed shell.
+   - Next: find what in binding/activation makes Preview recreate the panel (focus guard?
+     `activateFromApplication`?), then test reachability-based press confirmation.
+
 ### Testing Computer Use live
 
 - Use the taucode Code conversation "Use your Computer Use tool on Calculator…" in
