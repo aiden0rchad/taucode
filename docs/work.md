@@ -70,6 +70,8 @@ A focused request is easier to check. After reviewing the first result, send a f
 | Failed | Read the error and retained progress before following up. |
 | Stopped | Execution was interrupted. Existing edits and files remain. |
 
+While a task runs, **Enter** queues a follow-up (or adds it to the running turn, per **Settings → Composer → Follow-up behavior**), and **Shift+Cmd+Enter** does the other. Queued follow-ups are saved with the task, so they keep waiting while you use another mode or restart the app. Each one is sent after the task finishes; a stopped or failed task keeps its queue until a later message completes.
+
 Task concurrency controls how many queued tasks can run together. Background work continues while the window is hidden, while the app/backend remains running. It is not a scheduled cloud service; quitting the runtime or losing the host can interrupt it.
 
 ## Files and approvals

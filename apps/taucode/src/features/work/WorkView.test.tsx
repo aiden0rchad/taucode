@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppSettings, ReasoningCapability, WorkState, WorkTask } from "@/types";
-import { WorkView, workQueues } from "./WorkView";
+import { WorkView } from "./WorkView";
 import { workRequest, workOutput, workAttachment, pickWorkAttachments, browserRequest } from "@services/tauri";
 
 const events = vi.hoisted(() => ({ listener: (_event: unknown) => {}, importsChanged: () => {} }));
@@ -40,13 +40,15 @@ beforeEach(() => {
     if (action === "respond") { state.tasks[0].status = "running"; state.tasks[0].pending = []; }
     if (action === "rename") state.tasks.find(t => t.id === params?.taskId)!.title = String(params?.title).trim();
     if (action === "stop-all") state.tasks.forEach(t => { t.status = "stopped"; });
+    if (action === "queue-follow-up") { const entry = state.tasks.find(t => t.id === params?.taskId)!; entry.followUps = [...entry.followUps ?? [], { id: `queued-${entry.followUps?.length ?? 0}`, text: String(params?.message), accessMode: params?.accessMode as WorkTask["accessMode"], createdAt: 0 }]; }
+    if (action === "unqueue-follow-up") { const entry = state.tasks.find(t => t.id === params?.taskId)!; entry.followUps = entry.followUps?.filter(f => f.id !== params?.id); }
     return {};
   });
   vi.mocked(workOutput).mockResolvedValue();
   vi.mocked(workAttachment).mockResolvedValue(".taucode/uploads/copied-notes.pdf");
   vi.mocked(pickWorkAttachments).mockResolvedValue(["/synthetic-source/notes.pdf"]);
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); workQueues.clear(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Work mode", () => {
   it.each([
@@ -373,7 +375,7 @@ describe("Work mode", () => {
     await waitFor(() => expect(input).toHaveProperty("value", ""));
     expect(workRequest).not.toHaveBeenCalledWith("create", expect.anything());
   });
-  it("queues follow-ups while a task runs and sends them one at a time after it completes", async () => {
+  it("queues follow-ups with the task in Rust while it runs, and steers with the shortcut", async () => {
     state.tasks = [task("Report", "running")];
     render(<WorkView settings={{ ...settings, steerEnabled: true, followUpMessageBehavior: "queue" }} />);
     fireEvent.click(await screen.findByRole("button", { name: "Report" }));
@@ -381,47 +383,35 @@ describe("Work mode", () => {
     for (const message of ["First check", "Second check"]) {
       fireEvent.change(input, { target: { value: message } });
       fireEvent.click(screen.getByRole("button", { name: "Queue follow-up" }));
+      await waitFor(() => expect(workRequest).toHaveBeenCalledWith("queue-follow-up", { taskId: "Report", message, accessMode: "ask" }));
     }
     expect(input).toHaveProperty("value", "");
-    expect(screen.getByText("First check")).toBeTruthy();
+    expect(await screen.findByText("First check")).toBeTruthy();
     expect(workRequest).not.toHaveBeenCalledWith("follow-up", expect.anything());
     fireEvent.change(input, { target: { value: "Steer now" } });
     fireEvent.keyDown(input, { key: "Enter", shiftKey: true, metaKey: true });
     await waitFor(() => expect(workRequest).toHaveBeenCalledWith("follow-up", { taskId: "Report", message: "Steer now", accessMode: "ask" }));
-    vi.mocked(workRequest).mockClear();
-    const request = vi.mocked(workRequest).getMockImplementation()!;
-    vi.mocked(workRequest).mockImplementation((action, params) => {
-      if (action === "follow-up") state.tasks[0].status = "running";
-      return request(action, params);
-    });
-    state.tasks[0].status = "done";
-    await act(async () => { events.importsChanged(); });
-    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("follow-up", { taskId: "Report", message: "First check", accessMode: "ask", model: "local/test", effort: null }));
-    expect(workRequest).not.toHaveBeenCalledWith("follow-up", expect.objectContaining({ message: "Second check" }));
   });
-  it("keeps queued follow-ups when the view unmounts for another mode", async () => {
-    state.tasks = [task("Report", "running")];
-    const view = render(<WorkView settings={{ ...settings, followUpMessageBehavior: "queue" }} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
-    const input = await screen.findByRole("textbox", { name: "Message task" });
-    fireEvent.change(input, { target: { value: "Kept across modes" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    view.unmount();
-    state.tasks[0].status = "done";
-    render(<WorkView settings={{ ...settings, followUpMessageBehavior: "queue" }} />);
-    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("follow-up", expect.objectContaining({ taskId: "Report", message: "Kept across modes" })));
-  });
-  it("pauses queued follow-ups when the running task stops", async () => {
-    state.tasks = [task("Report", "running")];
+  it("edits and deletes queued follow-ups through Rust", async () => {
+    state.tasks = [{ ...task("Report", "running"), followUps: [{ id: "a", text: "Edit me", accessMode: "ask", createdAt: 0 }, { id: "b", text: "Delete me", accessMode: "ask", createdAt: 0 }] }];
     render(<WorkView settings={{ ...settings, followUpMessageBehavior: "queue" }} />);
     fireEvent.click(await screen.findByRole("button", { name: "Report" }));
-    const input = await screen.findByRole("textbox", { name: "Message task" });
-    fireEvent.change(input, { target: { value: "Later" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    state.tasks[0].status = "stopped";
-    await act(async () => { events.importsChanged(); });
+    const menus = await screen.findAllByRole("button", { name: "Queue item menu" });
+    fireEvent.click(menus[1]);
+    fireEvent.click(screen.getByText("Delete"));
+    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("unqueue-follow-up", { taskId: "Report", id: "b" }));
+    await waitFor(() => expect(screen.queryByText("Delete me")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Queue item menu" }));
+    fireEvent.click(screen.getByText("Edit"));
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Message task" })).toHaveProperty("value", "Edit me"));
+    expect(workRequest).toHaveBeenCalledWith("unqueue-follow-up", { taskId: "Report", id: "a" });
+  });
+  it("shows the queue as paused when the task stopped", async () => {
+    state.tasks = [{ ...task("Report", "stopped"), followUps: [{ id: "a", text: "Later", accessMode: "ask", createdAt: 0 }] }];
+    render(<WorkView settings={{ ...settings, followUpMessageBehavior: "queue" }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
     expect(await screen.findByText("Paused because the task was stopped")).toBeTruthy();
-    expect(workRequest).not.toHaveBeenCalledWith("follow-up", expect.anything());
+    expect(screen.getByText("Later")).toBeTruthy();
   });
   it("preserves task drafts across selection and failed sends", async () => {
     state.tasks = [task("First", "done"), task("Second", "done")];

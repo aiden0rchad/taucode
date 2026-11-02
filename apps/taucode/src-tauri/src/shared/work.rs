@@ -44,6 +44,17 @@ struct Task {
     error: Option<String>,
     #[serde(default)]
     pending_message: Option<String>,
+    /// Messages written while the task ran, sent one at a time after it finishes.
+    #[serde(default)]
+    follow_ups: Vec<FollowUp>,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FollowUp {
+    id: String,
+    text: String,
+    access_mode: String,
+    created_at: i64,
 }
 impl Task {
     fn set_status(&mut self, status: &str) {
@@ -117,6 +128,54 @@ fn merge_outputs(task: &mut Task, space: &Space, paths: impl IntoIterator<Item =
         }
     }
     task.outputs.sort();
+}
+fn follow_up_text(params: &Value) -> Result<&str, String> {
+    let message = params["message"].as_str().unwrap_or("").trim();
+    if message.is_empty() || message.len() > 100_000 { return Err("Message must be 1–100000 bytes".into()); }
+    Ok(message)
+}
+/// Queues a finished task to continue with `message`, optionally switching access, model and reasoning.
+fn resume(state: &mut State, index: usize, message: &str, params: &Value) -> Result<(), String> {
+    let task = &state.store.tasks[index];
+    let mode = params["accessMode"].as_str().unwrap_or(&task.access_mode);
+    if !["ask", "read-only", "full-access"].contains(&mode) { return Err("Invalid access mode".into()); }
+    let model = match params.get("model") { Some(value) => value.as_str().ok_or("Select a registry model")?, None => &task.model };
+    let effort = match params.get("effort") {
+        None if model == task.model => task.effort.clone(),
+        None | Some(Value::Null) => None,
+        Some(value) => Some(value.as_str().ok_or("Invalid reasoning level")?.to_owned()),
+    };
+    if params.get("model").is_some() || params.get("effort").is_some() {
+        let (provider, model_id) = model.split_once('/').ok_or("Select a registry model")?;
+        let selected = state.settings.providers.iter().find(|p| p.enabled && p.id == provider)
+            .and_then(|p| p.models.iter().find(|m| m.enabled && m.id == model_id)).ok_or("Enable this registry model in Settings")?;
+        if let Some(level) = &effort {
+            if !selected.reasoning.as_ref().is_some_and(|r| r.supported && r.levels.contains(level)) {
+                return Err("Choose a reasoning level supported by this model".into());
+            }
+        }
+    }
+    let (mode, model) = (mode.to_owned(), model.to_owned());
+    let task = &mut state.store.tasks[index];
+    task.model = model;
+    task.effort = effort;
+    task.pending_message = Some(message.into());
+    task.set_status("queued");
+    task.access_mode = mode;
+    task.error = None;
+    Ok(())
+}
+/// Continues a done task with its next queued follow-up. Stopped and failed tasks keep theirs
+/// until a later message completes, and the slot is awaited by the normal task queue.
+fn flush_follow_ups(state: &mut State, index: usize) {
+    let task = &state.store.tasks[index];
+    if task.status != "done" || task.follow_ups.is_empty() { return; }
+    let next = state.store.tasks[index].follow_ups.remove(0);
+    if let Err(error) = resume(state, index, &next.text, &json!({"accessMode":next.access_mode})) {
+        let task = &mut state.store.tasks[index];
+        task.follow_ups.insert(0, next);
+        task.error = Some(error);
+    }
 }
 impl Work {
     #[cfg(test)]
@@ -207,7 +266,7 @@ impl Work {
                 created_at: None, updated_at: None, attachments: vec![], model: String::new(), effort: None, access_mode: "read-only".into(),
                 status: if completed { "done" } else { "stopped" }.into(), plan: vec![],
                 outputs: history["attachments"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_owned)).collect(),
-                pending: vec![], pending_message: None, error: history["warning"].as_str().map(str::to_owned),
+                pending: vec![], pending_message: None, follow_ups: vec![], error: history["warning"].as_str().map(str::to_owned),
             });
         }
         store.spaces.retain(|s| !s.imported || store.tasks.iter().any(|t| t.space_id == s.id));
@@ -367,6 +426,7 @@ impl Work {
                 Err(error) => task.error = Some(format!("{}Checkpoint outputs unavailable: {error}", task.error.as_ref().map(|e| format!("{e}\n")).unwrap_or_default())),
             }
         }
+        if method == "turn/completed" { flush_follow_ups(state, index); }
         self.save(&state.store)?;
         self.publish(state, Some(&state.store.tasks[index]), Some(&previous));
         Ok(())
@@ -452,7 +512,7 @@ impl Work {
                 let model = params["model"].as_str().ok_or("Select a model")?;
                 let (provider, model_id) = model.split_once('/').ok_or("Select a registry model")?;
                 if !state.settings.providers.iter().any(|p| p.enabled && p.id == provider && p.models.iter().any(|m| m.enabled && m.id == model_id)) { return Err("Enable this registry model in Settings".into()); }
-                let task = Task { created_at: Some(chrono::Utc::now().timestamp()), updated_at: None, id: uuid::Uuid::new_v4().to_string(), import_id: None, space_id: space_id.into(), thread_id: None, title: task_title(brief), brief: brief.into(), attachments, model: model.into(), effort: params["effort"].as_str().map(str::to_owned), access_mode: mode.into(), status: "queued".into(), plan: vec![], outputs: vec![], pending: vec![], pending_message: None, error: None };
+                let task = Task { created_at: Some(chrono::Utc::now().timestamp()), updated_at: None, id: uuid::Uuid::new_v4().to_string(), import_id: None, space_id: space_id.into(), thread_id: None, title: task_title(brief), brief: brief.into(), attachments, model: model.into(), effort: params["effort"].as_str().map(str::to_owned), access_mode: mode.into(), status: "queued".into(), plan: vec![], outputs: vec![], pending: vec![], pending_message: None, follow_ups: vec![], error: None };
                 let result = json!(task);
                 if params["runNow"] == true { state.store.tasks.insert(0, task); } else { state.store.tasks.push(task); }
                 return Ok(result);
@@ -491,8 +551,7 @@ impl Work {
         match action {
             "read" => session.pi.request(&space.id, "thread/read", json!({"threadId":thread})).await,
             "follow-up" => {
-                let message = params["message"].as_str().unwrap_or("").trim();
-                if message.is_empty() || message.len() > 100_000 { return Err("Message must be 1–100000 bytes".into()); }
+                let message = follow_up_text(&params)?;
                 if space.read_only { return Err("This space is read-only".into()); }
                 if task.status == "needs-input" { return Err("Answer the pending request before sending another message".into()); }
                 if matches!(task.status.as_str(), "queued" | "starting" | "stopping") { return Err("Wait for this task to start or finish stopping".into()); }
@@ -506,32 +565,23 @@ impl Work {
                 if state.store.tasks.iter().any(|t| t.space_id == space.id && occupied(&t.status)) || state.store.tasks.iter().filter(|t| occupied(&t.status)).count() >= state.store.concurrency {
                     return Err("Wait for an available task slot before continuing".into());
                 }
+                resume(state, index, message, &params)?;
+                Ok(json!({}))
+            }
+            "queue-follow-up" => {
+                let message = follow_up_text(&params)?;
+                if space.read_only { return Err("This space is read-only".into()); }
                 let mode = params["accessMode"].as_str().unwrap_or(&task.access_mode);
                 if !["ask", "read-only", "full-access"].contains(&mode) { return Err("Invalid access mode".into()); }
-                let model = match params.get("model") { Some(value) => value.as_str().ok_or("Select a registry model")?, None => &task.model };
-                let effort = match params.get("effort") {
-                    None if model == task.model => task.effort.clone(),
-                    None | Some(Value::Null) => None,
-                    Some(value) => Some(value.as_str().ok_or("Invalid reasoning level")?.to_owned()),
-                };
-                if params.get("model").is_some() || params.get("effort").is_some() {
-                    let (provider, model_id) = model.split_once('/').ok_or("Select a registry model")?;
-                    let selected = state.settings.providers.iter().find(|p| p.enabled && p.id == provider)
-                        .and_then(|p| p.models.iter().find(|m| m.enabled && m.id == model_id)).ok_or("Enable this registry model in Settings")?;
-                    if let Some(level) = &effort {
-                        if !selected.reasoning.as_ref().is_some_and(|r| r.supported && r.levels.contains(level)) {
-                            return Err("Choose a reasoning level supported by this model".into());
-                        }
-                    }
-                }
+                let item = FollowUp { id: uuid::Uuid::new_v4().to_string(), text: message.into(), access_mode: mode.into(), created_at: chrono::Utc::now().timestamp_millis() };
+                state.store.tasks[index].follow_ups.push(item.clone());
+                flush_follow_ups(state, index);
+                Ok(json!(item))
+            }
+            "unqueue-follow-up" => {
                 let task = &mut state.store.tasks[index];
-                task.model = model.into();
-                task.effort = effort;
-                task.pending_message = Some(message.into());
-                task.set_status("queued");
-                task.access_mode = mode.into();
-                task.error = None;
-                Ok(json!({}))
+                let position = task.follow_ups.iter().position(|f| Some(f.id.as_str()) == params["id"].as_str()).ok_or("This follow-up was already sent")?;
+                Ok(json!(task.follow_ups.remove(position)))
             }
             "respond" => {
                 let request = task.pending.iter().find(|p| p["id"] == params["requestId"]).ok_or("Input request is no longer pending")?;
@@ -645,7 +695,7 @@ mod tests {
         fn emit_terminal_exit(&self, _: TerminalExit) {}
     }
     fn task(id: &str, space: &str, status: &str) -> Task {
-        Task { created_at: None, updated_at: None, import_id: None, id: id.into(), space_id: space.into(), thread_id: Some(id.into()), title: id.into(), brief: "brief".into(), attachments: vec![], model: "local/test".into(), effort: None, access_mode: "ask".into(), status: status.into(), plan: vec![], outputs: vec![], pending: vec![], pending_message: None, error: None }
+        Task { created_at: None, updated_at: None, import_id: None, id: id.into(), space_id: space.into(), thread_id: Some(id.into()), title: id.into(), brief: "brief".into(), attachments: vec![], model: "local/test".into(), effort: None, access_mode: "ask".into(), status: status.into(), plan: vec![], outputs: vec![], pending: vec![], pending_message: None, follow_ups: vec![], error: None }
     }
     #[test]
     fn automatic_titles_keep_whole_words_with_a_unicode_safe_limit() {
@@ -993,6 +1043,49 @@ mod tests {
         assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), marker, "Transcript-only events must not rewrite work/state.json");
         let forwarded: Vec<_> = sink.0.lock().unwrap().iter().map(|e| e.message.clone()).collect();
         assert_eq!(forwarded, messages, "Transcript events must arrive unchanged without metadata refreshes");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    async fn queued_follow_ups_persist_and_send_one_at_a_time_after_a_done_turn() {
+        let root = temp();
+        let folder = root.join("space");
+        std::fs::create_dir_all(&folder).unwrap();
+        let service = Work::new(root.join("data"), Sink::default());
+        let space = Space { id: "space".into(), name: "Space".into(), path: folder.canonicalize().unwrap().to_string_lossy().into_owned(), kind: WorkspaceKind::Work, read_only_folders: vec![], read_only: false, imported: false };
+        let mut state = service.state.lock().await;
+        state.store.spaces.push(space.clone());
+        state.store.tasks.push(task("thread", "space", "running"));
+        let session = service.session(&mut state, &space).await;
+        session.checkpoints.as_ref().unwrap().before("space", "thread", "pi", &json!({"input":[]})).await.unwrap();
+        let completed = |status: &str| AppServerEvent { workspace_id: "space".into(), message: json!({"method":"turn/completed","params":{"threadId":"thread","turn":{"status":status}}}) };
+        assert!(service.action(&mut state, "queue-follow-up", json!({"taskId":"thread","message":"  "})).await.is_err());
+        let first = service.action(&mut state, "queue-follow-up", json!({"taskId":"thread","message":"First","accessMode":"read-only"})).await.unwrap();
+        service.action(&mut state, "queue-follow-up", json!({"taskId":"thread","message":"Second"})).await.unwrap();
+        let dropped = service.action(&mut state, "queue-follow-up", json!({"taskId":"thread","message":"Dropped"})).await.unwrap();
+        assert_eq!(service.action(&mut state, "unqueue-follow-up", json!({"taskId":"thread","id":dropped["id"]})).await.unwrap()["text"], "Dropped");
+        assert!(service.action(&mut state, "unqueue-follow-up", json!({"taskId":"thread","id":dropped["id"]})).await.is_err());
+        service.save(&state.store).unwrap();
+        let persisted: Value = serde_json::from_slice(&std::fs::read(service.data.join("work/state.json")).unwrap()).unwrap();
+        assert_eq!(persisted["tasks"][0]["followUps"][0]["id"], first["id"]);
+        assert_eq!(persisted["tasks"][0]["followUps"].as_array().unwrap().len(), 2);
+        // A stopped turn pauses the queue.
+        service.observe(&mut state, &completed("interrupted")).await.unwrap();
+        assert_eq!(state.store.tasks[0].status, "stopped");
+        assert_eq!(state.store.tasks[0].follow_ups.len(), 2);
+        state.store.tasks[0].set_status("running");
+        service.observe(&mut state, &completed("completed")).await.unwrap();
+        assert_eq!(state.store.tasks[0].status, "queued");
+        assert_eq!(state.store.tasks[0].pending_message.as_deref(), Some("First"));
+        assert_eq!(state.store.tasks[0].access_mode, "read-only");
+        assert_eq!(state.store.tasks[0].follow_ups.iter().map(|f| f.text.as_str()).collect::<Vec<_>>(), vec!["Second"]);
+        // Queueing on a task that already finished continues it right away.
+        state.store.tasks[0].set_status("done");
+        state.store.tasks[0].follow_ups.clear();
+        service.action(&mut state, "queue-follow-up", json!({"taskId":"thread","message":"Late"})).await.unwrap();
+        assert_eq!(state.store.tasks[0].status, "queued");
+        assert_eq!(state.store.tasks[0].pending_message.as_deref(), Some("Late"));
+        for session in state.sessions.values() { session.pi.shutdown().await.unwrap(); }
+        drop(state);
         std::fs::remove_dir_all(root).unwrap();
     }
     #[tokio::test]

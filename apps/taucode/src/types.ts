@@ -812,6 +812,8 @@ export type WorkTask = {
   id: string; spaceId: string; threadId: string | null; title: string; brief: string;
   attachments: string[]; model: string; accessMode: "ask" | "read-only" | "full-access"; status: WorkStatus;
   plan: TurnPlanStep[]; outputs: string[]; pending: WorkRequest[]; error: string | null;
+  /** Messages queued while the task ran; Rust sends them one at a time after it completes. */
+  followUps?: (QueuedMessage & { accessMode: WorkTask["accessMode"] })[];
 };
 export type WorkState = { spaces: WorkSpace[]; tasks: WorkTask[]; concurrency: number };
 export type ImportEntry = {

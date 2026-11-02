@@ -25,9 +25,8 @@ import { Folder, FolderLock, X, FolderTree, FileSearch, Table, Presentation, Tra
 import { ComposerShell, ComposerSendButton, ComposerAccessControl } from "@/features/composer/components/ComposerShell";
 import { getFileTypeIconUrl } from "@utils/fileTypeIcons";
 import { createElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { AppSettings, QueuedMessage, WorkRequest, WorkTask } from "@/types";
+import type { AppSettings, WorkRequest, WorkTask } from "@/types";
 import { ComposerQueue } from "@/features/composer/components/ComposerQueue";
-import { createQueueStore } from "@/features/composer/queueStore";
 import { isMacPlatform } from "@utils/platformPaths";
 import { checkpointRequest, pickWorkspacePath, pickWorkspacePaths, pickWorkAttachments, workAttachment, workOutput, workRequest } from "@services/tauri";
 import { subscribeWindowDragDrop } from "@services/dragDrop";
@@ -85,7 +84,6 @@ function WorkAgentsLink() {
   return <button type="button" className="ghost work-agents-link" onClick={() => panel?.openTool("agents")}><Bot size={16} aria-hidden />View agents</button>;
 }
 
-export const workQueues = createQueueStore<QueuedMessage & { accessMode: WorkTask["accessMode"] }>();
 
 export function WorkView({ settings, onOpenSettings = () => {} }: { settings: AppSettings; onOpenSettings?: () => void }) {
   const features = useFeatures();
@@ -205,39 +203,24 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       setFollowSelections(current => { const next = { ...current }; delete next[id]; return next; });
     });
   };
-  // Follow-ups written while a task runs, sent one at a time after it completes.
-  const [queued, setQueued] = workQueues.useQueue();
-  const flushing = useRef(new Set<string>());
   const followUpMode = settings.followUpMessageBehavior === "steer" && settings.steerEnabled ? "steer" : "queue";
   const otherFollowUpMode = followUpMode === "steer" || !settings.steerEnabled ? "queue" : "steer";
   const followUpShortcut = isMacPlatform() ? "Shift+Cmd+Enter" : "Shift+Ctrl+Enter";
+  // Queued follow-ups live with the task in Rust, which sends them one at a time after it completes.
   const sendFollowUp = (other = false) => {
     if (task?.status === "running" && (other ? otherFollowUpMode : followUpMode) === "queue") {
       if (busy || !followUp.trim()) return;
       const id = task.id;
-      setQueued(current => ({ ...current, [id]: [...(current[id] ?? []), { id: crypto.randomUUID(), text: followUp, createdAt: Date.now(), accessMode: followAccess }] }));
-      setDrafts(current => { const next = { ...current }; delete next[id]; return next; });
+      void run(async () => {
+        await work.mutate("queue-follow-up", { taskId: id, message: followUp, accessMode: followAccess });
+        setDrafts(current => { const next = { ...current }; delete next[id]; return next; });
+      });
       return;
     }
     void continueTask(followUp, true);
   };
-  useEffect(() => {
-    for (const entry of work.state.tasks) {
-      const items = queued[entry.id];
-      // A stopped or failed task pauses its queue until a follow-up completes.
-      if (!items?.length || entry.status !== "done" || flushing.current.has(entry.id)) continue;
-      const [next, ...rest] = items;
-      flushing.current.add(entry.id);
-      setQueued(current => ({ ...current, [entry.id]: rest }));
-      void work.mutate("follow-up", { taskId: entry.id, message: next.text, accessMode: next.accessMode, model: entry.model, effort: entry.effort ?? null })
-        .catch(error => {
-          setQueued(current => ({ ...current, [entry.id]: [next, ...(current[entry.id] ?? [])] }));
-          work.setError(String(error));
-        })
-        .finally(() => flushing.current.delete(entry.id));
-    }
-  });
-  const taskQueue = task ? queued[task.id] ?? [] : [];
+  const taskQueue = task?.followUps ?? [];
+  // A stopped or failed task keeps its queue until a follow-up completes.
   const queuePausedReason = taskQueue.length && (task?.status === "stopped" || task?.status === "failed")
     ? task.status === "stopped" ? "Paused because the task was stopped" : "Paused because the task failed"
     : null;
@@ -386,11 +369,11 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
               setBrief(task.pendingMessage ?? task.brief); setSpaceId(task.spaceId); setModel(task.model); setAccess(task.accessMode); setAttachments(task.attachments); work.setActive(null);
             }}>Reuse brief</button>}
           </div>
-          <ComposerQueue queuedMessages={taskQueue} pausedReason={queuePausedReason} onDeleteQueued={itemId => setQueued(current => ({ ...current, [task.id]: (current[task.id] ?? []).filter(item => item.id !== itemId) }))} onEditQueued={item => {
-            setQueued(current => ({ ...current, [task.id]: (current[task.id] ?? []).filter(entry => entry.id !== item.id) }));
+          <ComposerQueue queuedMessages={taskQueue} pausedReason={queuePausedReason} onDeleteQueued={itemId => { void run(() => work.mutate("unqueue-follow-up", { taskId: task.id, id: itemId })); }} onEditQueued={item => { void run(async () => {
+            await work.mutate("unqueue-follow-up", { taskId: task.id, id: item.id });
             setDrafts(current => ({ ...current, [task.id]: item.text }));
             followInputRef.current?.focus();
-          }} />
+          }); }} />
           <ComposerShell
             toolbar={<ComposerAccessControl value={followAccess} onChange={setFollowAccess} disabled={busy || active || task.status === "queued"} />}
             reasoning={{
