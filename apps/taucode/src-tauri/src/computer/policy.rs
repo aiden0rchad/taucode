@@ -81,8 +81,9 @@ pub enum Action {
     Wait {
         seconds: f64,
     },
-    /// Read-only: searches Notes through its scripting interface; the result goes to the planner.
-    SearchNotes {
+    /// Read-only: searches Notes or Reminders through their scripting interface; the result
+    /// goes to the planner.
+    SearchItems {
         query: String,
     },
     Done {
@@ -228,8 +229,8 @@ impl Prediction {
             Action::Type { text, .. } if text.len() > 32768 || text.contains('\0') => {
                 return Err("Invalid text".into())
             }
-            Action::SearchNotes { query } if query.trim().is_empty() || query.len() > 500 || query.contains('\0') => {
-                return Err("Invalid Notes search".into())
+            Action::SearchItems { query } if query.trim().is_empty() || query.len() > 500 || query.contains('\0') => {
+                return Err("Invalid search".into())
             }
             _ => (),
         }
@@ -237,6 +238,7 @@ impl Prediction {
     }
 }
 pub const NOTES: &str = "com.apple.Notes";
+pub const REMINDERS: &str = "com.apple.reminders";
 pub const ALWAYS_DENIED: &[&str] = &[
     "com.agilebits.onepassword7",
     "com.agilebits.onepassword",
@@ -498,11 +500,11 @@ fn review(
     {
         return Decision::Deny("Target app is not allowed; use an allowed bundle ID".into());
     }
-    if matches!(a, Action::SearchNotes { .. }) {
-        return if c.app == NOTES {
+    if matches!(a, Action::SearchItems { .. }) {
+        return if [NOTES, REMINDERS].contains(&c.app.as_str()) {
             Decision::Allow
         } else {
-            Decision::Deny("search_notes works only in a run that targets Notes".into())
+            Decision::Deny("search_items works only in a run that targets Notes or Reminders".into())
         };
     }
     if let Err(reason) = check_pane(&c.app, target_info) {
@@ -553,7 +555,7 @@ fn review(
             | Action::Open { .. }
             | Action::SwitchApp { .. }
             | Action::Wait { .. }
-            | Action::SearchNotes { .. }
+            | Action::SearchItems { .. }
             | Action::Done { .. }
             | Action::Fail { .. } => true,
             _ => false,

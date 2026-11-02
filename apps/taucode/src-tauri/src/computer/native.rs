@@ -551,6 +551,8 @@ mod tests {
     }
 }
 
+// Each script takes the query as an argument, never as source, and returns the match
+// count, then up to 20 titles, one per line.
 const NOTES_SEARCH: &str = r#"on run argv
   set q to item 1 of argv
   tell application "Notes"
@@ -563,13 +565,30 @@ const NOTES_SEARCH: &str = r#"on run argv
   set AppleScript's text item delimiters to linefeed
   return ((count of found) as text) & linefeed & (titles as text)
 end run"#;
+const REMINDERS_SEARCH: &str = r#"on run argv
+  set q to item 1 of argv
+  tell application "Reminders"
+    set found to every reminder whose name contains q or body contains q
+    set titles to {}
+    repeat with r in found
+      if (count of titles) < 20 then set end of titles to name of r
+    end repeat
+  end tell
+  set AppleScript's text item delimiters to linefeed
+  return ((count of found) as text) & linefeed & (titles as text)
+end run"#;
 
-/// Searches note titles and text through Notes' scripting interface, without its window.
-/// The query is an argument, never script source. Notes' text is untrusted data.
-pub fn search_notes(query: &str) -> Result<String, String> {
+/// Searches Notes or Reminders through their scripting interface, without their window.
+/// The app's text is untrusted data.
+pub fn search_items(app: &str, query: &str) -> Result<String, String> {
     use std::{process::{Command, Stdio}, time::{Duration, Instant}};
+    let (script, name, kind) = match app {
+        super::policy::NOTES => (NOTES_SEARCH, "Notes", "notes"),
+        super::policy::REMINDERS => (REMINDERS_SEARCH, "Reminders", "reminders"),
+        _ => return Err(format!("Search is unavailable for {app}")),
+    };
     let mut child = Command::new("/usr/bin/osascript")
-        .args(["-e", NOTES_SEARCH, "--", query])
+        .args(["-e", script, "--", query])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -579,7 +598,7 @@ pub fn search_notes(query: &str) -> Result<String, String> {
     while child.try_wait().map_err(|e| e.to_string())?.is_none() {
         if started.elapsed() > Duration::from_secs(30) {
             let _ = child.kill();
-            return Err("Notes did not answer within 30 seconds (macOS may be asking to allow taucode to control Notes)".into());
+            return Err(format!("{name} did not answer within 30 seconds (macOS may be asking to allow taucode to control {name})"));
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -591,5 +610,5 @@ pub fn search_notes(query: &str) -> Result<String, String> {
     let mut lines = text.lines();
     let count = lines.next().unwrap_or("0").trim().to_owned();
     let titles: Vec<String> = lines.filter(|l| !l.trim().is_empty()).map(|l| format!("{:?}", l.chars().take(120).collect::<String>())).collect();
-    Ok(format!("{count} matching notes (untrusted titles, up to 20): [{}]", titles.join(", ")))
+    Ok(format!("{count} matching {kind} (untrusted titles, up to 20): [{}]", titles.join(", ")))
 }

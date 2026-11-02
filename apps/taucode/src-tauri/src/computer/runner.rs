@@ -113,9 +113,9 @@ pub trait Environment {
     fn keyboard_idle(&self) -> f64 {
         f64::INFINITY
     }
-    /// Matching note count and titles, read without the Notes window.
-    fn search_notes<'a>(&'a self, _: &'a str) -> BoxFuture<'a, Result<String, String>> {
-        Box::pin(async { Err("Notes search is unavailable".into()) })
+    /// Matching item count and titles in the target app, read without its window.
+    fn search_items<'a>(&'a self, _: &'a str, _: &'a str) -> BoxFuture<'a, Result<String, String>> {
+        Box::pin(async { Err("Search is unavailable".into()) })
     }
     /// Checked after an action's last event, before key focus is handed back.
     fn input_finished(&self) -> Result<(), String> {
@@ -162,9 +162,9 @@ fn verify_app(check: &str, before: &Context, after: &Context) -> Result<(), Stri
     }
     Ok(())
 }
-/// Done, Fail, Wait and SearchNotes send no input, so they have no input target to resolve or verify.
+/// Done, Fail, Wait and SearchItems send no input, so they have no input target to resolve or verify.
 fn input_target(env: &impl Environment, action: &Action) -> Result<Target, String> {
-    if matches!(action, Action::Done { .. } | Action::Fail { .. } | Action::Wait { .. } | Action::SearchNotes { .. }) {
+    if matches!(action, Action::Done { .. } | Action::Fail { .. } | Action::Wait { .. } | Action::SearchItems { .. }) {
         Ok(Target::default())
     } else {
         env.policy_target(action)
@@ -393,7 +393,7 @@ async fn execute(
                     })
                     .await?
             }
-            Action::Done { .. } | Action::Fail { .. } | Action::SearchNotes { .. } => (),
+            Action::Done { .. } | Action::Fail { .. } | Action::SearchItems { .. } => (),
         }
         if matches!(action, Action::Open { .. } | Action::SwitchApp { .. }) {
             control
@@ -852,10 +852,10 @@ pub async fn run(
             });
             // The planner reads the search result in its next observation.
             let mut tool_result = None;
-            if let (Ok(()), Action::SearchNotes { query }) = (&outcome, &action) {
-                let found = control.until(env.search_notes(query)).await.unwrap_or_else(|e| format!("failed: {e}"));
+            if let (Ok(()), Action::SearchItems { query }) = (&outcome, &action) {
+                let found = control.until(env.search_items(&after.app, query)).await.unwrap_or_else(|e| format!("failed: {e}"));
                 pending.as_mut().unwrap()["toolResult"] = json!(found);
-                tool_result = Some(format!("Tool result: search_notes({query:?}) {found}\n\n"));
+                tool_result = Some(format!("Tool result: search_items({query:?}) {found}\n\n"));
             }
             let mut entry = pending.take().unwrap();
             entry[phase] = json!(

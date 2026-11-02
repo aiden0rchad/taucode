@@ -2203,26 +2203,26 @@ async fn closing_the_last_window_is_verified_read_only_instead_of_failing_the_ca
 }
 
 #[tokio::test]
-async fn notes_search_result_reaches_the_planner_and_other_apps_refuse_it() {
-    for in_notes in [true, false] {
+async fn notes_and_reminders_search_results_reach_the_planner_and_other_apps_refuse_it() {
+    for app in [Some(super::policy::NOTES), Some(super::policy::REMINDERS), None] {
         let input = FakeInput::default();
         let control = Control::new(input.clone());
         control.start();
-        let mut env = fake(vec![json!({"kind":"search_notes","query":"taucode"}), json!({"kind":"done","summary":"7 notes"})]);
+        let mut env = fake(vec![json!({"kind":"search_items","query":"taucode"}), json!({"kind":"done","summary":"7 notes"})]);
         let mut s = settings();
-        if in_notes {
-            s.allowed_apps.push(super::policy::NOTES.into());
-            env.focus = Context { app: super::policy::NOTES.into(), secure: false };
+        if let Some(app) = app {
+            s.allowed_apps.push(app.into());
+            env.focus = Context { app: app.into(), secure: false };
         }
         runner::run(&mut env, &control, &s, &s.app_ids(), "Count taucode notes", Instant::now()).await.unwrap();
         // A read-only search sends no input either way.
         assert!(input.0.lock().unwrap().is_empty());
         let next = &env.instructions[1];
-        if in_notes {
-            assert!(next.starts_with("Tool result: search_notes(\"taucode\") failed: Notes search is unavailable"), "{next}");
+        if app.is_some() {
+            assert!(next.starts_with("Tool result: search_items(\"taucode\") failed: Search is unavailable"), "{next}");
             assert_eq!(env.steps.iter().filter_map(|s| s["toolResult"].as_str()).count(), 1);
         } else {
-            assert!(next.starts_with("Previous action was NOT executed: search_notes works only in a run that targets Notes"), "{next}");
+            assert!(next.starts_with("Previous action was NOT executed: search_items works only in a run that targets Notes or Reminders"), "{next}");
         }
     }
 }

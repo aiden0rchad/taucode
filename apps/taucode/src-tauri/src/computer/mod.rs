@@ -623,10 +623,10 @@ impl runner::Environment for Live {
     fn verify_target(&self) -> Result<(), String> {
         self.session.as_ref().map_or(Ok(()), |s| s.verify_element())
     }
-    fn search_notes<'a>(&'a self, query: &'a str) -> crate::shared::providers::BoxFuture<'a, Result<String, String>> {
-        let query = query.to_owned();
+    fn search_items<'a>(&'a self, app: &'a str, query: &'a str) -> crate::shared::providers::BoxFuture<'a, Result<String, String>> {
+        let (app, query) = (app.to_owned(), query.to_owned());
         Box::pin(async move {
-            tokio::task::spawn_blocking(move || native::search_notes(&query))
+            tokio::task::spawn_blocking(move || native::search_items(&app, &query))
                 .await
                 .map_err(|e| e.to_string())?
         })
@@ -680,7 +680,7 @@ impl runner::Environment for Live {
         if matches!(
             action,
             Action::Wait { .. }
-                | Action::SearchNotes { .. }
+                | Action::SearchItems { .. }
                 | Action::Done { .. }
                 | Action::Fail { .. }
                 | Action::SwitchApp { .. }

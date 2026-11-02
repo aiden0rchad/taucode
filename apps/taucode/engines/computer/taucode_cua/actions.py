@@ -12,7 +12,7 @@ from .vendor.agent_s3.utils.common_utils import call_llm_safe
 
 from .vendor.agent_s3.agents.grounding import OSWorldACI, agent_action
 
-ALLOWED = frozenset(('click', 'click_sequence', 'search_notes', 'type', 'scroll', 'drag_and_drop', 'hotkey',
+ALLOWED = frozenset(('click', 'click_sequence', 'search_items', 'type', 'scroll', 'drag_and_drop', 'hotkey',
                      'hold_and_press', 'open', 'switch_applications', 'wait', 'done', 'fail'))
 # The host sends these when the last proposal was not cleanly executed.
 RECOVERY_PREFIXES = ('Previous action was NOT executed:', 'Previous action was interrupted after input started:', 'READ-ONLY VERIFICATION:')
@@ -231,12 +231,12 @@ class StructuredACI(OSWorldACI):
         return action
 
     @agent_action
-    def search_notes(self, query: str):
-        """Notes only: count notes whose title or text contains the query and list up to 20 titles, without using the Notes window; the result arrives with the next screenshot. Use it instead of the Notes search field."""
+    def search_items(self, query: str):
+        """Notes and Reminders only: count notes or reminders whose title or text contains the query and list up to 20 titles, without using the app's window; the result arrives with the next screenshot. Use it instead of the app's search field."""
         query = check_text(query)
         if not query.strip() or len(query) > 500:
-            raise ValueError('search_notes needs a query of 1 to 500 characters')
-        return dict(kind='search_notes', query=query)
+            raise ValueError('search_items needs a query of 1 to 500 characters')
+        return dict(kind='search_items', query=query)
 
     @agent_action
     def type(self, element_description: str | None = None, text: str = '', overwrite: bool = False, enter: bool = False):
