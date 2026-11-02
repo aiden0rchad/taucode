@@ -161,6 +161,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "rename": if (task) task.title = String(params.title ?? task.title); return task ?? null;
       case "respond": if (task) { task.pending = []; task.status = record(params.answer).decision === "decline" ? "stopped" : "running"; } break;
       case "stop": if (task) task.status = "stopped"; break;
+      case "delete": state.work.tasks = state.work.tasks.filter(t => t !== task); break;
       case "stop-all": state.work.tasks.forEach(t => { if (["running", "needs-input", "queued"].includes(t.status)) { t.status = "stopped"; t.pending = []; } }); break;
       case "concurrency": state.work.concurrency = Math.min(8, Math.max(1, Number(params.count) || 2)); break;
       case "checkpoint": return checkpoint(record(params.request));
@@ -397,6 +398,7 @@ export function createPreviewHandler(publish: Publish = () => {}, search = "") {
       case "plugin:notification|is_permission_granted": return false;
       case "plugin:dialog|open": return setup ? ["~/Projects/atlas"] : null;
       case "plugin:dialog|save": case "plugin:updater|check": return null;
+      case "plugin:dialog|ask": return true;
       case "connect_workspace": case "set_workspace_runtime_codex_args": case "set_thread_access_mode":
       case "thread_live_subscribe": case "thread_live_unsubscribe": case "turn_interrupt":
       case "menu_set_accelerators": case "set_tray_recent_threads": case "set_tray_session_usage":

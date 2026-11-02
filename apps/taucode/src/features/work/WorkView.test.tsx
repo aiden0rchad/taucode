@@ -16,6 +16,7 @@ vi.mock("@services/events", () => ({ subscribeMenuViewAction: () => () => {},
   subscribeImportsChanged: (listener: () => void) => { events.importsChanged = listener; return () => {}; },
 }));
 vi.mock("@services/dragDrop", () => ({ subscribeWindowDragDrop: () => () => {} }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ ask: vi.fn().mockResolvedValue(true) }));
 vi.mock("@/features/chat/ModeShell", () => ({ ModeSwitcher: () => <nav>Code Chat Work</nav> }));
 vi.mock("@/features/checkpoints/Checkpoints", () => ({ Checkpoints: () => null, RewindAction: () => <button>Rewind…</button> }));
 const settings = { providers: [{ id: "local", name: "Local", enabled: true, models: [{ id: "test", enabled: true }] }] } as AppSettings;
@@ -39,6 +40,7 @@ beforeEach(() => {
     if (action === "read") return { result: { thread: { id: params?.taskId, turns: [] } } };
     if (action === "respond") { state.tasks[0].status = "running"; state.tasks[0].pending = []; }
     if (action === "rename") state.tasks.find(t => t.id === params?.taskId)!.title = String(params?.title).trim();
+    if (action === "delete") state.tasks = state.tasks.filter(t => t.id !== params?.taskId);
     if (action === "stop-all") state.tasks.forEach(t => { t.status = "stopped"; });
     if (action === "queue-follow-up") { const entry = state.tasks.find(t => t.id === params?.taskId)!; entry.followUps = [...entry.followUps ?? [], { id: `queued-${entry.followUps?.length ?? 0}`, text: String(params?.message), accessMode: params?.accessMode as WorkTask["accessMode"], createdAt: 0 }]; }
     if (action === "unqueue-follow-up") { const entry = state.tasks.find(t => t.id === params?.taskId)!; entry.followUps = entry.followUps?.filter(f => f.id !== params?.id); }
@@ -219,6 +221,19 @@ describe("Work mode", () => {
     expect(progress.scrollTop).toBe(2000);
     expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
     expect(workRequest).not.toHaveBeenCalledWith("respond", expect.anything());
+  });
+  it("deletes a finished task after confirmation but offers no delete while one runs", async () => {
+    state.tasks = [task("Report", "done"), task("Live", "running")];
+    render(<WorkView settings={settings} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Live" }));
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveProperty("disabled", true);
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Report" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Report" })).toBeNull());
+    expect(workRequest).toHaveBeenCalledWith("delete", { taskId: "Report" });
+    expect(screen.getByRole("button", { name: "Live" })).toBeTruthy();
   });
   it("renames a sidebar task without navigating away or losing an unsent draft", async () => {
     state.tasks = [task("Report", "done"), { ...task("Queued", "queued"), threadId: null }];

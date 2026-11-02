@@ -545,6 +545,12 @@ impl Work {
             state.store.tasks[index].title = title;
             return Ok(json!({}));
         }
+        if action == "delete" {
+            // Removes the task from the list; its output files stay in the space.
+            if occupied(&task.status) { return Err("Stop the task before deleting it".into()); }
+            state.store.tasks.remove(index);
+            return Ok(json!({}));
+        }
         let space = state.store.spaces.iter().find(|s| s.id == task.space_id).unwrap().clone();
         let thread = task.thread_id.as_deref().ok_or("Task is queued")?;
         let session = self.session(state, &space).await;
@@ -1044,6 +1050,21 @@ mod tests {
         let forwarded: Vec<_> = sink.0.lock().unwrap().iter().map(|e| e.message.clone()).collect();
         assert_eq!(forwarded, messages, "Transcript events must arrive unchanged without metadata refreshes");
         std::fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    async fn delete_removes_finished_or_queued_tasks_but_never_a_running_one() {
+        let root = temp();
+        let service = Work::new(root.join("data"), Sink::default());
+        let mut state = service.state.lock().await;
+        let space = Space { id: "space".into(), name: "Space".into(), path: root.to_string_lossy().into_owned(), kind: WorkspaceKind::Work, read_only_folders: vec![], read_only: false, imported: false };
+        state.store.spaces.push(space);
+        let mut queued = task("queued", "space", "queued");
+        queued.thread_id = None;
+        state.store.tasks.extend([task("running", "space", "running"), task("done", "space", "done"), queued]);
+        assert!(service.action(&mut state, "delete", json!({"taskId":"running"})).await.unwrap_err().contains("Stop the task"));
+        for id in ["done", "queued"] { service.action(&mut state, "delete", json!({"taskId":id})).await.unwrap(); }
+        assert_eq!(state.store.tasks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["running"]);
+        assert!(service.action(&mut state, "delete", json!({"taskId":"done"})).await.is_err());
     }
     #[tokio::test]
     async fn queued_follow_ups_persist_and_send_one_at_a_time_after_a_done_turn() {

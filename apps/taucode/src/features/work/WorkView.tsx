@@ -28,6 +28,7 @@ import { createElement, useCallback, useEffect, useLayoutEffect, useRef, useStat
 import type { AppSettings, WorkRequest, WorkTask } from "@/types";
 import { ComposerQueue } from "@/features/composer/components/ComposerQueue";
 import { isMacPlatform } from "@utils/platformPaths";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { checkpointRequest, pickWorkspacePath, pickWorkspacePaths, pickWorkAttachments, workAttachment, workOutput, workRequest } from "@services/tauri";
 import { subscribeWindowDragDrop } from "@services/dragDrop";
 import { Markdown } from "@/features/messages/components/Markdown";
@@ -242,6 +243,11 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     row?.scrollIntoView({ block: "nearest" });
     setScrollTask(null);
   }, [scrollTask, sidebarBodyRef]);
+  const deleteTask = async (entry: WorkTask) => {
+    if (!await ask(`Delete "${entry.title}"? Its files stay in the space folder.`, { title: "Delete Task", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel" })) return;
+    if (work.active === entry.id) work.setActive(null);
+    await run(() => work.mutate("delete", { taskId: entry.id }));
+  };
   const taskButton = (entry: WorkTask) => {
     const status = entry.status.replace("-", " ");
     const timestamp = entry.updatedAt ?? entry.createdAt;
@@ -250,10 +256,12 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       entry.title, work.state.spaces.find(space => space.id === entry.spaceId)?.name, formatModelRef(settings, entry.model).title, status,
       ...(["createdAt", "updatedAt"] as const).flatMap(key => entry[key] == null ? [] : [`${key === "createdAt" ? "Created" : "Updated"}: ${new Date(entry[key] * 1000).toLocaleString()}`]),
     ].filter(Boolean).join(" · ");
-    return <RowMenu key={entry.id} label={entry.title} actions={[
+    // The space card isolates stacking, so the menu renders at the document root to sit above the main pane.
+    return <RowMenu key={entry.id} portal label={entry.title} actions={[
     { label: "Open task", onClick: () => selectTask(entry.id) },
     ...(["starting", "running", "needs-input", "queued"].includes(entry.status) ? [{ label: "Stop task", disabled: busy, onClick: () => { void run(() => work.mutate("stop", { taskId: entry.id })); } }] : []),
     ...(!entry.importId ? [{ label: "Rename", disabled: busy, onClick: () => openRename(entry) }] : []),
+    ...(!entry.importId ? [{ label: "Delete", disabled: busy || ["starting", "running", "needs-input", "stopping"].includes(entry.status), onClick: () => { void deleteTask(entry); } }] : []),
   ]}><button className={`thread-row work-task-row is-nested${work.active === entry.id ? " active" : ""}`} data-task-id={entry.id} data-depth={1} title={title} aria-label={entry.title} aria-current={work.active === entry.id ? "page" : undefined} onClick={() => selectTask(entry.id)}><span className={`thread-status work-status-${entry.status}`} aria-label={status} /><span className="thread-name">{entry.title}</span>{(attention || timestamp != null) && <span className={`thread-time${attention ? ` work-attention-${entry.status}` : ""}`}>{attention ? status : formatRelativeTimeShort(timestamp! * 1000)}</span>}</button></RowMenu>;
   };
   const checkpoints = useCallback<typeof checkpointRequest>((_space, params) => {
