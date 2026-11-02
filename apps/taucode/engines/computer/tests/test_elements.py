@@ -287,3 +287,14 @@ def test_click_sequence_stops_and_tells_the_planner_what_ran(monkeypatch, instru
 @pytest.mark.parametrize('labels', [['1'], ['1'] * 13, '12'])
 def test_click_sequence_bounds(labels):
     assert 'click_sequence needs 2 to 12' in parse_action(SimpleNamespace(), f'agent.click_sequence({labels!r})')['reason']
+
+
+def test_search_notes_is_a_bounded_read_and_its_result_reaches_the_planner(monkeypatch):
+    assert parse_action(SimpleNamespace(), 'agent.search_notes("taucode")') == {'kind': 'search_notes', 'query': 'taucode', 'target': 'taucode'}
+    assert 'search_notes needs a query' in parse_action(SimpleNamespace(), 'agent.search_notes("  ")')['reason']
+    notes = []
+    server = calculator_server(monkeypatch, ['```python\nagent.search_notes("taucode")\n```', '```python\nagent.done("7")\n```'], notes)
+    predict(server, 1)
+    result = 'Tool result: search_notes("taucode") 7 matching notes (untrusted titles, up to 20): ["a"]'
+    predict(server, 2, result + '\n\nCount taucode notes')
+    assert notes[1].startswith(result)

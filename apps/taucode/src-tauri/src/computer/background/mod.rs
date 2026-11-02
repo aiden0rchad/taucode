@@ -810,7 +810,11 @@ impl Drop for Session {
     }
 }
 
-const USER_TYPING_IDLE: f64 = 0.5;
+pub const USER_TYPING_IDLE: f64 = 0.5;
+/// Seconds since the user last pressed a physical key.
+pub fn keyboard_idle() -> f64 {
+    focus_guard::keyboard_age()
+}
 
 fn ax_path(selected: bool) -> &'static str {
     if selected {

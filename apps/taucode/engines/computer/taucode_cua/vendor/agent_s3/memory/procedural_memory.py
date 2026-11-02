@@ -76,6 +76,7 @@ class PROCEDURAL_MEMORY:
         10. Do not use the "command" + "tab" hotkey on MacOS.
         11. Prefer hotkeys and application features over clicking on text elements when possible. Highlighting text is fine.
         12. When several clicks in a row target buttons that stay on screen (a keypad, fixed toolbar buttons), use one agent.click_sequence() with their exact element labels instead of separate clicks. Never use it when a click opens, closes, or moves anything the later clicks need.
+        13. When the target is in the accessibility element list, describe it by its exact label from that list (for example agent.type("Search", "query", enter=True)); a unique exact label is located without guessing.
         """)
 
         return procedural_memory.strip()

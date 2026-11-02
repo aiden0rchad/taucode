@@ -11,6 +11,16 @@ pub const RECOVERABLE: &str = "Action not executed: ";
 pub const UNCERTAIN: &str = "Action outcome uncertain: ";
 /// A capture after the run acted found the app without windows; it is not reopened.
 pub const NO_WINDOWS: &str = "App has no open windows: ";
+/// Key input waits this long after the user's last key press, and at most TYPING_WAIT for it.
+pub const TYPING_PAUSE: f64 = 0.5;
+const TYPING_WAIT: Duration = Duration::from_secs(5);
+fn keyboard_input(action: &Action) -> bool {
+    match action {
+        Action::Type { .. } | Action::Hotkey { .. } | Action::HoldAndPress { .. } => true,
+        Action::Click { hold_keys, .. } | Action::Drag { hold_keys, .. } => !hold_keys.is_empty(),
+        _ => false,
+    }
+}
 
 #[derive(Default)]
 struct Recovery {
@@ -99,6 +109,14 @@ pub trait Environment {
     fn verify_target(&self) -> Result<(), String> {
         Ok(())
     }
+    /// Seconds since the user last pressed a physical key.
+    fn keyboard_idle(&self) -> f64 {
+        f64::INFINITY
+    }
+    /// Matching note count and titles, read without the Notes window.
+    fn search_notes<'a>(&'a self, _: &'a str) -> BoxFuture<'a, Result<String, String>> {
+        Box::pin(async { Err("Notes search is unavailable".into()) })
+    }
     /// Checked after an action's last event, before key focus is handed back.
     fn input_finished(&self) -> Result<(), String> {
         Ok(())
@@ -144,9 +162,9 @@ fn verify_app(check: &str, before: &Context, after: &Context) -> Result<(), Stri
     }
     Ok(())
 }
-/// Done, Fail and Wait send no input, so they have no input target to resolve or verify.
+/// Done, Fail, Wait and SearchNotes send no input, so they have no input target to resolve or verify.
 fn input_target(env: &impl Environment, action: &Action) -> Result<Target, String> {
-    if matches!(action, Action::Done { .. } | Action::Fail { .. } | Action::Wait { .. }) {
+    if matches!(action, Action::Done { .. } | Action::Fail { .. } | Action::Wait { .. } | Action::SearchNotes { .. }) {
         Ok(Target::default())
     } else {
         env.policy_target(action)
@@ -375,7 +393,7 @@ async fn execute(
                     })
                     .await?
             }
-            Action::Done { .. } | Action::Fail { .. } => (),
+            Action::Done { .. } | Action::Fail { .. } | Action::SearchNotes { .. } => (),
         }
         if matches!(action, Action::Open { .. } | Action::SwitchApp { .. }) {
             control
@@ -709,6 +727,22 @@ pub async fn run(
             };
             phase_start = Instant::now();
             observation!(verify_observation());
+            // Wait for the user to stop typing rather than discard the step; the
+            // background check still refuses input if they keep typing past the wait.
+            if keyboard_input(&action) && env.keyboard_idle() < TYPING_PAUSE {
+                let waited = Instant::now();
+                control
+                    .until(async {
+                        while env.keyboard_idle() < TYPING_PAUSE && waited.elapsed() < TYPING_WAIT {
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                        }
+                        Ok(())
+                    })
+                    .await?;
+                control.checkpoint().await?;
+                observation!(verify_observation());
+                pending.as_mut().unwrap()["typingWaitMs"] = json!(waited.elapsed().as_millis() as u64);
+            }
             observation!(env.verify_target());
             env.phase(Phase::Acting);
             env.begin_action();
@@ -816,6 +850,13 @@ pub async fn run(
                     Ok(())
                 }
             });
+            // The planner reads the search result in its next observation.
+            let mut tool_result = None;
+            if let (Ok(()), Action::SearchNotes { query }) = (&outcome, &action) {
+                let found = control.until(env.search_notes(query)).await.unwrap_or_else(|e| format!("failed: {e}"));
+                pending.as_mut().unwrap()["toolResult"] = json!(found);
+                tool_result = Some(format!("Tool result: search_notes({query:?}) {found}\n\n"));
+            }
             let mut entry = pending.take().unwrap();
             entry[phase] = json!(
                 entry[phase].as_u64().unwrap_or(0) + phase_start.elapsed().as_millis() as u64
@@ -846,7 +887,7 @@ pub async fn run(
             }
             outcome?;
             recovery.consecutive = 0;
-            recovery.previous = None;
+            recovery.previous = tool_result;
             match action {
                 Action::Done { summary } => {
                     // Done sends no input: return the observation the planner verified.

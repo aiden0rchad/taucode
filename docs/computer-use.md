@@ -36,6 +36,10 @@ The planner decides what action to attempt. Grounding maps that action to an obs
 
 When the planner names a target by the exact label of one accessibility element, grounding uses that element without calling the grounding model. For runs of clicks on buttons that stay on screen, such as a calculator keypad, the planner can propose one click sequence. Each click is still its own step, with a fresh capture and the usual checks, but only the first needs a planner call. The sequence stops, and the planner takes over, if a step is not executed cleanly or the next label no longer matches exactly one element.
 
+In a run that targets Notes, the planner can search notes by title and text through Notes' scripting interface instead of its search field, which macOS does not let background input reach. The search sends no input, and the count and up to 20 titles go to the planner with its next screenshot. The first search makes macOS ask whether taucode may control Notes.
+
+Keyboard steps wait up to 5 seconds for you to stop typing before sending keys, so your keystrokes cannot land in the target app. If you are still typing after that, the step is not sent and the planner tries again.
+
 Do not assume a model that handles ordinary image chat can reliably ground desktop controls. Test a harmless, bounded task and inspect the actual target/result.
 
 Each planning step has a time limit, **Planning seconds per step** in Settings → Computer Use (default 120, range 10–600). It covers the provider request and its retries. Raise it for slow providers or local models; the run's **Maximum seconds** still bounds the whole run.

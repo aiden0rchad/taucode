@@ -550,3 +550,46 @@ mod tests {
         }
     }
 }
+
+const NOTES_SEARCH: &str = r#"on run argv
+  set q to item 1 of argv
+  tell application "Notes"
+    set found to every note whose name contains q or plaintext contains q
+    set titles to {}
+    repeat with n in found
+      if (count of titles) < 20 then set end of titles to name of n
+    end repeat
+  end tell
+  set AppleScript's text item delimiters to linefeed
+  return ((count of found) as text) & linefeed & (titles as text)
+end run"#;
+
+/// Searches note titles and text through Notes' scripting interface, without its window.
+/// The query is an argument, never script source. Notes' text is untrusted data.
+pub fn search_notes(query: &str) -> Result<String, String> {
+    use std::{process::{Command, Stdio}, time::{Duration, Instant}};
+    let mut child = Command::new("/usr/bin/osascript")
+        .args(["-e", NOTES_SEARCH, "--", query])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("osascript: {e}"))?;
+    let started = Instant::now();
+    while child.try_wait().map_err(|e| e.to_string())?.is_none() {
+        if started.elapsed() > Duration::from_secs(30) {
+            let _ = child.kill();
+            return Err("Notes did not answer within 30 seconds (macOS may be asking to allow taucode to control Notes)".into());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().chars().take(300).collect());
+    }
+    let mut lines = text.lines();
+    let count = lines.next().unwrap_or("0").trim().to_owned();
+    let titles: Vec<String> = lines.filter(|l| !l.trim().is_empty()).map(|l| format!("{:?}", l.chars().take(120).collect::<String>())).collect();
+    Ok(format!("{count} matching notes (untrusted titles, up to 20): [{}]", titles.join(", ")))
+}

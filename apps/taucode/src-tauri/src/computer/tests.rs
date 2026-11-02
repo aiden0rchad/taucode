@@ -310,6 +310,8 @@ struct Fake {
     unreadable_reads: Vec<usize>,
     contexts: std::cell::RefCell<std::collections::VecDeque<Context>>,
     typing_focus_changes: bool,
+    /// The user keeps pressing keys until this instant.
+    typing_until: Option<Instant>,
     element_label: String,
     element_secure: bool,
     target_changes: bool,
@@ -465,6 +467,9 @@ impl Environment for Fake {
     fn input_finished(&self) -> Result<(), String> {
         self.input_finished_error.clone().map_or(Ok(()), Err)
     }
+    fn keyboard_idle(&self) -> f64 {
+        if self.typing_until.is_some_and(|until| Instant::now() < until) { 0. } else { f64::INFINITY }
+    }
     fn verify_target(&self) -> Result<(), String> {
         if self.windowless {
             return Err("Target window closed".into());
@@ -610,6 +615,7 @@ fn fake(actions: Vec<Value>) -> Fake {
         unreadable_reads: vec![],
         contexts: Default::default(),
         typing_focus_changes: false,
+        typing_until: None,
         element_label: String::new(),
         element_secure: false,
         target_changes: false,
@@ -709,6 +715,23 @@ async fn user_typing_during_keyboard_delivery_stops_input_and_only_verifies() {
         if succeeds { assert_eq!(env.steps.last().unwrap()["verificationOnly"], true); }
         else { assert!(result.unwrap_err().contains("Read-only verification rejected further input")); }
     }
+}
+
+#[tokio::test]
+async fn keyboard_steps_wait_for_the_user_to_stop_typing_instead_of_failing() {
+    let input = FakeInput::default();
+    let control = Control::new(input.clone());
+    control.start();
+    let mut env = fake(vec![json!({"kind":"hotkey","keys":["shift","a"]}), json!({"kind":"done","summary":"A entered"})]);
+    env.typing_until = Some(Instant::now() + Duration::from_millis(900));
+    let s = settings();
+    runner::run(&mut env, &control, &s, &s.app_ids(), "Type A", Instant::now()).await.unwrap();
+    // The key went out once, after the pause, with no recovery step.
+    assert_eq!(*input.0.lock().unwrap(), [Event::Key(56, true), Event::Key(0, true), Event::Key(0, false), Event::Key(56, false)]);
+    let waited = env.steps.iter().filter_map(|step| step["typingWaitMs"].as_u64()).max();
+    assert!(waited.is_some_and(|ms| ms >= 400), "{:?}", env.steps);
+    assert_eq!(env.instructions.len(), 2);
+    assert!(!env.instructions[1].starts_with("Previous action was NOT executed"));
 }
 
 #[tokio::test]
@@ -2177,4 +2200,29 @@ async fn closing_the_last_window_is_verified_read_only_instead_of_failing_the_ca
     let s = settings();
     let error = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await.unwrap_err();
     assert!(error.starts_with("Pre-flight capture"), "{error}");
+}
+
+#[tokio::test]
+async fn notes_search_result_reaches_the_planner_and_other_apps_refuse_it() {
+    for in_notes in [true, false] {
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let mut env = fake(vec![json!({"kind":"search_notes","query":"taucode"}), json!({"kind":"done","summary":"7 notes"})]);
+        let mut s = settings();
+        if in_notes {
+            s.allowed_apps.push(super::policy::NOTES.into());
+            env.focus = Context { app: super::policy::NOTES.into(), secure: false };
+        }
+        runner::run(&mut env, &control, &s, &s.app_ids(), "Count taucode notes", Instant::now()).await.unwrap();
+        // A read-only search sends no input either way.
+        assert!(input.0.lock().unwrap().is_empty());
+        let next = &env.instructions[1];
+        if in_notes {
+            assert!(next.starts_with("Tool result: search_notes(\"taucode\") failed: Notes search is unavailable"), "{next}");
+            assert_eq!(env.steps.iter().filter_map(|s| s["toolResult"].as_str()).count(), 1);
+        } else {
+            assert!(next.starts_with("Previous action was NOT executed: search_notes works only in a run that targets Notes"), "{next}");
+        }
+    }
 }

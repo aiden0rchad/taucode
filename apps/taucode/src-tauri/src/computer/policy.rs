@@ -81,6 +81,10 @@ pub enum Action {
     Wait {
         seconds: f64,
     },
+    /// Read-only: searches Notes through its scripting interface; the result goes to the planner.
+    SearchNotes {
+        query: String,
+    },
     Done {
         summary: String,
     },
@@ -224,11 +228,15 @@ impl Prediction {
             Action::Type { text, .. } if text.len() > 32768 || text.contains('\0') => {
                 return Err("Invalid text".into())
             }
+            Action::SearchNotes { query } if query.trim().is_empty() || query.len() > 500 || query.contains('\0') => {
+                return Err("Invalid Notes search".into())
+            }
             _ => (),
         }
         Ok(action)
     }
 }
+pub const NOTES: &str = "com.apple.Notes";
 pub const ALWAYS_DENIED: &[&str] = &[
     "com.agilebits.onepassword7",
     "com.agilebits.onepassword",
@@ -490,6 +498,13 @@ fn review(
     {
         return Decision::Deny("Target app is not allowed; use an allowed bundle ID".into());
     }
+    if matches!(a, Action::SearchNotes { .. }) {
+        return if c.app == NOTES {
+            Decision::Allow
+        } else {
+            Decision::Deny("search_notes works only in a run that targets Notes".into())
+        };
+    }
     if let Err(reason) = check_pane(&c.app, target_info) {
         return Decision::Deny(reason);
     }
@@ -538,6 +553,7 @@ fn review(
             | Action::Open { .. }
             | Action::SwitchApp { .. }
             | Action::Wait { .. }
+            | Action::SearchNotes { .. }
             | Action::Done { .. }
             | Action::Fail { .. } => true,
             _ => false,

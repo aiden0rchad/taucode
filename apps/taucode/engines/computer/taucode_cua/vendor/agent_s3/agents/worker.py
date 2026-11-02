@@ -202,7 +202,7 @@ class Worker(BaseModule):
         generator_message += '\n' + obs.get('element_summary', '')
         if obs.get('sequence_note'):
             generator_message = obs['sequence_note'] + '\n\n' + generator_message
-        if instruction.startswith(RECOVERY_PREFIXES):
+        if instruction.startswith(RECOVERY_PREFIXES + ('Tool result:',)):
             generator_message = instruction.split('\n\n', 1)[0] + '\n\n' + generator_message
 
         # Finalize the generator message

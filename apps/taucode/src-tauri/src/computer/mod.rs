@@ -623,6 +623,18 @@ impl runner::Environment for Live {
     fn verify_target(&self) -> Result<(), String> {
         self.session.as_ref().map_or(Ok(()), |s| s.verify_element())
     }
+    fn search_notes<'a>(&'a self, query: &'a str) -> crate::shared::providers::BoxFuture<'a, Result<String, String>> {
+        let query = query.to_owned();
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || native::search_notes(&query))
+                .await
+                .map_err(|e| e.to_string())?
+        })
+    }
+    fn keyboard_idle(&self) -> f64 {
+        // Foreground runs post real input; only background delivery can capture the user's keys.
+        if self.session.is_some() { background::keyboard_idle() } else { f64::INFINITY }
+    }
     fn input_finished(&self) -> Result<(), String> {
         self.session.as_ref().map_or(Ok(()), |s| s.check_user_typing())
     }
@@ -668,6 +680,7 @@ impl runner::Environment for Live {
         if matches!(
             action,
             Action::Wait { .. }
+                | Action::SearchNotes { .. }
                 | Action::Done { .. }
                 | Action::Fail { .. }
                 | Action::SwitchApp { .. }
@@ -872,6 +885,8 @@ impl runner::Environment for Live {
         self.computer.persist(&self.id)
     }
 }
+// The app uses mcp_cli and the daemon uses ipc.
+#[allow(unused_imports)]
 pub use transport::{ipc, mcp_cli};
 
 fn compact_steps(steps: &Value) -> Vec<Value> {

@@ -12,7 +12,7 @@ from .vendor.agent_s3.utils.common_utils import call_llm_safe
 
 from .vendor.agent_s3.agents.grounding import OSWorldACI, agent_action
 
-ALLOWED = frozenset(('click', 'click_sequence', 'type', 'scroll', 'drag_and_drop', 'hotkey',
+ALLOWED = frozenset(('click', 'click_sequence', 'search_notes', 'type', 'scroll', 'drag_and_drop', 'hotkey',
                      'hold_and_press', 'open', 'switch_applications', 'wait', 'done', 'fail'))
 # The host sends these when the last proposal was not cleanly executed.
 RECOVERY_PREFIXES = ('Previous action was NOT executed:', 'Previous action was interrupted after input started:', 'READ-ONLY VERIFICATION:')
@@ -229,6 +229,14 @@ class StructuredACI(OSWorldACI):
         action = dict(self.ground(labels[0]), kind='click', clicks=1, button='left', hold_keys=[], target=labels[0])
         self.queued_clicks, self.sequence_clicked, self.sequence_note = labels[1:], labels[:1], ''
         return action
+
+    @agent_action
+    def search_notes(self, query: str):
+        """Notes only: count notes whose title or text contains the query and list up to 20 titles, without using the Notes window; the result arrives with the next screenshot. Use it instead of the Notes search field."""
+        query = check_text(query)
+        if not query.strip() or len(query) > 500:
+            raise ValueError('search_notes needs a query of 1 to 500 characters')
+        return dict(kind='search_notes', query=query)
 
     @agent_action
     def type(self, element_description: str | None = None, text: str = '', overwrite: bool = False, enter: bool = False):
