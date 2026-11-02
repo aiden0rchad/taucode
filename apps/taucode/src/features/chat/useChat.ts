@@ -6,6 +6,9 @@ import { buildConversationItem, buildItemsFromThread, previewThreadName, upsertI
 import { clampThreadName } from "@threads/utils/threadNaming";
 import type { QueuedMessage } from "@/types";
 import type { Chat, ChatMessage, ChatResponse, ChatThread } from "./chat";
+import { createQueueStore } from "@/features/composer/queueStore";
+
+export const chatQueues = createQueueStore<QueuedMessage>();
 
 export function useChat() {
   const [chats, setChats] = useState<Chat[]>([]);
@@ -16,7 +19,7 @@ export function useChat() {
   const [turnErrors, setTurnErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   // Follow-ups written while a response runs, sent one at a time after it completes.
-  const [queued, setQueued] = useState<Record<string, QueuedMessage[]>>({});
+  const [queued, setQueued] = chatQueues.useQueue();
   const flushing = useRef(new Set<string>());
   useEffect(() => setError(""), [active]);
   const recordTurn = useCallback((id: string, turn: { status?: string; error?: { message?: string } } | undefined) => {

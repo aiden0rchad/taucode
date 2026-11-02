@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppSettings, ReasoningCapability, WorkState, WorkTask } from "@/types";
-import { WorkView } from "./WorkView";
+import { WorkView, workQueues } from "./WorkView";
 import { workRequest, workOutput, workAttachment, pickWorkAttachments, browserRequest } from "@services/tauri";
 
 const events = vi.hoisted(() => ({ listener: (_event: unknown) => {}, importsChanged: () => {} }));
@@ -46,7 +46,7 @@ beforeEach(() => {
   vi.mocked(workAttachment).mockResolvedValue(".taucode/uploads/copied-notes.pdf");
   vi.mocked(pickWorkAttachments).mockResolvedValue(["/synthetic-source/notes.pdf"]);
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); workQueues.clear(); });
 
 describe("Work mode", () => {
   it.each([
@@ -398,6 +398,18 @@ describe("Work mode", () => {
     await act(async () => { events.importsChanged(); });
     await waitFor(() => expect(workRequest).toHaveBeenCalledWith("follow-up", { taskId: "Report", message: "First check", accessMode: "ask", model: "local/test", effort: null }));
     expect(workRequest).not.toHaveBeenCalledWith("follow-up", expect.objectContaining({ message: "Second check" }));
+  });
+  it("keeps queued follow-ups when the view unmounts for another mode", async () => {
+    state.tasks = [task("Report", "running")];
+    const view = render(<WorkView settings={{ ...settings, followUpMessageBehavior: "queue" }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Report" }));
+    const input = await screen.findByRole("textbox", { name: "Message task" });
+    fireEvent.change(input, { target: { value: "Kept across modes" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    view.unmount();
+    state.tasks[0].status = "done";
+    render(<WorkView settings={{ ...settings, followUpMessageBehavior: "queue" }} />);
+    await waitFor(() => expect(workRequest).toHaveBeenCalledWith("follow-up", expect.objectContaining({ taskId: "Report", message: "Kept across modes" })));
   });
   it("pauses queued follow-ups when the running task stops", async () => {
     state.tasks = [task("Report", "running")];

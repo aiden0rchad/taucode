@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppServerEvent, AppSettings } from "@/types";
 import { chatRequest, exportMarkdownFile, readChatAttachment } from "@services/tauri";
 import { ChatView } from "./ChatView";
+import { chatQueues } from "./useChat";
 import type { Chat } from "./chat";
 
 let listener: (event: AppServerEvent) => void;
@@ -35,7 +36,7 @@ beforeEach(() => {
     return {};
   });
 });
-afterEach(() => { assertRowAlignment(document.body); cleanup(); vi.clearAllMocks(); });
+afterEach(() => { assertRowAlignment(document.body); cleanup(); vi.clearAllMocks(); chatQueues.clear(); });
 it("exposes the Chat layout and rows used by the WebKit audit", async () => {
   render(<ChatView settings={settings} />);
   const row = await screen.findByRole("button", { name: "My conversation" });
@@ -250,6 +251,17 @@ describe("follow-ups while a response runs", () => {
     finish("completed");
     await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("send", { threadId: "chat", input: [{ type: "text", text: "Second follow-up" }] }));
     await waitFor(() => expect(screen.queryByText("Queued")).toBeNull());
+  });
+  it("keeps queued follow-ups when the view unmounts for another mode", async () => {
+    const view = render(<ChatView settings={settings} />); await open();
+    start();
+    write("Kept across modes");
+    view.unmount();
+    render(<ChatView settings={settings} />); await open();
+    expect(await screen.findByText("Kept across modes")).toBeTruthy();
+    start();
+    finish("completed");
+    await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("send", { threadId: "chat", input: [{ type: "text", text: "Kept across modes" }] }));
   });
   it("pauses the queue when the response is stopped", async () => {
     render(<ChatView settings={settings} />); await open();

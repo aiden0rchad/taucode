@@ -27,6 +27,7 @@ import { getFileTypeIconUrl } from "@utils/fileTypeIcons";
 import { createElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AppSettings, QueuedMessage, WorkRequest, WorkTask } from "@/types";
 import { ComposerQueue } from "@/features/composer/components/ComposerQueue";
+import { createQueueStore } from "@/features/composer/queueStore";
 import { isMacPlatform } from "@utils/platformPaths";
 import { checkpointRequest, pickWorkspacePath, pickWorkspacePaths, pickWorkAttachments, workAttachment, workOutput, workRequest } from "@services/tauri";
 import { subscribeWindowDragDrop } from "@services/dragDrop";
@@ -83,6 +84,8 @@ function WorkAgentsLink() {
   const panel = useSidePanel();
   return <button type="button" className="ghost work-agents-link" onClick={() => panel?.openTool("agents")}><Bot size={16} aria-hidden />View agents</button>;
 }
+
+export const workQueues = createQueueStore<QueuedMessage & { accessMode: WorkTask["accessMode"] }>();
 
 export function WorkView({ settings, onOpenSettings = () => {} }: { settings: AppSettings; onOpenSettings?: () => void }) {
   const features = useFeatures();
@@ -203,7 +206,7 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
     });
   };
   // Follow-ups written while a task runs, sent one at a time after it completes.
-  const [queued, setQueued] = useState<Record<string, (QueuedMessage & { accessMode: WorkTask["accessMode"] })[]>>({});
+  const [queued, setQueued] = workQueues.useQueue();
   const flushing = useRef(new Set<string>());
   const followUpMode = settings.followUpMessageBehavior === "steer" && settings.steerEnabled ? "steer" : "queue";
   const otherFollowUpMode = followUpMode === "steer" || !settings.steerEnabled ? "queue" : "steer";
