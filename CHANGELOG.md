@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.71 — November 2, 2026
+
+### Faster Computer Use and steadier Work tasks
+
+- **Computer Use speed:** targets that match one on-screen label exactly skip the grounding model, and runs of clicks on buttons that stay on screen are planned once. A Calculator run went from 73 to 17 seconds.
+- **Notes and Reminders:** search them through their scripting interface instead of their search fields, without using the window. macOS asks once per app whether taucode may control it.
+- **Typing:** keyboard steps wait for you to stop typing instead of failing, so your keystrokes cannot land in the target app.
+- **Reliability:** runs whose action closes an app's last window can still finish, and a briefly unreadable control is re-read instead of cancelling the step.
+- **Work follow-ups:** queue follow-ups while a task runs. They are kept with the task, survive switching modes and restarting the app, and are sent one at a time after each finished turn.
+- **Work tasks:** delete finished, stopped or queued tasks from the task menu (files stay in the space). Task menus now open above the main pane, and the sidebar tree line no longer runs through group headings.
+- **Chat:** Chat no longer queues follow-ups. With steering on, a message sent while a reply runs is added to that reply.
+- **Interruptions:** a task cut off by the app quitting says so, instead of suggesting another model.
+- **Window:** the window keeps its size and position across restarts, including after a forced quit, on mixed-resolution displays.
+- **Usage:** an all-time usage ledger survives transcript removal.
+
+### Release status
+
+Published as a [macOS Apple Silicon release](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.71), with a [DMG installer](https://github.com/aiden0rchad/taucode/releases/download/v0.7.71/taucode_0.7.71_aarch64.dmg), build manifest and SHA-256 checksums. Windows remains on [0.7.69](https://github.com/aiden0rchad/taucode/releases/tag/v0.7.69). This remains an early-development release; the macOS package is development-signed and not notarized.
+
 ## 0.7.70 — November 1, 2026
 
 ### A more cohesive desktop interface
