@@ -25,7 +25,9 @@ import { Folder, FolderLock, X, FolderTree, FileSearch, Table, Presentation, Tra
 import { ComposerShell, ComposerSendButton, ComposerAccessControl } from "@/features/composer/components/ComposerShell";
 import { getFileTypeIconUrl } from "@utils/fileTypeIcons";
 import { createElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { AppSettings, WorkRequest, WorkTask } from "@/types";
+import type { AppSettings, QueuedMessage, WorkRequest, WorkTask } from "@/types";
+import { ComposerQueue } from "@/features/composer/components/ComposerQueue";
+import { isMacPlatform } from "@utils/platformPaths";
 import { checkpointRequest, pickWorkspacePath, pickWorkspacePaths, pickWorkAttachments, workAttachment, workOutput, workRequest } from "@services/tauri";
 import { subscribeWindowDragDrop } from "@services/dragDrop";
 import { Markdown } from "@/features/messages/components/Markdown";
@@ -200,7 +202,42 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
       setFollowSelections(current => { const next = { ...current }; delete next[id]; return next; });
     });
   };
-  const sendFollowUp = () => { void continueTask(followUp, true); };
+  // Follow-ups written while a task runs, sent one at a time after it completes.
+  const [queued, setQueued] = useState<Record<string, (QueuedMessage & { accessMode: WorkTask["accessMode"] })[]>>({});
+  const flushing = useRef(new Set<string>());
+  const followUpMode = settings.followUpMessageBehavior === "steer" && settings.steerEnabled ? "steer" : "queue";
+  const otherFollowUpMode = followUpMode === "steer" || !settings.steerEnabled ? "queue" : "steer";
+  const followUpShortcut = isMacPlatform() ? "Shift+Cmd+Enter" : "Shift+Ctrl+Enter";
+  const sendFollowUp = (other = false) => {
+    if (task?.status === "running" && (other ? otherFollowUpMode : followUpMode) === "queue") {
+      if (busy || !followUp.trim()) return;
+      const id = task.id;
+      setQueued(current => ({ ...current, [id]: [...(current[id] ?? []), { id: crypto.randomUUID(), text: followUp, createdAt: Date.now(), accessMode: followAccess }] }));
+      setDrafts(current => { const next = { ...current }; delete next[id]; return next; });
+      return;
+    }
+    void continueTask(followUp, true);
+  };
+  useEffect(() => {
+    for (const entry of work.state.tasks) {
+      const items = queued[entry.id];
+      // A stopped or failed task pauses its queue until a follow-up completes.
+      if (!items?.length || entry.status !== "done" || flushing.current.has(entry.id)) continue;
+      const [next, ...rest] = items;
+      flushing.current.add(entry.id);
+      setQueued(current => ({ ...current, [entry.id]: rest }));
+      void work.mutate("follow-up", { taskId: entry.id, message: next.text, accessMode: next.accessMode, model: entry.model, effort: entry.effort ?? null })
+        .catch(error => {
+          setQueued(current => ({ ...current, [entry.id]: [next, ...(current[entry.id] ?? [])] }));
+          work.setError(String(error));
+        })
+        .finally(() => flushing.current.delete(entry.id));
+    }
+  });
+  const taskQueue = task ? queued[task.id] ?? [] : [];
+  const queuePausedReason = taskQueue.length && (task?.status === "stopped" || task?.status === "failed")
+    ? task.status === "stopped" ? "Paused because the task was stopped" : "Paused because the task failed"
+    : null;
   const selectTask = (id: string) => { work.setActive(id); setSpaceId(""); if (window.innerWidth < 760) setSidebarCollapsed(true); };
   const jumpToInput = () => {
     const entry = needs[(needs.findIndex(t => t.id === lastInputTask.current) + 1) % needs.length];
@@ -339,13 +376,18 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
         </div></div>{showLatest && <button className="secondary work-jump-latest" onClick={scrollToLatest}>Jump to latest</button>}</div>
         {!task.importId && <form className="work-follow-up" aria-label="Task conversation" onSubmit={e => { e.preventDefault(); sendFollowUp(); }}>
           <div className={`work-conversation-state work-state-${task.status}`}>
-            <div role="status"><strong>{taskStates[task.status].label}</strong><p>{!task.threadId && (task.status === "stopped" || task.status === "failed") ? "This task did not start. Reuse its brief to try again." : taskStates[task.status].hint}</p></div>
+            <div role="status"><strong>{taskStates[task.status].label}</strong><p>{!task.threadId && (task.status === "stopped" || task.status === "failed") ? "This task did not start. Reuse its brief to try again." : task.status === "running" ? `${followUpMode === "queue" ? "Enter queues a follow-up for when this task finishes" : "Enter adds an instruction to the running task"}${otherFollowUpMode !== followUpMode ? `; ${followUpShortcut} ${otherFollowUpMode === "queue" ? "queues it" : "adds it now"}` : ""}. You can also stop the task.` : taskStates[task.status].hint}</p></div>
             {task.status === "needs-input" && <button className="ghost" type="button" onClick={reviewRequest}>Review request</button>}
             {task.threadId && (task.status === "stopped" || task.status === "failed") && <button className="ghost" type="button" onClick={() => followInputRef.current?.focus()}>Write follow-up</button>}
             {!task.threadId && (task.status === "stopped" || task.status === "failed") && <button className="ghost" type="button" onClick={() => {
               setBrief(task.pendingMessage ?? task.brief); setSpaceId(task.spaceId); setModel(task.model); setAccess(task.accessMode); setAttachments(task.attachments); work.setActive(null);
             }}>Reuse brief</button>}
           </div>
+          <ComposerQueue queuedMessages={taskQueue} pausedReason={queuePausedReason} onDeleteQueued={itemId => setQueued(current => ({ ...current, [task.id]: (current[task.id] ?? []).filter(item => item.id !== itemId) }))} onEditQueued={item => {
+            setQueued(current => ({ ...current, [task.id]: (current[task.id] ?? []).filter(entry => entry.id !== item.id) }));
+            setDrafts(current => ({ ...current, [task.id]: item.text }));
+            followInputRef.current?.focus();
+          }} />
           <ComposerShell
             toolbar={<ComposerAccessControl value={followAccess} onChange={setFollowAccess} disabled={busy || active || task.status === "queued"} />}
             reasoning={{
@@ -358,8 +400,8 @@ export function WorkView({ settings, onOpenSettings = () => {} }: { settings: Ap
               onChange: effort => setFollowSelections(current => ({ ...current, [task.id]: { model: followModel, effort } })),
               disabled: busy || active || task.status === "queued", onOpenSettings,
             }}
-            actions={<ComposerSendButton label={task.status === "running" ? "Send instruction" : "Send follow-up"} disabled={followBlocked || !followUp.trim()} disabledReason={task.status === "needs-input" ? "Answer the pending request first" : ["queued", "starting", "stopping"].includes(task.status) ? "Waiting for this task to start or finish stopping" : busy ? "Please wait" : "Write a message"} onSend={sendFollowUp} />}>
-            <textarea writingsuggestions="false" ref={followInputRef} aria-label="Message task" placeholder={task.status === "running" ? "Add an instruction…" : "Ask for changes or continue this task…"} rows={2} value={followUp} disabled={busy} onChange={e => setDrafts(current => ({ ...current, [task.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); sendFollowUp(); } }} />
+            actions={<ComposerSendButton label={task.status === "running" ? followUpMode === "queue" ? "Queue follow-up" : "Send instruction" : "Send follow-up"} disabled={followBlocked || !followUp.trim()} disabledReason={task.status === "needs-input" ? "Answer the pending request first" : ["queued", "starting", "stopping"].includes(task.status) ? "Waiting for this task to start or finish stopping" : busy ? "Please wait" : "Write a message"} onSend={() => sendFollowUp()} />}>
+            <textarea writingsuggestions="false" ref={followInputRef} aria-label="Message task" placeholder={task.status === "running" ? "Add an instruction…" : "Ask for changes or continue this task…"} rows={2} value={followUp} disabled={busy} onChange={e => setDrafts(current => ({ ...current, [task.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && (!e.shiftKey || e.metaKey || e.ctrlKey)) { e.preventDefault(); sendFollowUp(e.shiftKey); } }} />
           </ComposerShell>
         </form>}
       </div> : <div className="chat-scroll"><div className="chat-column">
