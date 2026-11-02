@@ -12,6 +12,9 @@ export function describeTurnError(message: string): { title: string; description
   if (/^(?:Turn failed(?: to start)?:\s*)?Pi process (?:exited\b|is closed\b)/i.test(message)) {
     return { title: "Agent stopped unexpectedly", description: "The agent process ended before finishing. Review any saved progress above, then send a follow-up to continue. Unfinished commands are not restarted automatically.", canRetry: false };
   }
+  if (/^Interrupted by app restart\b/i.test(message)) {
+    return { title: "Interrupted when taucode closed", description: "This task was running when the app quit. Review the saved progress above, then send a message to continue.", canRetry: false };
+  }
   if (/^(?:Turn failed(?: to start)?:\s*)?Verification incomplete:/i.test(message)) {
     return { title: "Review needs follow-up", description: "One or more acceptance criteria remain unverified. Review the findings above, then ask for the missing checks or corrections.", canRetry: false };
   }

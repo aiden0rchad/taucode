@@ -27,6 +27,14 @@ it.each([
   expect(container.querySelector("pre")?.textContent).toBe(message);
 });
 
+it("explains a task cut off by the app quitting instead of blaming the model", () => {
+  render(<TurnErrorCard message="Interrupted by app restart. Send a message below to continue." onRetry={vi.fn()} onChangeModel={vi.fn()} />);
+  expect(screen.getByRole("region", { name: "Interrupted when taucode closed" })).toBeTruthy();
+  expect(screen.queryByText(/choose another model/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Change model" })).toBeNull();
+});
+
 it.each(["", "Turn failed: "])("explains incomplete QA without suggesting a blind retry (%s)", prefix => {
   const message = `${prefix}Verification incomplete: QA could not verify the 429 timeout handling criterion`;
   const { container } = render(<TurnErrorCard message={message} onRetry={vi.fn()} onChangeModel={vi.fn()} />);
