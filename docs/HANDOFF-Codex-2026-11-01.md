@@ -7,9 +7,12 @@ work and the traps found along the way.
 
 ## 1. State right now
 
-- **Worktree:** `/Users/rolandleyco/taucode-m1w`, branch `m1-wiring`. Do all work here.
-- **Main checkout:** `/Users/rolandleyco/taucode`, branch `main`, currently
-  `8b67d06` from separate release work. This continuation changes only `m1-wiring`.
+- **Update (Nov 1, late):** `m1-wiring` is merged and every side worktree was removed
+  (branches kept). Work in the main checkout `/Users/rolandleyco/taucode` on `main`;
+  `.cargo-home/` and `.tmp/` live there, ignored via `.git/info/exclude`.
+- **Worktree (historical):** `/Users/rolandleyco/taucode-m1w`, branch `m1-wiring`.
+- **Main checkout:** `/Users/rolandleyco/taucode`, branch `main`, then
+  `8b67d06` from separate release work.
 - **Publishing:** GitHub has release `v0.7.69`. This continuation has not pushed,
   tagged, published, or merged into `main`.
 - **Untracked file to leave alone:** `docs/HANDOFF-window-resize.md`.
@@ -47,7 +50,7 @@ work and the traps found along the way.
 From `apps/taucode`:
 
 ```bash
-PATH="$HOME/.cargo/bin:$PATH" CARGO_HOME=/Users/rolandleyco/taucode-m1w/.cargo-home TMPDIR=/Users/rolandleyco/taucode-m1w/.tmp npx tauri build --debug --bundles app && ./scripts/sign-dev.sh && codesign --verify --deep --strict src-tauri/target/debug/bundle/macos/taucode.app
+PATH="$HOME/.cargo/bin:$PATH" CARGO_HOME=/Users/rolandleyco/taucode/.cargo-home TMPDIR=/Users/rolandleyco/taucode/.tmp npx tauri build --debug --bundles app && ./scripts/sign-dev.sh && codesign --verify --deep --strict src-tauri/target/debug/bundle/macos/taucode.app
 ```
 
 ```bash
@@ -57,7 +60,7 @@ open -g src-tauri/target/debug/bundle/macos/taucode.app
 Tests:
 
 ```bash
-cd src-tauri && PATH="$HOME/.cargo/bin:$PATH" CARGO_HOME=/Users/rolandleyco/taucode-m1w/.cargo-home TMPDIR=/Users/rolandleyco/taucode-m1w/.tmp cargo test --lib
+cd src-tauri && PATH="$HOME/.cargo/bin:$PATH" CARGO_HOME=/Users/rolandleyco/taucode/.cargo-home TMPDIR=/Users/rolandleyco/taucode/.tmp cargo test --lib
 ```
 
 ```bash
