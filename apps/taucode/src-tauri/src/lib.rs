@@ -149,6 +149,10 @@ pub fn run() {
             if let Some(main) = app.get_webview("main") {
                 window::install_main_focus(&main)?;
             }
+            #[cfg(desktop)]
+            if let Err(error) = window::restore_main_bounds(app.handle()) {
+                eprintln!("Cannot restore main window bounds: {error}");
+            }
             if let Err(error) = themes::watch(app.handle()) { eprintln!("Theme watcher unavailable: {error}"); }
             let _ = shared::engine_runtime::RESOURCES.set(app.path().resource_dir()?);
             let state = state::AppState::load(&app.handle());
@@ -227,7 +231,11 @@ pub fn run() {
         });
 
     #[cfg(desktop)]
-    let builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
+    let builder = builder.plugin(
+        tauri_plugin_window_state::Builder::default()
+            .with_state_flags(tauri_plugin_window_state::StateFlags::all() - tauri_plugin_window_state::StateFlags::SIZE - tauri_plugin_window_state::StateFlags::POSITION)
+            .build(),
+    );
 
     let app = builder
         .plugin(tauri_plugin_opener::init())
@@ -409,6 +417,15 @@ pub fn run() {
     #[cfg(desktop)]
     let mut main_window_snapshot = None;
     app.run(move |app_handle, event| {
+        // Keep a live snapshot so a quit without ExitRequested still saves the right size.
+        #[cfg(desktop)]
+        if let tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_), .. } = &event {
+            if label == "main" {
+                if let Ok(snapshot) = window::capture_main_state(app_handle) {
+                    main_window_snapshot = Some(snapshot);
+                }
+            }
+        }
         if let tauri::RunEvent::Exit = event {
             #[cfg(desktop)]
             if let Some(snapshot) = main_window_snapshot.take() {

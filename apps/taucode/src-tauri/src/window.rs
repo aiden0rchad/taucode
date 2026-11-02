@@ -13,16 +13,48 @@ pub(crate) fn capture_main_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -
         ("visible", window.is_visible()?), ("decorated", window.is_decorated()?),
     ] { state.insert(key.into(), value.into()); }
     if !maximized && !fullscreen && !window.is_minimized()? {
-        let size = window.inner_size()?;
-        let position = window.outer_position()?;
-        if size.width > 0 && size.height > 0 {
-            state.insert("width".into(), size.width.into());
-            state.insert("height".into(), size.height.into());
+        let scale = window.scale_factor()?;
+        let size = window.inner_size()?.to_logical::<f64>(scale);
+        let position = window.outer_position()?.to_logical::<f64>(scale);
+        if size.width > 0. && size.height > 0. {
+            state.insert("width".into(), size.width.round().into());
+            state.insert("height".into(), size.height.round().into());
+            state.insert("logical".into(), true.into());
         }
-        for key in ["x", "prev_x"] { state.insert(key.into(), position.x.into()); }
-        for key in ["y", "prev_y"] { state.insert(key.into(), position.y.into()); }
+        for key in ["x", "prev_x"] { state.insert(key.into(), position.x.round().into()); }
+        for key in ["y", "prev_y"] { state.insert(key.into(), position.y.round().into()); }
     }
     Ok(state)
+}
+
+// Size and position are saved here in logical points, never by the plugin: its physical
+// values come back at half size when a save happened at a 1x scale (a SIGTERM quit).
+#[cfg(desktop)]
+pub(crate) fn restore_main_bounds<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri_plugin_window_state::AppHandleExt;
+    let Some(window) = app.get_window("main") else { return Ok(()); };
+    let Some(config) = app.config().app.windows.iter().find(|w| w.label == "main") else { return Ok(()); };
+    let path = app.path().app_config_dir()?.join(app.filename());
+    let Ok(bytes) = std::fs::read(path) else { return Ok(()); };
+    let states: serde_json::Value = serde_json::from_slice(&bytes)?;
+    let main = &states["main"];
+    if main["logical"] != true { return Ok(()); }
+    let number = |key: &str| main[key].as_f64();
+    let (Some(width), Some(height)) = (number("width"), number("height")) else { return Ok(()); };
+    if width < config.min_width.unwrap_or(0.) || height < config.min_height.unwrap_or(0.) { return Ok(()); }
+    // Move first: sizing on the launch screen and then moving to a screen with another
+    // scale converts the size wrongly.
+    if let (Some(x), Some(y)) = (number("x"), number("y")) {
+        // Only onto a screen that is still attached; otherwise macOS places it.
+        let on_screen = window.available_monitors()?.iter().any(|m| {
+            let (scale, origin, size) = (m.scale_factor(), m.position(), m.size());
+            let (left, top) = (origin.x as f64 / scale, origin.y as f64 / scale);
+            x >= left && y >= top && x < left + size.width as f64 / scale && y < top + size.height as f64 / scale
+        });
+        if on_screen { window.set_position(tauri::LogicalPosition::new(x, y))?; }
+    }
+    window.set_size(tauri::LogicalSize::new(width, height))?;
+    Ok(())
 }
 
 // window-state omits main from its exit snapshot after add_child. Preserve
@@ -33,8 +65,9 @@ pub(crate) fn save_main_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>, snap
     let save = || -> Result<(), Box<dyn std::error::Error>> {
         let path = app.path().app_config_dir()?.join(app.filename());
         let mut states: serde_json::Value = serde_json::from_slice(&std::fs::read(&path)?)?;
-        states.get_mut("main").and_then(|s| s.as_object_mut())
-            .ok_or("Missing main window state")?.extend(snapshot);
+        states.as_object_mut().ok_or("Invalid window state file")?
+            .entry("main").or_insert_with(|| serde_json::json!({}))
+            .as_object_mut().ok_or("Invalid main window state")?.extend(snapshot);
         let temporary = path.with_extension("tmp");
         std::fs::write(&temporary, serde_json::to_vec_pretty(&states)?)?;
         std::fs::rename(temporary, path)?;
