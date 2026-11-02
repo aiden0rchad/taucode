@@ -12,8 +12,11 @@ from .vendor.agent_s3.utils.common_utils import call_llm_safe
 
 from .vendor.agent_s3.agents.grounding import OSWorldACI, agent_action
 
-ALLOWED = frozenset(('click', 'type', 'scroll', 'drag_and_drop', 'hotkey',
+ALLOWED = frozenset(('click', 'click_sequence', 'type', 'scroll', 'drag_and_drop', 'hotkey',
                      'hold_and_press', 'open', 'switch_applications', 'wait', 'done', 'fail'))
+# The host sends these when the last proposal was not cleanly executed.
+RECOVERY_PREFIXES = ('Previous action was NOT executed:', 'Previous action was interrupted after input started:', 'READ-ONLY VERIFICATION:')
+MAX_SEQUENCE = 12
 
 
 def parse_call(code):
@@ -45,7 +48,7 @@ def parse_action(agent, code):
         bound = inspect.signature(getattr(StructuredACI, method)).bind(agent, *args, **kwargs)
         bound.apply_defaults()
         first = list(bound.arguments.values())[1]
-        action['target'] = check_text(first) if isinstance(first, str) else ''
+        action['target'] = check_text(first) if isinstance(first, str) else action.get('target', '')
         json.dumps(action, allow_nan=False)
         return action
     except ProviderError:
@@ -78,6 +81,51 @@ class StructuredACI(OSWorldACI):
     def assign_screenshot(self, obs):
         super().assign_screenshot(obs)
         self.grounding_decisions = []
+
+    def clear_sequence(self):
+        self.queued_clicks, self.sequence_clicked, self.sequence_note = [], [], ''
+
+    def continue_sequence(self, instruction, obs):
+        """Next queued click_sequence step, grounded by exact label on the fresh snapshot without a model call.
+
+        Returns None, and leaves a note for the planner, when there is nothing queued, the host reports
+        the last step did not run cleanly, or the next label no longer matches exactly one element."""
+        queued, clicked = getattr(self, 'queued_clicks', []), getattr(self, 'sequence_clicked', [])
+        if not queued:
+            return None
+        self.queued_clicks = []
+        stop = 'the previous step did not run cleanly' if instruction.startswith(RECOVERY_PREFIXES) else None
+        if not stop:
+            self.assign_screenshot(obs)
+            decision = self.decision()
+            snapshot = obs.get('ax_snapshot')
+            target = self.exact_element(queued[0], usable_elements(snapshot), snapshot, decision) if snapshot and decision['configured_mode'] == 'elements' else None
+            if target:
+                decision['model_result'] = 'sequence'
+                self.record_grounding(decision)
+                self.queued_clicks, self.sequence_clicked = queued[1:], clicked + [queued[0]]
+                position = len(self.sequence_clicked)
+                self.sequence_note = '' if self.queued_clicks else f'Your click_sequence finished: clicked {json.dumps(self.sequence_clicked)} in order. Verify the result.'
+                return dict(target, kind='click', clicks=1, button='left', hold_keys=[], target=queued[0],
+                            plan=f'Continuing click_sequence ({position} of {position + len(self.queued_clicks)}): {queued[0]}')
+            stop = 'it no longer matches exactly one element'
+        self.sequence_clicked = []
+        self.sequence_note = (f'Your click_sequence stopped: clicked {json.dumps(clicked)}; did not click {json.dumps(queued)} '
+                              f'because {stop}. Check the screen before continuing.')
+        return None
+
+    def exact_element(self, description, elements, snapshot, decision):
+        """The one usable element whose label equals the description, ignoring case and outer spaces."""
+        key = description.strip().casefold()
+        matches = [e for e in elements if key and e['label'].strip().casefold() == key]
+        if len(matches) != 1:
+            return None
+        _, (width, height) = downscale(self.obs.get('grounding_screenshot', self.obs['screenshot']))
+        x, y, w, h = matches[0]['frame']
+        if not (0 <= x + w / 2 < width and 0 <= y + h / 2 < height):
+            return None
+        decision['element_index'] = matches[0]['index']
+        return dict(x=x + w / 2, y=y + h / 2, element_index=matches[0]['index'], snapshot_id=snapshot['snapshot_id'])
 
     def decision(self):
         snapshot = self.obs.get('ax_snapshot') if self.obs else None
@@ -127,6 +175,12 @@ class StructuredACI(OSWorldACI):
             elements = usable_elements(snapshot) if snapshot else []
             if elements:
                 try:
+                    # An exact, unique label needs no model call.
+                    target = self.exact_element(description, elements, snapshot, decision)
+                    if target:
+                        decision['model_result'] = 'exact_label'
+                        self.record_grounding(decision)
+                        return target
                     image, (width, height) = downscale(self.obs.get('grounding_screenshot', self.obs['screenshot']))
                     self.engine_params_for_grounding.update(grounding_width=width, grounding_height=height)
                     self.grounding_model.reset()
@@ -165,6 +219,16 @@ class StructuredACI(OSWorldACI):
         if type(num_clicks) is not int or not 1 <= num_clicks <= 3 or button_type not in ('left', 'right', 'middle'):
             raise ValueError('Invalid click')
         return dict(self.ground(element_description), kind='click', clicks=num_clicks, button=button_type, hold_keys=check_keys(hold_keys))
+
+    @agent_action
+    def click_sequence(self, element_labels: list):
+        """Left-click 2-12 elements in order on a screen that stays the same between clicks (keypads, fixed buttons); each label must be an exact element label from the accessibility list."""
+        if not isinstance(element_labels, (list, tuple)) or not 2 <= len(element_labels) <= MAX_SEQUENCE:
+            raise ValueError(f'click_sequence needs 2 to {MAX_SEQUENCE} element labels')
+        labels = [check_text(label) for label in element_labels]
+        action = dict(self.ground(labels[0]), kind='click', clicks=1, button='left', hold_keys=[], target=labels[0])
+        self.queued_clicks, self.sequence_clicked, self.sequence_note = labels[1:], labels[:1], ''
+        return action
 
     @agent_action
     def type(self, element_description: str | None = None, text: str = '', overwrite: bool = False, enter: bool = False):

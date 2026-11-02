@@ -80,7 +80,7 @@ def test_calculator_sequence_keeps_fresh_indices_and_prompt_lists(monkeypatch, c
     image = png((200, 100))
     for sid, index in enumerate([4, 0, 1, 2, 5, 3], 1):
         label = elements[index]['label']
-        monkeypatch.setattr(worker, 'call_llm_formatted', lambda *a, **k: f'```python\nagent.click({label!r})\n```')
+        monkeypatch.setattr(worker, 'call_llm_formatted', lambda *a, **k: f'```python\nagent.click({"the " + label + " button"!r})\n```')
         prompts = []
         server.agent.grounding_agent.grounding_model = SimpleNamespace(reset=lambda: None, add_message=lambda **k: prompts.append(k), get_response=lambda **_: str(index))
         result = server.dispatch('predict', {'instruction': 'Compute 12 times 7', 'screen_size': [200, 100],
@@ -215,3 +215,75 @@ def test_menu_elements_and_rows_reach_grounding_and_planner():
     assert 'sidebar/list navigation, click the row' in summary
     menus[0]['enabled'] = False
     assert menus[0] not in usable_elements(snapshot)
+
+
+def calculator(sid, exclude=()):
+    raw = json.loads(Path(__file__).with_name('calculator.json').read_text())
+    elements = [dict(index=i, role=e['AXRole'], label=next(e[k] for k in ('AXTitle', 'AXDescription', 'AXHelp', 'AXIdentifier') if e[k].strip()),
+                     actions=e['actions'] or ['AXPress'], value='', frame=e['frame'], enabled=True) for i, e in enumerate(raw)]
+    return {'snapshot_id': sid, 'size': [200, 100], 'status': 'complete', 'elements': [e for e in elements if e['label'] not in exclude]}
+
+
+def calculator_server(monkeypatch, plans, notes):
+    from taucode_cua.vendor.agent_s3.agents import worker
+    server = Server()
+    config = {'kind': 'openai', 'model': 'fake'}
+    server.dispatch('configure', {'platform': 'darwin', 'planner': config, 'grounding': config})
+    server.agent.executor.enable_reflection = False
+    def plan(agent, *a, **k):
+        notes.append(agent.messages[-1]['content'][0]['text'])
+        return plans.pop(0)
+    monkeypatch.setattr(worker, 'call_llm_formatted', plan)
+    server.agent.grounding_agent.grounding_model = SimpleNamespace(reset=lambda: None, add_message=lambda **k: pytest.fail('exact labels need no grounding model'), get_response=lambda **_: '0')
+    return server
+
+
+def predict(server, sid, instruction='Compute 12 times 7', **kwargs):
+    return server.dispatch('predict', {'instruction': instruction, 'screen_size': [200, 100],
+        'screenshot_png_b64': base64.b64encode(png((200, 100))).decode(), 'ax_snapshot': calculator(sid, **kwargs)})
+
+
+def test_exact_unique_label_skips_the_grounding_model(monkeypatch):
+    labels = [e['label'] for e in calculator(1)['elements']]
+    server = calculator_server(monkeypatch, [f'```python\nagent.click({labels[2].upper()!r})\n```'], [])
+    result = predict(server, 1)
+    assert result['action']['element_index'] == 2 and result['action']['snapshot_id'] == 1
+    assert result['grounding'][0]['model_result'] == 'exact_label'
+
+
+def test_click_sequence_plans_once_and_grounds_each_click_on_a_fresh_snapshot(monkeypatch):
+    labels = [e['label'] for e in calculator(1)['elements']]
+    order = [labels[i] for i in (4, 0, 1, 2, 5)]
+    notes = []
+    server = calculator_server(monkeypatch, [f'```python\nagent.click_sequence({order!r})\n```', '```python\nagent.done("84")\n```'], notes)
+    clicked = []
+    for sid in range(1, 6):
+        result = predict(server, sid)
+        assert result['action']['kind'] == 'click' and result['action']['snapshot_id'] == sid
+        clicked.append(labels[result['action']['element_index']])
+        assert result['action']['target'] == clicked[-1]
+    assert clicked == order and len(notes) == 1
+    assert [d['model_result'] for d in server.agent.grounding_agent.grounding_decisions] == ['sequence']
+    assert 'Continuing click_sequence (5 of 5)' in result['plan_text']
+    assert predict(server, 6)['action']['kind'] == 'done'
+    assert notes[1].startswith('Your click_sequence finished: clicked ' + json.dumps(order))
+
+
+@pytest.mark.parametrize('instruction,exclude,reason', [
+    ('Previous action was NOT executed: target moved. Choose a different approach.\n\nCompute 12 times 7', (), 'did not run cleanly'),
+    ('Compute 12 times 7', 'MISSING', 'no longer matches exactly one element'),
+])
+def test_click_sequence_stops_and_tells_the_planner_what_ran(monkeypatch, instruction, exclude, reason):
+    labels = [e['label'] for e in calculator(1)['elements']]
+    notes = []
+    server = calculator_server(monkeypatch, [f'```python\nagent.click_sequence({labels[:3]!r})\n```', '```python\nagent.wait(0)\n```'], notes)
+    predict(server, 1)
+    result = predict(server, 2, instruction, exclude=(labels[1],) if exclude else ())
+    assert result['action']['kind'] == 'wait' and len(notes) == 2
+    assert f'clicked {json.dumps(labels[:1])}; did not click {json.dumps(labels[1:3])} because' in notes[1] and reason in notes[1]
+    assert server.agent.grounding_agent.queued_clicks == []
+
+
+@pytest.mark.parametrize('labels', [['1'], ['1'] * 13, '12'])
+def test_click_sequence_bounds(labels):
+    assert 'click_sequence needs 2 to 12' in parse_action(SimpleNamespace(), f'agent.click_sequence({labels!r})')['reason']

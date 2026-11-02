@@ -1,4 +1,5 @@
 from taucode_cua.requests import ProviderError
+from taucode_cua.actions import RECOVERY_PREFIXES
 from functools import partial
 import logging
 import textwrap
@@ -199,7 +200,9 @@ class Worker(BaseModule):
         )
 
         generator_message += '\n' + obs.get('element_summary', '')
-        if instruction.startswith(('Previous action was NOT executed:', 'Previous action was interrupted after input started:', 'READ-ONLY VERIFICATION:')):
+        if obs.get('sequence_note'):
+            generator_message = obs['sequence_note'] + '\n\n' + generator_message
+        if instruction.startswith(RECOVERY_PREFIXES):
             generator_message = instruction.split('\n\n', 1)[0] + '\n\n' + generator_message
 
         # Finalize the generator message

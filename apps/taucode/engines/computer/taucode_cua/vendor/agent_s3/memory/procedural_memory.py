@@ -75,6 +75,7 @@ class PROCEDURAL_MEMORY:
         9. Generate agent.done() as your grounded action when your believe the task is fully complete.
         10. Do not use the "command" + "tab" hotkey on MacOS.
         11. Prefer hotkeys and application features over clicking on text elements when possible. Highlighting text is fine.
+        12. When several clicks in a row target buttons that stay on screen (a keypad, fixed toolbar buttons), use one agent.click_sequence() with their exact element labels instead of separate clicks. Never use it when a click opens, closes, or moves anything the later clicks need.
         """)
 
         return procedural_memory.strip()

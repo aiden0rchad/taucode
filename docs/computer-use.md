@@ -34,6 +34,8 @@ The planner decides what action to attempt. Grounding maps that action to an obs
 | Pixels | Uses the dimensions of an aspect-preserving screenshot, capped at 1920 pixels on its long side. |
 | UI-TARS | Uses the configured supported image dimensions and specialized grounding prompt. |
 
+When the planner names a target by the exact label of one accessibility element, grounding uses that element without calling the grounding model. For runs of clicks on buttons that stay on screen, such as a calculator keypad, the planner can propose one click sequence. Each click is still its own step, with a fresh capture and the usual checks, but only the first needs a planner call. The sequence stops, and the planner takes over, if a step is not executed cleanly or the next label no longer matches exactly one element.
+
 Do not assume a model that handles ordinary image chat can reliably ground desktop controls. Test a harmless, bounded task and inspect the actual target/result.
 
 Each planning step has a time limit, **Planning seconds per step** in Settings → Computer Use (default 120, range 10–600). It covers the provider request and its retries. Raise it for slow providers or local models; the run's **Maximum seconds** still bounds the whole run.

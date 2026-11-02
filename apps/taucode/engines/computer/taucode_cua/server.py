@@ -60,6 +60,7 @@ class Server:
             aci = StructuredACI(None, 'darwin', planner, grounding)
             # The planner already verifies the previous action from each fresh screenshot.
             self.agent = AgentS3(planner, aci, platform='darwin', enable_reflection=False)
+            aci.clear_sequence()
             self.size = [grounding['grounding_width'], grounding['grounding_height']]
             self.mode = grounding['grounding_mode']
             self.planner_seconds = seconds
@@ -69,6 +70,7 @@ class Server:
         if method == 'reset':
             self.agent.reset()
             self.agent.grounding_agent.notes.clear()
+            self.agent.grounding_agent.clear_sequence()
             return {'ok': True}
         if method != 'predict':
             raise ValueError('Unknown method')
@@ -94,8 +96,17 @@ class Server:
                 if not isinstance(bounds, list) or len(bounds) != 2 or any(type(n) not in (int, float) or not 0 < n <= 16384 for n in bounds):
                     raise ValueError('Invalid snapshot size')
                 snapshot = {**snapshot, 'elements': [{**e, 'frame': [v * size[i % 2] / bounds[i % 2] for i, v in enumerate(e['frame'])] if e.get('frame') else None} for e in snapshot['elements']]}
-            info, actions = self.agent.predict(instruction, {'screenshot': planner_png, 'grounding_screenshot': png, 'ax_snapshot': snapshot,
-                'element_summary': observation_summary(snapshot['elements'], snapshot.get('menus')) if snapshot else ''})
+            obs = {'screenshot': planner_png, 'grounding_screenshot': png, 'ax_snapshot': snapshot,
+                   'element_summary': observation_summary(snapshot['elements'], snapshot.get('menus')) if snapshot else ''}
+            aci = getattr(self.agent, 'grounding_agent', None)
+            # Queued click_sequence steps skip the planner; every one still passes the host's checks.
+            queued = aci.continue_sequence(instruction, obs) if isinstance(aci, StructuredACI) else None
+            if queued:
+                info, actions = {'plan': queued.pop('plan')}, [queued]
+            else:
+                if isinstance(aci, StructuredACI):
+                    obs['sequence_note'], aci.sequence_note = aci.sequence_note, ''
+                info, actions = self.agent.predict(instruction, obs)
         action = actions[0]
         action['grounding_width'], action['grounding_height'] = self.size if self.mode == 'ui-tars' else size
         return {'action': action, 'reflection': info.get('reflection') or '', 'plan_text': info.get('plan') or '',
