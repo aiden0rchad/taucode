@@ -320,6 +320,10 @@ struct Fake {
     approval: bool,
     approved: usize,
     captures: usize,
+    /// Errors for captures by order (None succeeds), as when an action closed the last window.
+    capture_errors: std::collections::VecDeque<Option<String>>,
+    /// Set by a failed capture: the window is gone, so target checks fail.
+    windowless: bool,
     focus: Context,
     change_after_approval: bool,
     approval_delay: Duration,
@@ -462,6 +466,9 @@ impl Environment for Fake {
         self.input_finished_error.clone().map_or(Ok(()), Err)
     }
     fn verify_target(&self) -> Result<(), String> {
+        if self.windowless {
+            return Err("Target window closed".into());
+        }
         if let Some(Some(error)) = self.observation_errors.borrow_mut().pop_front() {
             return Err(error);
         }
@@ -503,6 +510,10 @@ impl Environment for Fake {
     }
     fn capture(&mut self) -> BoxFuture<'_, Result<Frame, String>> {
         self.captures += 1;
+        if let Some(Some(error)) = self.capture_errors.pop_front() {
+            self.windowless = true;
+            return Box::pin(async move { Err(error) });
+        }
         if let Some(control) = self.pause_during_capture.take() {
             control.pause(true);
             control.pause(false);
@@ -609,6 +620,8 @@ fn fake(actions: Vec<Value>) -> Fake {
         approval: true,
         approved: 0,
         captures: 0,
+        capture_errors: Default::default(),
+        windowless: false,
         focus: context(),
         change_after_approval: false,
         approval_delay: Duration::ZERO,
@@ -2122,4 +2135,36 @@ async fn unreadable_target_samples_are_read_again_but_lasting_loss_still_cancels
             assert_eq!(typed(&input), "firstsecond");
         }
     }
+}
+
+#[tokio::test]
+async fn closing_the_last_window_is_verified_read_only_instead_of_failing_the_capture() {
+    let closed = format!("{}the last action closed its last window", runner::NO_WINDOWS);
+    for next in [json!({"kind":"done","summary":"Dialog cancelled"}), json!({"kind":"click","x":10,"y":10,"button":"left","clicks":1,"hold_keys":[]})] {
+        let done = next["kind"] == "done";
+        let mut env = fake(vec![json!({"kind":"click","x":960,"y":540,"button":"left","clicks":1,"hold_keys":[]}), next]);
+        env.capture_errors = [None, Some(closed.clone())].into();
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        let s = settings();
+        let result = runner::run(&mut env, &control, &s, &s.app_ids(), "Cancel the dialog", Instant::now()).await;
+        assert!(env.instructions[1].starts_with("READ-ONLY VERIFICATION: App has no open windows"), "{}", env.instructions[1]);
+        assert!(env.instructions[1].contains("BEFORE the last action"));
+        let clicks = input.0.lock().unwrap().iter().filter(|e| matches!(e, Event::Mouse { down: true, .. })).count();
+        assert_eq!(clicks, 1, "verification never sends input");
+        if done {
+            assert_eq!(result.unwrap()["summary"], "Dialog cancelled");
+        } else {
+            assert!(result.unwrap_err().contains("Read-only verification rejected further input"));
+        }
+    }
+    // Before any action there is nothing to verify, so the capture error stays fatal.
+    let mut env = fake(vec![json!({"kind":"done","summary":"never"})]);
+    env.capture_errors = [Some(closed)].into();
+    let control = Control::new(FakeInput::default());
+    control.start();
+    let s = settings();
+    let error = runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now()).await.unwrap_err();
+    assert!(error.starts_with("Pre-flight capture"), "{error}");
 }

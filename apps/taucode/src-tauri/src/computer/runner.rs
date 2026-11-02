@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 pub const STALE_OBSERVATION: &str = "Stale observation: ";
 pub const RECOVERABLE: &str = "Action not executed: ";
 pub const UNCERTAIN: &str = "Action outcome uncertain: ";
+/// A capture after the run acted found the app without windows; it is not reopened.
+pub const NO_WINDOWS: &str = "App has no open windows: ";
 
 #[derive(Default)]
 struct Recovery {
@@ -48,6 +50,7 @@ pub async fn settle<T: PartialEq, F: std::future::Future<Output = Result<T, Stri
     .await;
 }
 
+#[derive(Clone)]
 pub struct Frame {
     pub png: String,
     pub thumbnail: String,
@@ -415,6 +418,7 @@ pub async fn run(
         let mut run_stale_retries = 0;
         let mut recovery = Recovery::default();
         let mut verify_only: Option<String> = None;
+        let mut last_frame: Option<Frame> = None;
         'steps: while step < settings.max_steps {
             macro_rules! recover {
                 ($reason:expr) => {{
@@ -505,10 +509,21 @@ pub async fn run(
                 return Err(format!("App blocked: {}", context.app));
             }
             env.phase(Phase::Observing);
-            let frame = control
-                .until(env.capture())
-                .await
-                .map_err(|e| format!("Pre-flight capture: app={}, {e}", context.app))?;
+            let frame = match (control.until(env.capture()).await, last_frame.take()) {
+                (Ok(frame), _) => frame,
+                // The last action closed the app's last window (Preview's Open dialog cancelled).
+                // That may be the requested result, so the planner judges it from the frame
+                // before that action, without input.
+                (Err(error), Some(before)) if error.starts_with(NO_WINDOWS) && verify_only.is_none() => {
+                    recovery.previous = Some(format!(
+                        "READ-ONLY VERIFICATION: {error} The screenshot shows the app BEFORE the last action; it now has no open windows. Return done ONLY if closing that window or dialog completed the entire requested task; otherwise return fail explaining what remains. No input is possible.\n\n"
+                    ));
+                    verify_only = Some(error);
+                    before
+                }
+                (Err(error), _) => return Err(format!("Pre-flight capture: app={}, {error}", context.app)),
+            };
+            last_frame = Some(frame.clone());
             control.checkpoint().await?;
             observation!(verify_observation());
             let scoped = format!("{instruction}\n\nHost policy: allowed application bundle IDs: {}. {}: {}. {} Never interact with taucode itself.", apps.join(", "), env.capture_description(), context.app, if settings.mode == "background" { "This run is bound to this app. Coordinates refer only to its captured window. Do not switch to another app." } else { "If taucode is frontmost, first use switch_applications with an allowed bundle ID." });
@@ -554,8 +569,13 @@ pub async fn run(
                     recover!(format!("Invalid proposed action: {error}"));
                 }
             };
-            observation!(env.verify_target());
-            let (element_label, secure) = observation!(env.ground_target(&prediction, &mut action));
+            // Read-only verification sends no input, and its window may be gone.
+            let (element_label, secure) = if verify_only.is_some() {
+                (String::new(), false)
+            } else {
+                observation!(env.verify_target());
+                observation!(env.ground_target(&prediction, &mut action))
+            };
             let description = format!(
                 "{} {}",
                 prediction.action["target"].as_str().unwrap_or(""),

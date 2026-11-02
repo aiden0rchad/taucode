@@ -52,7 +52,7 @@ pub fn capture(
     )
     .map_err(|error| {
         if !reopen && error.contains("Target has no window;") {
-            format!("The app has no open windows after the last action (it was not reopened). {error}")
+            format!("{}the last action closed its last window, and it was not reopened. {error}", super::super::runner::NO_WINDOWS)
         } else {
             error
         }
