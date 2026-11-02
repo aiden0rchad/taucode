@@ -1400,7 +1400,7 @@ mod tests {
         assert_eq!(settings.chat_history_scrollback_items, Some(200));
         assert!(!settings.thread_title_autogeneration_enabled);
         assert!(settings.automatic_app_update_checks_enabled);
-        assert!(settings.ui_font_family.contains("system-ui"));
+        assert!(settings.ui_font_family.contains("-apple-system"));
         assert!(settings.code_font_family.contains("ui-monospace"));
         assert_eq!(settings.code_font_size, 11);
         assert!(settings.notification_sounds_enabled);

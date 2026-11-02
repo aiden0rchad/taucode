@@ -29,6 +29,12 @@ export function makeThread(id: string, workspaceId: string, title: string, items
 
 const reasoning = (levels: string[], control: ReasoningCapability["control"] = "effort"): ReasoningCapability => ({ supported: levels.length > 0, levels, default: levels.includes("medium") ? "medium" : levels[0] ?? null, control, source: "api", detectedAt: 1792800000 });
 
+/** Unix seconds `days` calendar days before `now`, so a 23- or 25-hour DST day keeps the date group. */
+function daysAgo(now: number, days: number) {
+  const date = new Date(now);
+  date.setDate(date.getDate() - days);
+  return Math.floor(date.getTime() / 1000);
+}
 export function createFixtures(now = Date.now()) {
   const settings: AppSettings = {
     ...buildDefaultSettings(), theme: "dark", automaticAppUpdateChecksEnabled: false,
@@ -84,8 +90,8 @@ export function createFixtures(now = Date.now()) {
   threads.push(makeThread("thread-empty", "workspace-atlas", "New thread"));
   threads.push(...(settings.providers ?? []).flatMap(p => p.models.map(m => ({ ...makeThread("reasoning-" + m.id, "workspace-atlas", m.displayName || m.id, [], now), modelProvider: p.id, model: m.id }))));
   const chats: Chat[] = ["Plan a weekend in Kyoto", "Explain async iterators", "Ideas for a team offsite", "A better morning routine", "Notes on good documentation"].map((title, i) => ({
-    id: `chat-${i + 1}`, model: "gpt-5", modelProvider: "openai", createdAt: Math.floor(now / 1000) - [0, 0, 2, 5, 20][i] * 86400,
-    updatedAt: Math.floor(now / 1000) - [0, 0, 2, 5, 20][i] * 86400, preview: title,
+    id: `chat-${i + 1}`, model: "gpt-5", modelProvider: "openai", createdAt: daysAgo(now, [0, 0, 2, 5, 20][i]),
+    updatedAt: daysAgo(now, [0, 0, 2, 5, 20][i]), preview: title,
     chat: { title, pinned: false, deletedAt: null, web: false },
   }));
   chats.push({ ...chats[0], id: "chat-streaming", running: true, chat: { ...chats[0].chat, title: "Exploring an idea" } });
