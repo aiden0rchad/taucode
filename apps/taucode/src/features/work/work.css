@@ -95,5 +95,5 @@
 .work-tool summary > svg { flex-shrink: 0; }
 
 .work-agents-link { display: inline-flex; align-items: center; gap: 6px; margin: 4px 0; }
-.work-space .work-task-group h3 { display: flex; align-items: center; gap: 6px; margin: 10px 10px 5px; color: var(--text-muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.work-space .work-task-group h3 { display: flex; align-items: center; gap: 6px; margin: 10px 10px 5px 24px; color: var(--text-muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .work-task-group h3 span { color: var(--text-faint); font-weight: 400; }
