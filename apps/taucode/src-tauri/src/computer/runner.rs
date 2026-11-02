@@ -149,6 +149,21 @@ fn input_target(env: &impl Environment, action: &Action) -> Result<Target, Strin
         env.policy_target(action)
     }
 }
+/// An app rebuilding a control (Notes' search field, TextEdit's text view while scrolling) can
+/// briefly answer AX reads with no role. That is an unreadable sample, not a different target,
+/// so read again before judging it. A changed role, label or secure flag still fails closed.
+async fn readable_input_target(env: &impl Environment, action: &Action) -> Result<Target, String> {
+    let mut target = input_target(env, action)?;
+    for _ in 0..UNREADABLE_TARGET_RETRIES {
+        if !target.role.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(40)).await;
+        target = input_target(env, action)?;
+    }
+    Ok(target)
+}
+const UNREADABLE_TARGET_RETRIES: usize = 5;
 fn verify_policy_target(check: &str, before: &Target, after: &Target) -> Result<(), String> {
     if before != after {
         // Never log labels, pane titles, field values, or typed text.
@@ -604,7 +619,7 @@ pub async fn run(
                 ..current.clone()
             };
             observation!(env.verify_target());
-            let policy_target = observation!(input_target(&*env, &action));
+            let policy_target = observation!(readable_input_target(&*env, &action).await);
             let after = loop {
                 match decide(
                     &policy_action,
@@ -641,7 +656,7 @@ pub async fn run(
                 if let Err(reason) = verify_policy_target(
                     "AX policy target changed after approval",
                     &policy_target,
-                    &observation!(input_target(&*env, &action)),
+                    &observation!(readable_input_target(&*env, &action).await),
                 ) {
                     // Nothing has been sent. Discard this approval and plan again.
                     recover!(reason);
@@ -719,7 +734,7 @@ pub async fn run(
                 verify_policy_target(
                     "AX policy target changed after fallback approval",
                     &policy_target,
-                    &observation!(input_target(&*env, &action)),
+                    &observation!(readable_input_target(&*env, &action).await),
                 )?;
                 env.phase(Phase::Acting);
                 observation!(env.begin_foreground(control, &after));
@@ -745,7 +760,7 @@ pub async fn run(
                 verify_policy_target(
                     "AX policy target changed before input",
                     &policy_target,
-                    &observation!(input_target(&*env, &action)),
+                    &observation!(readable_input_target(&*env, &action).await),
                 )?;
             }
             let outcome = if preparation == Preparation::Handled {

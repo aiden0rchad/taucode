@@ -306,6 +306,8 @@ struct Fake {
     policy_evidence: Target,
     policy_reads: std::cell::Cell<usize>,
     policy_change: Option<(usize, Target)>,
+    /// 1-based policy reads that come back unreadable (no role), as during an AX rebuild.
+    unreadable_reads: Vec<usize>,
     contexts: std::cell::RefCell<std::collections::VecDeque<Context>>,
     typing_focus_changes: bool,
     element_label: String,
@@ -437,6 +439,9 @@ impl Environment for Fake {
     }
     fn policy_target(&self, action: &Action) -> Result<Target, String> {
         self.policy_reads.set(self.policy_reads.get() + 1);
+        if self.unreadable_reads.contains(&self.policy_reads.get()) {
+            return Ok(Target::default());
+        }
         if let Some((after, target)) = &self.policy_change {
             if self.policy_reads.get() > *after {
                 return Ok(target.clone());
@@ -591,6 +596,7 @@ fn fake(actions: Vec<Value>) -> Fake {
         policy_evidence: Target::default(),
         policy_reads: std::cell::Cell::new(0),
         policy_change: None,
+        unreadable_reads: vec![],
         contexts: Default::default(),
         typing_focus_changes: false,
         element_label: String::new(),
@@ -2071,4 +2077,49 @@ fn pointer_events_recheck_the_app_and_keystrokes_also_the_secure_state() {
     let other_app = Context { app: "com.apple.finder".into(), ..context() };
     assert!(control.post(click, &approved, || Ok(other_app)).is_err());
     control.release();
+}
+
+fn typed(input: &FakeInput) -> String {
+    input
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|event| match event {
+            Event::Text(text) => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn unreadable_target_samples_are_read_again_but_lasting_loss_still_cancels() {
+    for unreadable in [vec![2], (2..=7).collect::<Vec<_>>()] {
+        let lasting = unreadable.len() > 1;
+        let mut env = fake(vec![
+            json!({"kind":"type","text":"first","overwrite":false,"enter":false}),
+            json!({"kind":"type","text":"second","overwrite":false,"enter":false}),
+            json!({"kind":"done","summary":"done"}),
+        ]);
+        env.policy_evidence = Target {
+            role: "AXTextField".into(),
+            label: "Search".into(),
+            ..Default::default()
+        };
+        env.unreadable_reads = unreadable; // Read 2 is the first check after approval.
+        let mut s = settings();
+        s.confirm_typing = ConfirmTyping::Always;
+        let input = FakeInput::default();
+        let control = Control::new(input.clone());
+        control.start();
+        runner::run(&mut env, &control, &s, &s.app_ids(), "test", Instant::now())
+            .await
+            .unwrap();
+        if lasting {
+            assert!(env.instructions[1].contains("NOT executed"));
+            assert_eq!(typed(&input), "second");
+        } else {
+            assert_eq!(typed(&input), "firstsecond");
+        }
+    }
 }
