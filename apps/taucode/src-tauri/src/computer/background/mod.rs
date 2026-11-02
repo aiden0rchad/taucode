@@ -79,7 +79,7 @@ pub fn screenshot(bundle: &str) -> Result<super::native::Frame, String> {
             .map(|a| a.processIdentifier())
             .ok_or("Target app is not running")?;
     let process = process::Binding::bind(pid, bundle)?;
-    let (frame, window) = capture::capture(&process)?;
+    let (frame, window) = capture::capture(&process, true)?;
     ax_actions::check_pane(pid, bundle, Some(window.id))?;
     Ok(frame)
 }
@@ -92,6 +92,8 @@ pub struct Session {
     pub foreground: AtomicBool,
     pub dragging: AtomicBool,
     pub active: AtomicBool,
+    /// Set once this run has started an action; see `capture::capture`.
+    pub acted: AtomicBool,
     pub guard: focus_guard::Guard,
     pub overlay: overlay::Overlay,
     pub path: Mutex<Option<&'static str>>,
@@ -160,6 +162,7 @@ impl Session {
             foreground: AtomicBool::new(false),
             dragging: AtomicBool::new(false),
             active: AtomicBool::new(true),
+            acted: AtomicBool::new(false),
             guard: focus_guard::Guard::new(pid, previous),
             overlay: overlay::Overlay::new(app, cursor, pid),
             path: Mutex::new(None),
@@ -227,7 +230,7 @@ impl Session {
     }
     pub fn capture(&self) -> Result<super::native::Frame, String> {
         self.check()?;
-        let (frame, window) = capture::capture(&self.process)?;
+        let (frame, window) = capture::capture(&self.process, !self.acted.load(Ordering::SeqCst))?;
         ax_actions::check_pane(self.pid, &self.bundle, Some(window.id))?;
         self.overlay.set_visible(window.on_screen);
         self.ax_fallback.store(false, Ordering::SeqCst);

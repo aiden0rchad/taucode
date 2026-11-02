@@ -175,8 +175,11 @@ Known gaps, not fixed:
    - Probe tools in `apps/taucode/scripts/ax-probes/` (build with `swiftc -O`): `press <timeout> [delay]` / `press check`, and `winwatch <s>`
      that logs Preview's window ids/positions on change. AX probes must run from a process
      with Accessibility (the Claude terminal tab), not the sandboxed shell.
-   - Next: find what in binding/activation makes Preview recreate the panel (focus guard?
-     `activateFromApplication`?), then test reachability-based press confirmation.
+   - **Resolved (later Nov 1):** the press works; the panel closes about 1 s later. The new
+     panel came from `capture.rs`'s windowless reopen: with no windows left, the next capture
+     reopened Preview, which shows its Open panel again. Captures no longer reopen an app
+     once the run has acted (`Session::acted`); the run now ends saying the app has no open
+     windows. Verified with `winwatch`: the panel closes and nothing reappears.
 
 ### Testing Computer Use live
 

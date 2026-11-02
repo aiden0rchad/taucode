@@ -743,6 +743,7 @@ impl runner::Environment for Live {
     }
     fn begin_action(&self) {
         if let Some(s) = &self.session {
+            s.acted.store(true, std::sync::atomic::Ordering::SeqCst);
             s.guard.begin_action();
         }
     }

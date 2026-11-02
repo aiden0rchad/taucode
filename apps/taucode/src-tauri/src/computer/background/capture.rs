@@ -9,7 +9,13 @@ use screencapturekit::{
     prelude::*,
 };
 
-pub fn capture(process: &super::process::Binding) -> Result<(native::Frame, Window), String> {
+/// `reopen`: an app with no windows may be reopened to get one. Only before a run acts: after
+/// that, no windows can be the action's result (Preview's Open dialog cancelled), and
+/// reopening would show the app's launch UI again.
+pub fn capture(
+    process: &super::process::Binding,
+    reopen: bool,
+) -> Result<(native::Frame, Window), String> {
     let pid = process.pid;
     if native::permissions()["screen"] != true {
         return Err("Grant Screen Recording in System Settings".into());
@@ -26,6 +32,9 @@ pub fn capture(process: &super::process::Binding) -> Result<(native::Frame, Wind
         },
         || {
             process.check("windowless capture reopen")?;
+            if !reopen {
+                return Err("the app has no open windows; not reopened after this run acted".into());
+            }
             if super::ax_actions::window_count(pid)? != 0 {
                 return Ok(());
             }
@@ -40,7 +49,14 @@ pub fn capture(process: &super::process::Binding) -> Result<(native::Frame, Wind
         },
         std::time::Instant::now,
         std::thread::sleep,
-    )?;
+    )
+    .map_err(|error| {
+        if !reopen && error.contains("Target has no window;") {
+            format!("The app has no open windows after the last action (it was not reopened). {error}")
+        } else {
+            error
+        }
+    })?;
     let target = windows::describe(&window);
     // Desktop-independent window filter: occluders, HUD and all overlay windows are excluded by construction.
     let filter = SCContentFilter::create()
