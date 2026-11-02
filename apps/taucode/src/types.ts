@@ -628,6 +628,9 @@ export type LocalUsageDay = {
 };
 
 export type LocalUsageTotals = {
+  allTimeTokens?: number;
+  allTimeAgentRuns?: number;
+  allTimeAgentTimeMs?: number;
   last7DaysTokens: number;
   last30DaysTokens: number;
   averageDailyTokens: number;

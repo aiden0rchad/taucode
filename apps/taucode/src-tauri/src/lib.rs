@@ -152,6 +152,9 @@ pub fn run() {
             if let Err(error) = themes::watch(app.handle()) { eprintln!("Theme watcher unavailable: {error}"); }
             let _ = shared::engine_runtime::RESOURCES.set(app.path().resource_dir()?);
             let state = state::AppState::load(&app.handle());
+            tauri::async_runtime::spawn(shared::local_usage_core::collect_usage(
+                state.storage_path.parent().ok_or_else(|| std::io::Error::other("Missing app data directory"))?.to_path_buf(),
+            ));
             diagnostics::initialize(app.handle(), &tauri::async_runtime::block_on(state.app_settings.lock()).clone()).map_err(std::io::Error::other)?;
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             let _ = state.browser.native.set(std::sync::Arc::new(shared::browser::native::NativeBackend::new(app.handle().clone(), state.browser.native_state.clone(), app.path().app_data_dir()?.join("settings.json"))));

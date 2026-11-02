@@ -258,7 +258,7 @@ export function HomeUsageSection({
           </div>
           <div className="home-usage-models">
             <div className="home-usage-models-label">
-              Top models
+              Models · all time
               {usageMetric === "time" && (
                 <span className="home-usage-models-hint">Tokens</span>
               )}

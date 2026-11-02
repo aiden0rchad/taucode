@@ -124,7 +124,10 @@ All cross-runtime domain behavior belongs in `src-tauri/src/shared/*`:
 - Files read/write: `src-tauri/src/shared/files_core.rs`
 - Git and GitHub logic: `src-tauri/src/shared/git_core.rs`, `src-tauri/src/shared/git_ui_core.rs`, `src-tauri/src/shared/git_ui_core/*`
 - Prompts CRUD/listing: `src-tauri/src/shared/prompts_core.rs`
-- Usage snapshot and aggregation: `src-tauri/src/shared/local_usage_core.rs`
+- Usage snapshot and aggregation: `src-tauri/src/shared/local_usage_core.rs`; durable ingestion: `src-tauri/src/shared/local_usage_core/ledger.rs`.
+  App and daemon collect managed Codex (including archives), pi/OMP/custom pi-RPC, Chat/Work, Claude transcripts, and saved subagent/recovery messages at startup and every minute. Only reported usage can be recovered; context-window occupancy is not treated as billable usage. Input includes cache reads/writes; reasoning already included in output is not added again. Time is an activity estimate and runs count model responses.
+  The versioned ledger lives at `<app-data>/usage/ledger-v1.json`, outside build/runtime directories, with an OS lock and atomic synced replacement. Repeated scans and copied histories are deduplicated; imported records survive transcript removal. Back up this directory with app data. Never delete it during builds or runtime updates. Invalid ledgers produce an error instead of resetting totals. Daily charts cover the requested range; lifetime totals and model shares cover all retained records.
+  Explicit recovery/check: `TAUCODE_USAGE_DATA_DIR="/absolute/app-data" cargo test --lib backfill_existing_usage -- --ignored --nocapture` from `src-tauri` backfills available history, reloads the ledger, and prints a usage-only snapshot.
 - Process helpers: `src-tauri/src/shared/process_core.rs`
 
 ## Events Map (Backend -> Frontend)

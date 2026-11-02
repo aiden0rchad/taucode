@@ -161,6 +161,12 @@ pub(crate) struct LocalUsageDay {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LocalUsageTotals {
+    #[serde(default)]
+    pub(crate) all_time_tokens: i64,
+    #[serde(default)]
+    pub(crate) all_time_agent_runs: i64,
+    #[serde(default)]
+    pub(crate) all_time_agent_time_ms: i64,
     pub(crate) last7_days_tokens: i64,
     pub(crate) last30_days_tokens: i64,
     pub(crate) average_daily_tokens: i64,

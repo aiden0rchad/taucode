@@ -93,6 +93,12 @@ export function buildHomeUsageViewModel({
     usageMetric === "tokens"
       ? [
           {
+            label: "All time",
+            value: formatCompactNumber(usageTotals?.allTimeTokens),
+            suffix: "tokens",
+            caption: "All recorded model usage",
+          },
+          {
             label: "Today",
             value: formatCompactNumber(latestUsageDay?.totalTokens ?? 0),
             suffix: "tokens",
@@ -149,6 +155,12 @@ export function buildHomeUsageViewModel({
           },
         ]
       : [
+          {
+            label: "All time",
+            value: formatDurationCompact(usageTotals?.allTimeAgentTimeMs),
+            suffix: "agent time",
+            caption: `${formatCount(usageTotals?.allTimeAgentRuns ?? 0)} recorded model responses · estimated time`,
+          },
           {
             label: "Last 7 days",
             value: formatDurationCompact(last7AgentMs),

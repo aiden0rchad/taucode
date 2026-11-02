@@ -1,8 +1,6 @@
 use chrono::{DateTime, Duration, Local, TimeZone, Utc};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
@@ -21,6 +19,8 @@ struct DailyTotals {
     agent_runs: i64,
 }
 
+mod ledger;
+
 #[derive(Default, Clone, Copy)]
 struct UsageTotals {
     input: i64,
@@ -30,7 +30,20 @@ struct UsageTotals {
 
 const MAX_ACTIVITY_GAP_MS: i64 = 2 * 60 * 1000;
 
+pub(crate) async fn collect_usage(data_dir: PathBuf) {
+    loop {
+        let data = data_dir.clone();
+        match tokio::task::spawn_blocking(move || ledger::sync(&data, &[])).await {
+            Ok(Ok(_)) => (),
+            Ok(Err(error)) => eprintln!("Usage collection failed: {error}"),
+            Err(error) => eprintln!("Usage collection task failed: {error}"),
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+    }
+}
+
 pub(crate) async fn local_usage_snapshot_core(
+    data_dir: &Path,
     workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
     days: Option<u32>,
     workspace_path: Option<String>,
@@ -46,58 +59,68 @@ pub(crate) async fn local_usage_snapshot_core(
     });
     let sessions_roots = {
         let workspaces = workspaces.lock().await;
-        resolve_sessions_roots(&workspaces, workspace_path.as_deref())
+        resolve_sessions_roots(&workspaces, None)
     };
+    let data_dir = data_dir.to_path_buf();
     let snapshot = tokio::task::spawn_blocking(move || {
-        scan_local_usage(days, workspace_path.as_deref(), &sessions_roots)
+        let records = ledger::sync(&data_dir, &sessions_roots)?;
+        Ok::<_, String>(snapshot_from_records(
+            days,
+            workspace_path.as_deref(),
+            records.values(),
+        ))
     })
     .await
     .map_err(|err| err.to_string())??;
     Ok(snapshot)
 }
 
-fn scan_local_usage(
+fn snapshot_from_records<'a>(
     days: u32,
     workspace_path: Option<&Path>,
-    sessions_roots: &[PathBuf],
-) -> Result<LocalUsageSnapshot, String> {
+    records: impl Iterator<Item = &'a ledger::Record>,
+) -> LocalUsageSnapshot {
     let updated_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
-
     let day_keys = make_day_keys(days);
-    let mut daily: HashMap<String, DailyTotals> = day_keys
+    let mut daily = day_keys
         .iter()
         .map(|key| (key.clone(), DailyTotals::default()))
         .collect();
-    let mut model_totals: HashMap<String, i64> = HashMap::new();
-
-    if sessions_roots.is_empty() {
-        return Ok(build_snapshot(updated_at, day_keys, daily, HashMap::new()));
+    let mut model_totals = HashMap::new();
+    let mut all_time = DailyTotals::default();
+    for record in records.filter(|record| {
+        workspace_path.is_none_or(|path| path_matches_workspace(&record.cwd, path))
+    }) {
+        record.add_to(&mut all_time);
+        record.aggregate(&mut daily, &mut model_totals);
     }
+    let mut snapshot = build_snapshot(updated_at, day_keys, daily, model_totals);
+    snapshot.totals.all_time_tokens = all_time.input + all_time.output;
+    snapshot.totals.all_time_agent_runs = all_time.agent_runs;
+    snapshot.totals.all_time_agent_time_ms = all_time.agent_ms;
+    snapshot
+}
 
-    for root in sessions_roots {
-        for day_key in &day_keys {
-            let day_dir = day_dir_for_key(root, day_key);
-            if !day_dir.exists() {
-                continue;
-            }
-            let entries = match std::fs::read_dir(&day_dir) {
-                Ok(entries) => entries,
-                Err(_) => continue,
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
-                    continue;
-                }
-                scan_file(&path, &mut daily, &mut model_totals, workspace_path)?;
-            }
+#[cfg(test)]
+fn scan_local_usage(
+    days: u32,
+    workspace_path: Option<&Path>,
+    roots: &[PathBuf],
+) -> Result<LocalUsageSnapshot, String> {
+    let mut records = HashMap::new();
+    for root in roots {
+        for path in ledger::files(root)? {
+            ledger::scan_file(&path, &mut records)?;
         }
     }
-
-    Ok(build_snapshot(updated_at, day_keys, daily, model_totals))
+    Ok(snapshot_from_records(
+        days,
+        workspace_path,
+        records.values(),
+    ))
 }
 
 fn build_snapshot(
@@ -148,26 +171,29 @@ fn build_snapshot(
     let peak_day = peak.map(|day| day.day.clone());
     let peak_day_tokens = peak.map(|day| day.total_tokens).unwrap_or(0);
 
+    let all_model_tokens: i64 = model_totals.values().sum();
     let mut top_models: Vec<LocalUsageModel> = model_totals
         .into_iter()
-        .filter(|(model, tokens)| model != "unknown" && *tokens > 0)
+        .filter(|(_, tokens)| *tokens > 0)
         .map(|(model, tokens)| LocalUsageModel {
             model,
             tokens,
-            share_percent: if total_tokens > 0 {
-                ((tokens as f64) / (total_tokens as f64) * 1000.0).round() / 10.0
+            share_percent: if all_model_tokens > 0 {
+                ((tokens as f64) / (all_model_tokens as f64) * 1000.0).round() / 10.0
             } else {
                 0.0
             },
         })
         .collect();
-    top_models.sort_by(|a, b| b.tokens.cmp(&a.tokens));
-    top_models.truncate(4);
+    top_models.sort_by(|a, b| b.tokens.cmp(&a.tokens).then_with(|| a.model.cmp(&b.model)));
 
     LocalUsageSnapshot {
         updated_at,
         days,
         totals: LocalUsageTotals {
+            all_time_tokens: 0,
+            all_time_agent_runs: 0,
+            all_time_agent_time_ms: 0,
             last7_days_tokens: last7_tokens,
             last30_days_tokens: total_tokens,
             average_daily_tokens,
@@ -179,236 +205,21 @@ fn build_snapshot(
     }
 }
 
+#[cfg(test)]
 fn scan_file(
     path: &Path,
     daily: &mut HashMap<String, DailyTotals>,
-    model_totals: &mut HashMap<String, i64>,
-    workspace_path: Option<&Path>,
+    models: &mut HashMap<String, i64>,
+    workspace: Option<&Path>,
 ) -> Result<(), String> {
-    let file = match File::open(path) {
-        Ok(file) => file,
-        Err(_) => {
-            return Ok(());
-        }
-    };
-    let reader = BufReader::new(file);
-    let mut previous_totals: Option<UsageTotals> = None;
-    let mut current_model: Option<String> = None;
-    let mut last_activity_ms: Option<i64> = None;
-    let mut seen_runs: HashSet<i64> = HashSet::new();
-    let mut match_known = workspace_path.is_none();
-    let mut matches_workspace = workspace_path.is_none();
-
-    for line in reader.lines() {
-        let line = match line {
-            Ok(line) => line,
-            Err(_) => continue,
-        };
-        if line.len() > 512_000 {
-            continue;
-        }
-
-        let value = match serde_json::from_str::<Value>(&line) {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        let entry_type = value
-            .get("type")
-            .and_then(|value| value.as_str())
-            .unwrap_or("");
-
-        if entry_type == "session_meta" || entry_type == "turn_context" {
-            if let Some(cwd) = extract_cwd(&value) {
-                if let Some(filter) = workspace_path {
-                    matches_workspace = path_matches_workspace(&cwd, filter);
-                    match_known = true;
-                    if !matches_workspace {
-                        break;
-                    }
-                }
-            }
-        }
-
-        if entry_type == "turn_context" {
-            if let Some(model) = extract_model_from_turn_context(&value) {
-                current_model = Some(model);
-            }
-            continue;
-        }
-
-        if entry_type == "session_meta" {
-            continue;
-        }
-
-        if !matches_workspace {
-            if match_known {
-                break;
-            }
-            continue;
-        }
-
-        if !match_known {
-            continue;
-        }
-
-        if entry_type == "event_msg" || entry_type.is_empty() {
-            let payload = value.get("payload").and_then(|value| value.as_object());
-            let payload_type = payload
-                .and_then(|payload| payload.get("type"))
-                .and_then(|value| value.as_str());
-
-            if payload_type == Some("agent_message") {
-                if let Some(timestamp_ms) = read_timestamp_ms(&value) {
-                    if seen_runs.insert(timestamp_ms) {
-                        if let Some(day_key) = day_key_for_timestamp_ms(timestamp_ms) {
-                            if let Some(entry) = daily.get_mut(&day_key) {
-                                entry.agent_runs += 1;
-                            }
-                        }
-                    }
-                    track_activity(daily, &mut last_activity_ms, timestamp_ms);
-                }
-                continue;
-            }
-
-            if payload_type == Some("agent_reasoning") {
-                if let Some(timestamp_ms) = read_timestamp_ms(&value) {
-                    track_activity(daily, &mut last_activity_ms, timestamp_ms);
-                }
-                continue;
-            }
-
-            if payload_type != Some("token_count") {
-                continue;
-            }
-
-            let info = payload
-                .and_then(|payload| payload.get("info"))
-                .and_then(|v| v.as_object());
-            let (input, cached, output, used_total) = if let Some(info) = info {
-                if let Some(total) = find_usage_map(info, &["total_token_usage", "totalTokenUsage"])
-                {
-                    (
-                        read_i64(total, &["input_tokens", "inputTokens"]),
-                        read_i64(
-                            total,
-                            &[
-                                "cached_input_tokens",
-                                "cache_read_input_tokens",
-                                "cachedInputTokens",
-                                "cacheReadInputTokens",
-                            ],
-                        ),
-                        read_i64(total, &["output_tokens", "outputTokens"]),
-                        true,
-                    )
-                } else if let Some(last) =
-                    find_usage_map(info, &["last_token_usage", "lastTokenUsage"])
-                {
-                    (
-                        read_i64(last, &["input_tokens", "inputTokens"]),
-                        read_i64(
-                            last,
-                            &[
-                                "cached_input_tokens",
-                                "cache_read_input_tokens",
-                                "cachedInputTokens",
-                                "cacheReadInputTokens",
-                            ],
-                        ),
-                        read_i64(last, &["output_tokens", "outputTokens"]),
-                        false,
-                    )
-                } else {
-                    continue;
-                }
-            } else {
-                continue;
-            };
-
-            let mut delta = UsageTotals {
-                input,
-                cached,
-                output,
-            };
-
-            if used_total {
-                let prev = previous_totals.unwrap_or_default();
-                delta = UsageTotals {
-                    input: (input - prev.input).max(0),
-                    cached: (cached - prev.cached).max(0),
-                    output: (output - prev.output).max(0),
-                };
-                previous_totals = Some(UsageTotals {
-                    input,
-                    cached,
-                    output,
-                });
-            } else {
-                // Some streams emit `last_token_usage` deltas between `total_token_usage` snapshots.
-                // Treat those as already-counted to avoid double-counting when the next total arrives.
-                let mut next = previous_totals.unwrap_or_default();
-                next.input += delta.input;
-                next.cached += delta.cached;
-                next.output += delta.output;
-                previous_totals = Some(next);
-            }
-
-            if delta.input == 0 && delta.cached == 0 && delta.output == 0 {
-                continue;
-            }
-
-            let timestamp_ms = read_timestamp_ms(&value);
-            if let Some(day_key) = timestamp_ms.and_then(|ms| day_key_for_timestamp_ms(ms)) {
-                if let Some(entry) = daily.get_mut(&day_key) {
-                    let cached = delta.cached.min(delta.input);
-                    entry.input += delta.input;
-                    entry.cached += cached;
-                    entry.output += delta.output;
-
-                    let model = current_model
-                        .clone()
-                        .or_else(|| extract_model_from_token_count(&value))
-                        .unwrap_or_else(|| "unknown".to_string());
-                    *model_totals.entry(model).or_insert(0) += delta.input + delta.output;
-                }
-            }
-
-            if let Some(timestamp_ms) = timestamp_ms {
-                track_activity(daily, &mut last_activity_ms, timestamp_ms);
-            }
-            continue;
-        }
-
-        if entry_type == "response_item" {
-            let payload = value.get("payload").and_then(|value| value.as_object());
-            let payload_type = payload
-                .and_then(|payload| payload.get("type"))
-                .and_then(|value| value.as_str());
-            let role = payload
-                .and_then(|payload| payload.get("role"))
-                .and_then(|value| value.as_str())
-                .unwrap_or("");
-
-            if role == "assistant" {
-                if let Some(timestamp_ms) = read_timestamp_ms(&value) {
-                    if seen_runs.insert(timestamp_ms) {
-                        if let Some(day_key) = day_key_for_timestamp_ms(timestamp_ms) {
-                            if let Some(entry) = daily.get_mut(&day_key) {
-                                entry.agent_runs += 1;
-                            }
-                        }
-                    }
-                    track_activity(daily, &mut last_activity_ms, timestamp_ms);
-                }
-            } else if payload_type != Some("message") {
-                if let Some(timestamp_ms) = read_timestamp_ms(&value) {
-                    track_activity(daily, &mut last_activity_ms, timestamp_ms);
-                }
-            }
-        }
+    let mut records = HashMap::new();
+    ledger::scan_file(path, &mut records)?;
+    for record in records
+        .values()
+        .filter(|r| workspace.is_none_or(|p| path_matches_workspace(&r.cwd, p)))
+    {
+        record.aggregate(daily, models);
     }
-
     Ok(())
 }
 
@@ -454,6 +265,7 @@ fn read_i64(map: &serde_json::Map<String, Value>, keys: &[&str]) -> i64 {
                 .or_else(|| value.as_f64().map(|value| value as i64))
         })
         .unwrap_or(0)
+        .max(0)
 }
 
 fn read_timestamp_ms(value: &Value) -> Option<i64> {
@@ -470,24 +282,6 @@ fn read_timestamp_ms(value: &Value) -> Option<i64> {
         return Some(numeric * 1000);
     }
     Some(numeric)
-}
-
-fn track_activity(
-    daily: &mut HashMap<String, DailyTotals>,
-    last_activity_ms: &mut Option<i64>,
-    timestamp_ms: i64,
-) {
-    if let Some(prev_ms) = *last_activity_ms {
-        let delta = timestamp_ms - prev_ms;
-        if delta > 0 && delta <= MAX_ACTIVITY_GAP_MS {
-            if let Some(day_key) = day_key_for_timestamp_ms(timestamp_ms) {
-                if let Some(entry) = daily.get_mut(&day_key) {
-                    entry.agent_ms += delta;
-                }
-            }
-        }
-    }
-    *last_activity_ms = Some(timestamp_ms);
 }
 
 fn day_key_for_timestamp_ms(timestamp_ms: i64) -> Option<String> {
@@ -585,6 +379,7 @@ fn resolve_workspace_codex_home_for_path(
     resolve_workspace_codex_home(entry, parent_entry)
 }
 
+#[cfg(test)]
 fn day_dir_for_key(root: &Path, day_key: &str) -> PathBuf {
     let mut parts = day_key.split('-');
     let year = parts.next().unwrap_or("1970");
@@ -598,6 +393,7 @@ mod tests {
     use super::*;
     use crate::types::{WorkspaceKind, WorkspaceSettings};
     use chrono::NaiveDateTime;
+    use std::fs::File;
     use std::io::Write;
     use std::path::Path;
     use std::{fs, path::PathBuf};

@@ -193,6 +193,7 @@ struct WorkspaceFileResponse {
 impl DaemonState {
     fn load(config: &DaemonConfig, event_sink: DaemonEventSink) -> Self {
         codex_home::set_app_data_dir(&config.data_dir);
+        tokio::spawn(local_usage_core::collect_usage(config.data_dir.clone()));
         let storage_path = config.data_dir.join("workspaces.json");
         let settings_path = config.data_dir.join("settings.json");
         let workspaces = read_workspaces(&storage_path).unwrap_or_default();
@@ -1325,7 +1326,7 @@ impl DaemonState {
         days: Option<u32>,
         workspace_path: Option<String>,
     ) -> Result<LocalUsageSnapshot, String> {
-        local_usage_core::local_usage_snapshot_core(&self.workspaces, days, workspace_path).await
+        local_usage_core::local_usage_snapshot_core(&self.data_dir, &self.workspaces, days, workspace_path).await
     }
 
     async fn menu_set_accelerators(&self, _updates: Vec<Value>) -> Result<(), String> {
