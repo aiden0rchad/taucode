@@ -10,8 +10,6 @@ import { NewConversationRow } from "@/features/chat/NewConversationRow";
 import { formatRelativeTimeShort } from "@utils/time";
 import { Globe, X, Lightbulb, Calendar, PenLine, Pencil, RotateCcw, Copy, Search } from "lucide-react";
 import { ComposerShell, ComposerSendButton, ComposerAccessControl } from "@/features/composer/components/ComposerShell";
-import { ComposerQueue } from "@/features/composer/components/ComposerQueue";
-import { isMacPlatform } from "@utils/platformPaths";
 import { getFileTypeIconUrl } from "@utils/fileTypeIcons";
 import { useEffect, useRef, useState } from "react";
 import type { AppSettings } from "@/types";
@@ -93,15 +91,12 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
       setAttachments(current => [...current, ...added.map(a => a.text !== undefined ? { ...a, text: inlineAttachment(a.name, a.text) } : a)]);
     });
   };
-  // While a response runs, Enter does the follow-up behavior from Settings and the shortcut the other.
-  const followUp = settings.followUpMessageBehavior === "steer" && settings.steerEnabled ? "steer" : "queue";
-  const otherFollowUp = followUp === "steer" || !settings.steerEnabled ? "queue" : "steer";
-  const followUpShortcut = isMacPlatform() ? "Shift+Cmd+Enter" : "Shift+Ctrl+Enter";
-  const send = (other = false) => {
-    if (busy || dictating || (!draft.trim() && !attachments.length)) return;
+  // While a response runs, Enter adds the message to it when steering is on; Chat never queues.
+  const canSteer = settings.steerEnabled;
+  const send = () => {
+    if (busy || dictating || (chat.running && !canSteer) || (!draft.trim() && !attachments.length)) return;
     const text = [draft, ...attachments.flatMap(a => a.text ? [a.text] : [])].filter(Boolean).join("\n\n");
     const images = attachments.flatMap(a => a.url ? [a.url] : []);
-    if (chat.running && (other ? otherFollowUp : followUp) === "queue") { chat.queue(text, images); clearDraft(); return; }
     void run(async () => {
       if (chat.running) await chat.steer(text, images);
       else await chat.send(text, images, model || null, editing, newWeb, reasoning.level);
@@ -169,24 +164,19 @@ export function ChatView({ settings, onOpenSettings = () => {} }: { settings: Ap
       <form className="chat-composer chat-column" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false); }} onDrop={e => { e.preventDefault(); setDragOver(false); if (!disabled) addFiles(Array.from(e.dataTransfer.files)); }}>
         {(chat.running || chat.turnStatus === "interrupted" || chat.turnStatus === "failed") && <p role="status" className={`chat-turn-state${chat.running ? "" : ` is-${chat.turnStatus}`}`}>
           <strong>{chat.running ? "Working" : chat.turnStatus === "interrupted" ? "Stopped" : "Failed"}</strong>
-          {chat.running ? ` — Enter ${followUp === "steer" ? "adds your message to this response" : "queues a follow-up"}${otherFollowUp !== followUp ? `; ${followUpShortcut} ${otherFollowUp === "steer" ? "adds it to this response" : "queues it"}` : ""}. You can also stop it below.` : chat.turnStatus === "interrupted" ? " — Send a follow-up to continue, or regenerate the last answer." : " — Review the error, then retry or choose another model."}
+          {chat.running ? canSteer ? " — Enter adds your message to this response. You can also stop it below." : " — You can stop this response below." : chat.turnStatus === "interrupted" ? " — Send a follow-up to continue, or regenerate the last answer." : " — Review the error, then retry or choose another model."}
         </p>}
-        <ComposerQueue queuedMessages={chat.queued} pausedReason={chat.pausedReason} onDeleteQueued={chat.unqueue} onEditQueued={item => { chat.unqueue(item.id); setDraft(item.text); setAttachments((item.images ?? []).map((url, i) => ({ name: `Image ${i + 1}`, url }))); composerInput.current?.focus(); }} />
         <input ref={fileInput} hidden type="file" aria-label="Attach files" multiple disabled={disabled} onChange={e => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
         <ComposerShell reasoning={{ modelName: formatModelRef(settings, model).name, models: models.map(m => ({ id: m.key, name: m.displayName || m.id, provider: m.provider })), selectedModelId: model, defaultModelId: settings.agentPolicy?.defaultModel ? settings.agentPolicy.defaultModel.providerId + "/" + settings.agentPolicy.defaultModel.modelId : undefined, onSelectModel: selectModel, capability, value: reasoning.requested, onChange: reasoning.onChange, disabled, onOpenSettings }} menu={<><button type="button" disabled={disabled} onClick={() => fileInput.current?.click()}>Attach files or images</button>{features.browser && features.connectors && settings.mcpServers?.some(c => c.id === "taucode-browser" && c.enabled) && <button type="button" disabled={disabled} aria-pressed={web} onClick={toggleWeb}><Globe aria-hidden />{web ? "Turn off Web" : "Turn on Web"}</button>}<button type="button" disabled={disabled || !model} onClick={() => { void run(async () => {
           const value = defaultModel === model ? "" : model;
           const updated = await updateAppSettings({ ...await getAppSettings(), chatDefaultModel: modelRef(value) });
           updateSettings?.(updated);
           setDefaultModel(value);
-        }); }}>{defaultModel === model ? "Use policy default" : "Make chat default"}</button></>} toolbar={<><ComposerAccessControl value="read-only" title="Chat has no file or command access" />{web && <button type="button" className="composer-chip" disabled={disabled} onClick={toggleWeb} title="Turn off Web"><Globe aria-hidden />Web<X aria-hidden /></button>}</>} actions={<> <ComposerDictation settings={settings} disabled={busy || chat.running} onBusyChange={setDictating} onTranscript={text => setDraft(current => current + (current && !/\s$/.test(current) ? " " : "") + text)} onError={chat.setError} onOpenSettings={onOpenSettings} /><ComposerSendButton running={chat.running} runningHint={`Enter to ${followUp} a follow-up; Shift+Enter for a new line`} disabled={busy || dictating || !model || (!draft.trim() && !attachments.length)} disabledReason={dictating ? "Finish dictation first" : busy ? "Please wait" : !model ? "Choose a model in Settings" : "Write a message or add an attachment"} onSend={() => send()} onStop={() => { void run(() => chatRequest("stop", { threadId: chat.active })); }} /></>}>
+        }); }}>{defaultModel === model ? "Use policy default" : "Make chat default"}</button></>} toolbar={<><ComposerAccessControl value="read-only" title="Chat has no file or command access" />{web && <button type="button" className="composer-chip" disabled={disabled} onClick={toggleWeb} title="Turn off Web"><Globe aria-hidden />Web<X aria-hidden /></button>}</>} actions={<> <ComposerDictation settings={settings} disabled={busy || chat.running} onBusyChange={setDictating} onTranscript={text => setDraft(current => current + (current && !/\s$/.test(current) ? " " : "") + text)} onError={chat.setError} onOpenSettings={onOpenSettings} /><ComposerSendButton running={chat.running} runningHint={canSteer ? "Enter to add to this response; Shift+Enter for a new line" : undefined} disabled={busy || dictating || !model || (chat.running && !canSteer) || (!draft.trim() && !attachments.length)} disabledReason={dictating ? "Finish dictation first" : busy ? "Please wait" : !model ? "Choose a model in Settings" : "Write a message or add an attachment"} onSend={send} onStop={() => { void run(() => chatRequest("stop", { threadId: chat.active })); }} /></>}>
         {dragOver && <div className="composer-drop-overlay">Drop files or images</div>}
         {!!attachments.length && <ul className="chat-attachments">{attachments.map((a, index) => <li key={index}><img src={a.url || getFileTypeIconUrl(a.name)} alt="" />{a.name}<IconButton type="button" disabled={busy} aria-label={`Remove ${a.name}`} onClick={() => setAttachments(current => current.filter((_, i) => i !== index))}><X aria-hidden /></IconButton></li>)}</ul>}
         {editing && <div className="chat-editing">Editing the last message · creates a new branch <button type="button" onClick={() => { clearDraft(); composerInput.current?.focus(); }}>Cancel</button></div>}
-        <textarea writingsuggestions="false" ref={composerInput} aria-label="Message" placeholder="Ask anything" rows={1} value={draft} disabled={busy} onChange={e => setDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { e.preventDefault(); if (!disabled) addFiles(files); } }} onKeyDown={e => {
-          if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
-          if (!e.shiftKey) { e.preventDefault(); send(); }
-          else if (chat.running && (isMacPlatform() ? e.metaKey : e.ctrlKey)) { e.preventDefault(); send(true); }
-        }} />
+        <textarea writingsuggestions="false" ref={composerInput} aria-label="Message" placeholder="Ask anything" rows={1} value={draft} disabled={busy} onChange={e => setDraft(e.target.value)} onPaste={e => { const files = Array.from(e.clipboardData.files); if (files.length) { e.preventDefault(); if (!disabled) addFiles(files); } }} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} />
 
         {chat.error && <p role="alert">{chat.error}</p>}
         </ComposerShell>

@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppServerEvent, AppSettings } from "@/types";
 import { chatRequest, exportMarkdownFile, readChatAttachment } from "@services/tauri";
 import { ChatView } from "./ChatView";
-import { chatQueues } from "./useChat";
 import type { Chat } from "./chat";
 
 let listener: (event: AppServerEvent) => void;
@@ -36,7 +35,7 @@ beforeEach(() => {
     return {};
   });
 });
-afterEach(() => { assertRowAlignment(document.body); cleanup(); vi.clearAllMocks(); chatQueues.clear(); });
+afterEach(() => { assertRowAlignment(document.body); cleanup(); vi.clearAllMocks(); });
 it("exposes the Chat layout and rows used by the WebKit audit", async () => {
   render(<ChatView settings={settings} />);
   const row = await screen.findByRole("button", { name: "My conversation" });
@@ -229,60 +228,36 @@ it("keeps an accepted optimistic message if refreshing the chat list fails", asy
 
 describe("follow-ups while a response runs", () => {
   const start = () => act(() => listener({ workspace_id: "chats", message: { method: "turn/started", params: { threadId: "chat" } } }));
-  const finish = (status: string) => act(() => listener({ workspace_id: "chats", message: { method: "turn/completed", params: { threadId: "chat", turn: { status } } } }));
   const write = (text: string, keys: Partial<KeyboardEvent> = {}) => {
     const box = screen.getByRole("textbox", { name: "Message" });
     fireEvent.change(box, { target: { value: text } });
     fireEvent.keyDown(box, { key: "Enter", ...keys });
   };
-  it("queues them and sends each after the response completes", async () => {
-    render(<ChatView settings={settings} />); await open();
+  it("adds them to the running response instead of queueing", async () => {
+    render(<ChatView settings={{ ...settings, steerEnabled: true }} />); await open();
     start();
-    expect(screen.getByRole("status").textContent).toContain("Enter queues a follow-up");
-    write("First follow-up");
-    write("Second follow-up");
-    expect(await screen.findByText("Queued")).toBeTruthy();
-    expect(screen.getByText("First follow-up")).toBeTruthy();
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty("value", "");
-    expect(chatRequest).not.toHaveBeenCalledWith("send", expect.anything());
-    finish("completed");
-    await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("send", { threadId: "chat", input: [{ type: "text", text: "First follow-up" }] }));
-    expect(chatRequest).not.toHaveBeenCalledWith("send", { threadId: "chat", input: [{ type: "text", text: "Second follow-up" }] });
-    finish("completed");
-    await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("send", { threadId: "chat", input: [{ type: "text", text: "Second follow-up" }] }));
-    await waitFor(() => expect(screen.queryByText("Queued")).toBeNull());
-  });
-  it("keeps queued follow-ups when the view unmounts for another mode", async () => {
-    const view = render(<ChatView settings={settings} />); await open();
-    start();
-    write("Kept across modes");
-    view.unmount();
-    render(<ChatView settings={settings} />); await open();
-    expect(await screen.findByText("Kept across modes")).toBeTruthy();
-    start();
-    finish("completed");
-    await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("send", { threadId: "chat", input: [{ type: "text", text: "Kept across modes" }] }));
-  });
-  it("pauses the queue when the response is stopped", async () => {
-    render(<ChatView settings={settings} />); await open();
-    start();
-    write("After the stop");
-    finish("interrupted");
-    expect(await screen.findByText("Paused because the response was stopped")).toBeTruthy();
-    expect(chatRequest).not.toHaveBeenCalledWith("send", expect.anything());
-  });
-  it("steers with the shortcut, and queues when the response already ended", async () => {
-    render(<ChatView settings={{ ...settings, steerEnabled: true, followUpMessageBehavior: "queue" }} />); await open();
-    start();
-    expect(screen.getByRole("status").textContent).toMatch(/Shift\+(Cmd|Ctrl)\+Enter adds it to this response/);
-    write("Also cover costs", { shiftKey: true, metaKey: true, ctrlKey: true });
+    expect(screen.getByRole("status").textContent).toContain("Enter adds your message to this response");
+    write("Also cover costs");
     await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("steer", { threadId: "chat", input: [{ type: "text", text: "Also cover costs" }] }));
     expect(screen.getByText("Also cover costs", { selector: "p" })).toBeTruthy();
+    expect(screen.queryByText("Queued")).toBeNull();
+  });
+  it("sends the message normally when the response already ended", async () => {
+    render(<ChatView settings={{ ...settings, steerEnabled: true }} />); await open();
+    start();
     const original = vi.mocked(chatRequest).getMockImplementation()!;
     vi.mocked(chatRequest).mockImplementation((action, params) => action === "steer" ? Promise.reject(new Error("No running response to steer")) : original(action, params));
-    write("Too late", { shiftKey: true, metaKey: true, ctrlKey: true });
-    expect(await screen.findByText("Queued")).toBeTruthy();
-    expect(screen.queryByText("Too late", { selector: "p" })).toBeNull();
+    write("Too late");
+    await waitFor(() => expect(chatRequest).toHaveBeenCalledWith("send", { threadId: "chat", input: [{ type: "text", text: "Too late" }] }));
+    expect(screen.queryByText("Queued")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it("keeps the composer closed while a response runs when steering is off", async () => {
+    render(<ChatView settings={{ ...settings, steerEnabled: false }} />); await open();
+    start();
+    write("Not now");
+    expect(screen.getByRole("status").textContent).toContain("You can stop this response below");
+    expect(chatRequest).not.toHaveBeenCalledWith("steer", expect.anything());
+    expect(chatRequest).not.toHaveBeenCalledWith("send", expect.anything());
   });
 });

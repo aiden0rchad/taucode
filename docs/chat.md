@@ -22,7 +22,7 @@ The **message box** is where you type requests; technical pages also call it the
 
 Choose **Chat** in the sidebar, select **New chat**, and pick an enabled model. Replies stream into a centered conversation. Use Stop to interrupt a response.
 
-You can keep writing while a reply streams. **Enter** queues your message: it waits above the composer, where you can edit or delete it, and is sent after the reply finishes. **Shift+Cmd+Enter** (Shift+Ctrl+Enter on Windows and Linux) steers instead: the message joins the running reply, which the model reads after its current step. If the reply already ended, a steered message is queued. Swap the two keys with **Settings → Composer → Follow-up behavior**. Stopping a reply, or a failed reply, pauses the queue until the next reply completes.
+You can keep writing while a reply streams. **Enter** adds your message to the running reply, which the model reads after its current step; if the reply already ended, the message is sent as the next one. Chat never queues messages. With steering turned off in **Settings → Composer**, sending waits until the reply finishes or you stop it.
 
 Chat runs on **pi** with its own restricted set of tools and settings. Choosing another engine for Code does not change Chat's engine. The available models come from your provider settings, and Chat can have its own default model.
 
