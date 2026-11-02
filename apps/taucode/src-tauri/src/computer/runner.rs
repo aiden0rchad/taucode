@@ -514,7 +514,8 @@ pub async fn run(
                 // The last action closed the app's last window (Preview's Open dialog cancelled).
                 // That may be the requested result, so the planner judges it from the frame
                 // before that action, without input.
-                (Err(error), Some(before)) if error.starts_with(NO_WINDOWS) && verify_only.is_none() => {
+                // Also after an uncertain action, whose verification this replaces.
+                (Err(error), Some(before)) if error.starts_with(NO_WINDOWS) => {
                     recovery.previous = Some(format!(
                         "READ-ONLY VERIFICATION: {error} The screenshot shows the app BEFORE the last action; it now has no open windows. Return done ONLY if closing that window or dialog completed the entire requested task; otherwise return fail explaining what remains. No input is possible.\n\n"
                     ));

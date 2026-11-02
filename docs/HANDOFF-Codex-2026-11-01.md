@@ -186,6 +186,10 @@ Known gaps, not fixed:
    - **Run end (Nov 1 night):** a capture that finds no windows after the run acted now gives
      the planner a read-only verification step (frame from before the action), so a run like
      "cancel the Open dialog" ends done instead of failing (`runner::NO_WINDOWS`).
+     This also covers an uncertain press (Preview's Cancel answers -25204). Live sweep after
+     these changes (debug build, approvals off): Calculator, TextEdit, Dictionary, Reminders,
+     Maps, Weather pass in the background; Notes search passes via the foreground fallback;
+     Preview's Open dialog cancel now ends done with one press.
 3. **Notes search stays a foreground step.** Probed with `scripts/ax-probes/notessearch.swift`
    (Notes 2026-11-01, behind another app): the toolbar search field (`AXTextField`,
    subrole `AXSearchField`, only action `AXConfirm`) reports `AXValue`, `AXFocused` and

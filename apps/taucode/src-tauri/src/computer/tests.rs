@@ -2159,6 +2159,16 @@ async fn closing_the_last_window_is_verified_read_only_instead_of_failing_the_ca
             assert!(result.unwrap_err().contains("Read-only verification rejected further input"));
         }
     }
+    // An uncertain AX press (Preview's Cancel answers -25204) that closed the window is verified the same way.
+    let mut env = fake(vec![json!({"kind":"click","x":960,"y":540,"button":"left","clicks":1,"hold_keys":[]}), json!({"kind":"done","summary":"Dialog cancelled"})]);
+    env.prepare_error = Some(format!("{}ax_press_failed(-25204)", runner::UNCERTAIN));
+    env.capture_errors = [None, Some(closed.clone())].into();
+    let control = Control::new(FakeInput::default());
+    control.start();
+    let s = settings();
+    let result = runner::run(&mut env, &control, &s, &s.app_ids(), "Cancel the dialog", Instant::now()).await;
+    assert_eq!(result.unwrap()["summary"], "Dialog cancelled");
+    assert!(env.instructions[1].starts_with("READ-ONLY VERIFICATION: App has no open windows"));
     // Before any action there is nothing to verify, so the capture error stays fatal.
     let mut env = fake(vec![json!({"kind":"done","summary":"never"})]);
     env.capture_errors = [Some(closed)].into();
