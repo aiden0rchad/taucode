@@ -183,6 +183,16 @@ Known gaps, not fixed:
      reopened Preview, which shows its Open panel again. Captures no longer reopen an app
      once the run has acted (`Session::acted`); the run now ends saying the app has no open
      windows. Verified with `winwatch`: the panel closes and nothing reappears.
+   - **Run end (Nov 1 night):** a capture that finds no windows after the run acted now gives
+     the planner a read-only verification step (frame from before the action), so a run like
+     "cancel the Open dialog" ends done instead of failing (`runner::NO_WINDOWS`).
+3. **Notes search stays a foreground step.** Probed with `scripts/ax-probes/notessearch.swift`
+   (Notes 2026-11-01, behind another app): the toolbar search field (`AXTextField`,
+   subrole `AXSearchField`, only action `AXConfirm`) reports `AXValue`, `AXFocused` and
+   `AXSelectedText` as not settable, and Edit › Find › Note List Search… is disabled while
+   Notes is inactive (AXPress returns 0 and does nothing). No background route exists, so the
+   opt-in foreground fallback stays. Searching the note list another way (AppleScript
+   `notes whose name contains`) would be a separate, non-UI tool.
 
 ### Testing Computer Use live
 
